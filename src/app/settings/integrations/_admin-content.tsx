@@ -1,5 +1,5 @@
-import { Card, CardContent } from '@/components/ui/card';
 import { IntegrationCard } from '@/components/shared/settings/IntegrationCard';
+import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
@@ -23,63 +23,60 @@ export function AdminIntegrationsContent() {
         subtitle="Connected services and integrations across your workspace. Health status visible at a glance."
         items={adminSettingsNav}
       >
-        <Card className="py-7">
-          <CardContent className="px-8">
-            <SettingsSection
-              heading={
-                <>
-                  Connected <em>services</em>
-                </>
-              }
-              description={
-                <>
-                  6 services connected.{' '}
-                  <strong>Each integration is a maintenance commitment</strong> — Webnua adds them
-                  sparingly. Click any card to manage credentials or reauthorize.
-                </>
-              }
-            >
-              <div className="flex flex-col gap-2.5">
-                {adminConnectedIntegrations.map((item) => (
-                  <IntegrationCard
-                    key={item.id}
-                    name={item.name}
-                    description={item.description}
-                    status={item.status}
-                    statusLabel={item.statusLabel}
-                    logo={item.logo}
-                    meta={item.meta}
-                    action={item.action}
-                  />
-                ))}
-              </div>
-            </SettingsSection>
+        <SettingsPanel>
+          <SettingsSection
+            heading={
+              <>
+                Connected <em>services</em>
+              </>
+            }
+            description={
+              <>
+                6 services connected. <strong>Each integration is a maintenance commitment</strong>{' '}
+                — Webnua adds them sparingly. Click any card to manage credentials or reauthorize.
+              </>
+            }
+          >
+            <div className="flex flex-col gap-2.5">
+              {adminConnectedIntegrations.map((item) => (
+                <IntegrationCard
+                  key={item.id}
+                  name={item.name}
+                  description={item.description}
+                  status={item.status}
+                  statusLabel={item.statusLabel}
+                  logo={item.logo}
+                  meta={item.meta}
+                  action={item.action}
+                />
+              ))}
+            </div>
+          </SettingsSection>
 
-            <SettingsSection
-              heading={
-                <>
-                  Available <em>integrations</em>
-                </>
-              }
-              description="Other services Webnua supports but you haven't connected yet. Click to start the connect flow."
-            >
-              <div className="flex flex-col gap-2.5">
-                {adminAvailableIntegrations.map((item) => (
-                  <IntegrationCard
-                    key={item.id}
-                    name={item.name}
-                    description={item.description}
-                    status={item.status}
-                    statusLabel={item.statusLabel}
-                    logo={item.logo}
-                    meta={item.meta}
-                    action={item.action}
-                  />
-                ))}
-              </div>
-            </SettingsSection>
-          </CardContent>
-        </Card>
+          <SettingsSection
+            heading={
+              <>
+                Available <em>integrations</em>
+              </>
+            }
+            description="Other services Webnua supports but you haven't connected yet. Click to start the connect flow."
+          >
+            <div className="flex flex-col gap-2.5">
+              {adminAvailableIntegrations.map((item) => (
+                <IntegrationCard
+                  key={item.id}
+                  name={item.name}
+                  description={item.description}
+                  status={item.status}
+                  statusLabel={item.statusLabel}
+                  logo={item.logo}
+                  meta={item.meta}
+                  action={item.action}
+                />
+              ))}
+            </div>
+          </SettingsSection>
+        </SettingsPanel>
       </SettingsShell>
     </>
   );
