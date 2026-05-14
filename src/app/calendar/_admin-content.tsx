@@ -1,12 +1,13 @@
-import { AddBookingButton } from '@/components/admin/calendar/AddBookingButton';
 import { CalendarClientFilterBar } from '@/components/admin/calendar/CalendarClientFilterBar';
 import { CalendarLegend } from '@/components/admin/calendar/CalendarLegend';
 import { CalendarTodayPanel } from '@/components/admin/calendar/CalendarTodayPanel';
+import { AddBookingButton } from '@/components/shared/bookings/AddBookingButton';
 import { CalendarGrid } from '@/components/shared/calendar/CalendarGrid';
 import { CalendarToolbar } from '@/components/shared/calendar/CalendarToolbar';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { adminCalendar } from '@/lib/calendar/admin-calendar';
+import { freshhomeNewBooking } from '@/lib/bookings/new-booking-modal';
 
 function AdminCalendarContent() {
   const { hero, filters, legend, legendMeta, week, today } = adminCalendar;
@@ -25,7 +26,7 @@ function AdminCalendarContent() {
         />
         <div className="flex flex-wrap items-center justify-between gap-3">
           <CalendarClientFilterBar filters={filters} defaultActiveId="all" />
-          <AddBookingButton />
+          <AddBookingButton data={freshhomeNewBooking} />
         </div>
         <CalendarToolbar periodLabel={week.periodLabel} />
         <CalendarLegend items={legend} meta={legendMeta} />

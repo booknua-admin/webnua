@@ -94,7 +94,7 @@ function CalendarGrid({ week, className }: CalendarGridProps) {
                 top={b.top}
                 height={b.height}
                 tone={b.tone}
-                href={b.href}
+                href={b.href ?? `/bookings/${b.id}`}
               />
             ))}
             {day.nowTopPx !== undefined && day.nowLabel ? (

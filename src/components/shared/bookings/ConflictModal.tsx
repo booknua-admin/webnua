@@ -35,9 +35,9 @@ function ConflictModal({
       <DialogContent
         size="default"
         showCloseButton={false}
-        className="overflow-hidden rounded-[14px] border-rule bg-card p-0 gap-0"
+        className="flex max-h-[calc(100vh-4rem)] flex-col overflow-hidden rounded-[14px] border-rule bg-card p-0 gap-0"
       >
-        <div className="flex items-start justify-between gap-4 border-b border-paper-2 px-7 pb-4 pt-5.5">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-paper-2 px-7 pb-4 pt-5.5">
           <div className="flex-1">
             <div className="mb-2 inline-flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-warn">
               <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-warn" />
@@ -58,7 +58,7 @@ function ConflictModal({
           </DialogPrimitive.Close>
         </div>
 
-        <div className="px-7 py-6">
+        <div className="min-h-0 flex-1 overflow-y-auto px-7 py-6">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-warn-soft text-[26px] font-black text-warn">
             ⚠
           </div>
@@ -86,7 +86,7 @@ function ConflictModal({
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-paper-2 bg-paper px-7 py-4">
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-paper-2 bg-paper px-7 py-4">
           <Button
             variant="ghost"
             className="h-9"

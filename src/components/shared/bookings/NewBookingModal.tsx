@@ -32,9 +32,9 @@ function NewBookingModal({ open, onOpenChange, data }: NewBookingModalProps) {
       <DialogContent
         size="lg"
         showCloseButton={false}
-        className="overflow-hidden rounded-[14px] border-rule bg-card p-0 gap-0"
+        className="flex max-h-[calc(100vh-4rem)] flex-col overflow-hidden rounded-[14px] border-rule bg-card p-0 gap-0"
       >
-        <div className="flex items-start justify-between gap-4 border-b border-paper-2 px-7 pb-4 pt-5.5">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-paper-2 px-7 pb-4 pt-5.5">
           <div className="flex-1">
             <div className="mb-2 inline-flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust">
               <span
@@ -58,16 +58,18 @@ function NewBookingModal({ open, onOpenChange, data }: NewBookingModalProps) {
           </DialogPrimitive.Close>
         </div>
 
-        <div className="px-7 py-6">
-          <div className="mb-4.5 flex items-center gap-3.5 rounded-[10px] border border-rule bg-paper px-4.5 py-3.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-ink font-extrabold text-[14px] text-rust-light">
-              {data.summary.initial}
+        <div className="min-h-0 flex-1 overflow-y-auto px-7 py-6">
+          {data.summary ? (
+            <div className="mb-4.5 flex items-center gap-3.5 rounded-[10px] border border-rule bg-paper px-4.5 py-3.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-ink font-extrabold text-[14px] text-rust-light">
+                {data.summary.initial}
+              </div>
+              <div className="flex-1 text-[13px] text-ink">
+                {data.summary.headline}
+                <span className="text-ink-quiet">{data.summary.detail}</span>
+              </div>
             </div>
-            <div className="flex-1 text-[13px] text-ink">
-              {data.summary.headline}
-              <span className="text-ink-quiet">{data.summary.detail}</span>
-            </div>
-          </div>
+          ) : null}
 
           <FormRow label="Customer" required>
             <Input className="bg-paper" defaultValue={data.customer.value} readOnly />
@@ -124,7 +126,7 @@ function NewBookingModal({ open, onOpenChange, data }: NewBookingModalProps) {
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-t border-paper-2 bg-paper px-7 py-4">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-t border-paper-2 bg-paper px-7 py-4">
           <div className="flex-1 text-[12px] leading-[1.45] text-ink-quiet [&_strong]:font-semibold [&_strong]:text-ink">
             {data.footerInfo}
           </div>

@@ -4,9 +4,11 @@ import { BookingJobGrid } from '@/components/shared/bookings/BookingJobGrid';
 import { BookingNotesBox } from '@/components/shared/bookings/BookingNotesBox';
 import { BookingSection } from '@/components/shared/bookings/BookingSection';
 import { ClientBookingHero } from '@/components/shared/bookings/ClientBookingHero';
+import { RescheduleBookingButton } from '@/components/shared/bookings/RescheduleBookingButton';
 import { TicketSideCard } from '@/components/shared/tickets/TicketSideCard';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { voltlineBooking } from '@/lib/bookings/client-booking';
+import { voltlineReschedule } from '@/lib/bookings/reschedule-modal';
 
 function ClientBookingDetailContent() {
   const b = voltlineBooking;
@@ -66,15 +68,25 @@ function ClientBookingDetailContent() {
           <div className="sticky top-[100px] flex flex-col gap-3">
             {b.actions.map((group) => (
               <TicketSideCard key={group.heading} heading={group.heading}>
-                {group.actions.map((a, i) => (
-                  <BookingActionBtn
-                    key={i}
-                    icon={a.icon}
-                    label={a.label}
-                    tone={a.tone ?? 'secondary'}
-                    href={a.href}
-                  />
-                ))}
+                {group.actions.map((a, i) =>
+                  a.label === 'Reschedule' ? (
+                    <RescheduleBookingButton
+                      key={i}
+                      data={voltlineReschedule}
+                      label={a.label}
+                      variant="action-row"
+                      icon={a.icon}
+                    />
+                  ) : (
+                    <BookingActionBtn
+                      key={i}
+                      icon={a.icon}
+                      label={a.label}
+                      tone={a.tone ?? 'secondary'}
+                      href={a.href}
+                    />
+                  ),
+                )}
               </TicketSideCard>
             ))}
             {b.nextNote ? (

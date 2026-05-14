@@ -4,6 +4,7 @@ import { BookingJobGrid } from '@/components/shared/bookings/BookingJobGrid';
 import { BookingNotesBox } from '@/components/shared/bookings/BookingNotesBox';
 import { BookingSection } from '@/components/shared/bookings/BookingSection';
 import { RescheduleBookingButton } from '@/components/shared/bookings/RescheduleBookingButton';
+import { freshhomeReschedule } from '@/lib/bookings/reschedule-modal';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { TicketPropertyRow } from '@/components/shared/tickets/TicketPropertyRow';
 import { TicketSideCard } from '@/components/shared/tickets/TicketSideCard';
@@ -39,7 +40,7 @@ function AdminBookingDetailContent() {
                   <Button variant="default" className="h-9">
                     Mark complete
                   </Button>
-                  <RescheduleBookingButton />
+                  <RescheduleBookingButton data={freshhomeReschedule} />
                   <Button variant="secondary" className="h-9" asChild>
                     <a href="/leads/larsen">Open lead →</a>
                   </Button>

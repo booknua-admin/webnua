@@ -110,7 +110,75 @@ const freshhomeReschedule: RescheduleModalData = {
   saveLabel: 'Confirm + notify Emma →',
 };
 
-export { freshhomeReschedule };
+const voltlineReschedule: RescheduleModalData = {
+  tag: '// RESCHEDULE BOOKING',
+  title: (
+    <>
+      Reschedule <em>Liam Reilly</em>
+    </>
+  ),
+  subtitle: (
+    <>
+      Confirm the new time, review the customer SMS, and we'll let Liam know.
+      Same-day reschedules need at least 2 hours' notice.
+    </>
+  ),
+  was: {
+    tag: '// WAS BOOKED',
+    time: '13:00 — 15:00',
+    day: 'Wed, May 13 · 2 hrs',
+  },
+  now: {
+    tag: '// NEW TIME',
+    time: '15:30 — 17:30',
+    day: 'Wed, May 13 · 2 hrs',
+  },
+  reasons: [
+    { id: 'running_late', label: 'Running late' },
+    { id: 'earlier_job_overran', label: 'Earlier job overran' },
+    { id: 'customer', label: 'Customer request' },
+    { id: 'parts', label: 'Waiting on parts' },
+    { id: 'weather', label: 'Weather' },
+    { id: 'custom', label: 'Custom message' },
+  ],
+  defaultReasonId: 'earlier_job_overran',
+  smsPreview: [
+    { type: 'text', value: 'Hi ' },
+    { type: 'var', value: 'Liam' },
+    { type: 'text', value: ", it's Mark from " },
+    { type: 'var', value: 'Voltline' },
+    {
+      type: 'text',
+      value:
+        " — quick heads-up, this morning's job is running long. I'd like to bump our ",
+    },
+    { type: 'var', value: '13:00 Wed' },
+    { type: 'text', value: ' visit to ' },
+    { type: 'var', value: '15:30 Wed' },
+    {
+      type: 'text',
+      value:
+        ". Reply OK or text back if another time suits better. Cheers — Mark",
+    },
+  ],
+  toggles: [
+    { id: 'send_sms', label: 'Send SMS to Liam', defaultOn: true },
+    {
+      id: 'pause_review',
+      label: 'Pause review-request automation',
+      defaultOn: true,
+    },
+  ],
+  footerInfo: (
+    <>
+      <strong>2.5-hour notice</strong> — within healthy range. Liam's first
+      reschedule this booking.
+    </>
+  ),
+  saveLabel: 'Confirm + notify Liam →',
+};
+
+export { freshhomeReschedule, voltlineReschedule };
 export type {
   RescheduleCompareSide,
   RescheduleModalData,
