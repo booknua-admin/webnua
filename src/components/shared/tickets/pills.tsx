@@ -24,6 +24,8 @@ type StatusPillProps = {
   awaiting?: TicketAwaiting;
   /** When true, status `in_progress` + awaiting `client` renders as "Review". */
   reviewAware?: boolean;
+  /** Override the default status text (e.g. "Open · awaiting your reply"). */
+  label?: string;
   className?: string;
 };
 
@@ -31,6 +33,7 @@ function StatusPill({
   status,
   awaiting,
   reviewAware = false,
+  label,
   className,
 }: StatusPillProps) {
   const isReview =
@@ -47,7 +50,7 @@ function StatusPill({
           className,
         )}
       >
-        Review
+        {label ?? 'Review'}
       </span>
     );
   }
@@ -58,7 +61,7 @@ function StatusPill({
       data-status={status}
       className={cn(pillBase, STATUS_CLASS[status], className)}
     >
-      {STATUS_LABEL[status]}
+      {label ?? STATUS_LABEL[status]}
     </span>
   );
 }
