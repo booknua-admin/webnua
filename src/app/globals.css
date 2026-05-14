@@ -1,11 +1,18 @@
 @import 'tailwindcss';
+@import 'tw-animate-css';
 
 /* ============================================================
-   Webnua design tokens (Phase 2)
+   Webnua design tokens (Phase 2, renamed Phase 3)
    Source of truth: reference/webnua-platform-prototype.html +
    reference/webnua-client-prototype.html. CLAUDE.md overrides
-   for accent (#d24317), good (#1e6b3a), info (#2d7d8a teal),
+   for rust (#d24317), good (#1e6b3a), info (#2d7d8a teal),
    paper-3 (#e0d8c8), warn (#c44444).
+
+   Phase 3 rename: `accent` → `rust` (the brand IS the rust),
+   and `muted` → `ink-quiet` (it's the lightest end of the ink
+   scale). These renames free `--color-accent` and `--color-muted`
+   so shadcn role-layer aliases (see block below) can use them
+   without clobbering Webnua palette values.
    ============================================================ */
 @theme {
   /* Surfaces */
@@ -13,17 +20,17 @@
   --color-paper-2: #ebe5d9;
   --color-paper-3: #e0d8c8;
 
-  /* Ink (text + dark surfaces) */
+  /* Ink scale (text + dark surfaces) */
   --color-ink: #0a0a0a;
   --color-ink-soft: #2a2a28;
   --color-ink-mid: #4a4a45;
-  --color-muted: #6e685c;
+  --color-ink-quiet: #6e685c;
 
-  /* Accent — Webnua rust */
-  --color-accent: #d24317;
-  --color-accent-light: #e8743b;
-  --color-accent-soft: #f4dccd;
-  --color-rust: #8a3815;
+  /* Rust scale — Webnua brand */
+  --color-rust-deep: #8a3815;
+  --color-rust: #d24317;
+  --color-rust-light: #e8743b;
+  --color-rust-soft: #f4dccd;
 
   /* Semantic states */
   --color-good: #1e6b3a;
@@ -60,6 +67,59 @@
 }
 
 /* ============================================================
+   shadcn semantic-name aliases → Webnua palette tokens.
+   shadcn primitives reference Tailwind utilities (bg-primary,
+   text-card-foreground, border-ring, etc.) — these aliases are
+   what makes those utilities resolve to Webnua colours. In
+   Tailwind v4 they MUST live in @theme so the utility classes
+   are generated. Edit the right-hand side only.
+
+   Webnua palette tokens above are the source of truth.
+   Convention (see CLAUDE.md): shadcn-derived primitives keep
+   the shadcn role vocabulary they ship with; everything
+   Webnua-authored uses the Webnua palette names.
+   ============================================================ */
+@theme {
+  /* Surfaces */
+  --color-background:        var(--color-paper);
+  --color-foreground:        var(--color-ink);
+
+  --color-card:              #ffffff;
+  --color-card-foreground:   var(--color-ink);
+
+  --color-popover:           #ffffff;
+  --color-popover-foreground: var(--color-ink);
+
+  /* Brand — Webnua rust */
+  --color-primary:           var(--color-rust);
+  --color-primary-foreground: var(--color-paper);
+
+  /* Secondary — subtle paper surface */
+  --color-secondary:         var(--color-paper-2);
+  --color-secondary-foreground: var(--color-ink);
+
+  /* Muted — shadcn surface + quiet text.
+     `--color-muted` here is the shadcn surface name (paper-2);
+     `--color-muted-foreground` is the Webnua ink-quiet text. */
+  --color-muted:             var(--color-paper-2);
+  --color-muted-foreground:  var(--color-ink-quiet);
+
+  /* Accent — shadcn's hover-highlight surface (NOT brand).
+     Brand rust is exposed above as `primary`. */
+  --color-accent:            var(--color-paper-2);
+  --color-accent-foreground: var(--color-ink);
+
+  /* Destructive */
+  --color-destructive:       var(--color-warn);
+  --color-destructive-foreground: var(--color-paper);
+
+  /* Hairlines / inputs / focus ring */
+  --color-border:            var(--color-rule);
+  --color-input:             var(--color-rule);
+  --color-ring:              var(--color-rust);
+}
+
+/* ============================================================
    Base — Webnua is light-theme only. No prefers-color-scheme.
    ============================================================ */
 html,
@@ -76,6 +136,6 @@ body {
 }
 
 ::selection {
-  background: var(--color-accent);
+  background: var(--color-rust);
   color: var(--color-paper);
 }
