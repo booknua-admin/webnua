@@ -5,16 +5,17 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import type { NegativeReviewModalData } from '@/lib/reviews/types';
 
-import { NegativeReviewModal } from './NegativeReviewModal';
+import { NegativeReviewModal } from '@/components/shared/reviews/NegativeReviewModal';
 
 type NegativeReviewAlertButtonProps = {
   data: NegativeReviewModalData;
 };
 
 /**
- * Stub trigger for the negative-review modal on admin `/reviews`. In the real
- * build the modal fires from a low-rating webhook; for the stub layer it
- * lives as a button on the page header so the modal is reachable.
+ * Stub trigger for the negative-review modal on client `/reviews`. In the
+ * real build the modal fires from a low-rating webhook the moment Google
+ * surfaces a sub-4★ review; for the stub layer it lives as a button on the
+ * page header so the modal is reachable.
  */
 function NegativeReviewAlertButton({ data }: NegativeReviewAlertButtonProps) {
   const [open, setOpen] = useState(false);
