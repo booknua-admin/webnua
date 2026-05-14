@@ -11,3 +11,9 @@ export type NavSection = {
   label: string;
   items: NavItem[];
 };
+
+export type SettingsNavItem = {
+  label: string;
+  href: string;
+  icon: ReactNode;
+};
