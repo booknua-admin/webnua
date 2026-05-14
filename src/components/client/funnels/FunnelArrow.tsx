@@ -23,7 +23,7 @@ function FunnelArrow({ arrow, className }: FunnelArrowProps) {
           →
         </span>
       </div>
-      <span className="mt-2 font-mono text-[9px] font-bold uppercase tracking-[0.06em] text-ink-quiet [&_strong]:text-warn">
+      <span className="mt-2 px-1 text-center font-mono text-[9px] font-bold leading-[1.5] uppercase tracking-[0.04em] text-ink-quiet [&_strong]:text-warn">
         {arrow.dropLabel}
       </span>
     </div>

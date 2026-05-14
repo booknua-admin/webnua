@@ -2,7 +2,7 @@ import type { FunnelDetail } from './types';
 
 export const voltlineFunnel: FunnelDetail = {
   id: 'emergency-call-out',
-  back: { label: 'Back to website', href: '/website' },
+  back: { label: 'Back to funnels', href: '/funnels' },
   hero: {
     tag: 'Webnua-managed funnel',
     title: (

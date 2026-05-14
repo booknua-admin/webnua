@@ -13,7 +13,7 @@ function FunnelStepThumbnail({ variant, className }: FunnelStepThumbnailProps) {
         data-slot="funnel-step-thumbnail"
         data-variant="landing"
         className={cn(
-          'flex h-20 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-[8px] bg-gradient-to-br from-ink to-[#2c2620] px-2.5 text-paper',
+          'flex h-16 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-[8px] bg-gradient-to-br from-ink to-[#2c2620] px-2.5 text-paper',
           className,
         )}
       >
@@ -33,7 +33,7 @@ function FunnelStepThumbnail({ variant, className }: FunnelStepThumbnailProps) {
         data-slot="funnel-step-thumbnail"
         data-variant="schedule"
         className={cn(
-          'grid h-20 grid-cols-2 gap-1.5 overflow-hidden rounded-[8px] border border-rule-soft bg-paper p-2',
+          'grid h-16 grid-cols-2 gap-1.5 overflow-hidden rounded-[8px] border border-rule-soft bg-paper p-2',
           className,
         )}
       >
@@ -63,12 +63,12 @@ function FunnelStepThumbnail({ variant, className }: FunnelStepThumbnailProps) {
       data-slot="funnel-step-thumbnail"
       data-variant="thanks"
       className={cn(
-        'relative flex h-20 items-center justify-center overflow-hidden rounded-[8px] border border-rule-soft bg-gradient-to-br from-good-soft to-[#c5e0c9]',
+        'relative flex h-16 items-center justify-center overflow-hidden rounded-[8px] border border-rule-soft bg-gradient-to-br from-good-soft to-[#c5e0c9]',
         className,
       )}
     >
-      <span className="text-[38px] font-black leading-none text-good">✓</span>
-      <span className="absolute bottom-1.5 text-[9px] font-extrabold tracking-[0.1em] text-good">
+      <span className="text-[28px] font-black leading-none text-good">✓</span>
+      <span className="absolute bottom-1 text-[9px] font-extrabold tracking-[0.1em] text-good">
         BOOKED
       </span>
     </div>

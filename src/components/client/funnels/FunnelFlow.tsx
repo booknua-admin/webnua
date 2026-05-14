@@ -42,7 +42,7 @@ function FunnelFlow({
         <FunnelPeriodToggle periods={periods} defaultPeriod={defaultPeriod} />
       </div>
 
-      <div className="grid grid-cols-[1fr_40px_1fr_40px_1fr] items-stretch">
+      <div className="grid grid-cols-[1fr_100px_1fr_100px_1fr] items-stretch">
         {steps.flatMap((step, idx) => {
           const arrow = arrows[idx];
           const nodes: ReactNode[] = [

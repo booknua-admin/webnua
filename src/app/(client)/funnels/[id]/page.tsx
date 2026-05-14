@@ -12,7 +12,7 @@ export default function ClientFunnelDetailPage() {
     <>
       <Topbar
         breadcrumb={
-          <TopbarBreadcrumb trail={['Website']} current="Funnel detail" />
+          <TopbarBreadcrumb trail={['Funnels']} current="$99 emergency call-out" />
         }
       />
       <div className="flex flex-col gap-4 px-10 py-7">
