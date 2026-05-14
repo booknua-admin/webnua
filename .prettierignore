@@ -1,0 +1,13 @@
+.next/
+out/
+build/
+coverage/
+node_modules/
+package-lock.json
+reference/
+next-env.d.ts
+
+# Standing-orders docs — hand-authored, don't reformat
+CLAUDE.md
+AGENTS.md
+README.md
