@@ -75,7 +75,7 @@ export const midSetupClient: MidSetupClient = {
   ownerName: 'Mark Cassidy',
   ownerPhone: '0411 567 234',
   website: 'voltline.com.au',
-  continueHref: '#',
+  continueHref: '/clients/new/basics',
 };
 
 export const liveClients: LiveClient[] = [

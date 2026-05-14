@@ -69,7 +69,7 @@ export default function AdminClientsPage() {
         <div className="mt-2 flex items-center justify-between">
           <Eyebrow tone="quiet">{'// Live clients'}</Eyebrow>
           <Button variant="secondary" asChild>
-            <Link href="#">+ Add new client</Link>
+            <Link href="/clients/new">+ Add new client</Link>
           </Button>
         </div>
 
