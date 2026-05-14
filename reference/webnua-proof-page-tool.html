@@ -1,0 +1,3180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Webnua Proof Page — generator + preview</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --paper: #f5f1ea;
+    --paper-2: #ebe5d9;
+    --paper-3: #e0d8c8;
+    --ink: #0a0a0a;
+    --ink-2: #141414;
+    --ink-3: #1f1f1f;
+    --accent: #d45b1a;
+    --accent-light: #e08a4f;
+    --accent-soft: rgba(212,91,26,0.08);
+    --good: #2d8a4e;
+    --good-light: #4caf6e;
+    --good-soft: rgba(45,138,78,0.1);
+    --warn: #c44444;
+    --warn-soft: rgba(196,68,68,0.1);
+    --info: #2d7d8a;
+    --info-soft: rgba(45,125,138,0.1);
+    --line: rgba(10,10,10,0.1);
+    --line-soft: rgba(10,10,10,0.055);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter Tight', sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--accent); color: var(--paper); }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  /* ============================================================
+     TOP BAR + 3-STEP STEPPER
+     ============================================================ */
+  .mode-bar {
+    background: var(--ink);
+    color: var(--paper);
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    position: sticky;
+    top: 0;
+    z-index: 500;
+  }
+  .mode-bar-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .mode-logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 16px;
+    letter-spacing: -0.02em;
+  }
+  .mode-logo-diamond {
+    width: 12px; height: 12px;
+    background: var(--accent);
+    transform: rotate(45deg);
+  }
+  .mode-bar-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(245,241,234,0.4);
+    border-left: 1px solid rgba(245,241,234,0.15);
+    padding-left: 14px;
+  }
+  /* the 3-step pipeline indicator */
+  .pipe-steps {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .pipe-step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 13px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: rgba(245,241,234,0.4);
+    cursor: pointer;
+    transition: all 0.15s;
+    background: transparent;
+    border: none;
+    font-family: inherit;
+  }
+  .pipe-step:hover:not(.active) { color: rgba(245,241,234,0.7); }
+  .pipe-step.active {
+    background: var(--accent);
+    color: var(--paper);
+  }
+  .pipe-step.done { color: rgba(245,241,234,0.65); }
+  .pipe-step-num {
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    border: 1.5px solid currentColor;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .pipe-step.active .pipe-step-num {
+    background: var(--paper);
+    color: var(--accent);
+    border-color: var(--paper);
+  }
+  .pipe-step.done .pipe-step-num {
+    background: var(--good);
+    color: var(--paper);
+    border-color: var(--good);
+  }
+  .pipe-arrow {
+    color: rgba(245,241,234,0.25);
+    font-size: 12px;
+  }
+
+  /* ============================================================
+     STEP 1 — AUDIT (input + research assembly)
+     ============================================================ */
+  .audit { display: none; }
+  .audit.active { display: block; }
+  .audit-wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 36px 28px 90px;
+  }
+  .audit-head { margin-bottom: 26px; }
+  .audit-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  .audit-title {
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    margin-bottom: 8px;
+  }
+  .audit-title em { font-style: normal; color: var(--accent); }
+  .audit-sub {
+    font-size: 14px;
+    color: rgba(10,10,10,0.6);
+    max-width: 640px;
+  }
+
+  /* the input phase */
+  .audit-input-grid {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  .audit-skip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 14px;
+    font-size: 12px;
+    color: rgba(10,10,10,0.45);
+    cursor: pointer;
+    background: none;
+    border: none;
+    font-family: inherit;
+  }
+  .audit-skip:hover { color: var(--accent); }
+
+  /* research assembly phase */
+  .research-target {
+    background: var(--ink);
+    color: var(--paper);
+    border-radius: 14px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .research-target-info { display: flex; align-items: center; gap: 14px; }
+  .research-target-avatar {
+    width: 46px; height: 46px;
+    border-radius: 11px;
+    background: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 20px;
+  }
+  .research-target-name {
+    font-size: 17px;
+    font-weight: 600;
+  }
+  .research-target-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: rgba(245,241,234,0.5);
+    letter-spacing: 0.05em;
+    margin-top: 2px;
+  }
+  .research-target-status {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .pulse-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--accent-light);
+    animation: pulse 1.4s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  .source-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+  }
+  .source-card {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 18px 20px;
+    transition: all 0.3s;
+  }
+  .source-card.pending { opacity: 0.5; }
+  .source-card.loading { border-color: var(--accent); }
+  .source-card.done { border-color: rgba(45,138,78,0.3); }
+  .source-card.warn-found { border-color: rgba(196,68,68,0.3); }
+  .source-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .source-name {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .source-icon {
+    width: 28px; height: 28px;
+    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 13px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .source-icon.web { background: #5a5a5a; }
+  .source-icon.gbp { background: #4285F4; }
+  .source-icon.ads { background: #1877F2; }
+  .source-icon.seo { background: #E37400; }
+  .source-status {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 999px;
+  }
+  .source-status.pending {
+    background: rgba(10,10,10,0.06);
+    color: rgba(10,10,10,0.4);
+  }
+  .source-status.loading {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .source-status.done {
+    background: var(--good-soft);
+    color: var(--good);
+  }
+  .source-status.warn-found {
+    background: var(--warn-soft);
+    color: var(--warn);
+  }
+  .source-body {
+    font-size: 12px;
+    color: rgba(10,10,10,0.6);
+    min-height: 72px;
+  }
+  .source-loading-bar {
+    height: 3px;
+    background: rgba(10,10,10,0.08);
+    border-radius: 999px;
+    overflow: hidden;
+    margin: 8px 0;
+  }
+  .source-loading-fill {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    border-radius: 999px;
+    transition: width 0.4s ease;
+  }
+  .source-datapoint {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--line-soft);
+    font-size: 12px;
+  }
+  .source-datapoint:last-child { border-bottom: none; }
+  .source-datapoint .dp-label { color: rgba(10,10,10,0.5); }
+  .source-datapoint .dp-val { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+  .source-datapoint .dp-val.bad { color: var(--warn); }
+  .source-datapoint .dp-val.ok { color: var(--good); }
+  .source-datapoint .dp-val.meh { color: var(--accent); }
+  .research-foot {
+    margin-top: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .research-foot-status {
+    font-size: 13px;
+    color: rgba(10,10,10,0.6);
+  }
+  .research-foot-status strong { color: var(--ink); }
+
+  /* the findings-ready phase — what the engine produced */
+  .findings-ready {
+    background: var(--good-soft);
+    border: 1px solid rgba(45,138,78,0.3);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 13px;
+  }
+  .findings-ready-icon {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: var(--good);
+    color: var(--paper);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .findings-ready-text { flex: 1; font-size: 13px; }
+  .findings-ready-text strong { display: block; font-size: 14px; }
+  .findings-ready-text span { color: rgba(10,10,10,0.6); }
+
+  /* ============================================================
+     SETUP SCREEN
+     ============================================================ */
+  .setup { display: none; }
+  .setup.active { display: block; }
+
+  .setup-wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 36px 28px 90px;
+  }
+  .setup-head { margin-bottom: 28px; }
+  .setup-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  .setup-title {
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    margin-bottom: 8px;
+  }
+  .setup-title em { font-style: normal; color: var(--accent); }
+  .setup-sub {
+    font-size: 14px;
+    color: rgba(10,10,10,0.6);
+    max-width: 640px;
+  }
+
+  .setup-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+
+  .setup-card {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 24px;
+  }
+  .setup-card-h {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 3px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+  .setup-card-num {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--ink);
+    color: var(--paper);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .setup-card-sub {
+    font-size: 12.5px;
+    color: rgba(10,10,10,0.5);
+    margin-bottom: 18px;
+    padding-left: 31px;
+  }
+
+  .fld { margin-bottom: 15px; }
+  .fld-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(10,10,10,0.55);
+    margin-bottom: 6px;
+    display: block;
+  }
+  .fld-label .opt { color: rgba(10,10,10,0.35); text-transform: none; letter-spacing: 0; }
+  .fld-input, .fld-select, .fld-textarea {
+    width: 100%;
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-family: inherit;
+    font-size: 13.5px;
+    color: var(--ink);
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .fld-input:focus, .fld-select:focus, .fld-textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: var(--paper);
+  }
+  .fld-textarea { min-height: 64px; resize: vertical; line-height: 1.5; }
+  .fld-row { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+  .fld-hint { font-size: 11px; color: rgba(10,10,10,0.4); margin-top: 4px; }
+
+  /* logo upload mock */
+  .logo-drop {
+    border: 1.5px dashed var(--line);
+    border-radius: 9px;
+    padding: 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: var(--paper-2);
+  }
+  .logo-drop:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .logo-drop-icon {
+    font-size: 20px;
+    color: rgba(10,10,10,0.3);
+    margin-bottom: 4px;
+  }
+  .logo-drop-text { font-size: 12px; color: rgba(10,10,10,0.5); }
+  .logo-drop-text strong { color: var(--ink); }
+  .logo-preview {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+  }
+  .logo-preview.shown { display: flex; }
+  .logo-preview-swatch {
+    width: 36px; height: 36px;
+    border-radius: 7px;
+    background: var(--ink);
+    color: var(--paper);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 15px;
+    flex-shrink: 0;
+  }
+  .logo-preview-text { font-size: 12px; }
+  .logo-preview-text strong { display: block; }
+  .logo-preview-text span { color: rgba(10,10,10,0.45); font-size: 11px; }
+  .logo-preview-remove {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: rgba(10,10,10,0.4);
+    cursor: pointer;
+    font-size: 16px;
+  }
+
+  /* finding builder */
+  .finding-builder {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 10px;
+  }
+  .audit-import {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--ink);
+    border-radius: 10px;
+    padding: 13px 15px;
+    margin-bottom: 16px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .audit-import:hover { background: var(--ink-2); }
+  .audit-import-icon {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    background: rgba(212,91,26,0.18);
+    color: var(--accent-light);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    flex-shrink: 0;
+  }
+  .audit-import-text { flex: 1; }
+  .audit-import-text strong {
+    color: var(--paper);
+    font-size: 13px;
+    display: block;
+  }
+  .audit-import-text span {
+    color: rgba(245,241,234,0.5);
+    font-size: 11.5px;
+  }
+  .audit-import-status {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--good-light);
+    background: rgba(45,138,78,0.15);
+    padding: 4px 9px;
+    border-radius: 999px;
+    flex-shrink: 0;
+  }
+  .finding-builder-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .finding-builder-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(10,10,10,0.5);
+  }
+  .conf-flag {
+    display: inline-flex;
+    align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8.5px;
+    letter-spacing: 0.04em;
+    text-transform: none;
+    padding: 2px 7px;
+    border-radius: 999px;
+    margin-left: 6px;
+    font-weight: 500;
+  }
+  .conf-flag.high {
+    background: rgba(45,138,78,0.12);
+    color: var(--good);
+  }
+  .conf-flag.review {
+    background: rgba(196,68,68,0.12);
+    color: var(--warn);
+  }
+  .sev-pick { display: flex; gap: 4px; }
+  .sev-opt {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: rgba(10,10,10,0.5);
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .sev-opt.active.critical { background: var(--warn); color: var(--paper); border-color: var(--warn); }
+  .sev-opt.active.moderate { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+  .sev-opt.active.minor { background: var(--paper-3); color: rgba(10,10,10,0.7); border-color: var(--paper-3); }
+
+  /* vertical proof preset banner */
+  .proof-preset {
+    background: var(--ink);
+    color: var(--paper);
+    border-radius: 11px;
+    padding: 16px 18px;
+    margin-bottom: 16px;
+  }
+  .proof-preset-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent-light);
+    margin-bottom: 8px;
+  }
+  .proof-preset-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 0;
+    font-size: 12.5px;
+    border-bottom: 1px solid rgba(245,241,234,0.08);
+  }
+  .proof-preset-row:last-child { border-bottom: none; }
+  .proof-preset-row .label { color: rgba(245,241,234,0.55); }
+  .proof-preset-row .val { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+  .proof-preset-row .val.accent { color: var(--accent-light); }
+  .proof-preset-note {
+    font-size: 11px;
+    color: rgba(245,241,234,0.4);
+    margin-top: 10px;
+    line-height: 1.5;
+  }
+
+  .setup-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--ink);
+    border-radius: 14px;
+    padding: 20px 26px;
+    margin-top: 4px;
+  }
+  .setup-actions-info {
+    color: var(--paper);
+  }
+  .setup-actions-info-h { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+  .setup-actions-info-sub { font-size: 12px; color: rgba(245,241,234,0.5); }
+
+  .btn {
+    background: var(--accent);
+    color: var(--paper);
+    border: none;
+    padding: 13px 24px;
+    border-radius: 9px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn:hover { background: var(--accent-light); transform: translateY(-1px); }
+  .btn.ghost {
+    background: rgba(245,241,234,0.08);
+    color: var(--paper);
+  }
+  .btn.ghost:hover { background: rgba(245,241,234,0.14); }
+
+  .gen-checklist {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-top: 16px;
+    grid-column: 1 / -1;
+  }
+  .gen-checklist-h {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(10,10,10,0.5);
+    margin-bottom: 10px;
+  }
+  .gen-check {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    font-size: 12.5px;
+    color: rgba(10,10,10,0.7);
+    padding: 4px 0;
+  }
+  .gen-check-icon {
+    color: var(--good);
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .gen-check.warn .gen-check-icon { color: var(--warn); }
+
+  /* ============================================================
+     PROOF PAGE — the prospect-facing artefact
+     ============================================================ */
+  .proofpage { display: none; }
+  .proofpage.active { display: block; }
+
+  /* ============================================================
+     PROOF PAGE — prospect-facing artefact · LIGHT THEME
+     Matches the Perth landing page: paper bg, ink text, rust accent.
+     ============================================================ */
+  .pp {
+    background: var(--paper);
+    color: var(--ink);
+  }
+  .pp-inner {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 0 28px;
+  }
+
+  /* shared section rhythm */
+  .pp-sec {
+    padding: 64px 0;
+    border-top: 1px solid var(--line);
+  }
+  .pp-eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+  .pp-eyebrow::before {
+    content: "";
+    width: 22px;
+    height: 1px;
+    background: var(--accent);
+  }
+  .pp-h2 {
+    font-family: 'Inter Tight', sans-serif;
+    font-weight: 800;
+    font-size: 34px;
+    line-height: 1.02;
+    letter-spacing: -0.035em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+  .pp-h2 em { font-style: normal; color: var(--accent); }
+  .pp-lead {
+    font-size: 16px;
+    line-height: 1.6;
+    color: rgba(10,10,10,0.62);
+    max-width: 580px;
+    margin-bottom: 30px;
+  }
+  .pp-lead strong { color: var(--ink); font-weight: 600; }
+
+  /* ---- HOOK / HERO ---- */
+  .pp-hero {
+    padding: 64px 0 56px;
+    position: relative;
+  }
+  .pp-hero::after {
+    content: "";
+    position: absolute;
+    top: 0; right: -120px;
+    width: 380px; height: 380px;
+    background: radial-gradient(circle, rgba(212,91,26,0.12) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .pp-from {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 44px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    color: rgba(10,10,10,0.5);
+    position: relative;
+    z-index: 1;
+  }
+  .pp-from-diamond {
+    width: 11px; height: 11px;
+    background: var(--accent);
+    transform: rotate(45deg);
+  }
+  .pp-from strong { color: var(--ink); }
+  .pp-hook-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    border: 1px solid rgba(212,91,26,0.35);
+    background: rgba(212,91,26,0.07);
+    padding: 6px 13px;
+    border-radius: 999px;
+    margin-bottom: 24px;
+    position: relative;
+    z-index: 1;
+  }
+  .pp-hook-tag::before {
+    content: "";
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .pp-hook {
+    font-family: 'Inter Tight', sans-serif;
+    font-size: 52px;
+    font-weight: 800;
+    line-height: 0.98;
+    letter-spacing: -0.04em;
+    text-transform: uppercase;
+    margin-bottom: 22px;
+    position: relative;
+    z-index: 1;
+  }
+  .pp-hook em {
+    font-style: normal;
+    color: var(--accent);
+  }
+  .pp-hook-sub {
+    font-size: 17px;
+    color: rgba(10,10,10,0.68);
+    line-height: 1.6;
+    max-width: 540px;
+    position: relative;
+    z-index: 1;
+  }
+  .pp-hook-sub strong { color: var(--ink); }
+  .pp-scroll-cue {
+    margin-top: 44px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(10,10,10,0.4);
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    position: relative;
+    z-index: 1;
+  }
+  .pp-scroll-cue::after {
+    content: "↓";
+    font-size: 13px;
+    animation: ppbounce 1.6s infinite;
+  }
+  @keyframes ppbounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(3px); }
+  }
+
+  /* ---- ACT 1 — findings, each with an inline data-viz ---- */
+  .pp-finding {
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+    margin-bottom: 14px;
+    box-shadow: 0 4px 14px rgba(10,10,10,0.04);
+  }
+  .pp-finding-top {
+    display: flex;
+    align-items: stretch;
+  }
+  .pp-finding-main {
+    flex: 1;
+    padding: 22px 24px;
+    min-width: 0;
+  }
+  /* the inline viz panel on the right of each finding */
+  .pp-finding-viz {
+    width: 168px;
+    flex-shrink: 0;
+    background: var(--paper-2);
+    border-left: 1px solid var(--line);
+    padding: 18px 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 8px;
+  }
+  .pp-finding.critical { border-left: 3px solid var(--warn); }
+  .pp-finding.moderate { border-left: 3px solid var(--accent); }
+  .pp-finding.minor { border-left: 3px solid rgba(10,10,10,0.2); }
+  .pp-finding-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 12px;
+  }
+  .pp-finding-title {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    line-height: 1.2;
+  }
+  .pp-finding-sev {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 4px 9px;
+    border-radius: 999px;
+    font-weight: 600;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .pp-finding-sev.critical { background: var(--warn); color: #fff; }
+  .pp-finding-sev.moderate { background: var(--accent); color: #fff; }
+  .pp-finding-sev.minor { background: var(--paper-3); color: rgba(10,10,10,0.6); }
+  .pp-finding-body {
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: rgba(10,10,10,0.72);
+    margin-bottom: 12px;
+  }
+  .pp-finding-evidence {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: rgba(10,10,10,0.5);
+    letter-spacing: 0.02em;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .pp-finding-evidence::before {
+    content: "EVIDENCE";
+    background: rgba(10,10,10,0.06);
+    color: rgba(10,10,10,0.55);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 8px;
+    letter-spacing: 0.08em;
+    flex-shrink: 0;
+  }
+
+  /* inline viz: speed gauge */
+  .viz-gauge-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(10,10,10,0.45);
+  }
+  .viz-gauge-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .viz-gauge-num.bad { color: var(--warn); }
+  .viz-gauge-num.meh { color: var(--accent); }
+  .viz-gauge-num.ok { color: var(--good); }
+  .viz-gauge-unit { font-size: 13px; color: rgba(10,10,10,0.4); }
+  .viz-gauge-track {
+    height: 5px;
+    background: rgba(10,10,10,0.1);
+    border-radius: 999px;
+    overflow: hidden;
+    margin-top: 2px;
+  }
+  .viz-gauge-fill { height: 100%; border-radius: 999px; }
+  .viz-gauge-fill.bad { background: var(--warn); }
+  .viz-gauge-fill.meh { background: var(--accent); }
+  .viz-gauge-fill.ok { background: var(--good); }
+  .viz-gauge-scale {
+    display: flex;
+    justify-content: space-between;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 7px;
+    color: rgba(10,10,10,0.35);
+  }
+  /* inline viz: review-recency timeline */
+  .viz-timeline {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 38px;
+  }
+  .viz-timeline-bar {
+    flex: 1;
+    background: rgba(10,10,10,0.12);
+    border-radius: 1px;
+    min-height: 3px;
+  }
+  .viz-timeline-bar.has { background: var(--good); }
+  .viz-timeline-bar.gap { background: rgba(196,68,68,0.3); }
+  .viz-caption {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8px;
+    letter-spacing: 0.04em;
+    color: rgba(10,10,10,0.45);
+    text-align: center;
+  }
+  .viz-caption strong { color: var(--warn); }
+  /* inline viz: missed-window clock dots */
+  .viz-dots {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 4px;
+  }
+  .viz-dot {
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: rgba(10,10,10,0.1);
+  }
+  .viz-dot.miss { background: var(--warn); opacity: 0.6; }
+  .viz-dot.hit { background: var(--good); }
+
+  /* ---- THE PIVOT ---- */
+  .pp-pivot {
+    padding: 72px 0;
+    text-align: center;
+    position: relative;
+  }
+  .pp-pivot-line {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(10,10,10,0.4);
+    margin-bottom: 18px;
+  }
+  .pp-pivot-h {
+    font-family: 'Inter Tight', sans-serif;
+    font-size: 42px;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    line-height: 1.0;
+    text-transform: uppercase;
+    max-width: 620px;
+    margin: 0 auto;
+  }
+  .pp-pivot-h em { font-style: normal; color: var(--accent); }
+
+  /* ---- ACT 2 — the system ---- */
+  /* browser mockup */
+  .pp-browser {
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 14px;
+    box-shadow: 0 24px 50px -16px rgba(10,10,10,0.18);
+  }
+  .pp-browser-bar {
+    background: var(--paper-2);
+    padding: 11px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  .pp-browser-dots { display: flex; gap: 5px; }
+  .pp-browser-dot { width: 9px; height: 9px; border-radius: 50%; background: rgba(10,10,10,0.15); }
+  .pp-browser-url {
+    flex: 1;
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: rgba(10,10,10,0.55);
+  }
+  .pp-browser-url .live-dot { color: var(--good); }
+  .pp-browser-live {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--good);
+    display: flex; align-items: center; gap: 5px;
+  }
+  .pp-browser-live::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--good); animation: pppulse 1.5s infinite;
+  }
+  @keyframes pppulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+
+  /* the mock landing page inside */
+  .pp-lp { background: var(--paper); color: var(--ink); }
+  .pp-lp-nav {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 15px 24px;
+    border-bottom: 1px solid var(--line);
+    background: #fff;
+  }
+  .pp-lp-brand { display: flex; align-items: center; gap: 9px; font-weight: 800; font-size: 16px; letter-spacing: -0.02em; }
+  .pp-lp-brand-mark {
+    width: 28px; height: 28px; border-radius: 7px;
+    background: var(--ink); color: var(--paper);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700;
+  }
+  .pp-lp-nav-cta {
+    background: var(--accent); color: #fff;
+    font-size: 12px; font-weight: 700; padding: 8px 15px; border-radius: 7px;
+  }
+  .pp-lp-hero {
+    padding: 40px 24px 32px;
+    text-align: center;
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(212,91,26,0.06) 0%, transparent 60%),
+      linear-gradient(180deg, #fff 0%, var(--paper-2) 100%);
+  }
+  .pp-lp-hero-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 11px;
+  }
+  .pp-lp-hero-h {
+    font-family: 'Inter Tight', sans-serif;
+    font-size: 27px; font-weight: 800; letter-spacing: -0.03em;
+    line-height: 1.05; text-transform: uppercase; margin-bottom: 9px;
+  }
+  .pp-lp-hero-sub {
+    font-size: 13px; color: rgba(10,10,10,0.6);
+    margin: 0 auto 18px; max-width: 380px; line-height: 1.5;
+  }
+  .pp-lp-hero-cta {
+    display: inline-block;
+    background: var(--accent); color: #fff;
+    font-size: 14px; font-weight: 700; padding: 13px 28px; border-radius: 9px;
+    box-shadow: 0 8px 20px -6px rgba(212,91,26,0.4);
+  }
+  .pp-lp-trust {
+    display: flex; align-items: center; justify-content: center; gap: 18px;
+    margin-top: 16px; font-size: 11px; color: rgba(10,10,10,0.5);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .pp-lp-trust span { display: flex; align-items: center; gap: 5px; }
+  .pp-lp-strip { display: flex; border-top: 1px solid var(--line); background: #fff; }
+  .pp-lp-strip-cell {
+    flex: 1; padding: 15px 10px; text-align: center;
+    border-right: 1px solid var(--line);
+  }
+  .pp-lp-strip-cell:last-child { border-right: none; }
+  .pp-lp-strip-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px; font-weight: 700; color: var(--accent);
+  }
+  .pp-lp-strip-label {
+    font-size: 8px; color: rgba(10,10,10,0.5);
+    text-transform: uppercase; letter-spacing: 0.07em; margin-top: 3px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .pp-system-caption {
+    font-size: 12.5px; color: rgba(10,10,10,0.55);
+    text-align: center; margin-bottom: 40px;
+  }
+  .pp-system-caption strong { color: var(--accent); }
+
+  /* ---- the before/after — light cards with gradient bars ---- */
+  .pp-howit-intro {
+    font-size: 16px; color: rgba(10,10,10,0.65); line-height: 1.6;
+    margin-bottom: 26px; max-width: 560px;
+  }
+  .pp-howit-intro strong { color: var(--ink); }
+  .pp-ba {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 18px;
+  }
+  .pp-ba-col {
+    border-radius: 14px;
+    padding: 0;
+    overflow: hidden;
+    background: #ffffff;
+  }
+  .pp-ba-col.before { border: 1px solid rgba(196,68,68,0.35); }
+  .pp-ba-col.after  { border: 1px solid rgba(30,107,58,0.4); }
+  .pp-ba-head {
+    padding: 14px 18px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .pp-ba-col.before .pp-ba-head { background: rgba(196,68,68,0.07); }
+  .pp-ba-col.after  .pp-ba-head { background: rgba(30,107,58,0.08); }
+  .pp-ba-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+    font-weight: 600;
+  }
+  .pp-ba-col.before .pp-ba-tag { color: var(--warn); }
+  .pp-ba-col.after  .pp-ba-tag { color: var(--good); }
+  .pp-ba-pill {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8px; letter-spacing: 0.05em; text-transform: uppercase;
+    padding: 3px 7px; border-radius: 999px; font-weight: 700;
+  }
+  .pp-ba-col.before .pp-ba-pill { background: var(--warn); color: #fff; }
+  .pp-ba-col.after  .pp-ba-pill { background: var(--good); color: #fff; }
+
+  /* the funnel-bars chart at the top of each ba column */
+  .pp-ba-chart {
+    padding: 18px 18px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .pp-ba-bars {
+    display: flex; align-items: flex-end; gap: 6px;
+    height: 76px; margin-bottom: 8px;
+  }
+  .pp-ba-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; }
+  .pp-ba-bar {
+    width: 100%;
+    border-radius: 2px 2px 0 0;
+  }
+  .pp-ba-col.before .pp-ba-bar {
+    background: linear-gradient(180deg, #c44444 0%, rgba(196,68,68,0.2) 100%);
+  }
+  .pp-ba-col.after .pp-ba-bar {
+    background: linear-gradient(180deg, #1e6b3a 0%, rgba(30,107,58,0.25) 100%);
+  }
+  .pp-ba-bar-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 7px; letter-spacing: 0.03em; text-transform: uppercase;
+    color: rgba(10,10,10,0.45);
+  }
+  .pp-ba-chart-foot {
+    display: flex; justify-content: space-between;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8px; color: rgba(10,10,10,0.5);
+  }
+  .pp-ba-chart-foot strong {
+    font-size: 13px; display: block;
+  }
+  .pp-ba-col.before .pp-ba-chart-foot strong { color: var(--warn); }
+  .pp-ba-col.after .pp-ba-chart-foot strong { color: var(--good); }
+
+  /* the flow steps inside each ba column */
+  .pp-ba-flow { padding: 16px 18px 18px; }
+  .pp-flow-step {
+    display: flex; align-items: flex-start; gap: 10px;
+    position: relative; padding-bottom: 12px;
+  }
+  .pp-flow-step:last-child { padding-bottom: 0; }
+  .pp-flow-step:not(:last-child)::before {
+    content: ""; position: absolute; left: 10px; top: 22px; bottom: 0; width: 2px;
+  }
+  .pp-ba-col.before .pp-flow-step:not(:last-child)::before {
+    background: repeating-linear-gradient(to bottom, rgba(196,68,68,0.45) 0 3px, transparent 3px 7px);
+  }
+  .pp-ba-col.after .pp-flow-step:not(:last-child)::before {
+    background: rgba(30,107,58,0.5);
+  }
+  .pp-flow-node {
+    width: 21px; height: 21px; border-radius: 50%;
+    flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700;
+    z-index: 1;
+  }
+  .pp-ba-col.before .pp-flow-node {
+    background: rgba(196,68,68,0.1); color: var(--warn); border: 1px solid rgba(196,68,68,0.4);
+  }
+  .pp-ba-col.after .pp-flow-node { background: var(--good); color: #fff; }
+  .pp-flow-content { flex: 1; padding-top: 1px; }
+  .pp-flow-label { font-size: 12.5px; font-weight: 600; margin-bottom: 1px; }
+  .pp-flow-note { font-size: 11px; line-height: 1.4; }
+  .pp-ba-col.before .pp-flow-note { color: rgba(196,68,68,0.85); }
+  .pp-ba-col.after .pp-flow-note { color: rgba(10,10,10,0.55); }
+  .pp-flow-leak {
+    display: inline-block; font-family: 'JetBrains Mono', monospace;
+    font-size: 8px; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--warn); background: rgba(196,68,68,0.1);
+    padding: 2px 6px; border-radius: 999px; margin-top: 4px;
+  }
+  .pp-howit-why {
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px 12px 12px 4px;
+    padding: 20px 24px;
+    font-size: 14px; line-height: 1.6; color: rgba(10,10,10,0.75);
+    box-shadow: 0 4px 14px rgba(10,10,10,0.04);
+  }
+  .pp-howit-why strong { color: var(--ink); }
+  .pp-howit-why .why-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--accent); display: block; margin-bottom: 7px;
+  }
+
+  /* ---- the proof section — CREDIBLE light dashboard ---- */
+  .pp-proof {
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 16px;
+    box-shadow: 0 10px 30px rgba(10,10,10,0.06);
+  }
+  .pp-proof-bar {
+    background: var(--paper-2);
+    padding: 13px 20px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid var(--line);
+  }
+  .pp-proof-bar-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: rgba(10,10,10,0.7); display: flex; align-items: center; gap: 9px;
+  }
+  .pp-proof-bar-live {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--good); display: flex; align-items: center; gap: 5px;
+  }
+  .pp-proof-bar-live::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--good); animation: pppulse 1.5s infinite;
+  }
+  .pp-proof-body { padding: 22px 20px; }
+
+  /* the big funnel-performance chart */
+  .pp-chart {
+    margin-bottom: 20px;
+  }
+  .pp-chart-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .pp-chart-head-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: rgba(10,10,10,0.5);
+  }
+  .pp-chart-head-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: var(--good);
+  }
+  .pp-chart-funnel {
+    display: flex; align-items: flex-end; gap: 8px;
+    height: 130px; margin-bottom: 10px;
+  }
+  .pp-funnel-stage {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; gap: 6px; height: 100%; justify-content: flex-end;
+  }
+  .pp-funnel-bar {
+    width: 100%;
+    background: linear-gradient(180deg, var(--accent) 0%, rgba(212,91,26,0.25) 100%);
+    border-radius: 3px 3px 0 0;
+    position: relative;
+    transition: height 0.6s ease;
+  }
+  .pp-funnel-bar.peak {
+    background: linear-gradient(180deg, var(--good) 0%, rgba(30,107,58,0.3) 100%);
+  }
+  .pp-funnel-bar-num {
+    position: absolute; top: -18px; left: 50%; transform: translateX(-50%);
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700;
+    color: var(--ink); white-space: nowrap;
+  }
+  .pp-funnel-stage-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8px; letter-spacing: 0.03em; text-transform: uppercase;
+    color: rgba(10,10,10,0.5); text-align: center; line-height: 1.3;
+  }
+  .pp-chart-axis {
+    display: flex; justify-content: space-between;
+    border-top: 1px solid var(--line);
+    padding-top: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8px; color: rgba(10,10,10,0.4);
+  }
+
+  /* the proof stat row */
+  .pp-proof-stats {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border-radius: 10px; overflow: hidden;
+    margin-bottom: 18px;
+    border: 1px solid var(--line);
+  }
+  .pp-proof-stat {
+    background: var(--paper);
+    padding: 16px 14px;
+    text-align: center;
+  }
+  .pp-proof-stat-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 24px; font-weight: 700; color: var(--good);
+    line-height: 1;
+  }
+  .pp-proof-stat-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8px; letter-spacing: 0.06em; text-transform: uppercase;
+    color: rgba(10,10,10,0.5); margin-top: 6px;
+  }
+
+  /* the withheld CPL — blurred, dramatic */
+  .pp-cpl-locked {
+    background: linear-gradient(135deg, var(--paper-2) 0%, var(--paper) 100%);
+    border: 1px dashed rgba(212,91,26,0.5);
+    border-radius: 13px;
+    padding: 22px 24px;
+    margin-top: 16px;
+    display: flex; align-items: center; gap: 20px;
+  }
+  .pp-cpl-locked-blur { flex-shrink: 0; text-align: center; position: relative; }
+  .pp-cpl-locked-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 38px; font-weight: 700; color: var(--accent);
+    filter: blur(11px); user-select: none; line-height: 1;
+  }
+  .pp-cpl-locked-lock {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -60%);
+    font-size: 20px;
+  }
+  .pp-cpl-locked-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: rgba(10,10,10,0.45); margin-top: 10px;
+  }
+  .pp-cpl-locked-text { font-size: 13.5px; line-height: 1.6; color: rgba(10,10,10,0.72); }
+  .pp-cpl-locked-text strong { color: var(--ink); }
+
+  /* ---- ACT 3 — the offer ---- */
+  .pp-offer-h {
+    font-family: 'Inter Tight', sans-serif;
+    font-size: 38px; font-weight: 800; letter-spacing: -0.04em;
+    line-height: 1.0; text-transform: uppercase; margin-bottom: 28px;
+  }
+  .pp-offer-h em { font-style: normal; color: var(--accent); }
+
+  .pp-stack {
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 20px;
+    box-shadow: 0 6px 18px rgba(10,10,10,0.05);
+  }
+  .pp-stack-item {
+    display: flex; align-items: center; gap: 14px;
+    padding: 17px 22px;
+    border-bottom: 1px solid var(--line);
+  }
+  .pp-stack-item:last-of-type { border-bottom: none; }
+  .pp-stack-check {
+    width: 24px; height: 24px; border-radius: 7px;
+    background: rgba(30,107,58,0.12); color: var(--good);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700; flex-shrink: 0;
+  }
+  .pp-stack-text { flex: 1; font-size: 14px; }
+  .pp-stack-text strong { font-weight: 700; }
+  .pp-stack-text span { color: rgba(10,10,10,0.55); font-size: 12px; display: block; margin-top: 1px; }
+  .pp-stack-worth {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px; color: rgba(10,10,10,0.4);
+    text-decoration: line-through; flex-shrink: 0;
+  }
+  .pp-stack-price {
+    background: var(--paper-2);
+    padding: 22px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-top: 2px solid var(--accent);
+  }
+  .pp-stack-price-label { font-size: 13px; color: rgba(10,10,10,0.6); }
+  .pp-stack-price-label strong {
+    color: var(--ink); display: block; font-size: 16px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: -0.01em;
+  }
+  .pp-stack-price-num { text-align: right; }
+  .pp-stack-price-num .amount {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 38px; font-weight: 700; color: var(--accent);
+    line-height: 1;
+  }
+  .pp-stack-price-num .per {
+    font-size: 11px; color: rgba(10,10,10,0.45);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* guarantee */
+  .pp-guarantee {
+    background: rgba(30,107,58,0.06);
+    border: 1px solid rgba(30,107,58,0.3);
+    border-radius: 14px;
+    padding: 22px 24px;
+    margin-bottom: 26px;
+    display: flex; gap: 16px; align-items: center;
+  }
+  .pp-guarantee-seal {
+    width: 60px; height: 60px; border-radius: 50%;
+    background: var(--good); color: #fff;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700; font-size: 13px; line-height: 1; letter-spacing: 0.02em;
+    box-shadow: 0 8px 20px -6px rgba(30,107,58,0.5);
+  }
+  .pp-guarantee-seal span { font-size: 8px; margin-top: 2px; letter-spacing: 0.08em; }
+  .pp-guarantee-text { font-size: 13.5px; line-height: 1.6; color: rgba(10,10,10,0.78); }
+  .pp-guarantee-text strong { color: var(--ink); }
+  .pp-guarantee-text .gtitle {
+    display: block; font-size: 15px; font-weight: 700;
+    color: var(--good); margin-bottom: 4px;
+    text-transform: uppercase; letter-spacing: -0.01em;
+  }
+
+  /* the call CTA */
+  .pp-cta {
+    background:
+      radial-gradient(ellipse at 30% 0%, rgba(255,255,255,0.15) 0%, transparent 60%),
+      var(--accent);
+    border-radius: 18px;
+    padding: 38px 32px;
+    text-align: center;
+    box-shadow: 0 24px 50px -16px rgba(212,91,26,0.4);
+  }
+  .pp-cta-h {
+    font-family: 'Inter Tight', sans-serif;
+    font-size: 30px; font-weight: 800; letter-spacing: -0.035em;
+    line-height: 1.05; text-transform: uppercase;
+    margin-bottom: 10px; color: #fff;
+  }
+  .pp-cta-sub {
+    font-size: 14.5px; color: rgba(255,255,255,0.9); line-height: 1.55;
+    margin: 0 auto 24px; max-width: 440px;
+  }
+  .pp-cta-sub strong { color: #fff; }
+  .pp-cta-btn {
+    display: inline-block;
+    background: var(--ink); color: var(--paper);
+    font-size: 16px; font-weight: 700; padding: 17px 40px; border-radius: 11px;
+    cursor: pointer; transition: transform 0.15s;
+    text-transform: uppercase; letter-spacing: -0.01em;
+  }
+  .pp-cta-btn:hover { transform: translateY(-2px); }
+  .pp-cta-micro {
+    margin-top: 15px; font-size: 11.5px; color: rgba(255,255,255,0.8);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .pp-signoff {
+    text-align: center; padding: 48px 0 64px;
+    font-size: 13px; color: rgba(10,10,10,0.5); line-height: 1.7;
+  }
+  .pp-signoff strong { color: rgba(10,10,10,0.7); }
+
+
+  /* step 3 preview action bar */
+  .pp-actionbar {
+    background: var(--accent-soft);
+    border-bottom: 1px solid rgba(212,91,26,0.2);
+    padding: 10px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .pp-actionbar-text {
+    font-size: 12px;
+    color: #8a3a10;
+  }
+  .pp-actionbar-text strong { color: var(--accent); }
+  .pp-actionbar-btns { display: flex; gap: 8px; }
+  .pp-actionbar-btn {
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 7px 14px;
+    border-radius: 7px;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s;
+  }
+  .pp-actionbar-btn.back {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid rgba(212,91,26,0.35);
+  }
+  .pp-actionbar-btn.back:hover { background: rgba(212,91,26,0.08); }
+  .pp-actionbar-btn.gen {
+    background: var(--accent);
+    color: var(--paper);
+  }
+  .pp-actionbar-btn.gen:hover { background: var(--accent-light); }
+  .pp-edithint strong { color: var(--accent); }
+
+  /* prototype note */
+  .proto-note {
+    position: fixed;
+    bottom: 16px; right: 16px;
+    background: var(--paper);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 600;
+  }
+  .proto-note::before {
+    content: "";
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .proto-note strong { color: var(--ink); }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR + 3-STEP STEPPER -->
+<div class="mode-bar">
+  <div class="mode-bar-left">
+    <div class="mode-logo">
+      <div class="mode-logo-diamond"></div>
+      Webnua
+    </div>
+    <span class="mode-bar-tag">Proof Page · pipeline</span>
+  </div>
+  <div class="pipe-steps">
+    <button class="pipe-step active" id="pipe-1" onclick="goToStep(1)">
+      <span class="pipe-step-num">1</span> Audit
+    </button>
+    <span class="pipe-arrow">→</span>
+    <button class="pipe-step" id="pipe-2" onclick="goToStep(2)">
+      <span class="pipe-step-num">2</span> Build Proof Page
+    </button>
+    <span class="pipe-arrow">→</span>
+    <button class="pipe-step" id="pipe-3" onclick="goToStep(3)">
+      <span class="pipe-step-num">3</span> Preview &amp; generate
+    </button>
+  </div>
+</div>
+
+<!-- ============================================
+     STEP 1 — AUDIT (input → research → findings)
+     ============================================ -->
+<div class="audit active" id="audit">
+  <div class="audit-wrap">
+
+    <!-- PHASE A: input -->
+    <div id="audit-phase-input">
+      <div class="audit-head">
+        <div class="audit-tag">// Step 1 · audit the prospect</div>
+        <h1 class="audit-title">Who are we <em>auditing</em>?</h1>
+        <p class="audit-sub">Everything starts here. The engine collects what's public about the prospect — PageSpeed, Google Business Profile, Meta Ad Library, local search — and turns it into the findings that become Act 1 of their Proof Page.</p>
+      </div>
+
+      <div class="audit-input-grid">
+        <!-- manual input -->
+        <div class="setup-card">
+          <div class="setup-card-h"><span class="setup-card-num">·</span> Audit a specific business</div>
+          <div class="setup-card-sub">Enter what you know — the engine finds the rest.</div>
+
+          <div class="fld">
+            <label class="fld-label">Business name</label>
+            <input class="fld-input" id="a-name" value="Hawthorn Electrical Co." />
+          </div>
+          <div class="fld-row">
+            <div class="fld">
+              <label class="fld-label">Website</label>
+              <input class="fld-input" id="a-web" value="hawthornelectrical.com.au" />
+            </div>
+            <div class="fld">
+              <label class="fld-label">Suburb / city</label>
+              <input class="fld-input" id="a-city" value="Mt Hawthorn, Perth" />
+            </div>
+          </div>
+          <div class="fld-row">
+            <div class="fld">
+              <label class="fld-label">Vertical</label>
+              <select class="fld-select" id="a-vertical">
+                <option value="electrician">Electrician</option>
+                <option value="plumber">Plumber</option>
+                <option value="roofer">Roofer</option>
+                <option value="cleaner">Cleaning company</option>
+                <option value="salon">Salon / barber</option>
+              </select>
+            </div>
+            <div class="fld">
+              <label class="fld-label">Owner first name <span class="opt">· optional</span></label>
+              <input class="fld-input" id="a-owner" value="Pete" />
+            </div>
+          </div>
+          <div class="fld" style="margin-bottom:0;">
+            <label class="fld-label">Contact email <span class="opt">· for the Proof Page send</span></label>
+            <input class="fld-input" id="a-email" value="info@hawthornelectrical.com.au" />
+          </div>
+
+          <button class="btn" style="margin-top:18px;" onclick="startResearch()">
+            Run the audit →
+          </button>
+          <button class="audit-skip" onclick="skipAudit()">
+            ↳ Skip — I already have the findings, take me straight to the Proof Page build
+          </button>
+        </div>
+
+        <!-- queue -->
+        <div class="queue-card">
+          <div class="queue-h">From the <em>prospect list</em></div>
+          <div class="queue-sub">Pulled from your Places API list · Perth metro · trades</div>
+          <div class="queue-item" onclick="loadQueued('Brightwork Electrical','brightworkelectrical.com.au','Leederville, Perth','electrician')">
+            <div class="queue-item-name">Brightwork Electrical</div>
+            <div class="queue-item-meta">LEEDERVILLE · 4.7★ (31) · RUNS ADS</div>
+          </div>
+          <div class="queue-item" onclick="loadQueued('Coastal Plumbing &amp; Gas','coastalplumbinggas.com.au','Scarborough, Perth','plumber')">
+            <div class="queue-item-name">Coastal Plumbing &amp; Gas</div>
+            <div class="queue-item-meta">SCARBOROUGH · 4.9★ (88) · NO ADS</div>
+          </div>
+          <div class="queue-item" onclick="loadQueued('PerthPro Roofing','perthproroofing.com.au','Bayswater, Perth','roofer')">
+            <div class="queue-item-name">PerthPro Roofing</div>
+            <div class="queue-item-meta">BAYSWATER · 4.4★ (12) · NO SSL</div>
+          </div>
+          <hr style="border:none;border-top:1px solid rgba(245,241,234,0.1);margin:16px 0;" />
+          <div class="queue-stat-row"><span class="label">In prospect list</span><span class="val">847</span></div>
+          <div class="queue-stat-row"><span class="label">Audited this week</span><span class="val accent">18 / 25</span></div>
+          <div class="queue-stat-row"><span class="label">Audit → Proof Page → call</span><span class="val accent">27%</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PHASE B: research assembly -->
+    <div id="audit-phase-research" style="display:none;">
+      <div class="audit-head">
+        <div class="audit-tag">// Step 1 · assembling research</div>
+        <h1 class="audit-title">Collecting everything <em>public</em>.</h1>
+        <p class="audit-sub">Four parallel pulls. Each degrades gracefully — if a source is unavailable, the audit still completes and notes the gap.</p>
+      </div>
+
+      <div class="research-target">
+        <div class="research-target-info">
+          <div class="research-target-avatar" id="rt-avatar">H</div>
+          <div>
+            <div class="research-target-name" id="rt-name">Hawthorn Electrical Co.</div>
+            <div class="research-target-meta" id="rt-meta">MT HAWTHORN, PERTH · ELECTRICIAN</div>
+          </div>
+        </div>
+        <div class="research-target-status" id="rt-status">
+          <div class="pulse-dot"></div>
+          <span id="rt-status-text">Collecting...</span>
+        </div>
+      </div>
+
+      <div class="source-grid">
+        <div class="source-card pending" id="src-web">
+          <div class="source-head">
+            <div class="source-name"><div class="source-icon web">⌬</div> Website &amp; speed</div>
+            <span class="source-status pending" id="src-web-status">Queued</span>
+          </div>
+          <div class="source-body" id="src-web-body">PageSpeed Insights · mobile usability · SSL · meta &amp; schema</div>
+        </div>
+        <div class="source-card pending" id="src-gbp">
+          <div class="source-head">
+            <div class="source-name"><div class="source-icon gbp">G</div> Google Business Profile</div>
+            <span class="source-status pending" id="src-gbp-status">Queued</span>
+          </div>
+          <div class="source-body" id="src-gbp-body">Listing completeness · reviews · photos · posts · hours</div>
+        </div>
+        <div class="source-card pending" id="src-ads">
+          <div class="source-head">
+            <div class="source-name"><div class="source-icon ads">f</div> Meta Ad Library</div>
+            <span class="source-status pending" id="src-ads-status">Queued</span>
+          </div>
+          <div class="source-body" id="src-ads-body">Active ads · creative count · roughly what they run</div>
+        </div>
+        <div class="source-card pending" id="src-seo">
+          <div class="source-head">
+            <div class="source-name"><div class="source-icon seo">▲</div> Local search presence</div>
+            <span class="source-status pending" id="src-seo-status">Queued</span>
+          </div>
+          <div class="source-body" id="src-seo-body">Ranking for "[service] [suburb]" · map pack presence</div>
+        </div>
+      </div>
+
+      <div class="research-foot">
+        <div class="research-foot-status" id="research-foot-status"><strong>Collecting data...</strong> ~30 seconds in the real tool</div>
+        <button class="btn" id="research-continue" style="display:none;" onclick="finishAudit()">See what the engine found →</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============================================
+     STEP 2 — BUILD PROOF PAGE — Craig customises per prospect
+     ============================================ -->
+<div class="setup" id="setup">
+  <div class="setup-wrap">
+    <div class="setup-head">
+      <div class="setup-tag">// Step 2 · build the Proof Page</div>
+      <h1 class="setup-title">Build the <em>Proof Page</em> on the audit.</h1>
+      <p class="setup-sub">Act 1 is already filled in — it came straight from the audit. Now confirm the prospect basics, pick the vertical to load the proven funnel, and set the offer. Then preview it as the prospect will see it.</p>
+    </div>
+
+    <div class="setup-grid">
+
+      <!-- CARD 1 — prospect basics -->
+      <div class="setup-card">
+        <div class="setup-card-h"><span class="setup-card-num">1</span> Confirm the prospect</div>
+        <div class="setup-card-sub">Carried from Step 1 — tweak if needed. This brands the whole page and their landing page mockup.</div>
+
+        <div class="fld">
+          <label class="fld-label">Business name</label>
+          <input class="fld-input" id="s-bizname" value="Hawthorn Electrical Co." oninput="syncProof()" />
+        </div>
+        <div class="fld-row">
+          <div class="fld">
+            <label class="fld-label">Owner first name <span class="opt">· optional</span></label>
+            <input class="fld-input" id="s-owner" value="Pete" oninput="syncProof()" />
+          </div>
+          <div class="fld">
+            <label class="fld-label">Suburb / city</label>
+            <input class="fld-input" id="s-suburb" value="Mt Hawthorn" oninput="syncProof()" />
+          </div>
+        </div>
+        <div class="fld-row">
+          <div class="fld">
+            <label class="fld-label">Vertical</label>
+            <select class="fld-select" id="s-vertical" onchange="applyVerticalPreset(); syncProof();">
+              <option value="electrician">Electrician</option>
+              <option value="plumber">Plumber</option>
+              <option value="roofer">Roofer</option>
+              <option value="cleaner">Cleaning company</option>
+              <option value="salon">Salon / barber</option>
+            </select>
+          </div>
+          <div class="fld">
+            <label class="fld-label">Contact email</label>
+            <input class="fld-input" id="s-email" value="info@hawthornelectrical.com.au" oninput="syncProof()" />
+          </div>
+        </div>
+
+        <div class="fld">
+          <label class="fld-label">Logo <span class="opt">· optional — falls back to initial mark</span></label>
+          <div class="logo-drop" id="logo-drop" onclick="mockUploadLogo()">
+            <div class="logo-drop-icon">⤴</div>
+            <div class="logo-drop-text"><strong>Click to upload</strong> their logo · PNG / SVG</div>
+          </div>
+          <div class="logo-preview" id="logo-preview">
+            <div class="logo-preview-swatch" id="logo-swatch">H</div>
+            <div class="logo-preview-text">
+              <strong>hawthorn-logo.png</strong>
+              <span>used on the page header + their landing page mockup</span>
+            </div>
+            <button class="logo-preview-remove" onclick="removeLogo(event)">×</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CARD 2 — the hook + findings (carried from Step 1 audit) -->
+      <div class="setup-card">
+        <div class="setup-card-h"><span class="setup-card-num">2</span> What the audit found</div>
+        <div class="setup-card-sub">This is Act 1 of the Proof Page — carried straight from your Step 1 audit. The wording's drafted; tighten it so it sounds like you. This is what proves the page is about <em>them</em>.</div>
+
+        <div class="audit-import" style="cursor:default;">
+          <div class="audit-import-icon">✓</div>
+          <div class="audit-import-text">
+            <strong>Carried from Step 1 audit</strong>
+            <span id="detection-summary">3 findings detected · showing top 3 · <strong>1 flagged for a quick verify</strong></span>
+          </div>
+          <div class="audit-import-status" id="audit-import-status">Synced ✓</div>
+        </div>
+
+        <div class="fld">
+          <label class="fld-label">The hook — one true, specific line <span class="opt">· from audit</span></label>
+          <textarea class="fld-textarea" id="s-hook" oninput="syncProof()">Your site takes 8.4 seconds to load on a phone. We timed it. That alone is costing you jobs every week — and it's the smallest of three problems we found.</textarea>
+          <div class="fld-hint">Auto-drafted from the audit's headline finding. Tighten it — this is the first thing they read.</div>
+        </div>
+
+        <!-- Finding 1 -->
+        <div class="finding-builder">
+          <div class="finding-builder-head">
+            <span class="finding-builder-label">Finding 1 <span class="conf-flag high" id="f1-conf-flag">✓ trust on sight</span></span>
+            <div class="sev-pick" data-finding="1">
+              <button class="sev-opt critical active" onclick="setSev(1,'critical')">Critical</button>
+              <button class="sev-opt moderate" onclick="setSev(1,'moderate')">Moderate</button>
+              <button class="sev-opt minor" onclick="setSev(1,'minor')">Minor</button>
+            </div>
+          </div>
+          <div class="fld" style="margin-bottom:8px;">
+            <input class="fld-input" id="s-f1-title" value="Mobile load speed is 8.4 seconds" oninput="syncProof()" placeholder="Finding title" />
+          </div>
+          <div class="fld" style="margin-bottom:8px;">
+            <input class="fld-input" id="s-f1-evidence" value="Google PageSpeed · mobile 31/100 · LCP 8.4s" oninput="syncProof()" placeholder="Evidence (source + data)" />
+          </div>
+          <div class="fld" style="margin-bottom:0;">
+            <textarea class="fld-textarea" id="s-f1-body" oninput="syncProof()" placeholder="Plain-language explanation">When someone needs an electrician urgently, they tap your listing and wait. At 8.4 seconds, most give up before your page even loads — and call the next electrician instead.</textarea>
+          </div>
+        </div>
+
+        <!-- Finding 2 -->
+        <div class="finding-builder">
+          <div class="finding-builder-head">
+            <span class="finding-builder-label">Finding 2 <span class="conf-flag high" id="f2-conf-flag">✓ trust on sight</span></span>
+            <div class="sev-pick" data-finding="2">
+              <button class="sev-opt critical" onclick="setSev(2,'critical')">Critical</button>
+              <button class="sev-opt moderate active" onclick="setSev(2,'moderate')">Moderate</button>
+              <button class="sev-opt minor" onclick="setSev(2,'minor')">Minor</button>
+            </div>
+          </div>
+          <div class="fld" style="margin-bottom:8px;">
+            <input class="fld-input" id="s-f2-title" value="Your Google profile has gone quiet" oninput="syncProof()" placeholder="Finding title" />
+          </div>
+          <div class="fld" style="margin-bottom:8px;">
+            <input class="fld-input" id="s-f2-evidence" value="GBP · 4.8★ (24) · last review 7 months ago · 0 posts" oninput="syncProof()" placeholder="Evidence (source + data)" />
+          </div>
+          <div class="fld" style="margin-bottom:0;">
+            <textarea class="fld-textarea" id="s-f2-body" oninput="syncProof()" placeholder="Plain-language explanation">Great rating — but your last review was 7 months ago, and a competitor two suburbs over is getting one a week. Google quietly drops dormant profiles down the map pack.</textarea>
+          </div>
+        </div>
+
+        <!-- Finding 3 -->
+        <div class="finding-builder">
+          <div class="finding-builder-head">
+            <span class="finding-builder-label">Finding 3 <span style="opacity:0.5;">· optional</span> <span class="conf-flag review" id="f3-conf-flag">⚠ verify</span></span>
+            <div class="sev-pick" data-finding="3">
+              <button class="sev-opt critical" onclick="setSev(3,'critical')">Critical</button>
+              <button class="sev-opt moderate" onclick="setSev(3,'moderate')">Moderate</button>
+              <button class="sev-opt minor active" onclick="setSev(3,'minor')">Minor</button>
+            </div>
+          </div>
+          <div class="fld" style="margin-bottom:8px;">
+            <input class="fld-input" id="s-f3-title" value="No way to enquire after hours" oninput="syncProof()" placeholder="Finding title" />
+          </div>
+          <div class="fld" style="margin-bottom:8px;">
+            <input class="fld-input" id="s-f3-evidence" value="Website · phone number only · no form, no callback" oninput="syncProof()" placeholder="Evidence (source + data)" />
+          </div>
+          <div class="fld" style="margin-bottom:0;">
+            <textarea class="fld-textarea" id="s-f3-body" oninput="syncProof()" placeholder="Plain-language explanation">Most electrical problems get noticed in the evening. If you don't pick up, that lead just vanishes — no voicemail, no record, no second chance.</textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- CARD 3 — the proven system (vertical preset) -->
+      <div class="setup-card">
+        <div class="setup-card-h"><span class="setup-card-num">3</span> The proven system</div>
+        <div class="setup-card-sub">Pre-loaded from the vertical's real, running proof campaign. You don't edit this per-prospect — it's the asset you built and proved once.</div>
+
+        <div class="proof-preset">
+          <div class="proof-preset-label">// Electrician system · live proof campaign</div>
+          <div class="proof-preset-row">
+            <span class="label">Campaign status</span>
+            <span class="val" style="color:var(--good-light);">● Running · Perth metro</span>
+          </div>
+          <div class="proof-preset-row">
+            <span class="label">Proven cost-per-lead</span>
+            <span class="val accent" id="preset-cpl">€2.50 — withheld on page</span>
+          </div>
+          <div class="proof-preset-row">
+            <span class="label">Days running</span>
+            <span class="val">63</span>
+          </div>
+          <div class="proof-preset-row">
+            <span class="label">Leads generated</span>
+            <span class="val">410</span>
+          </div>
+          <div class="proof-preset-row">
+            <span class="label">Ads · verifiable in Meta Library</span>
+            <span class="val" style="color:var(--good-light);">✓ Yes</span>
+          </div>
+          <div class="proof-preset-note">
+            The CPL is real — it comes from this campaign actually running. On the Proof Page it stays <strong>blurred / withheld</strong>: the prospect sees the system is proven, but the number is revealed live on the call. A number this good, stated cold, gets read as a lie.
+          </div>
+        </div>
+
+        <div class="fld">
+          <label class="fld-label">Landing page mockup headline <span class="opt">· their branded version</span></label>
+          <input class="fld-input" id="s-lp-headline" value="Need a sparky in Mt Hawthorn? We'll be there today." oninput="syncProof()" />
+          <div class="fld-hint">This shows inside the browser mockup as their real, ready-to-switch-on landing page.</div>
+        </div>
+      </div>
+
+      <!-- CARD 4 — the offer -->
+      <div class="setup-card">
+        <div class="setup-card-h"><span class="setup-card-num">4</span> The offer &amp; guarantee</div>
+        <div class="setup-card-sub">Standard across prospects — adjust only if you're running a specific promo.</div>
+
+        <div class="fld-row">
+          <div class="fld">
+            <label class="fld-label">Monthly price</label>
+            <input class="fld-input" id="s-price" value="€300" oninput="syncProof()" />
+          </div>
+          <div class="fld">
+            <label class="fld-label">Price note</label>
+            <input class="fld-input" id="s-price-note" value="ex ad spend" oninput="syncProof()" />
+          </div>
+        </div>
+        <div class="fld">
+          <label class="fld-label">Guarantee</label>
+          <input class="fld-input" id="s-guarantee" value="90-day money-back guarantee" oninput="syncProof()" />
+        </div>
+        <div class="fld">
+          <label class="fld-label">Guarantee definition — what "deliver" means</label>
+          <textarea class="fld-textarea" id="s-guarantee-def" oninput="syncProof()">If the system isn't live and generating leads at the proven cost-per-lead within 90 days, you get every cent back. No clawback on your ad spend questions, no arguments — the system performs or you don't pay us.</textarea>
+          <div class="fld-hint">Keep this tight and measurable — "deliver" must mean something you control, not their close rate.</div>
+        </div>
+        <div class="fld" style="margin-bottom:0;">
+          <label class="fld-label">Call booking link</label>
+          <input class="fld-input" id="s-calllink" value="webnua.com/perth/call" oninput="syncProof()" />
+        </div>
+      </div>
+
+      <!-- Generate checklist -->
+      <div class="gen-checklist">
+        <div class="gen-checklist-h">// Before you generate — integrity check</div>
+        <div class="gen-check"><span class="gen-check-icon">✓</span> The proven CPL comes from a real campaign that actually ran — not a number we'd like to be true.</div>
+        <div class="gen-check"><span class="gen-check-icon">✓</span> The findings are specific and true for <em>this</em> business — verify the hook line before sending.</div>
+        <div class="gen-check"><span class="gen-check-icon">✓</span> The landing page mockup is framed as "your version, ready to switch on" — not "we already tested yours."</div>
+        <div class="gen-check warn"><span class="gen-check-icon">!</span> Owner name pulled from GBP — confirm "Pete" is right, a wrong name kills the whole thing.</div>
+      </div>
+
+      <!-- Actions -->
+      <div class="setup-actions">
+        <div class="setup-actions-info">
+          <div class="setup-actions-info-h" id="setup-actions-h">Proof Page ready for Hawthorn Electrical Co.</div>
+          <div class="setup-actions-info-sub">Preview it as the prospect will see it, then generate the shareable link.</div>
+        </div>
+        <div style="display:flex; gap:10px;">
+          <button class="btn ghost" onclick="goToStep(1)">← Back to audit</button>
+          <button class="btn" onclick="goToStep(3)">Preview &amp; generate →</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ============================================
+     PROOF PAGE — what the prospect receives
+     ============================================ -->
+<div class="proofpage" id="proofpage">
+  <div class="pp-actionbar">
+    <div class="pp-actionbar-text">
+      <strong>Step 3 · Preview</strong> — this is exactly what the prospect sees. Happy with it? Generate the shareable link.
+    </div>
+    <div class="pp-actionbar-btns">
+      <button class="pp-actionbar-btn back" onclick="goToStep(2)">← Back to build</button>
+      <button class="pp-actionbar-btn gen" onclick="generateLink()">Generate shareable link →</button>
+    </div>
+  </div>
+  <div class="pp">
+    <div class="pp-inner">
+
+      <!-- ========== HOOK / HERO ========== -->
+      <div class="pp-hero">
+        <div class="pp-from">
+          <div class="pp-from-diamond"></div>
+          From <strong>Craig at Webnua</strong> · for <strong id="pp-from-biz">Hawthorn Electrical Co.</strong>
+        </div>
+        <div class="pp-hook-tag">A 90-second read · then a 15-minute call if you want it</div>
+        <h1 class="pp-hook" id="pp-hook-text">Your site takes <em>8.4 seconds</em> to load on a phone.</h1>
+        <p class="pp-hook-sub" id="pp-hook-sub">We timed it. That alone is costing you jobs every week — and it's the smallest of three problems we found.</p>
+        <div class="pp-scroll-cue">Keep reading — there's a reason this isn't just another sales email</div>
+      </div>
+
+      <!-- ========== ACT 1 — THE QUICK READ ========== -->
+      <div class="pp-sec">
+        <div class="pp-eyebrow">Act 1 · what we found</div>
+        <h2 class="pp-h2">We actually looked<br>at <em id="pp-act1-biz">Hawthorn Electrical</em>.</h2>
+        <p class="pp-lead">Not a template with your name pasted in. We spent real time on your setup this week — pulled the numbers, timed the page, checked the listings. Here's the honest read. Three things, in priority order.</p>
+
+        <!-- Finding 1 — with speed gauge viz -->
+        <div class="pp-finding critical" id="pp-f1">
+          <div class="pp-finding-top">
+            <div class="pp-finding-main">
+              <div class="pp-finding-head">
+                <div class="pp-finding-title" id="pp-f1-title">Mobile load speed is 8.4 seconds</div>
+                <span class="pp-finding-sev critical" id="pp-f1-sev">Critical</span>
+              </div>
+              <div class="pp-finding-body" id="pp-f1-body">When someone needs an electrician urgently, they tap your listing and wait. At 8.4 seconds, most give up before your page even loads — and call the next electrician instead.</div>
+              <div class="pp-finding-evidence" id="pp-f1-evidence">Google PageSpeed · mobile 31/100 · LCP 8.4s</div>
+            </div>
+            <div class="pp-finding-viz">
+              <div class="viz-gauge-label">Mobile load</div>
+              <div><span class="viz-gauge-num bad">8.4</span><span class="viz-gauge-unit">s</span></div>
+              <div class="viz-gauge-track"><div class="viz-gauge-fill bad" style="width:84%;"></div></div>
+              <div class="viz-gauge-scale"><span>0s</span><span>fast ‹ 3s</span><span>10s</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Finding 2 — with review-recency timeline viz -->
+        <div class="pp-finding moderate" id="pp-f2">
+          <div class="pp-finding-top">
+            <div class="pp-finding-main">
+              <div class="pp-finding-head">
+                <div class="pp-finding-title" id="pp-f2-title">Your Google profile has gone quiet</div>
+                <span class="pp-finding-sev moderate" id="pp-f2-sev">Moderate</span>
+              </div>
+              <div class="pp-finding-body" id="pp-f2-body">Great rating — but your last review was 7 months ago, and a competitor two suburbs over is getting one a week. Google quietly drops dormant profiles down the map pack.</div>
+              <div class="pp-finding-evidence" id="pp-f2-evidence">GBP · 4.8★ (24) · last review 7 months ago · 0 posts</div>
+            </div>
+            <div class="pp-finding-viz">
+              <div class="viz-gauge-label">Reviews · 12 mo</div>
+              <div class="viz-timeline">
+                <div class="viz-timeline-bar has" style="height:60%;"></div>
+                <div class="viz-timeline-bar has" style="height:85%;"></div>
+                <div class="viz-timeline-bar has" style="height:45%;"></div>
+                <div class="viz-timeline-bar has" style="height:70%;"></div>
+                <div class="viz-timeline-bar has" style="height:30%;"></div>
+                <div class="viz-timeline-bar gap" style="height:8%;"></div>
+                <div class="viz-timeline-bar gap" style="height:8%;"></div>
+                <div class="viz-timeline-bar gap" style="height:8%;"></div>
+                <div class="viz-timeline-bar gap" style="height:8%;"></div>
+                <div class="viz-timeline-bar gap" style="height:8%;"></div>
+                <div class="viz-timeline-bar gap" style="height:8%;"></div>
+                <div class="viz-timeline-bar gap" style="height:8%;"></div>
+              </div>
+              <div class="viz-caption"><strong>7 months</strong> silent</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Finding 3 — with missed-window dots viz -->
+        <div class="pp-finding minor" id="pp-f3">
+          <div class="pp-finding-top">
+            <div class="pp-finding-main">
+              <div class="pp-finding-head">
+                <div class="pp-finding-title" id="pp-f3-title">No way to enquire after hours</div>
+                <span class="pp-finding-sev minor" id="pp-f3-sev">Minor</span>
+              </div>
+              <div class="pp-finding-body" id="pp-f3-body">Most electrical problems get noticed in the evening. If you don't pick up, that lead just vanishes — no voicemail, no record, no second chance.</div>
+              <div class="pp-finding-evidence" id="pp-f3-evidence">Website · phone number only · no form, no callback</div>
+            </div>
+            <div class="pp-finding-viz">
+              <div class="viz-gauge-label">After-hours capture</div>
+              <div class="viz-dots">
+                <div class="viz-dot miss"></div><div class="viz-dot miss"></div>
+                <div class="viz-dot miss"></div><div class="viz-dot miss"></div>
+                <div class="viz-dot miss"></div><div class="viz-dot miss"></div>
+                <div class="viz-dot miss"></div><div class="viz-dot miss"></div>
+                <div class="viz-dot miss"></div><div class="viz-dot miss"></div>
+                <div class="viz-dot miss"></div><div class="viz-dot miss"></div>
+              </div>
+              <div class="viz-caption">every after-hours lead <strong>bounces</strong></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== THE PIVOT ========== -->
+      <div class="pp-pivot">
+        <div class="pp-pivot-line">// here's the part that's different</div>
+        <h2 class="pp-pivot-h">So we didn't just write you a list of problems. <em>We built you the fix.</em></h2>
+      </div>
+
+      <!-- ========== ACT 2 — THE PROVEN SYSTEM ========== -->
+      <div class="pp-sec">
+        <div class="pp-eyebrow">Act 2 · what we built</div>
+        <h2 class="pp-h2">This is <em id="pp-act2-biz">your</em><br>lead-gen system.</h2>
+        <p class="pp-lead">Not a pitch for something we'd build later. It's <strong>already built</strong> — your branded page, the proven campaign, the follow-up. Here it is.</p>
+
+        <!-- browser mockup -->
+        <div class="pp-browser">
+          <div class="pp-browser-bar">
+            <div class="pp-browser-dots">
+              <div class="pp-browser-dot"></div>
+              <div class="pp-browser-dot"></div>
+              <div class="pp-browser-dot"></div>
+            </div>
+            <div class="pp-browser-url"><span class="live-dot">●</span> <span id="pp-lp-url">hawthornelectrical.getwebnua.com</span></div>
+            <div class="pp-browser-live">Live</div>
+          </div>
+          <div class="pp-lp">
+            <div class="pp-lp-nav">
+              <div class="pp-lp-brand">
+                <div class="pp-lp-brand-mark" id="pp-lp-mark">H</div>
+                <span id="pp-lp-brand-name">Hawthorn Electrical</span>
+              </div>
+              <div class="pp-lp-nav-cta">Get a quote</div>
+            </div>
+            <div class="pp-lp-hero">
+              <div class="pp-lp-hero-tag">⚡ Licensed · insured · same-day</div>
+              <div class="pp-lp-hero-h" id="pp-lp-headline">Need a sparky in Mt Hawthorn? We'll be there today.</div>
+              <div class="pp-lp-hero-sub">Fast, fixed-price electrical work. No call-out games, no surprises.</div>
+              <div class="pp-lp-hero-cta">Book your electrician →</div>
+              <div class="pp-lp-trust">
+                <span>★ 4.8 rated</span>
+                <span>✓ Same-day</span>
+                <span>✓ Fixed price</span>
+              </div>
+            </div>
+            <div class="pp-lp-strip">
+              <div class="pp-lp-strip-cell">
+                <div class="pp-lp-strip-num">24/7</div>
+                <div class="pp-lp-strip-label">Booking</div>
+              </div>
+              <div class="pp-lp-strip-cell">
+                <div class="pp-lp-strip-num">‹2s</div>
+                <div class="pp-lp-strip-label">Load time</div>
+              </div>
+              <div class="pp-lp-strip-cell">
+                <div class="pp-lp-strip-num">SMS</div>
+                <div class="pp-lp-strip-label">Confirmed</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="pp-system-caption" id="pp-system-caption">Your branded landing page — built, hosted, ready to switch on. <strong>Not a mockup. A real page.</strong></div>
+
+        <!-- before / after — dashboard with gradient bars -->
+        <div class="pp-howit-intro">
+          Same customer journey, shown twice. <strong>Right now, jobs leak out at every step.</strong> With the system, every gap is closed — here's what that actually looks like.
+        </div>
+
+        <div class="pp-ba">
+          <!-- BEFORE -->
+          <div class="pp-ba-col before">
+            <div class="pp-ba-head">
+              <span class="pp-ba-tag">// your funnel now</span>
+              <span class="pp-ba-pill">Leaking</span>
+            </div>
+            <div class="pp-ba-chart">
+              <div class="pp-ba-bars">
+                <div class="pp-ba-bar-wrap"><div class="pp-ba-bar" style="height:100%;"></div><div class="pp-ba-bar-label">Search</div></div>
+                <div class="pp-ba-bar-wrap"><div class="pp-ba-bar" style="height:52%;"></div><div class="pp-ba-bar-label">Find you</div></div>
+                <div class="pp-ba-bar-wrap"><div class="pp-ba-bar" style="height:24%;"></div><div class="pp-ba-bar-label">Site</div></div>
+                <div class="pp-ba-bar-wrap"><div class="pp-ba-bar" style="height:12%;"></div><div class="pp-ba-bar-label">Enquire</div></div>
+                <div class="pp-ba-bar-wrap"><div class="pp-ba-bar" style="height:6%;"></div><div class="pp-ba-bar-label">Book</div></div>
+              </div>
+              <div class="pp-ba-chart-foot">
+                <span>100 ready-to-book searchers</span>
+                <span style="text-align:right;"><strong>~6</strong>reach you</span>
+              </div>
+            </div>
+            <div class="pp-ba-flow">
+              <div class="pp-flow-step">
+                <div class="pp-flow-node">1</div>
+                <div class="pp-flow-content">
+                  <div class="pp-flow-label">Someone searches</div>
+                  <div class="pp-flow-note">Ready to book, right now.</div>
+                </div>
+              </div>
+              <div class="pp-flow-step">
+                <div class="pp-flow-node">2</div>
+                <div class="pp-flow-content">
+                  <div class="pp-flow-label">They find you — maybe</div>
+                  <div class="pp-flow-note">Quiet profile, page 2.</div>
+                  <div class="pp-flow-leak">▼ half lost</div>
+                </div>
+              </div>
+              <div class="pp-flow-step">
+                <div class="pp-flow-node">3</div>
+                <div class="pp-flow-content">
+                  <div class="pp-flow-label">They tap your site — and wait</div>
+                  <div class="pp-flow-note">8.4 seconds. Most give up.</div>
+                  <div class="pp-flow-leak">▼ most lost</div>
+                </div>
+              </div>
+              <div class="pp-flow-step">
+                <div class="pp-flow-node">4</div>
+                <div class="pp-flow-content">
+                  <div class="pp-flow-label">They try to get in touch</div>
+                  <div class="pp-flow-note">Phone only. After hours? Gone.</div>
+                  <div class="pp-flow-leak">▼ more lost</div>
+                </div>
+              </div>
+              <div class="pp-flow-step">
+                <div class="pp-flow-node">5</div>
+                <div class="pp-flow-content">
+                  <div class="pp-flow-label">The few who get through</div>
+                  <div class="pp-flow-note">No follow-up. Go cold.</div>
+                  <div class="pp-flow-leak">▼ leak</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- AFTER -->
+          <div class="pp-ba-col after">
+            <div class="pp-ba-head">
+              <span class="pp-ba-tag">// with the system</span>
+              <span class="pp-ba-pill">Sealed</span>
+            </div>
+            <div class="pp-ba-chart">
+              <div class="pp-ba-bars">
+                <div class="pp-ba-bar-wrap"><div class="pp-ba-bar" style="height:100%;"></div><div class="pp-ba-bar-label">Search</div></div>
+                <div class="pp-ba-bar-wrap"><div class="pp-ba-bar" style="height:88%;"></div><div class="pp-ba-bar-label">Ad</div></div>
+                <div class="pp-ba-bar-wrap"><div class="pp-ba-bar" style="height:78%;"></div><div class="pp-ba-bar-label">Page</div></div>
+                <div class="pp-ba-bar-wrap"><div class="pp-ba-bar" style="height:64%;"></div><div class="pp-ba-bar-label">Enquire</div></div>
+                <div class="pp-ba-bar-wrap"><div class="pp-ba-bar" style="height:55%;"></div><div class="pp-ba-bar-label">Book</div></div>
+              </div>
+              <div class="pp-ba-chart-foot">
+                <span>100 ready-to-book searchers</span>
+                <span style="text-align:right;"><strong>9×</strong>more get through</span>
+              </div>
+            </div>
+            <div class="pp-ba-flow">
+              <div class="pp-flow-step">
+                <div class="pp-flow-node">1</div>
+                <div class="pp-flow-content">
+                  <div class="pp-flow-label">Someone searches</div>
+                  <div class="pp-flow-note">Same ready-to-book customer.</div>
+                </div>
+              </div>
+              <div class="pp-flow-step">
+                <div class="pp-flow-node">2</div>
+                <div class="pp-flow-content">
+                  <div class="pp-flow-label">The proven ad puts you in front</div>
+                  <div class="pp-flow-note">Not luck — a campaign that works.</div>
+                </div>
+              </div>
+              <div class="pp-flow-step">
+                <div class="pp-flow-node">3</div>
+                <div class="pp-flow-content">
+                  <div class="pp-flow-label">They land on a page built to convert</div>
+                  <div class="pp-flow-note">Under 2 seconds. One job: the booking.</div>
+                </div>
+              </div>
+              <div class="pp-flow-step">
+                <div class="pp-flow-node">4</div>
+                <div class="pp-flow-content">
+                  <div class="pp-flow-label">They book or enquire — any hour</div>
+                  <div class="pp-flow-note">Form, callback, SMS. No dead ends.</div>
+                </div>
+              </div>
+              <div class="pp-flow-step">
+                <div class="pp-flow-node">5</div>
+                <div class="pp-flow-content">
+                  <div class="pp-flow-label">The nurture sequence catches the rest</div>
+                  <div class="pp-flow-note">Followed up till they book or say no.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pp-howit-why">
+          <span class="why-label">// the why, in one line</span>
+          It works because it's not three separate tools — it's <strong>one chain with no weak links</strong>. The ad, the page and the follow-up were built to hand off to each other cleanly. Most businesses have bits of this. Almost none have all of it, connected, with someone keeping it running.
+        </div>
+      </div>
+
+      <!-- ========== THE PROOF — credible dashboard ========== -->
+      <div class="pp-sec">
+        <div class="pp-eyebrow">The proof</div>
+        <h2 class="pp-h2">This isn't a theory.<br>It's <em>running right now.</em></h2>
+        <p class="pp-lead">This exact funnel — same structure, same build — is live for your trade. Real ad spend, real leads, real numbers. Don't take our word for it: the ads are public.</p>
+
+        <div class="pp-proof">
+          <div class="pp-proof-bar">
+            <div class="pp-proof-bar-title">
+              <span style="color:var(--accent-light);">◢</span> Proven funnel · <span id="pp-proof-trade">electrician</span> campaign
+            </div>
+            <div class="pp-proof-bar-live">Live data</div>
+          </div>
+          <div class="pp-proof-body">
+
+            <!-- the big funnel-performance chart -->
+            <div class="pp-chart">
+              <div class="pp-chart-head">
+                <div class="pp-chart-head-label">Funnel performance · last 30 days</div>
+                <div class="pp-chart-head-val" id="pp-chart-trend">▲ steady volume</div>
+              </div>
+              <div class="pp-chart-funnel">
+                <div class="pp-funnel-stage">
+                  <div class="pp-funnel-bar" style="height:100%;"><span class="pp-funnel-bar-num" id="pp-fn-impr">38,400</span></div>
+                  <div class="pp-funnel-stage-label">Ad<br>impressions</div>
+                </div>
+                <div class="pp-funnel-stage">
+                  <div class="pp-funnel-bar" style="height:62%;"><span class="pp-funnel-bar-num" id="pp-fn-clicks">2,950</span></div>
+                  <div class="pp-funnel-stage-label">Clicks to<br>page</div>
+                </div>
+                <div class="pp-funnel-stage">
+                  <div class="pp-funnel-bar peak" style="height:44%;"><span class="pp-funnel-bar-num" id="pp-fn-leads">410</span></div>
+                  <div class="pp-funnel-stage-label">Leads<br>captured</div>
+                </div>
+                <div class="pp-funnel-stage">
+                  <div class="pp-funnel-bar peak" style="height:30%;"><span class="pp-funnel-bar-num" id="pp-fn-booked">139</span></div>
+                  <div class="pp-funnel-stage-label">Booked<br>jobs</div>
+                </div>
+              </div>
+              <div class="pp-chart-axis">
+                <span>cold audience</span>
+                <span>→ warmed → captured →</span>
+                <span>booked work</span>
+              </div>
+            </div>
+
+            <!-- the proof stat row -->
+            <div class="pp-proof-stats">
+              <div class="pp-proof-stat">
+                <div class="pp-proof-stat-num" id="pp-proof-days">63</div>
+                <div class="pp-proof-stat-label">Days running</div>
+              </div>
+              <div class="pp-proof-stat">
+                <div class="pp-proof-stat-num" id="pp-proof-leads">410</div>
+                <div class="pp-proof-stat-label">Leads generated</div>
+              </div>
+              <div class="pp-proof-stat">
+                <div class="pp-proof-stat-num">100%</div>
+                <div class="pp-proof-stat-label">Verifiable</div>
+              </div>
+            </div>
+
+            <!-- the withheld CPL -->
+            <div class="pp-cpl-locked">
+              <div class="pp-cpl-locked-blur">
+                <div class="pp-cpl-locked-num">€0.00</div>
+                <div class="pp-cpl-locked-lock">🔒</div>
+                <div class="pp-cpl-locked-label">Cost per lead</div>
+              </div>
+              <div class="pp-cpl-locked-text">
+                <strong>The cost-per-lead is the part you won't believe.</strong> So we're not going to type it in an email and ask you to take our word for it — you'd assume it's marketing spin. On a 15-minute call we'll screen-share the live dashboard. Real campaign, real numbers, nothing hidden. <strong>Then you can decide.</strong>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== ACT 3 — THE OFFER ========== -->
+      <div class="pp-sec">
+        <div class="pp-eyebrow">Act 3 · the offer</div>
+        <h2 class="pp-offer-h">Everything above,<br>run for you — <em id="pp-offer-price">€300</em>/mo.</h2>
+
+        <div class="pp-stack">
+          <div class="pp-stack-item">
+            <div class="pp-stack-check">✓</div>
+            <div class="pp-stack-text">
+              <strong>Your branded landing page</strong>
+              <span>Built, hosted, maintained — loads in under 2 seconds, always</span>
+            </div>
+            <div class="pp-stack-worth">worth €2,000+</div>
+          </div>
+          <div class="pp-stack-item">
+            <div class="pp-stack-check">✓</div>
+            <div class="pp-stack-text">
+              <strong>The proven ad campaign, run for you</strong>
+              <span>The exact structure that's working right now in your trade</span>
+            </div>
+            <div class="pp-stack-worth">worth €1,500/mo</div>
+          </div>
+          <div class="pp-stack-item">
+            <div class="pp-stack-check">✓</div>
+            <div class="pp-stack-text">
+              <strong>The full nurture sequence</strong>
+              <span>SMS + email follow-up on every single lead, automatically</span>
+            </div>
+            <div class="pp-stack-worth">worth €800/mo</div>
+          </div>
+          <div class="pp-stack-item">
+            <div class="pp-stack-check">✓</div>
+            <div class="pp-stack-text">
+              <strong>We run it, monitor it, keep it working</strong>
+              <span>Not handed to you to figure out — it stays our job, permanently</span>
+            </div>
+            <div class="pp-stack-worth">priceless, frankly</div>
+          </div>
+          <div class="pp-stack-price">
+            <div class="pp-stack-price-label">
+              Your price
+              <strong>Everything, every month</strong>
+            </div>
+            <div class="pp-stack-price-num">
+              <div class="amount" id="pp-stack-price-amount">€300</div>
+              <div class="per" id="pp-stack-price-per">per month · ex ad spend</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pp-guarantee">
+          <div class="pp-guarantee-seal">90<span>DAYS</span></div>
+          <div class="pp-guarantee-text">
+            <span class="gtitle" id="pp-guarantee-title">90-day money-back guarantee</span>
+            <span id="pp-guarantee-def">If the system isn't live and generating leads at the proven cost-per-lead within 90 days, you get every cent back. No clawback on your ad spend questions, no arguments — the system performs or you don't pay us.</span>
+          </div>
+        </div>
+
+        <div class="pp-cta">
+          <div class="pp-cta-h">Want to see the live numbers?</div>
+          <div class="pp-cta-sub">15 minutes. We screen-share the real dashboard — the cost-per-lead, the campaign, all of it. <strong>No pitch deck, no pressure.</strong> You'll either want it or you won't — and either way you'll have seen something real.</div>
+          <div class="pp-cta-btn" id="pp-cta-btn">Book the 15-minute call →</div>
+          <div class="pp-cta-micro" id="pp-cta-micro">webnua.com/perth/call · pick any slot that suits</div>
+        </div>
+      </div>
+
+      <!-- ========== SIGNOFF ========== -->
+      <div class="pp-signoff">
+        Built for <strong id="pp-signoff-biz">Hawthorn Electrical Co.</strong> by <strong>Craig</strong> at Webnua.<br>
+        This page is real. The system is real. The call is where you find out exactly how real.
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+<div class="proto-note">
+  <strong>Proof Page</strong> · prototype · <span id="proto-mode">Setup</span>
+</div>
+
+<script>
+  let logoUploaded = false;
+  let currentStep = 1;
+
+  // ============================================================
+  // FINDING LIBRARY — the audit engine's brain.
+  // The engine is a DETECTOR + ASSEMBLER, not a writer:
+  // detect which known problems a prospect has → read severity
+  // from the bands → pick a pre-vetted variant → slot-fill.
+  // (In the real tool this lives server-side as the library JSON;
+  //  embedded here so the prototype runs real detection logic.)
+  // ============================================================
+
+  // per-vertical language layer — findings are shared, only words vary
+  const VERTICAL_LANG = {
+    electrician: { trade_noun:'electrician', trade_noun_plural:'electricians', trade_casual:'sparky', job_noun:'job',
+      urgency_context:"someone's power is out and they need it fixed today",
+      competitor_example:'another sparky two suburbs over',
+      after_hours_context:'Most electrical problems get noticed in the evening, when someone gets home.' },
+    plumber: { trade_noun:'plumber', trade_noun_plural:'plumbers', trade_casual:'plumber', job_noun:'job',
+      urgency_context:"there's a leak or a blockage and it can't wait",
+      competitor_example:'another plumber down the road',
+      after_hours_context:"Burst pipes and blocked drains don't keep business hours." },
+    roofer: { trade_noun:'roofer', trade_noun_plural:'roofers', trade_casual:'roofer', job_noun:'job',
+      urgency_context:"there's a leak or storm damage and they're worried it'll get worse",
+      competitor_example:'another roofing company nearby',
+      after_hours_context:'Roofing is a considered purchase — people research in the evening.' },
+    cleaner: { trade_noun:'cleaner', trade_noun_plural:'cleaning companies', trade_casual:'cleaner', job_noun:'booking',
+      urgency_context:"someone's decided they want a clean, usually on their phone",
+      competitor_example:'another cleaning company in the area',
+      after_hours_context:'Cleaning gets booked on impulse — evenings and weekends are prime time.' },
+    salon: { trade_noun:'salon', trade_noun_plural:'salons', trade_casual:'stylist', job_noun:'booking',
+      urgency_context:'someone wants to book an appointment, scrolling in the evening',
+      competitor_example:'another salon nearby',
+      after_hours_context:'Most salon bookings get made outside business hours.' }
+  };
+
+  // the finding types — detection rule, severity bands, confidence, copy variants
+  const FINDING_LIB = {
+    slow_mobile_site: {
+      label:'Slow mobile load speed', confidence:'high', hook_eligible:true,
+      titleFor: d => 'Mobile load speed is ' + d.lcp + ' seconds',
+      evFor: d => 'Google PageSpeed · mobile ' + d.mobileScore + '/100 · LCP ' + d.lcp + 's',
+      detect: d => d.lcp >= 3.0,
+      severity: d => d.lcp >= 6.0 ? 'critical' : d.lcp >= 4.0 ? 'moderate' : 'minor',
+      copy: {
+        critical: [
+          "When {urgency_context}, they tap your listing and wait. At {lcp} seconds, most give up before your page even loads — and call {competitor_example} instead. You'd never know it happened: a bounce leaves no trace.",
+          "Your site takes {lcp} seconds to load on a phone. Google's own research shows most mobile visitors abandon long before that. Nearly everyone searching for a {trade_noun} on their phone is being quietly turned away at the door."
+        ],
+        moderate: [
+          "Your site loads in {lcp} seconds on mobile. Slow enough that a real chunk of urgent enquiries bounce before the page appears — and those people don't come back, they just call someone else.",
+          "At {lcp} seconds to load on a phone, you're losing the impatient ones — and when {urgency_context}, everyone's impatient."
+        ],
+        minor: [
+          "Your mobile site loads in {lcp} seconds. Not a crisis, but a touch slow — and on mobile, every second shaves a few people off before they see what you offer."
+        ]
+      },
+      hook: "Your site takes {lcp} seconds to load on a phone. We timed it. That alone is costing you {job_noun}s every week — and it's the smallest of the things we found."
+    },
+    quiet_gbp: {
+      label:'Dormant Google Business Profile', confidence:'high', hook_eligible:true,
+      titleFor: d => 'Your Google profile has gone quiet',
+      evFor: d => 'GBP · ' + d.gbpRating + '★ (' + d.gbpReviews + ') · last review ' + d.gbpLastReviewMonths + ' months ago · ' + d.gbpPosts + ' posts',
+      detect: d => d.gbpLastReviewMonths >= 3 || d.gbpPosts === 0,
+      severity: d => (d.gbpLastReviewMonths >= 6 || (d.gbpPosts === 0 && d.gbpLastReviewMonths >= 3)) ? 'moderate' : 'minor',
+      copy: {
+        moderate: [
+          "Your rating is genuinely good — but your last review came in {gbpLastReviewMonths} months ago, and {competitor_example} is getting one most weeks. Google's local ranking quietly weights review recency. A profile that looks dormant slips down the map pack even with a great star rating.",
+          "{gbpRating} stars is better than most {trade_noun_plural} in {suburb}. The problem isn't the score — it's that the profile looks abandoned. Last review {gbpLastReviewMonths} months ago, no posts. Google reads 'dormant' and ranks accordingly."
+        ],
+        minor: [
+          "Your Google profile is solid but coasting — a few months since the last review, nothing posted. Not hurting you badly yet, but not working for you either, and keeping it active is one of the cheapest local-ranking levers there is."
+        ]
+      },
+      hook: "Your Google profile has been silent for {gbpLastReviewMonths} months while competitors stay active. We checked. It's quietly costing you map-pack visibility — and it's one of three things we found."
+    },
+    not_in_map_pack: {
+      label:'Not in the local map pack', confidence:'medium', hook_eligible:true,
+      titleFor: d => "You're not in the local map pack",
+      evFor: d => "Local search · '" + VERTICAL_LANG[d._vertical].trade_noun + ' ' + d.suburb + "' · " + d.mapPackStatus,
+      detect: d => d.mapPackPosition === null || d.mapPackPosition > 3,
+      severity: d => (d.mapPackPosition === null && d.organicPosition > 10) ? 'critical' : (d.mapPackPosition === null || d.mapPackPosition > 6) ? 'moderate' : 'minor',
+      copy: {
+        critical: [
+          "Search '{trade_noun} {suburb}' and you're nowhere near the top — not in the map pack, down the page on the regular results. The people searching that exact phrase are the most ready-to-book customers there are, and right now they're not finding you at all.",
+          "When someone in {suburb} searches for a {trade_noun}, the top three map results get almost all the clicks. You're not in them. However good you are, you're invisible at the exact moment someone's looking."
+        ],
+        moderate: [
+          "The map pack — those top three local results — is where most '{trade_noun} near me' clicks go. You're below it. That's the difference between being found and being a second page nobody scrolls to.",
+          "You're not in the top three for '{trade_noun} {suburb}'. For a local trade that's the single highest-traffic spot there is, and right now {competitor_example} is sitting in it instead of you."
+        ],
+        minor: [
+          "You're showing in local results but not in the top three. You're close — but 'close' in the map pack still means most of the clicks go to the names above you."
+        ]
+      },
+      hook: "Search '{trade_noun} {suburb}' and you're not in the top results. We looked. The most ready-to-book customers in your area aren't finding you — and that's one of three things we spotted."
+    },
+    no_after_hours_capture: {
+      label:'No after-hours enquiry capture', confidence:'high', hook_eligible:false,
+      titleFor: d => 'No way to enquire after hours',
+      evFor: d => 'Website · ' + d.contactSummary,
+      detect: d => !d.hasContactForm && !d.hasCallbackRequest,
+      severity: d => (d.contactMethods === 'phone-only') ? 'moderate' : 'minor',
+      copy: {
+        moderate: [
+          "{after_hours_context} Right now your only contact path is a phone call — and if you don't pick up, that lead either waits or calls the next name on the list. No form, no callback request, no way to catch the ones who won't leave a voicemail.",
+          "Your site gives people exactly one way to reach you: ring the phone. {after_hours_context} Every one of those people who calls and gets no answer is a {job_noun} that just vanishes — no message, no record, no second chance."
+        ],
+        minor: [
+          "There's no quick way to enquire other than calling. {after_hours_context} A simple callback form would catch the ones who'd rather not ring — it's the cheapest fix on this list and it's pure upside."
+        ]
+      }
+    },
+    no_ssl: {
+      label:"No SSL — site shows 'not secure'", confidence:'high', hook_eligible:true,
+      titleFor: d => "Your website shows as 'not secure'",
+      evFor: d => "Website · no HTTPS · browser security warning shown to visitors",
+      detect: d => d.hasSSL === false,
+      severity: d => 'critical',
+      copy: {
+        critical: [
+          "Your site doesn't have a basic security certificate, so modern browsers put a 'not secure' warning in front of visitors before they see a thing. Most people don't read it — they just leave. A quick fix, but right now it's quietly turning people away at the door.",
+          "Browsers flag sites without HTTPS as 'not secure'. Yours is one of them. When {urgency_context} and they get a security warning on your page, they don't investigate — they go back and click {competitor_example}."
+        ]
+      },
+      hook: "Your website is showing visitors a 'not secure' warning before they see a thing. We checked. That's turning people away at the door — and it's not even the biggest issue we found."
+    },
+    thin_ad_presence: {
+      label:'No paid presence — opportunity untapped', confidence:'medium', hook_eligible:false,
+      titleFor: d => 'Nothing running on paid — the fastest channel is idle',
+      evFor: d => 'Meta Ad Library · ' + d.activeAds + ' active ads · ' + d.adHistorySummary,
+      detect: d => d.activeAds === 0,
+      severity: d => 'minor',
+      copy: {
+        minor: [
+          "There's nothing running for you in the Meta Ad Library — no active ads, no recent history. Not a problem exactly, an untapped channel: paid is the fastest way to get in front of ready-to-book {trade_noun} searchers, and right now you're relying entirely on people finding you on their own.",
+          "You're not running paid ads that we can see. The honest read: that's the single fastest lever you're not pulling. Everyone finding you right now found you the slow way — paid puts you in front of the people searching today."
+        ]
+      }
+    },
+    weak_site_structure: {
+      label:'Site missing basic conversion structure', confidence:'medium', hook_eligible:false,
+      titleFor: d => "The site isn't built to turn visitors into {job_noun}s",
+      evFor: d => 'Website · ' + d.structureSummary,
+      detect: d => !d.hasClearCta || !d.metaComplete || !d.hasSchema,
+      severity: d => (!d.hasClearCta && !d.metaComplete) ? 'moderate' : 'minor',
+      copy: {
+        moderate: [
+          "Your site has the basics of a brochure but not the basics of a booking tool — no obvious next step for a visitor, and the behind-the-scenes setup is incomplete. People landing on it have to work out what to do next, and most won't bother.",
+          "The site tells people who you are but doesn't move them to act. No clear 'do this next', and the technical groundwork Google uses to rank you is half-done. It's a page, not a funnel."
+        ],
+        minor: [
+          "A few structural basics are missing — the kind of thing that doesn't look broken but quietly costs you: an unclear next step for visitors, or incomplete behind-the-scenes setup. Small gaps, but they add up."
+        ]
+      }
+    }
+  };
+
+  // priority order for assembly: critical > moderate > minor; high-confidence above medium within a tier
+  const SEV_RANK = { critical: 0, moderate: 1, minor: 2 };
+  const CONF_RANK = { high: 0, medium: 1, low: 2 };
+
+  // ---- per-prospect MOCK pulled data ----
+  // In the real tool this is the PageSpeed/GBP/AdLibrary/local-search pull.
+  // Here, each prospect carries a realistic data profile for detection to run against.
+  const PROSPECT_DATA = {
+    'Hawthorn Electrical Co.': {
+      _vertical:'electrician', suburb:'Mt Hawthorn',
+      lcp:8.4, mobileScore:31,
+      gbpRating:4.8, gbpReviews:24, gbpLastReviewMonths:7, gbpPosts:0,
+      mapPackPosition:null, organicPosition:14, mapPackStatus:'not in top 3 · page 2 organic',
+      hasContactForm:false, hasCallbackRequest:false, contactMethods:'phone-only', contactSummary:'phone number only · no form, no callback',
+      hasSSL:true,
+      activeAds:0, adHistorySummary:'no record of past ads',
+      hasClearCta:false, metaComplete:false, hasSchema:false, structureSummary:'no clear CTA · meta + schema incomplete'
+    },
+    'Brightwork Electrical': {
+      _vertical:'electrician', suburb:'Leederville',
+      lcp:3.6, mobileScore:58,
+      gbpRating:4.7, gbpReviews:31, gbpLastReviewMonths:1, gbpPosts:6,
+      mapPackPosition:2, organicPosition:4, mapPackStatus:'2nd in map pack',
+      hasContactForm:true, hasCallbackRequest:false, contactMethods:'form+phone', contactSummary:'has contact form + phone',
+      hasSSL:true,
+      activeAds:3, adHistorySummary:'3 active · running ~2 months',
+      hasClearCta:true, metaComplete:false, hasSchema:false, structureSummary:'CTA present · meta + schema incomplete'
+    },
+    'Coastal Plumbing & Gas': {
+      _vertical:'plumber', suburb:'Scarborough',
+      lcp:5.9, mobileScore:44,
+      gbpRating:4.9, gbpReviews:88, gbpLastReviewMonths:1, gbpPosts:0,
+      mapPackPosition:null, organicPosition:6, mapPackStatus:'not in top 3 · 6th organic',
+      hasContactForm:false, hasCallbackRequest:false, contactMethods:'phone-only', contactSummary:'phone number only · no form',
+      hasSSL:true,
+      activeAds:0, adHistorySummary:'no record of past ads',
+      hasClearCta:true, metaComplete:true, hasSchema:false, structureSummary:'CTA + meta present · schema missing'
+    },
+    'PerthPro Roofing': {
+      _vertical:'roofer', suburb:'Bayswater',
+      lcp:4.2, mobileScore:51,
+      gbpRating:4.4, gbpReviews:12, gbpLastReviewMonths:4, gbpPosts:0,
+      mapPackPosition:5, organicPosition:8, mapPackStatus:'5th — just outside the pack',
+      hasContactForm:false, hasCallbackRequest:false, contactMethods:'phone-only', contactSummary:'buried phone number · no form',
+      hasSSL:false,
+      activeAds:0, adHistorySummary:'no record of past ads',
+      hasClearCta:false, metaComplete:false, hasSchema:false, structureSummary:'no clear CTA · meta + schema incomplete'
+    }
+  };
+  // fallback profile for manually-entered businesses not in the list
+  function defaultProspectData(vertical, suburb) {
+    return {
+      _vertical:vertical, suburb:suburb || 'your area',
+      lcp:7.1, mobileScore:36,
+      gbpRating:4.6, gbpReviews:19, gbpLastReviewMonths:5, gbpPosts:0,
+      mapPackPosition:null, organicPosition:9, mapPackStatus:'not in top 3',
+      hasContactForm:false, hasCallbackRequest:false, contactMethods:'phone-only', contactSummary:'phone number only · no form',
+      hasSSL:true,
+      activeAds:0, adHistorySummary:'no record of past ads',
+      hasClearCta:false, metaComplete:false, hasSchema:true, structureSummary:'no clear CTA · meta incomplete'
+    };
+  }
+
+  // ---- THE DETECTION ENGINE ----
+  // runs every finding's detect() against the prospect's data, picks severity,
+  // selects a variant, slot-fills, orders, picks the hook. Returns the Act 1 payload.
+  function runDetection(data) {
+    const lang = VERTICAL_LANG[data._vertical] || VERTICAL_LANG.electrician;
+
+    function slot(str, d) {
+      return str
+        .replace(/{trade_noun_plural}/g, lang.trade_noun_plural)
+        .replace(/{trade_noun}/g, lang.trade_noun)
+        .replace(/{trade_casual}/g, lang.trade_casual)
+        .replace(/{job_noun}/g, lang.job_noun)
+        .replace(/{urgency_context}/g, lang.urgency_context)
+        .replace(/{competitor_example}/g, lang.competitor_example)
+        .replace(/{after_hours_context}/g, lang.after_hours_context)
+        .replace(/{suburb}/g, d.suburb)
+        .replace(/{lcp}/g, d.lcp)
+        .replace(/{gbpRating}/g, d.gbpRating)
+        .replace(/{gbpReviews}/g, d.gbpReviews)
+        .replace(/{gbpLastReviewMonths}/g, d.gbpLastReviewMonths);
+    }
+
+    // 1. detect — which findings are present
+    let present = [];
+    for (const [id, F] of Object.entries(FINDING_LIB)) {
+      if (F.detect(data)) {
+        const sev = F.severity(data);
+        present.push({
+          id, F, sev,
+          confidence: F.confidence,
+          hook_eligible: F.hook_eligible,
+          title: slot(F.titleFor(data), data),
+          evidence: F.evFor(data),
+          body: slot((F.copy[sev] || F.copy[Object.keys(F.copy)[0]])[0], data)
+        });
+      }
+    }
+
+    // 2. order — severity, then confidence within tier
+    present.sort((a, b) => {
+      if (SEV_RANK[a.sev] !== SEV_RANK[b.sev]) return SEV_RANK[a.sev] - SEV_RANK[b.sev];
+      return CONF_RANK[a.confidence] - CONF_RANK[b.confidence];
+    });
+
+    // 3. cap at 3 findings for the Proof Page
+    const top = present.slice(0, 3);
+
+    // 4. pick the hook — highest-priority hook_eligible finding
+    let hook = '';
+    const hookFinding = top.find(f => f.hook_eligible && f.F.hook);
+    if (hookFinding) {
+      hook = slot(hookFinding.F.hook, data);
+    } else if (top.length) {
+      hook = top[0].title + '. We checked — and it\u2019s one of a few things quietly costing you ' + lang.job_noun + 's.';
+    }
+
+    return { findings: top, hook, totalDetected: present.length, lang };
+  }
+
+
+  // ---- 3-STEP PIPELINE NAVIGATION ----
+  function goToStep(n) {
+    // can't jump forward past step 1 until audit is done — but allow free movement once unlocked
+    document.getElementById('audit').classList.remove('active');
+    document.getElementById('setup').classList.remove('active');
+    document.getElementById('proofpage').classList.remove('active');
+
+    if (n === 1) {
+      document.getElementById('audit').classList.add('active');
+    } else if (n === 2) {
+      syncProof();
+      document.getElementById('setup').classList.add('active');
+    } else if (n === 3) {
+      syncProof();
+      document.getElementById('proofpage').classList.add('active');
+    }
+    currentStep = n;
+
+    // stepper visual state
+    for (let i = 1; i <= 3; i++) {
+      const el = document.getElementById('pipe-' + i);
+      el.classList.remove('active', 'done');
+      if (i < n) el.classList.add('done');
+      if (i === n) el.classList.add('active');
+    }
+    document.getElementById('proto-mode').textContent = 'Step ' + n + ' / 3';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // ---- STEP 1 PHASE A: input ----
+  function loadQueued(name, web, city, vertical) {
+    document.getElementById('a-name').value = name;
+    document.getElementById('a-web').value = web;
+    document.getElementById('a-city').value = city;
+    document.getElementById('a-vertical').value = vertical;
+    document.getElementById('a-owner').value = '';
+    document.getElementById('a-email').value = 'info@' + web;
+    startResearch();
+  }
+
+  function skipAudit() {
+    // jump straight to step 2 — carry whatever's in the step 1 inputs, load findings from vertical
+    carryAuditToSetup();
+    goToStep(2);
+  }
+
+  // ---- STEP 1 PHASE B: research assembly ----
+  function startResearch() {
+    const name = document.getElementById('a-name').value || 'This business';
+    const city = document.getElementById('a-city').value || '';
+    const vertical = document.getElementById('a-vertical').value || '';
+
+    document.getElementById('rt-name').textContent = name;
+    document.getElementById('rt-avatar').textContent = name.charAt(0).toUpperCase();
+    document.getElementById('rt-meta').textContent = (city + ' · ' + vertical).toUpperCase();
+    document.getElementById('rt-status').innerHTML = '<div class="pulse-dot"></div><span id="rt-status-text">Collecting...</span>';
+
+    ['web','gbp','ads','seo'].forEach(s => {
+      const card = document.getElementById('src-' + s);
+      card.className = 'source-card pending';
+      document.getElementById('src-' + s + '-status').className = 'source-status pending';
+      document.getElementById('src-' + s + '-status').textContent = 'Queued';
+    });
+    document.getElementById('research-continue').style.display = 'none';
+    document.getElementById('research-foot-status').innerHTML = '<strong>Collecting data...</strong> ~30 seconds in the real tool';
+
+    // switch phase A → phase B
+    document.getElementById('audit-phase-input').style.display = 'none';
+    document.getElementById('audit-phase-research').style.display = 'block';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    setTimeout(() => runSource('web'), 400);
+    setTimeout(() => runSource('gbp'), 700);
+    setTimeout(() => runSource('ads'), 1000);
+    setTimeout(() => runSource('seo'), 1300);
+    setTimeout(() => finishSource('web'), 2400);
+    setTimeout(() => finishSource('seo'), 3100);
+    setTimeout(() => finishSource('ads'), 3700);
+    setTimeout(() => finishSource('gbp'), 4400);
+    setTimeout(() => {
+      document.getElementById('rt-status').innerHTML = '<span style="color:var(--good-light);">✓ Research complete</span>';
+      document.getElementById('research-foot-status').innerHTML = '<strong>4 of 4 sources collected</strong> · 1 gap noted (Search Console — no access, expected)';
+      document.getElementById('research-continue').style.display = 'inline-flex';
+    }, 4700);
+  }
+
+  function runSource(key) {
+    const card = document.getElementById('src-' + key);
+    card.className = 'source-card loading';
+    const status = document.getElementById('src-' + key + '-status');
+    status.className = 'source-status loading';
+    status.textContent = 'Pulling';
+    const txt = { web:'Running PageSpeed · scanning DOM...', gbp:'Fetching listing · reviews · photos...',
+                  ads:'Querying Meta Ad Library...', seo:'Checking rank for target keywords...' }[key];
+    document.getElementById('src-' + key + '-body').innerHTML =
+      '<div class="source-loading-bar"><div class="source-loading-fill"></div></div>' +
+      '<div style="font-size:11px;color:rgba(10,10,10,0.45);">' + txt + '</div>';
+    setTimeout(() => {
+      const fill = card.querySelector('.source-loading-fill');
+      if (fill) fill.style.width = '70%';
+    }, 200);
+  }
+
+  function finishSource(key) {
+    const card = document.getElementById('src-' + key);
+    const status = document.getElementById('src-' + key + '-status');
+    const body = document.getElementById('src-' + key + '-body');
+    const data = {
+      web: { cls:'warn-found', label:'Issues found', rows:[['Mobile score','31 / 100','bad'],['Load (LCP)','8.4s','bad'],['SSL','Valid','ok'],['Meta + schema','Partial','meh']] },
+      gbp: { cls:'warn-found', label:'Issues found', rows:[['Rating','4.8★ (24)','ok'],['Last review','7 mo ago','bad'],['Posts','0 ever','bad'],['Photos / hours','3 · incomplete','meh']] },
+      ads: { cls:'done', label:'Collected', rows:[['Active Meta ads','None','meh'],['Ever run ads','No record','meh'],['Opportunity','Untapped','ok']] },
+      seo: { cls:'warn-found', label:'Issues found', rows:[['"electrician [suburb]"','Page 2','bad'],['Map pack','Not in top 3','bad'],['Indexed pages','6','meh']] }
+    }[key];
+    card.className = 'source-card ' + data.cls;
+    status.className = 'source-status ' + data.cls;
+    status.textContent = data.label;
+    body.innerHTML = data.rows.map(r =>
+      '<div class="source-datapoint"><span class="dp-label">' + r[0] +
+      '</span><span class="dp-val ' + r[2] + '">' + r[1] + '</span></div>').join('');
+  }
+
+  // ---- STEP 1 → STEP 2: carry the audit output into the Proof Page build ----
+  // lastDetection holds the engine's output so Step 2 can show confidence flags.
+  let lastDetection = null;
+
+  function carryAuditToSetup() {
+    // copy prospect basics from step 1 inputs into step 2 fields
+    const bizName = document.getElementById('a-name').value;
+    document.getElementById('s-bizname').value = bizName;
+    document.getElementById('s-owner').value = document.getElementById('a-owner').value;
+    const city = document.getElementById('a-city').value;
+    const suburb = city.split(',')[0].trim();
+    document.getElementById('s-suburb').value = suburb;
+    const vertical = document.getElementById('a-vertical').value;
+    document.getElementById('s-vertical').value = vertical;
+    document.getElementById('s-email').value = document.getElementById('a-email').value;
+
+    // get this prospect's pulled data — real profile if queued, else the default
+    let data = PROSPECT_DATA[bizName];
+    if (!data) {
+      data = defaultProspectData(vertical, suburb);
+    } else {
+      // queued prospect may have been re-typed into a different vertical — keep its real data
+      data = Object.assign({}, data);
+    }
+
+    // RUN THE DETECTION ENGINE — this is what the real audit engine does
+    const result = runDetection(data);
+    lastDetection = result;
+
+    // carry the hook + the detected findings into Act 1
+    document.getElementById('s-hook').value = result.hook;
+    for (let i = 1; i <= 3; i++) {
+      const f = result.findings[i - 1];
+      if (f) {
+        document.getElementById('s-f' + i + '-title').value = f.title;
+        document.getElementById('s-f' + i + '-evidence').value = f.evidence;
+        document.getElementById('s-f' + i + '-body').value = f.body;
+        setSev(i, f.sev);
+      } else {
+        // fewer than 3 findings detected — clear the slot
+        document.getElementById('s-f' + i + '-title').value = '';
+        document.getElementById('s-f' + i + '-evidence').value = '';
+        document.getElementById('s-f' + i + '-body').value = '';
+      }
+    }
+
+    applyConfidenceFlags(result);
+    applyVerticalPreset();
+    document.getElementById('setup-actions-h').textContent =
+      'Proof Page ready for ' + bizName;
+  }
+
+  // ---- show the audit engine's confidence flags on the Step 2 finding cards ----
+  // high-confidence findings = trust on sight; medium/low = flagged for a human glance.
+  function applyConfidenceFlags(result) {
+    for (let i = 1; i <= 3; i++) {
+      const flagEl = document.getElementById('f' + i + '-conf-flag');
+      if (!flagEl) continue;
+      const f = result.findings[i - 1];
+      if (!f) { flagEl.style.display = 'none'; continue; }
+      flagEl.style.display = 'inline-flex';
+      if (f.confidence === 'high') {
+        flagEl.className = 'conf-flag high';
+        flagEl.innerHTML = '\u2713 trust on sight \u00b7 ' + f.F.label;
+      } else {
+        flagEl.className = 'conf-flag review';
+        flagEl.innerHTML = '\u26a0 verify \u00b7 ' + f.confidence + '-confidence detection';
+      }
+    }
+    // detection summary line
+    const sumEl = document.getElementById('detection-summary');
+    if (sumEl) {
+      const flagged = result.findings.filter(f => f.confidence !== 'high').length;
+      sumEl.innerHTML = result.totalDetected + ' findings detected \u00b7 showing top ' +
+        result.findings.length + ' \u00b7 <strong>' +
+        (flagged === 0 ? 'all high-confidence, skim &amp; approve' : flagged + ' flagged for a quick verify') + '</strong>';
+    }
+  }
+
+  function finishAudit() {
+    carryAuditToSetup();
+    document.getElementById('audit-phase-input').style.display = 'block';
+    document.getElementById('audit-phase-research').style.display = 'none';
+    goToStep(2);
+  }
+
+  // ---- Severity picker ----
+  const sevState = { 1: 'critical', 2: 'moderate', 3: 'minor' };
+  function setSev(findingNum, sev) {
+    sevState[findingNum] = sev;
+    const picker = document.querySelector('.sev-pick[data-finding="' + findingNum + '"]');
+    picker.querySelectorAll('.sev-opt').forEach(b => b.classList.remove('active'));
+    picker.querySelector('.sev-opt.' + sev).classList.add('active');
+    syncProof();
+  }
+
+  // ---- Logo mock upload ----
+  function mockUploadLogo() {
+    logoUploaded = true;
+    document.getElementById('logo-drop').style.display = 'none';
+    document.getElementById('logo-preview').classList.add('shown');
+    const name = document.getElementById('s-bizname').value || 'B';
+    document.getElementById('logo-swatch').textContent = name.charAt(0).toUpperCase();
+    syncProof();
+  }
+  function removeLogo(e) {
+    e.stopPropagation();
+    logoUploaded = false;
+    document.getElementById('logo-drop').style.display = 'block';
+    document.getElementById('logo-preview').classList.remove('shown');
+    syncProof();
+  }
+
+  // ---- Vertical presets ----
+  const verticalPresets = {
+    electrician: { cpl: '€2.50', leads: '410', days: '63', tradeWord: 'electricians', sparky: 'sparky' },
+    plumber:     { cpl: '€3.10', leads: '288', days: '47', tradeWord: 'plumbers', sparky: 'plumber' },
+    roofer:      { cpl: '€4.80', leads: '142', days: '38', tradeWord: 'roofers', sparky: 'roofer' },
+    cleaner:     { cpl: '€1.90', leads: '521', days: '71', tradeWord: 'cleaning companies', sparky: 'cleaner' },
+    salon:       { cpl: '€2.20', leads: '367', days: '55', tradeWord: 'salons', sparky: 'stylist' }
+  };
+  function applyVerticalPreset() {
+    const v = document.getElementById('s-vertical').value;
+    const p = verticalPresets[v];
+    document.getElementById('preset-cpl').textContent = p.cpl + ' — withheld on page';
+    // update the preset card rows
+    document.querySelectorAll('.proof-preset-row .val').forEach(el => {
+      const label = el.parentElement.querySelector('.label').textContent;
+      if (label === 'Days running') el.textContent = p.days;
+      if (label === 'Leads generated') el.textContent = p.leads;
+    });
+    document.querySelector('.proof-preset-label').textContent = '// ' + p.sparky.charAt(0).toUpperCase() + p.sparky.slice(1) + ' system · live proof campaign';
+  }
+
+  // ---- The core sync: setup fields → proof page ----
+  function syncProof() {
+    const get = id => document.getElementById(id).value;
+    const biz = get('s-bizname') || 'This business';
+    const bizShort = biz.replace(/\b(Co\.|Pty Ltd|Ltd|Limited|Inc\.?)\b/gi, '').trim();
+    const owner = get('s-owner').trim();
+    const suburb = get('s-suburb');
+    const vertical = get('s-vertical');
+    const preset = verticalPresets[vertical];
+
+    // hero
+    document.getElementById('pp-from-biz').textContent = biz;
+    const hookFull = get('s-hook');
+    const hookParts = hookFull.split(/(?<=[.!?])\s+/);
+    document.getElementById('pp-hook-text').innerHTML = hookParts[0] || hookFull;
+    document.getElementById('pp-hook-sub').textContent = hookParts.slice(1).join(' ') || '';
+
+    // act 1 — findings + their inline viz
+    document.getElementById('pp-act1-biz').textContent = bizShort;
+    for (let i = 1; i <= 3; i++) {
+      const title = get('s-f' + i + '-title');
+      const ev = get('s-f' + i + '-evidence');
+      const body = get('s-f' + i + '-body');
+      const sev = sevState[i];
+      const card = document.getElementById('pp-f' + i);
+      if (!title && i === 3) {
+        card.style.display = 'none';
+      } else {
+        card.style.display = 'block';
+        card.className = 'pp-finding ' + sev;
+        document.getElementById('pp-f' + i + '-title').textContent = title;
+        document.getElementById('pp-f' + i + '-evidence').textContent = ev;
+        document.getElementById('pp-f' + i + '-body').textContent = body;
+        const sevEl = document.getElementById('pp-f' + i + '-sev');
+        sevEl.className = 'pp-finding-sev ' + sev;
+        sevEl.textContent = sev.charAt(0).toUpperCase() + sev.slice(1);
+      }
+    }
+
+    // act 2
+    document.getElementById('pp-act2-biz').textContent = owner ? (owner + "'s") : 'your';
+    const urlSlug = bizShort.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    document.getElementById('pp-lp-url').textContent = urlSlug + '.getwebnua.com';
+    document.getElementById('pp-lp-brand-name').textContent = bizShort;
+    document.getElementById('pp-lp-mark').textContent = bizShort.charAt(0).toUpperCase();
+    document.getElementById('pp-lp-headline').textContent = get('s-lp-headline');
+    document.getElementById('pp-system-caption').innerHTML =
+      'Your branded landing page — built, hosted, ready to switch on. <strong>Not a mockup. A real page.</strong>';
+
+    // the proof section — credible dashboard, vertical-specific
+    document.getElementById('pp-proof-trade').textContent = preset.tradeWord.replace(/s$/, '');
+    document.getElementById('pp-proof-days').textContent = preset.days;
+    document.getElementById('pp-proof-leads').textContent = preset.leads;
+    // funnel chart numbers — derive a believable funnel from the leads figure
+    const leads = parseInt(preset.leads, 10) || 410;
+    const impr = (leads * 93).toLocaleString();
+    const clicks = (leads * 7.2).toLocaleString(undefined, {maximumFractionDigits: 0});
+    const booked = Math.round(leads * 0.34);
+    document.getElementById('pp-fn-impr').textContent = impr;
+    document.getElementById('pp-fn-clicks').textContent = clicks;
+    document.getElementById('pp-fn-leads').textContent = leads.toLocaleString();
+    document.getElementById('pp-fn-booked').textContent = booked.toLocaleString();
+
+    // offer
+    const price = get('s-price');
+    const priceNote = get('s-price-note');
+    document.getElementById('pp-offer-price').textContent = price;
+    document.getElementById('pp-stack-price-amount').textContent = price;
+    document.getElementById('pp-stack-price-per').textContent = 'per month · ' + priceNote;
+    document.getElementById('pp-guarantee-title').textContent = get('s-guarantee');
+    document.getElementById('pp-guarantee-def').textContent = get('s-guarantee-def');
+    document.getElementById('pp-cta-micro').textContent = get('s-calllink') + ' · pick any slot that suits';
+
+    // signoff
+    document.getElementById('pp-signoff-biz').textContent = biz;
+  }
+
+  function generateLink() {
+    const biz = document.getElementById('s-bizname').value;
+    const slug = biz.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    alert('Proof Page generated.\n\nShareable link:\nwebnua.com/proof/' + slug + '\n\n(In the real tool this writes the prospect record to Supabase, renders the page at this URL, and tracks opens / scroll-depth / call-bookings back to it.)');
+  }
+
+  // init — start at step 1 (audit). Pre-run detection on the default
+  // prospect so Step 2 always reflects the live engine, never stale static HTML.
+  carryAuditToSetup();
+  syncProof();
+  goToStep(1);
+</script>
+
+</body>
+</html>

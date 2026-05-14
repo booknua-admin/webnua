@@ -1,0 +1,324 @@
+{
+  "_meta": {
+    "name": "Webnua Audit Engine — Finding Library",
+    "version": "1.0",
+    "purpose": "The detector + assembler library for the audit engine. The engine does NOT write findings from scratch. It (1) runs detection rules against the data pulled for a prospect, (2) determines severity from the banding, (3) selects a pre-vetted copy variant in Craig's voice, (4) slot-fills prospect specifics, (5) auto-selects the hook and orders findings. Human review then becomes a fast confirmation, not a rewrite.",
+    "how_the_engine_uses_this": {
+      "step_1_detect": "For each finding in `findings`, evaluate `detection.rule` against the prospect's pulled data. If it matches, the finding is PRESENT for this prospect.",
+      "step_2_severity": "For each present finding, evaluate `detection.severity_bands` top-to-bottom; first matching band sets the severity (critical | moderate | minor).",
+      "step_3_select_variant": "From `copy[severity]`, pick a variant. Default: rotate or pick index 0. Variant selection can later be A/B tracked.",
+      "step_4_slot_fill": "Replace {tokens} in the chosen variant + evidence_format using the prospect record and the vertical's `language` block.",
+      "step_5_assemble": "Select hook via `hook_selection`, order findings via `priority_order`, cap at `assembly.max_findings`. Emit the structured Act 1 payload for the Proof Page.",
+      "step_6_confidence": "Attach `detection.confidence` to each finding. The review UI surfaces low-confidence findings for human attention; high-confidence findings are trusted on sight.",
+      "improvement_loop": "When the human edits a variant during review, the edited text is written back as a new variant (status: 'candidate'). Variants accrue usage + edit-rate stats. Low-edit-rate variants get promoted; high-edit-rate variants get retired. The library sharpens with use — review time falls as a curve, not a step."
+    },
+    "token_reference": {
+      "{owner}": "Prospect owner first name (confirmed, never guessed)",
+      "{business}": "Full business name",
+      "{business_short}": "Business name with legal suffix stripped (Co./Pty Ltd/Ltd removed)",
+      "{suburb}": "Primary suburb",
+      "{trade_noun}": "From vertical.language.trade_noun — e.g. 'electrician'",
+      "{trade_noun_plural}": "From vertical.language.trade_noun_plural — e.g. 'electricians'",
+      "{trade_casual}": "From vertical.language.trade_casual — e.g. 'sparky'",
+      "{job_noun}": "From vertical.language.job_noun — e.g. 'job'",
+      "{urgency_context}": "From vertical.language.urgency_context — the typical 'why someone searches now' scenario",
+      "{competitor_example}": "From vertical.language.competitor_example — a plausible nearby-competitor framing",
+      "{n}": "A detected numeric value, injected by the engine (load time, review count, etc.)"
+    }
+  },
+
+  "verticals": {
+    "electrician": {
+      "label": "Electrician",
+      "language": {
+        "trade_noun": "electrician",
+        "trade_noun_plural": "electricians",
+        "trade_casual": "sparky",
+        "job_noun": "job",
+        "urgency_context": "someone's power is out or something's tripping and they need it fixed today",
+        "competitor_example": "another sparky two suburbs over",
+        "after_hours_context": "Most electrical problems get noticed in the evening, when someone gets home."
+      }
+    },
+    "plumber": {
+      "label": "Plumber",
+      "language": {
+        "trade_noun": "plumber",
+        "trade_noun_plural": "plumbers",
+        "trade_casual": "plumber",
+        "job_noun": "job",
+        "urgency_context": "there's a leak, a blockage or no hot water and it can't wait",
+        "competitor_example": "another plumber down the road",
+        "after_hours_context": "Burst pipes and blocked drains don't keep business hours — a lot of plumbing searches happen at night and on weekends."
+      }
+    },
+    "roofer": {
+      "label": "Roofer",
+      "language": {
+        "trade_noun": "roofer",
+        "trade_noun_plural": "roofers",
+        "trade_casual": "roofer",
+        "job_noun": "job",
+        "urgency_context": "there's a leak or storm damage and they're worried about it getting worse",
+        "competitor_example": "another roofing company nearby",
+        "after_hours_context": "Roofing is a considered purchase — people research in the evening and want to request a quote when it suits them, not just 9-to-5."
+      }
+    },
+    "cleaner": {
+      "label": "Cleaning company",
+      "language": {
+        "trade_noun": "cleaner",
+        "trade_noun_plural": "cleaning companies",
+        "trade_casual": "cleaner",
+        "job_noun": "booking",
+        "urgency_context": "someone's decided they want a clean — often on impulse, usually on their phone",
+        "competitor_example": "another cleaning company in the area",
+        "after_hours_context": "Cleaning gets booked on impulse and after hours — evenings and weekends are prime booking time."
+      }
+    },
+    "salon": {
+      "label": "Salon / barber",
+      "language": {
+        "trade_noun": "salon",
+        "trade_noun_plural": "salons",
+        "trade_casual": "stylist",
+        "job_noun": "booking",
+        "urgency_context": "someone wants to book an appointment, usually scrolling on their phone in the evening",
+        "competitor_example": "another salon nearby",
+        "after_hours_context": "Most salon bookings get made outside business hours — people book when they're relaxing at home, not during the workday."
+      }
+    }
+  },
+
+  "findings": {
+
+    "slow_mobile_site": {
+      "label": "Slow mobile load speed",
+      "data_source": "Google PageSpeed Insights",
+      "detection": {
+        "rule": "pagespeed.mobile.lcp_seconds >= 3.0",
+        "confidence": "high",
+        "confidence_note": "Hard API data. Trust on sight unless PageSpeed failed to return a result.",
+        "severity_bands": [
+          { "severity": "critical", "rule": "lcp_seconds >= 6.0" },
+          { "severity": "moderate", "rule": "lcp_seconds >= 4.0 && lcp_seconds < 6.0" },
+          { "severity": "minor", "rule": "lcp_seconds >= 3.0 && lcp_seconds < 4.0" }
+        ]
+      },
+      "title_format": "Mobile load speed is {n} seconds",
+      "evidence_format": "Google PageSpeed · mobile {pagespeed.mobile.score}/100 · LCP {n}s",
+      "hook_eligible": true,
+      "copy": {
+        "critical": [
+          "When {urgency_context}, they tap your listing and wait. At {n} seconds, most give up before your page even loads — and call {competitor_example} instead. You'd never know it happened: a bounce leaves no trace.",
+          "Your site takes {n} seconds to load on a phone. Google's own research shows the majority of mobile visitors abandon long before that. Nearly everyone searching for a {trade_noun} on their phone is being quietly turned away at the door."
+        ],
+        "moderate": [
+          "Your site loads in {n} seconds on mobile. Not the worst we've seen, but slow enough that a real chunk of urgent enquiries bounce before the page appears — and those people don't come back, they just call someone else.",
+          "At {n} seconds to load on a phone, you're losing the impatient ones — and when {urgency_context}, everyone's impatient."
+        ],
+        "minor": [
+          "Your mobile site loads in {n} seconds. It's not a crisis, but it's a touch slow — and on mobile, every second shaves a few people off before they ever see what you offer."
+        ]
+      }
+    },
+
+    "quiet_gbp": {
+      "label": "Dormant Google Business Profile",
+      "data_source": "Google Business Profile",
+      "detection": {
+        "rule": "gbp.last_review_age_months >= 3 || gbp.posts_count == 0",
+        "confidence": "high",
+        "confidence_note": "Hard API data. Trust on sight.",
+        "severity_bands": [
+          { "severity": "moderate", "rule": "gbp.last_review_age_months >= 6 || (gbp.posts_count == 0 && gbp.last_review_age_months >= 3)" },
+          { "severity": "minor", "rule": "gbp.last_review_age_months >= 3 || gbp.posts_count == 0" }
+        ]
+      },
+      "title_format": "Your Google profile has gone quiet",
+      "evidence_format": "GBP · {gbp.rating}★ ({gbp.review_count}) · last review {gbp.last_review_age_months} months ago · {gbp.posts_count} posts",
+      "hook_eligible": true,
+      "copy": {
+        "moderate": [
+          "Your rating is genuinely good — but your last review came in {n} months ago, and {competitor_example} is getting one most weeks. Google's local ranking quietly weights review recency and activity. A profile that looks dormant slips down the map pack even with a great star rating.",
+          "{gbp.rating} stars is better than most {trade_noun_plural} in {suburb}. The problem isn't the score — it's that the profile looks abandoned. Last review {n} months ago, no posts. Google reads 'dormant' and ranks accordingly."
+        ],
+        "minor": [
+          "Your Google profile is solid but coasting — a few months since the last review, nothing posted. It's not hurting you badly yet, but it's not working for you either, and keeping it active is one of the cheapest local-ranking levers there is."
+        ]
+      }
+    },
+
+    "not_in_map_pack": {
+      "label": "Not in the local map pack",
+      "data_source": "Local search check",
+      "detection": {
+        "rule": "local_search.map_pack_position == null || local_search.map_pack_position > 3",
+        "confidence": "medium",
+        "confidence_note": "Derived from a search check — can vary by exact query and searcher location. Flag for human glance if position is borderline.",
+        "severity_bands": [
+          { "severity": "critical", "rule": "local_search.map_pack_position == null && local_search.organic_position > 10" },
+          { "severity": "moderate", "rule": "local_search.map_pack_position == null || local_search.map_pack_position > 3" },
+          { "severity": "minor", "rule": "local_search.map_pack_position > 3 && local_search.map_pack_position <= 6" }
+        ]
+      },
+      "title_format": "You're not in the local map pack",
+      "evidence_format": "Local search · '{trade_noun} {suburb}' · {local_search.map_pack_status}",
+      "hook_eligible": true,
+      "copy": {
+        "critical": [
+          "Search '{trade_noun} {suburb}' and you're nowhere near the top — not in the map pack, and down the page on the regular results. The people searching that exact phrase are the most ready-to-book customers there are, and right now they're not finding you at all.",
+          "When someone in {suburb} searches for a {trade_noun}, the top three map results get almost all the clicks. You're not in them. However good you are, you're invisible at the exact moment someone's looking."
+        ],
+        "moderate": [
+          "The map pack — those top three local results — is where most '{trade_noun} near me' clicks go. You're below it. That's the difference between being found and being a second page nobody scrolls to.",
+          "You're not in the top three for '{trade_noun} {suburb}'. For a local trade, that's the single highest-traffic spot there is, and right now {competitor_example} is sitting in it instead of you."
+        ],
+        "minor": [
+          "You're showing in local results but not in the top three. You're close — but 'close' in the map pack still means most of the clicks go to the names above you."
+        ]
+      }
+    },
+
+    "no_after_hours_capture": {
+      "label": "No after-hours enquiry capture",
+      "data_source": "Website review",
+      "detection": {
+        "rule": "website.has_contact_form == false && website.has_callback_request == false",
+        "confidence": "high",
+        "confidence_note": "Determined from page scan. Trust on sight.",
+        "severity_bands": [
+          { "severity": "moderate", "rule": "website.contact_methods == ['phone'] && website.has_form == false" },
+          { "severity": "minor", "rule": "website.has_contact_form == false || website.has_callback_request == false" }
+        ]
+      },
+      "title_format": "No way to enquire after hours",
+      "evidence_format": "Website · {website.contact_summary}",
+      "hook_eligible": false,
+      "copy": {
+        "moderate": [
+          "{after_hours_context} Right now your only contact path is a phone call — and if you don't pick up, that lead either waits or calls the next name on the list. There's no form, no callback request, no way to catch the ones who won't leave a voicemail.",
+          "Your site gives people exactly one way to reach you: ring the phone. {after_hours_context} Every one of those people who calls and gets no answer is a {job_noun} that just vanishes — no message, no record, no second chance."
+        ],
+        "minor": [
+          "There's no quick way to enquire other than calling. {after_hours_context} A simple callback form would catch the ones who'd rather not ring — it's the cheapest fix on this list and it's pure upside."
+        ]
+      }
+    },
+
+    "no_ssl": {
+      "label": "No SSL — site shows 'not secure'",
+      "data_source": "Website review",
+      "detection": {
+        "rule": "website.has_ssl == false",
+        "confidence": "high",
+        "confidence_note": "Binary technical check. Trust on sight.",
+        "severity_bands": [
+          { "severity": "critical", "rule": "website.has_ssl == false" }
+        ]
+      },
+      "title_format": "Your website shows as 'not secure'",
+      "evidence_format": "Website · no HTTPS · browser security warning shown to visitors",
+      "hook_eligible": true,
+      "copy": {
+        "critical": [
+          "Your site doesn't have a basic security certificate, so modern browsers put a 'not secure' warning in front of visitors before they see a thing. Most people don't read it — they just leave. It's a quick fix, but right now it's quietly turning people away at the door.",
+          "Browsers flag sites without HTTPS as 'not secure'. Yours is one of them. When {urgency_context} and they get a security warning on your page, they don't investigate — they go back and click {competitor_example}."
+        ]
+      }
+    },
+
+    "thin_ad_presence": {
+      "label": "No paid presence — opportunity untapped",
+      "data_source": "Meta Ad Library",
+      "detection": {
+        "rule": "ad_library.active_ads == 0",
+        "confidence": "medium",
+        "confidence_note": "Meta Ad Library only covers Meta platforms — a prospect could be running Google Ads we can't see. Frame as 'on Meta' and flag for human glance. Never state as flat fact that they run no ads anywhere.",
+        "severity_bands": [
+          { "severity": "minor", "rule": "ad_library.active_ads == 0" }
+        ]
+      },
+      "title_format": "Nothing running on paid — the fastest channel is sitting idle",
+      "evidence_format": "Meta Ad Library · {ad_library.active_ads} active ads · {ad_library.history_summary}",
+      "hook_eligible": false,
+      "copy": {
+        "minor": [
+          "There's nothing running for you in the Meta Ad Library — no active ads, no recent history. That's not a problem exactly, it's an untapped channel: paid is the fastest way to get in front of ready-to-book {trade_noun} searchers, and right now you're relying entirely on people finding you on their own.",
+          "You're not running paid ads that we can see. The honest read: that's the single fastest lever you're not pulling. Everyone finding you right now found you the slow way — paid puts you in front of the people searching today."
+        ]
+      }
+    },
+
+    "weak_site_structure": {
+      "label": "Site missing basic conversion structure",
+      "data_source": "Website review",
+      "detection": {
+        "rule": "website.has_clear_cta == false || website.meta_complete == false || website.has_schema == false",
+        "confidence": "medium",
+        "confidence_note": "Part API-checkable (meta, schema), part judgement (is the CTA 'clear'). Flag the judgement portion for human glance.",
+        "severity_bands": [
+          { "severity": "moderate", "rule": "website.has_clear_cta == false && website.meta_complete == false" },
+          { "severity": "minor", "rule": "website.has_clear_cta == false || website.meta_complete == false || website.has_schema == false" }
+        ]
+      },
+      "title_format": "The site isn't built to turn visitors into {job_noun}s",
+      "evidence_format": "Website · {website.structure_summary}",
+      "hook_eligible": false,
+      "copy": {
+        "moderate": [
+          "Your site has the basics of a brochure but not the basics of a booking tool — no obvious next step for a visitor, and the behind-the-scenes setup (the bits Google reads) is incomplete. People landing on it have to work out what to do next, and most won't bother.",
+          "The site tells people who you are but doesn't move them to act. No clear 'do this next', and the technical groundwork Google uses to rank and display you is half-done. It's a page, not a funnel."
+        ],
+        "minor": [
+          "A few of the structural basics are missing — the kind of thing that doesn't look broken but quietly costs you: an unclear next step for visitors, or incomplete behind-the-scenes setup. Small gaps, but they add up."
+        ]
+      }
+    }
+
+  },
+
+  "assembly": {
+    "max_findings": 3,
+    "min_findings": 2,
+    "min_findings_note": "If fewer than 2 findings are detected, the prospect is a poor fit for the Proof Page approach — there isn't enough to credibly say 'we looked at you and found things'. Flag for human decision rather than auto-generating a thin page. A thin Proof Page is worse than no outreach: it burns the prospect and the channel.",
+
+    "priority_order": {
+      "rule": "Order detected findings by severity: all critical first, then moderate, then minor. Within the same severity, order by `data_source` reliability (high-confidence findings above medium-confidence).",
+      "note": "The order findings appear in Act 1 of the Proof Page IS the priority order. Most important problem first."
+    },
+
+    "hook_selection": {
+      "rule": "The hook is drawn from the single highest-priority finding that is also `hook_eligible: true`. Prefer findings with a hard quantifiable number (load time, review gap, map position) — a specific number is what makes a stranger believe the page is really about them.",
+      "fallback": "If the top-priority finding is not hook_eligible, walk down the ordered list to the first hook_eligible one. If none are hook_eligible (rare), use the highest-severity finding's title as the hook with a generic specific-but-true framing.",
+      "hook_format": "The hook is one true, specific, slightly alarming line. Built from the finding's detected number + the cost framing. Kept under ~30 words. The first sentence becomes the Proof Page headline; the rest becomes the sub.",
+      "hook_copy_by_finding": {
+        "slow_mobile_site": "Your site takes {n} seconds to load on a phone. We timed it. That alone is costing you {job_noun}s every week — and it's the smallest of the things we found.",
+        "no_ssl": "Your website is showing visitors a 'not secure' warning before they see a thing. We checked. That's turning people away at the door — and it's not even the biggest issue we found.",
+        "not_in_map_pack": "Search '{trade_noun} {suburb}' and you're not in the top results. We looked. The most ready-to-book customers in your area aren't finding you — and that's one of three things we spotted.",
+        "quiet_gbp": "Your Google profile has been silent for {n} months while competitors stay active. We checked. It's quietly costing you map-pack visibility — and it's one of three things we found."
+      }
+    },
+
+    "cost_framing_guardrail": {
+      "rule": "Quantitative claims ONLY where the data backs them. A finding may cite a real, sourced statistic (e.g. the detected load time, the real review count). A finding may NOT invent a per-month dollar figure of lost revenue. Where the data doesn't support a hard number, the copy stays specific-but-qualitative ('a meaningful number of lost enquiries', 'a few each week') — never a fabricated precise figure.",
+      "enforcement": "This is enforced at the library level: notice that no `copy` variant in this file contains an invented dollar amount. New variants added via the improvement loop must pass the same check before promotion from 'candidate' to active.",
+      "why": "A made-up '$4,200/month' figure gets the prospect asking 'how did you calculate that?' on the call — and there's no honest answer. Specific-but-true survives scrutiny. Fabricated-precise doesn't."
+    }
+  },
+
+  "review_ui_spec": {
+    "purpose": "Defines what the human review screen surfaces, so review is a fast confirmation not a rewrite. This is what makes per-prospect review drop toward 1-2 minutes as the library matures.",
+    "surface_prominently": [
+      "Any finding with detection.confidence == 'medium' or 'low' — flagged for a human glance at the underlying data",
+      "Any prospect with fewer than min_findings detected — flagged for keep/drop decision",
+      "The auto-selected hook — one-click confirm or swap to another hook_eligible finding",
+      "Any copy variant currently in 'candidate' status — not yet battle-tested, worth a closer read"
+    ],
+    "trust_on_sight": [
+      "Findings with detection.confidence == 'high' and a copy variant in 'active' status with a low historical edit-rate — these need only a skim"
+    ],
+    "the_review_action": "Human review = (1) glance at flagged/medium-confidence findings, (2) confirm or swap the hook, (3) skim the assembled Act 1, (4) approve. Edits made here feed the improvement loop. Target: under 2 minutes per prospect once the library is mature.",
+    "improvement_capture": "Every human edit to a variant is captured: which variant, what changed, the edited text. Edited text enters the library as a new 'candidate' variant. Variants accrue (times_used, times_edited). edit_rate = times_edited / times_used. Variants with edit_rate below threshold get promoted to 'active'; variants consistently above threshold get retired. The library — and therefore review speed — improves with every audit run."
+  }
+}
