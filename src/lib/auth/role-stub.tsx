@@ -23,7 +23,7 @@ export const STUB_ROLE_KEY = 'webnua.dev.role';
 
 export const ROLE_LANDING: Record<Role, string> = {
   client: '/dashboard',
-  admin: '/clients',
+  admin: '/dashboard',
 };
 
 type RoleContextValue = {

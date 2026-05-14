@@ -14,10 +14,10 @@ import {
   midSetupClient,
 } from '@/lib/dashboard/admin-dashboard';
 
-export default function AdminClientsPage() {
+export function AdminDashboardContent() {
   return (
     <>
-      <Topbar breadcrumb={<TopbarBreadcrumb current="Clients" />} />
+      <Topbar breadcrumb={<TopbarBreadcrumb current="Dashboard" />} />
       <div className="flex flex-col gap-7 px-10 py-10">
         <PageHeader
           eyebrow={dashboardGreeting.eyebrow}

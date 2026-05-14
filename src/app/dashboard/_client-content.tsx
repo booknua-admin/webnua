@@ -1,7 +1,7 @@
-import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { PagePlaceholder } from '@/components/shared/PagePlaceholder';
+import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 
-export default function ClientDashboardPage() {
+export function ClientDashboardContent() {
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb current="Home" />} />
