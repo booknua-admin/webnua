@@ -1,4 +1,9 @@
+'use client';
+
+import { useState } from 'react';
+
 import { ChipSelector } from '@/components/shared/ChipSelector';
+import { ConflictModal } from '@/components/shared/bookings/ConflictModal';
 import { FrequencyGrid } from '@/components/shared/bookings/FrequencyGrid';
 import { RecurringCustomerHeader } from '@/components/shared/bookings/RecurringCustomerHeader';
 import { RecurringPreviewList } from '@/components/shared/bookings/RecurringPreviewList';
@@ -6,10 +11,12 @@ import { RecurringSummaryBar } from '@/components/shared/bookings/RecurringSumma
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Input } from '@/components/ui/input';
+import { voltlineConflict } from '@/lib/bookings/conflict-modal';
 import { voltlineRecurring } from '@/lib/bookings/recurring-setup';
 
 export default function ClientRecurringNewPage() {
   const r = voltlineRecurring;
+  const [conflictOpen, setConflictOpen] = useState(false);
   return (
     <>
       <Topbar
@@ -78,8 +85,15 @@ export default function ClientRecurringNewPage() {
           summaryDetail={r.summaryDetail}
           totalLabel={r.totalLabel}
           ctaLabel={r.ctaLabel}
-          ctaHref="/calendar"
+          onCta={() => setConflictOpen(true)}
           className="mb-4.5"
+        />
+
+        <ConflictModal
+          open={conflictOpen}
+          onOpenChange={setConflictOpen}
+          data={voltlineConflict}
+          onSaveHref="/calendar"
         />
 
         <p className="mx-auto max-w-[720px] text-center text-[13px] leading-[1.5] text-ink-quiet [&_strong]:text-ink">
