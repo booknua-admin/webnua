@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { AutomationCard } from '@/components/admin/onboarding/AutomationCard';
+import { AutomationCard } from '@/components/shared/automations/AutomationCard';
 import { BuilderFooterActions } from '@/components/shared/builder/BuilderFooterActions';
 import { BuilderStepHeader } from '@/components/shared/builder/BuilderStepHeader';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
