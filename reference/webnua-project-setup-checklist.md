@@ -94,19 +94,54 @@ Now, and only now, build screens. For each one:
 5. Any genuinely new shared component → built in `shared/`, added to CLAUDE.md inventory
 6. Commit when it works
 
-**Suggested screen order** — shared-heavy things first, so the shared library builds up
-early and later screens have more to reuse:
+**Phase 5 build order — live, clustered** (replaces the older suggested screen-list).
+Group screens by the shared component surface they create, so each session feeds the next.
+Within a cluster, build the shared shape once, then the role variants.
 
-- [ ] Auth / login / role resolution screen
-- [ ] The shared dashboard shell + whichever dashboard is simpler
-- [ ] Settings + integrations (heavily shared between client and admin)
-- [ ] Tickets — inbox + detail (client and admin versions share most structure — build
-      the shared core, branch the role-specific bits)
-- [ ] The client funnel views
-- [ ] The admin Proof Page pipeline (audit → build → generate) — the most complex, do it
-      once the shared library is mature
-- [ ] Websites / page editor
-- [ ] The cross-client admin views (integrations matrix, internal automations)
+Foundation already shipped: auth/login, app shell + role architecture, settings (all tabs
+both roles), integrations matrix, tickets (inbox + detail both roles), client funnel
+detail, admin client-onboarding wizard, admin dashboard (`/dashboard`).
+
+**Cluster 1 — Lead / conversation surface.** Client Screens 2/3/9, admin 15/16/19.
+One shared `LeadRow`, `LeadDetailLayout`, `ConversationThread` (reuses existing
+`TicketThreadMessage` / `TicketReply` shapes where they fit). Replaces the
+`/leads` placeholder.
+
+**Cluster 2 — Calendar + booking surface.** Client 4 + admin 13, booking detail
+(client 8 / admin 18), booking/reschedule modals (admin 21/23, client 16/17).
+
+**Cluster 3 — Automations.** Client 5 + admin 10/17 + modal 22. Reuse the
+existing `AutomationCard` from onboarding.
+
+**Cluster 4 — Reviews + campaigns.** Client 6/18 + admin 11/12 + negative-review
+modal 24.
+
+**Cluster 5 — Website + page builder** (one component, role-gated). Admin gets
+the editor; client view is read-only for now (future-proofed for client edit
+access). Build order inside the cluster:
+1. `/websites` (admin cross-client list — Screens 9 + 46 merged) and
+   `/website` (client single-site view — Screen 19). Replaces the existing
+   `/website` placeholder.
+2. The single `PageBuilder` component, role-gated — covers Screens 20, 32,
+   41–43, 47. Also fed by a future "edit funnel" entry from `/funnels/[id]`.
+3. Gallery (client 21), Request-change modal (client 22), Version history
+   (admin 33), Variable picker (admin 34) hang off the builder.
+
+**The page-builder cluster needs its own dedicated plan-review when reached** —
+the role-gating + builder/editor/preview surface is complex enough that "next
+cluster" is not a safe shortcut into it.
+
+**Cluster 6 — Operator secondaries.** Admin Screen 20 (single-client overview)
+**lands here, after clusters 1–4**, because it's a hub that assembles their
+components — it can't be built first. Also: team invite 37–39, GBP connect flow
+25, global search 35, notification panel (client 10), job completion (client 11).
+
+**Cluster 7 — Client dashboard** (Screen 1). Last, because the stat/list shapes
+it needs all come from the lead, calendar, and reviews clusters. Replaces the
+`/dashboard` client placeholder.
+
+The deferred Proof Page pipeline (see "FINAL (deferred)" below) sits after
+everything above — only once the full platform incl. backend is working.
 
 ---
 
