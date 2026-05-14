@@ -40,6 +40,10 @@
   --color-info: #2d7d8a;
   --color-info-soft: #d4dde8;
 
+  /* Category swatches — used by tickets CategoryTile + CategoryPill */
+  --color-plum: #6b4ea6;
+  --color-amber: #c8941e;
+
   /* Hairlines / rules */
   --color-rule: #c9c0b0;
   --color-rule-soft: #d8d0bf;
