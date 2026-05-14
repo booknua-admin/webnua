@@ -103,3 +103,131 @@ export type AdminAutomations = {
   stats: AutomationsWorkspaceStat[];
   groups: AutomationGroup[];
 };
+
+/**
+ * The editor step's channel — same vocabulary as the onboarding card, kept
+ * here so the editor types can stand alone without depending on
+ * lib/onboarding/types.
+ */
+export type AutomationEditorChannel = 'sms' | 'email';
+
+/**
+ * Single trigger box at the top of the editor canvas (admin Screen 17).
+ * Ink-bg row with the rust ⚡ icon, mono label, name, and "Change trigger →"
+ * affordance.
+ */
+export type AutomationEditorTrigger = {
+  /** Mono uppercase label, e.g. "// TRIGGER" — caller passes the leading // */
+  label: string;
+  /** The trigger summary, e.g. 'Lead status = "New" for 24+ hours'. */
+  name: string;
+  /** The right-aligned affordance label, e.g. "Change trigger →". */
+  changeLabel: string;
+};
+
+/**
+ * Single editable step inside the editor canvas. Step 2 of FreshHome's
+ * follow-up is in editing state per the prototype.
+ */
+export type AutomationEditorStep = {
+  id: string;
+  number: number;
+  channel: AutomationEditorChannel;
+  /** Display text on the delay pill (e.g. "Delay: 24 hrs"). */
+  delay: string;
+  /** Editable step name, e.g. "Soft follow-up · check-in". */
+  name: string;
+  /** Email-only subject line — present iff channel === 'email'. */
+  subject?: string;
+  /** Message body. Wrap variable spans in `[data-slot=var]` for highlight. */
+  body: ReactNode;
+  /** Footer reply meta, e.g. "// 28% reply · 142 sent · last 7d". */
+  footerMeta: string;
+  /** Variable chips shown in the footer (excluding the "+ Insert variable" leader, which is always rendered). */
+  variables: string[];
+  /** When true, flips the step to the rust-bordered editing state + "// EDITING · auto-saved 8s ago" footer. */
+  isEditing?: boolean;
+};
+
+export type AutomationVariable = {
+  code: string;
+  description: string;
+};
+
+export type AutomationPerformanceMetric = {
+  label: string;
+  value: ReactNode;
+  /** Optional value-tint: 'accent' = rust, 'good' = good-green; default = ink-bold. */
+  tone?: 'default' | 'accent' | 'good';
+};
+
+/**
+ * Test-send modal config (admin Screen 22). Triggered from the right-rail
+ * `AutomationTestSendCard` button. Stub state for the stub layer.
+ */
+export type AutomationTestSendData = {
+  /** Mono pill at the top of the modal, e.g. "// TEST SEND · 24h follow-up · Step 2". */
+  tag: string;
+  /** Headline (ReactNode — `<em>` renders rust). */
+  title: ReactNode;
+  /** Subtitle (ReactNode — `<strong>` renders ink-bold). */
+  subtitle: ReactNode;
+  /** Read-only "Send to" field value. */
+  sendTo: string;
+  /** Helper text below the Send-to input. */
+  sendToHint: string;
+  /** SMS preview body — the actual rendered message text. */
+  smsPreview: ReactNode;
+  /** Mono meta below the SMS bubble showing variable substitutions. */
+  smsVariablesLine: ReactNode;
+  /** Phone-bar text above the SMS bubble. */
+  phoneBar: string;
+  /** Test-options row inside the modal body. */
+  options: {
+    title: ReactNode;
+    sub: ReactNode;
+    switchLabel: string;
+  };
+  /** Footer info line above the Cancel/Send buttons. */
+  footerInfo: ReactNode;
+  cancelLabel: string;
+  sendLabel: string;
+};
+
+/**
+ * Top-level admin editor stub. Drives `/automations/[id]` for admin.
+ */
+export type AutomationEditor = {
+  id: string;
+  /** Page-header eyebrow, e.g. "// FreshHome · 24-hour follow-up sequence". */
+  eyebrow: string;
+  /** Page-header title (ReactNode — `<em>` renders rust). */
+  title: ReactNode;
+  /** Page-header subtitle (ReactNode — `<strong>` renders ink-bold). */
+  subtitle: ReactNode;
+  trigger: AutomationEditorTrigger;
+  steps: AutomationEditorStep[];
+  /** "+ Add another step (SMS / Email / Wait)" affordance label. */
+  addStepLabel: string;
+  rail: {
+    variables: { heading: string; items: AutomationVariable[] };
+    testSend: {
+      heading: string;
+      body: ReactNode;
+      buttonLabel: string;
+    };
+    performance: {
+      heading: string;
+      metrics: AutomationPerformanceMetric[];
+    };
+  };
+  footer: {
+    /** Mono uppercase progress label, e.g. "FreshHome · 24-hour follow-up · v4 · auto-saved 8s ago". `<strong>` renders ink-bold. */
+    progress: ReactNode;
+    backLabel: string;
+    backHref: string;
+    disableLabel: string;
+    saveLabel: string;
+  };
+  testSend: AutomationTestSendData;
+};
