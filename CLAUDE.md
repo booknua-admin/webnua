@@ -121,7 +121,7 @@ When a design decision isn't covered by a token, **ask rather than inventing** �
 
 - `/reference` — read-only, ever.
 - Generated files, lockfiles, `.next/`.
-- `tailwind.config` tokens and `tsconfig` strict settings — these are deliberate. Changing them needs a conversation.
+- The `@theme` block in `src/app/globals.css` (the Webnua design tokens — palette, fonts, radii, shadows) and `tsconfig` strict settings — these are deliberate. Tailwind v4 is CSS-first, so tokens live in `@theme`, not `tailwind.config.*`. Changing them needs a conversation.
 - Any config that's clearly intentional — ask first.
 
 ---

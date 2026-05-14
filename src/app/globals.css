@@ -1,26 +1,81 @@
 @import 'tailwindcss';
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ============================================================
+   Webnua design tokens (Phase 2)
+   Source of truth: reference/webnua-platform-prototype.html +
+   reference/webnua-client-prototype.html. CLAUDE.md overrides
+   for accent (#d24317), good (#1e6b3a), info (#2d7d8a teal),
+   paper-3 (#e0d8c8), warn (#c44444).
+   ============================================================ */
+@theme {
+  /* Surfaces */
+  --color-paper: #f5f1ea;
+  --color-paper-2: #ebe5d9;
+  --color-paper-3: #e0d8c8;
+
+  /* Ink (text + dark surfaces) */
+  --color-ink: #0a0a0a;
+  --color-ink-soft: #2a2a28;
+  --color-ink-mid: #4a4a45;
+  --color-muted: #6e685c;
+
+  /* Accent — Webnua rust */
+  --color-accent: #d24317;
+  --color-accent-light: #e8743b;
+  --color-accent-soft: #f4dccd;
+  --color-rust: #8a3815;
+
+  /* Semantic states */
+  --color-good: #1e6b3a;
+  --color-good-soft: #d3e8d8;
+  --color-warn: #c44444;
+  --color-warn-soft: #f4d4d4;
+  --color-info: #2d7d8a;
+  --color-info-soft: #d4dde8;
+
+  /* Hairlines / rules */
+  --color-rule: #c9c0b0;
+  --color-rule-soft: #d8d0bf;
+
+  /* Type */
+  --font-sans: var(--font-inter-tight);
+  --font-mono: var(--font-jetbrains-mono);
+
+  /* Radii — derived from prototype frequency */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-2xl: 14px;
+  --radius-3xl: 16px;
+  --radius-pill: 100px;
+  --radius-full: 999px;
+
+  /* Shadows — restrained, mostly rust-tinted */
+  --shadow-card: 0 6px 18px rgba(10, 10, 10, 0.06);
+  --shadow-glow: 0 6px 20px rgba(210, 67, 23, 0.3);
+  --shadow-ring: 0 0 0 4px rgba(210, 67, 23, 0.18);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ============================================================
+   Base — Webnua is light-theme only. No prefers-color-scheme.
+   ============================================================ */
+html,
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: var(--color-paper);
 }
