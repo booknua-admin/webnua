@@ -13,8 +13,8 @@ const CATEGORY_GLYPH: Record<TicketCategory, string> = {
 const CATEGORY_BG: Record<TicketCategory, string> = {
   website: 'bg-rust',
   marketing: 'bg-info',
-  campaigns: 'bg-[#6b4ea6]',
-  reviews: 'bg-[#c8941e]',
+  campaigns: 'bg-plum',
+  reviews: 'bg-amber',
   billing: 'bg-good',
   other: 'bg-[#5a5a5a]',
 };
