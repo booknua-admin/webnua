@@ -1,3 +1,4 @@
+import { AddBookingButton } from '@/components/admin/calendar/AddBookingButton';
 import { CalendarClientFilterBar } from '@/components/admin/calendar/CalendarClientFilterBar';
 import { CalendarLegend } from '@/components/admin/calendar/CalendarLegend';
 import { CalendarTodayPanel } from '@/components/admin/calendar/CalendarTodayPanel';
@@ -22,7 +23,10 @@ function AdminCalendarContent() {
           title={hero.title}
           subtitle={hero.subtitle}
         />
-        <CalendarClientFilterBar filters={filters} defaultActiveId="all" />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <CalendarClientFilterBar filters={filters} defaultActiveId="all" />
+          <AddBookingButton />
+        </div>
         <CalendarToolbar periodLabel={week.periodLabel} />
         <CalendarLegend items={legend} meta={legendMeta} />
         <CalendarGrid week={week} />
