@@ -14,6 +14,7 @@ const buttonVariants = cva(
           'bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/30',
         outline:
           'border border-border bg-card text-foreground hover:bg-accent hover:text-accent-foreground',
+        // border added to match Webnua .btn.secondary — intentional divergence from upstream
         secondary:
           'bg-secondary text-secondary-foreground border border-border hover:bg-accent',
         ghost:
