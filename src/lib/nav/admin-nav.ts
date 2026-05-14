@@ -9,8 +9,8 @@ export const adminWorkspaceNav: NavSection = {
   label: 'Workspace',
   items: [
     {
-      label: 'Webnua leads',
-      href: '/webnua-leads',
+      label: 'Leads',
+      href: '/leads',
       icon: '✉',
       badge: { text: '23' },
     },
