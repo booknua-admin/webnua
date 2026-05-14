@@ -330,6 +330,24 @@ Components for the operator-only `/integrations` screen — workspace-wide view 
 
 ---
 
+## Deferred / out of scope until end
+
+The admin **Proof Page / prospecting tool** (the audit → proof-page → outreach
+pipeline, sourced from `reference/webnua-proof-page-tool.html` and
+`reference/webnua-finding-library.json`) is a real platform feature **but is
+deferred until the full platform — front and back end — is working.**
+
+Until then:
+- **Do not** scaffold routes, components, lib/types, or data for it.
+- **Do not** add it to nav, sidebar, or any role's settings.
+- **Do not** treat the prototype HTML or the finding-library JSON as current spec.
+- The files stay in `/reference` — they are the spec for the future build, not for now.
+
+If a session has a reason to touch this area, stop and confirm with the user
+first.
+
+---
+
 ## Open decisions / parked
 
 > Things deliberately not decided yet. Don't silently resolve these — flag them.

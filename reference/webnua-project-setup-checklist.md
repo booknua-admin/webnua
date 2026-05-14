@@ -129,3 +129,12 @@ early and later screens have more to reuse:
 
 Tokens → primitives → shell → features, in that order. Structure before features.
 CLAUDE.md is the standing orders and it's alive. Commit constantly. Search before building.
+
+---
+
+## FINAL (deferred)
+
+- [ ] **Admin Proof Page pipeline** — the audit → proof-page → outreach prospecting
+      tool (spec lives in `webnua-proof-page-tool.html` + `webnua-finding-library.json`).
+      **Only after the full platform — including backend — is working.** Out of scope
+      until then. No earlier session should route, scaffold, or wire any part of it.
