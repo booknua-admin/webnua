@@ -109,7 +109,7 @@ export default function NewClientBasicsPage() {
                 actions={
                   <>
                     <Button variant="ghost" asChild>
-                      <Link href="/clients">← Back</Link>
+                      <Link href="/dashboard">← Back</Link>
                     </Button>
                     <Button asChild>
                       <Link href={stepHref('idea')}>Continue →</Link>

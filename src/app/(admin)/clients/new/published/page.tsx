@@ -59,10 +59,10 @@ export default function NewClientPublishedPage() {
           actions={
             <>
               <Button variant="secondary" asChild>
-                <Link href="/clients">← Back to clients</Link>
+                <Link href="/dashboard">← Back to dashboard</Link>
               </Button>
               <Button asChild>
-                <Link href="/clients">Open {b.businessName} workspace →</Link>
+                <Link href="/dashboard">Open {b.businessName} workspace →</Link>
               </Button>
             </>
           }
