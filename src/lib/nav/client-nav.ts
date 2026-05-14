@@ -16,6 +16,7 @@ export const clientNav: NavSection[] = [
         badge: { text: '+2', tone: 'muted' },
       },
       { label: 'Campaigns', href: '/campaigns', icon: '↗' },
+      { label: 'Funnels', href: '/funnels', icon: '⇶' },
       { label: 'Website', href: '/website', icon: '▦' },
       { label: 'Settings', href: '/settings', icon: '⚙' },
     ],
