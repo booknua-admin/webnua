@@ -1,5 +1,9 @@
 import type { Metadata } from 'next';
 import { Inter_Tight, JetBrains_Mono } from 'next/font/google';
+
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { RoleProvider } from '@/lib/auth/role-stub';
+
 import './globals.css';
 
 const interTight = Inter_Tight({
@@ -31,7 +35,11 @@ export default function RootLayout({
       lang="en"
       className={`${interTight.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <RoleProvider>
+          <TooltipProvider>{children}</TooltipProvider>
+        </RoleProvider>
+      </body>
     </html>
   );
 }
