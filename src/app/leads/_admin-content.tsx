@@ -1,4 +1,4 @@
-import { LeadFilterChips } from '@/components/shared/leads/LeadFilterChips';
+import { FilterChips } from '@/components/shared/FilterChips';
 import { LeadRow } from '@/components/shared/leads/LeadRow';
 import { LeadTabsBar } from '@/components/shared/leads/LeadTabsBar';
 import { LeadsHero } from '@/components/shared/leads/LeadsHero';
@@ -27,7 +27,7 @@ function AdminLeadsContent() {
           subtitle={adminLeadsHero.subtitle}
         />
 
-        <LeadFilterChips
+        <FilterChips
           label="// CLIENT"
           chips={adminLeadsClientFilters}
           defaultActiveId="all"
