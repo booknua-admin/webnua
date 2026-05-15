@@ -1,21 +1,12 @@
 import type {
   Automation,
   BusinessBasics,
-  FunnelPreviewState,
   JobsMenuItem,
   NextStep,
   OfferDetails,
   ReframeOption,
   TrustSignal,
 } from './types';
-
-const VOLTLINE_LOGO = (
-  <>
-    Volt<em>line</em>
-  </>
-);
-
-const VOLTLINE_PHONE = '☏ 0411 567 234';
 
 export const voltlineBasics: BusinessBasics = {
   trade: 'Electrical · Residential',
@@ -329,78 +320,3 @@ export const voltlineNextSteps: NextStep[] = [
       'Auto-scheduled review meeting on day 30. Look at conversion, CPL, top-performing job rows, and decide what to A/B test next.',
   },
 ];
-
-// Progressive preview-state builders — each step adds another section.
-// The preview pane reads the slug for the current step and renders only
-// what should be visible by then.
-
-const baseHeader = {
-  logo: VOLTLINE_LOGO,
-  phone: VOLTLINE_PHONE,
-};
-
-const baseDomain = 'voltline.com.au';
-
-export const previewAfterBasics: FunnelPreviewState = {
-  domain: baseDomain,
-  header: baseHeader,
-};
-
-export const previewAfterIdea: FunnelPreviewState = {
-  domain: baseDomain,
-  header: baseHeader,
-  eyebrow: { text: 'Sparkies on call · Perth metro' },
-  headline: {
-    text: (
-      <>
-        You&apos;re not selling sparky hours.
-        <br />
-        You&apos;re selling <em>your Tuesday back</em>.
-      </>
-    ),
-  },
-};
-
-export const previewAfterOffer: FunnelPreviewState = {
-  ...previewAfterIdea,
-  sub: {
-    text: (
-      <>
-        24/7 emergency sparky. Same-day for everything else.{' '}
-        <strong>Licensed, insured, fixed-rate menu published.</strong>
-      </>
-    ),
-  },
-  offerCard: {
-    num: <em>90 min</em>,
-    headline: '— or $50 off the call-out',
-    sub: 'Skin in the game. EC Lic 47829 · $20M PL.',
-  },
-  cta: {
-    primary: "Book a sparky · today's slots →",
-    secondary: '☏ 0411 567 234',
-  },
-};
-
-export const previewAfterTrust: FunnelPreviewState = {
-  ...previewAfterOffer,
-  trust: {
-    items: [
-      { num: '1,840+', label: 'Jobs completed' },
-      { num: '11 yrs', label: 'Servicing Perth' },
-      { num: '4.9 ★', label: '184 reviews' },
-      { num: 'EC 47829', label: 'Licensed' },
-    ],
-  },
-  jobs: {
-    title: '// Common jobs · prices on the page',
-    rows: [
-      { name: 'Powerpoint install', price: '$85' },
-      { name: 'Smoke alarm hardwire', price: '$145' },
-      { name: 'Light fitting', price: '$95' },
-      { name: 'Ceiling fan install', price: '$220' },
-      { name: 'Switchboard check', price: '$220' },
-      { name: 'RCD replacement', price: '$185' },
-    ],
-  },
-};

@@ -101,55 +101,6 @@ export type Automation = {
   steps: AutomationStep[];
 };
 
-export type FunnelHeader = {
-  logo: ReactNode;
-  phone: string;
-};
-
-export type FunnelEyebrowConfig = {
-  text: string;
-};
-
-export type FunnelHeadlineConfig = {
-  text: ReactNode;
-};
-
-export type FunnelSubConfig = {
-  text: ReactNode;
-};
-
-export type FunnelOfferCardConfig = {
-  num: ReactNode;
-  headline: string;
-  sub: string;
-};
-
-export type FunnelCtaConfig = {
-  primary: string;
-  secondary: string;
-};
-
-export type FunnelTrustConfig = {
-  items: { num: ReactNode; label: string }[];
-};
-
-export type FunnelJobsConfig = {
-  title: string;
-  rows: { name: string; price: string }[];
-};
-
-export type FunnelPreviewState = {
-  domain: string;
-  header: FunnelHeader;
-  eyebrow?: FunnelEyebrowConfig;
-  headline?: FunnelHeadlineConfig;
-  sub?: FunnelSubConfig;
-  offerCard?: FunnelOfferCardConfig;
-  cta?: FunnelCtaConfig;
-  trust?: FunnelTrustConfig;
-  jobs?: FunnelJobsConfig;
-};
-
 export type NextStep = {
   num: string;
   title: string;

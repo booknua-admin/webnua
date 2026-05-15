@@ -72,7 +72,7 @@ export default function NewClientReviewPage() {
           />
           <ReviewCard
             heading="Big idea"
-            editHref={stepHref('idea')}
+            editHref={stepHref('draft')}
             details={[
               { label: '// HERO LINE', value: picked.text },
               {
@@ -87,7 +87,7 @@ export default function NewClientReviewPage() {
           />
           <ReviewCard
             heading="Offer + guarantee"
-            editHref={stepHref('offer')}
+            editHref={stepHref('draft')}
             details={[
               {
                 label: '// ANCHOR',
@@ -106,7 +106,7 @@ export default function NewClientReviewPage() {
           />
           <ReviewCard
             heading="Trust + jobs menu"
-            editHref={stepHref('trust')}
+            editHref={stepHref('draft')}
             details={[
               {
                 label: '// TRUST SIGNALS',
