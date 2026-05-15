@@ -29,7 +29,10 @@ import { CapabilityGate } from '@/components/shared/CapabilityGate';
 import { Button } from '@/components/ui/button';
 import { useCan, useCanAny } from '@/lib/auth/user-stub';
 import { cn } from '@/lib/utils';
+import type { AutosaveStatus } from '@/lib/website/use-autosave';
 import type { Website } from '@/lib/website/types';
+
+import { AutosaveIndicator } from './AutosaveIndicator';
 
 export type EditorToolbarTab = {
   id: string;
@@ -50,14 +53,41 @@ export type EditorToolbarMode =
       backHref?: string;
     };
 
+export type EditorToolbarAutosave = {
+  status: AutosaveStatus;
+  lastSavedAt: number | null;
+  onRetry: () => void;
+};
+
 export type EditorToolbarProps = {
   website: Website;
   mode: EditorToolbarMode;
   /** Forwarded to the publish action's request-change context. */
   activePageId?: string;
+  /** Live autosave state. Hidden when omitted (used by static demos). */
+  autosave?: EditorToolbarAutosave;
+  /** Hide both publish actions — used when the editor is locked for the
+   *  current user (Lane B submitter waiting on review). */
+  publishDisabled?: boolean;
+  /** Fired on the rust "Publish →" button (Lane A). */
+  onPublish?: () => void;
+  /** Fired on the ghost "Submit for review →" button (Lane B). */
+  onSubmitForReview?: () => void;
+  /** Render a chevron menu next to Publish with the force-publish item.
+   *  Wired in by chunk F; omit to hide the menu. */
+  publishMenu?: React.ReactNode;
 };
 
-export function EditorToolbar({ website, mode, activePageId }: EditorToolbarProps) {
+export function EditorToolbar({
+  website,
+  mode,
+  activePageId,
+  autosave,
+  publishDisabled = false,
+  onPublish,
+  onSubmitForReview,
+  publishMenu,
+}: EditorToolbarProps) {
   const canPublish = useCan('publish');
   const canEditAnything = useCanAny(
     'editCopy',
@@ -108,10 +138,13 @@ export function EditorToolbar({ website, mode, activePageId }: EditorToolbarProp
       </div>
 
       <div className="flex shrink-0 items-center gap-3">
-        <span className="hidden font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet md:inline-flex md:items-center md:gap-1.5">
-          <span aria-hidden className="size-1.5 rounded-full bg-good" />
-          Autosaved · stub
-        </span>
+        {autosave ? (
+          <AutosaveIndicator
+            status={autosave.status}
+            lastSavedAt={autosave.lastSavedAt}
+            onRetry={autosave.onRetry}
+          />
+        ) : null}
         <a
           href={`https://${website.domain.primary}`}
           target="_blank"
@@ -120,15 +153,22 @@ export function EditorToolbar({ website, mode, activePageId }: EditorToolbarProp
         >
           View live ↗
         </a>
-        {canPublish ? (
-          <Button size="sm">Publish →</Button>
+        {publishDisabled ? null : canPublish ? (
+          <span className="inline-flex items-center gap-1.5">
+            <Button size="sm" onClick={onPublish}>
+              Publish →
+            </Button>
+            {publishMenu}
+          </span>
         ) : canEditAnything ? (
           <CapabilityGate
             capability="publish"
             mode="request"
             requestContext={activePageId ? { pageId: activePageId } : undefined}
           >
-            <Button size="sm">Submit for review →</Button>
+            <Button size="sm" onClick={onSubmitForReview}>
+              Submit for review →
+            </Button>
           </CapabilityGate>
         ) : null}
       </div>
