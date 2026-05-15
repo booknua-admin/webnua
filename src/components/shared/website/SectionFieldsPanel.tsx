@@ -50,28 +50,23 @@ export function SectionFieldsPanel({
       data-slot="section-fields-panel"
       className="flex h-full flex-col border-l border-rule bg-paper"
     >
-      <div className="flex items-start justify-between gap-3 border-b border-rule px-4 py-3.5">
-        <div className="min-w-0">
-          <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust">
-            {def.label}
-          </p>
-          <p className="mt-1 truncate text-[14px] font-bold text-ink">
-            {def.description}
-          </p>
-        </div>
+      <div className="flex items-center justify-between gap-3 border-b border-rule px-4 py-3">
+        <p className="min-w-0 truncate font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-rust">
+          {def.label}
+        </p>
         {hideClose ? null : (
           <button
             type="button"
             onClick={onClose}
             aria-label="Close fields panel"
-            className="shrink-0 rounded-md border border-rule bg-card px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet transition-colors hover:border-ink hover:text-ink"
+            className="shrink-0 rounded font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet transition-colors hover:text-ink"
           >
             Close ×
           </button>
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      <div className="flex-1 overflow-y-auto px-4 py-4 [&_[data-slot=builder-form-section]]:mb-3.5 [&_[data-slot=builder-form-section]]:border-b [&_[data-slot=builder-form-section]]:border-paper-2 [&_[data-slot=builder-form-section]]:pb-3.5 [&_[data-slot=builder-form-section]:last-child]:mb-0 [&_[data-slot=builder-form-section]:last-child]:border-b-0 [&_[data-slot=builder-form-section]:last-child]:pb-0">
         {/* `as never` cast at the registry boundary — the Fields component
             is typed against its specific data shape; the registry stores
             them as unknown. defaultData() guarantees the shape on creation. */}
