@@ -731,11 +731,25 @@ the synthetic delay, after which the router pushes to `/clients/new/draft`.
 | 4 | Trust (`trust`) | `GenerationContext` — trust signals + jobs menu (prompt context). Continue → generation | Q&A card / structured form (`JobsMenuEditor` stays as input UI) | `previewAfterTrust` | **No preview** |
 | 5 | Draft walk-through (`draft`) — **NEW** | The generated `Funnel`'s `Section[]` — copy + media of every section across all 3 funnel steps | **Wizard-frame mode** — `SectionEditor` `{ kind: 'wizard' }` (§5.2) | n/a (new step) | Registry `<Preview>` rendering of live `Section` data |
 | 6 | Automations (`automations`) | The funnel's automation set | Static surface — existing `AutomationCard` list | none (full-width) | Unchanged |
-| 7 | Review (`review`) | Nothing — read-only verification | **Review surface** — `PreflightChecklist` + per-step review cards (Session 8's `/website/review` surface, funnel-flavoured) | none | Review surface |
+| 7 | Review (`review`) | Nothing — read-only verification | **Content summary** — adapted `ReviewCard` grid over the generated funnel (see note) | none | Content summary |
 | 8 | Published (`published`) | Nothing — publish event | Static success screen | none | Unchanged — publishes the `Funnel`, lands on `/funnels/[id]` |
 
 After publish, the operator lands on the funnel hub for that client; the
 funnel editor is fully unlocked from there.
+
+> **Note on Step 7.** A full `PreflightChecklist`-backed review *surface*
+> (the Session-8 `/website/review` shape) is the eventual target, but
+> `runPreflight` is website-snapshot-shaped and funnel preflight is
+> deferred alongside funnel publish (CLAUDE.md parked decision; §9). Until
+> that lands, Step 7 stays a **content summary** — the adapted `ReviewCard`
+> grid pointed at the generated funnel's sections. It swaps to the real
+> review surface when funnel publish/preflight is built.
+
+> **Note on `ONBOARDING_TOTAL_STEPS`.** The §5.1 table has 8 rows because it
+> counts the post-publish `published` step. The `ONBOARDING_STEPS` const
+> does not include `published` (it is a post-publish state, not a step you
+> fill in) — so the const goes from **6 entries to 7**, and
+> `ONBOARDING_TOTAL_STEPS` 6 → 7. "Step N of 7" in the UI.
 
 ### 5.2 Wizard-frame mode — concrete spec
 
@@ -818,16 +832,25 @@ this:
   thanksConfirmation). The wizard's funnel-generation stub returns this funnel
   for Voltline's deterministic Q&A inputs.
 - **`lib/onboarding/voltline-build.tsx` slims down.** Deleted from it: the
-  funnel-*content* stubs now superseded by `data-stub.tsx` — `voltlineOffer`,
-  `voltlineTrust`, `voltlineJobs` — and the four `previewAfter*` snapshots.
-  Surviving in it: `voltlineBasics` (brand seed — feeds the Step 1 form and
-  the Client's `BrandObject`), `voltlineReframes` (Q&A answer options for the
-  Big Idea step), `voltlineAutomations` (Step 6's data — a separate concern),
-  `voltlineNextSteps` (Step 8's cards).
-- The wizard's Step 3/4 form fields are now generation **inputs**, not stores
-  of final funnel content — the final content is whatever generation emits
-  (= `data-stub.tsx`). There is therefore no duplication of *content*, only of
-  *input shape* vs *output shape*, which is correct and intended.
+  four `previewAfter*` snapshots — redundant preview-rendering data retired
+  with `FunnelLandingPreview` (§5.3). Surviving in it: `voltlineBasics`
+  (brand seed — feeds the Step 1 form and the Client's `BrandObject`),
+  `voltlineReframes` (Q&A answer options for the Big Idea step),
+  `voltlineOffer` / `voltlineTrust` / `voltlineJobs` (the demo's structured
+  Q&A *answers* for Steps 3–4 — see below), `voltlineAutomations` (Step 6's
+  data — a separate concern), `voltlineNextSteps` (Step 8's cards).
+- **`voltlineOffer` / `voltlineTrust` / `voltlineJobs` are kept**, not
+  deleted. Per `builder-generation-design.md §3` the wizard's Steps 3–4 keep
+  *structured input fields* (price / inclusions / scarcity; trust signals +
+  jobs), and those need demo pre-fill values. These are the demo's *Q&A
+  answers*, not funnel content — no more redundant with `data-stub.tsx` than
+  Session 6's Q&A answers are with its generated page. The duplication §5.3
+  correctly kills is the redundant *preview rendering*
+  (`FunnelLandingPreview` + `FunnelPreviewState` + snapshots).
+- The wizard's Step 3/4 form fields are generation **inputs**, not stores of
+  final funnel content — the final content is whatever generation emits
+  (= `data-stub.tsx`). No duplication of *content*, only of *input shape* vs
+  *output shape*, which is correct and intended.
 - Optional tidy: with its funnel-content gone, `voltline-build.tsx` is now
   "Voltline onboarding inputs"; a rename to `voltline-onboarding.tsx` is
   reasonable but not required — left to the implementing session's discretion.
@@ -836,10 +859,14 @@ this:
 
 The wizard's per-step routes keep their URLs (a `draft` route is added). Steps
 2–4 swap one-off field components for Q&A cards emitting a `GenerationContext`;
-Step 5 mounts `SectionEditor` in wizard mode; Step 7 mounts the review
-surface. The funnel-generation stub composes Session 6's single-page
-generator three times (landing / schedule / thanks, per
-generation-design §8) to produce the draft. This is no longer the original
+Step 5 mounts `SectionEditor` in wizard mode; Step 7 renders the content
+summary. The funnel-generation stub is a **deterministic passthrough** —
+`generateFunnelStub(ctx)` returns the registry-backed Voltline funnel from
+`data-stub.tsx` after a 4–8s synthetic delay. (Session 6's `generatePageStub`
+is *website-page*-shaped — its recipes cannot emit the funnel-only
+`schedulePicker` / `thanksConfirmation` sections — so "compose three page
+generations" per generation-design §8 is the *real-backend* path, not the
+stub.) This is no longer the original
 "~6–8 file touches" estimate — with the new step, the new editor mode, and the
 stub consolidation it is a substantial session. The concrete file-by-file
 plan is written against this §5 once it is reviewed and committed.
@@ -1067,8 +1094,10 @@ together.
 *Wizard refactor* — **outstanding: the funnel-editor half above shipped,
 this half did not.** Reconciled in the §5 revision (hybrid model); build to
 the §5.1 table, not to the bullets below:
-- Wizard grows to 8 steps — a `draft` walk-through step is inserted after
-  generation (§5.1). `ONBOARDING_TOTAL_STEPS` 7 → 8.
+- Wizard grows by one step — a `draft` walk-through step is inserted after
+  generation (§5.1). `ONBOARDING_STEPS` 6 → 7 entries, `ONBOARDING_TOTAL_STEPS`
+  6 → 7 (the const excludes the post-publish step; the §5.1 table is 8 rows
+  because it counts it).
 - Wizard-frame mode added as a fourth `<SectionEditor>` discriminator
   (`{ kind: 'wizard' }`) — concrete spec in §5.2.
 - Steps 2–4 become Q&A cards emitting a `GenerationContext`; Step 7 becomes
