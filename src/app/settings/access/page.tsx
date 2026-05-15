@@ -1,20 +1,24 @@
 'use client';
 
 // =============================================================================
-// /settings/access — admin-only tab for managing per-user-per-website
-// capability grants + reviewing the force-publish audit log.
+// /settings/access — admin-only access management. Two-mode surface driven
+// by the workspace context (see lib/workspace/workspace-stub.tsx).
 //
-// Reached only from the admin settings nav. No runtime role gating here —
-// mirrors the existing admin-tab convention (clients reach their own tabs
-// from the client nav; URL-typed cross-traversal is a stub-era limitation
-// fixed when real auth lands).
+//   Agency mode  → birds-eye summary across all clients. Per-client roster,
+//                  force-publish audit log, pending-approval empty state.
+//                  No per-user cap editing here.
+//   Sub-account  → that client's users + per-user cap grid + audit log
+//                  entries scoped to this client. This is where actual
+//                  user management happens, drilled-into via the picker.
 //
-// The grid mutates grants via setUserGrant on the user-stub context, which
-// persists to localStorage and fires a re-render across every consumer.
+// Mental model: GoHighLevel-style. Agency for triage, sub-account for
+// changes. Per-client user counts are small (1–5) so the grid never
+// scales beyond what fits on one screen.
 // =============================================================================
 
 import { useMemo } from 'react';
 
+import { AccessClientRosterRow } from '@/components/shared/settings/AccessClientRosterRow';
 import {
   CapabilityToggleGrid,
   type CapabilityToggleGridUser,
@@ -24,25 +28,83 @@ import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
+import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
 import { Button } from '@/components/ui/button';
-import { STUB_FORCE_PUBLISH_LOG } from '@/lib/auth/audit-stub';
-import type { Capability } from '@/lib/auth/capabilities';
 import {
-  STUB_USER_DEFS,
+  STUB_FORCE_PUBLISH_LOG,
+  type ForcePublishEntry,
+} from '@/lib/auth/audit-stub';
+import {
+  ADMIN_DEFAULTS,
+  ALL_CAPABILITIES,
+  CLIENT_DEFAULTS,
+  type Capability,
+} from '@/lib/auth/capabilities';
+import {
   findWebsite,
+  getClientUserDefs,
+  getUserDefsForClient,
+  getWebsitesForClient,
   useUserContext,
 } from '@/lib/auth/user-stub';
+import { adminClients } from '@/lib/nav/admin-clients';
 import { adminSettingsNav } from '@/lib/nav/admin-settings-nav';
+import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 export default function AdminSettingsAccessPage() {
-  const ctx = useUserContext();
+  const workspace = useWorkspace();
 
-  // Client users only — operators have workspace-wide access through their
-  // role and aren't editable in the grid.
+  if (!workspace.hydrated) {
+    return (
+      <>
+        <Topbar
+          breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="Access" />}
+        />
+        <SettingsShell
+          eyebrow="Workspace · Webnua Perth"
+          title={
+            <>
+              Access <em>across all clients</em>.
+            </>
+          }
+          subtitle="Loading access context..."
+          items={adminSettingsNav}
+        >
+          <SettingsPanel>
+            <div className="h-32" />
+          </SettingsPanel>
+        </SettingsShell>
+      </>
+    );
+  }
+
+  return workspace.activeClient ? (
+    <SubAccountView
+      clientId={workspace.activeClient.id}
+      clientName={workspace.activeClient.name}
+    />
+  ) : (
+    <AgencyOverview />
+  );
+}
+
+// -- Sub-account view (drilled into a specific client) --------------------
+
+function SubAccountView({
+  clientId,
+  clientName,
+}: {
+  clientId: string;
+  clientName: string;
+}) {
+  const ctx = useUserContext();
+  const websites = useMemo(() => getWebsitesForClient(clientId), [clientId]);
+  const userDefs = useMemo(() => getUserDefsForClient(clientId), [clientId]);
+
   const gridUsers = useMemo<CapabilityToggleGridUser[]>(() => {
-    return STUB_USER_DEFS.filter((def) => def.role === 'client').map((def) => {
+    return userDefs.map((def) => {
       const liveUser = ctx.allUsers.find((u) => u.id === def.id);
-      const websites = def.accessibleWebsiteIds
+      const userWebsites = def.accessibleWebsiteIds
         .map((id) => findWebsite(id))
         .filter((w): w is NonNullable<typeof w> => w != null);
       return {
@@ -50,11 +112,11 @@ export default function AdminSettingsAccessPage() {
         displayName: def.displayName,
         email: def.email,
         role: def.role,
-        websites,
+        websites: userWebsites,
         capabilities: liveUser?.capabilities ?? new Set<Capability>(),
       };
     });
-  }, [ctx.allUsers]);
+  }, [ctx.allUsers, userDefs]);
 
   const handleToggle = (
     userId: string,
@@ -64,22 +126,13 @@ export default function AdminSettingsAccessPage() {
   ) => {
     const user = ctx.allUsers.find((u) => u.id === userId);
     if (!user) return;
-    // Compute the user's current non-default grant set for this website
-    // by reading their resolved caps and subtracting their role default.
-    // For the stub this collapses to: the cap is being toggled on/off.
-    const currentNonFloor = new Set(user.capabilities);
-    // Remove role-floor caps so we only track the explicit overrides.
-    // (For the stub layer this is a slight inaccuracy if a user has
-    // multiple websites — full per-website cap reading lands with the
-    // website data model in Session 2.)
-    const next = new Set(currentNonFloor);
+    const next = new Set(user.capabilities);
     if (enabled) next.add(capability);
     else next.delete(capability);
-    // Role default caps stay implicit — we never persist them as grants.
     const roleFloor =
       user.role === 'admin'
-        ? new Set<Capability>()
-        : new Set<Capability>(['viewBuilder']);
+        ? new Set<Capability>(ADMIN_DEFAULTS)
+        : new Set<Capability>(CLIENT_DEFAULTS);
     const explicit: Capability[] = [];
     for (const cap of next) {
       if (!roleFloor.has(cap)) explicit.push(cap);
@@ -87,40 +140,64 @@ export default function AdminSettingsAccessPage() {
     ctx.setUserGrant(userId, websiteId, explicit);
   };
 
+  const clientAuditEntries: ForcePublishEntry[] = useMemo(() => {
+    const websiteIds = new Set(websites.map((w) => w.id));
+    return STUB_FORCE_PUBLISH_LOG.filter((e) =>
+      websiteIds.has(e.target.websiteId),
+    );
+  }, [websites]);
+
   return (
     <>
-      <Topbar breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="Access" />} />
+      <Topbar
+        breadcrumb={
+          <TopbarBreadcrumb
+            trail={['Settings', 'Access']}
+            current={clientName}
+          />
+        }
+      />
       <SettingsShell
-        eyebrow="Workspace · Webnua Perth"
+        eyebrow={`Sub-account · ${clientName}`}
         title={
           <>
-            Settings + <em>integrations</em>.
+            Access for <em>{clientName}</em>.
           </>
         }
-        subtitle="Manage what each client user is allowed to do inside the page builder."
+        subtitle={
+          <>
+            <strong>Manage capabilities for the users at this client business.</strong>{' '}
+            Switch context with the client picker in the sidebar, or jump back to
+            agency birds-eye to triage across all clients.
+          </>
+        }
         items={adminSettingsNav}
       >
         <SettingsPanel>
+          <div className="mb-6">
+            <WorkspaceContextBanner />
+          </div>
+
           <SettingsSection
             heading={
               <>
-                Client <em>capabilities</em>
+                {clientName} <em>users</em>
               </>
             }
             description={
               <>
-                Every client user gets <strong>viewBuilder</strong> by default —
-                they can see their pages. Anything beyond that is granted
-                per-user, per-website. Toggling a capability writes a grant
-                immediately and updates everyone&rsquo;s editor in real time.
+                Every client user gets <strong>viewBuilder</strong> by default.
+                Anything beyond that is granted per-user, per-website. Changes
+                persist immediately and update every consumer of the cap layer.
               </>
             }
           >
             <div className="mb-4 flex items-center justify-between gap-3">
               <p className="font-mono text-[11px] font-bold uppercase tracking-[0.08em] text-ink-quiet">
-                <strong className="text-ink">{gridUsers.length}</strong>{' '}
-                client {gridUsers.length === 1 ? 'user' : 'users'} ·
-                editing scope: per-website
+                <strong className="text-ink">{userDefs.length}</strong>{' '}
+                {userDefs.length === 1 ? 'user' : 'users'} ·{' '}
+                <strong className="text-ink">{websites.length}</strong>{' '}
+                {websites.length === 1 ? 'website' : 'websites'}
               </p>
               <Button size="sm" variant="secondary" onClick={ctx.resetGrants}>
                 Reset to defaults
@@ -137,10 +214,166 @@ export default function AdminSettingsAccessPage() {
             }
             description={
               <>
-                Force-publish bypasses the approval queue. It&rsquo;s admin-only,
-                requires a confirm-twice action, and demands a free-text reason.{' '}
-                <strong>Every use is logged here and surfaced to the
-                affected client user&rsquo;s version history.</strong>
+                Break-glass force-publish events that affected{' '}
+                <strong>{clientName}</strong>. Each entry shows actor,
+                target page, free-text reason, and the resulting version id.
+              </>
+            }
+          >
+            <ForcePublishLog entries={clientAuditEntries} />
+          </SettingsSection>
+        </SettingsPanel>
+      </SettingsShell>
+    </>
+  );
+}
+
+// -- Agency birds-eye view (cross-client, no per-user editing) ------------
+
+function AgencyOverview() {
+  const ctx = useUserContext();
+  const workspace = useWorkspace();
+  const clientUserDefs = getClientUserDefs();
+  const totalClientUsers = clientUserDefs.length;
+  const totalAuditEntries = STUB_FORCE_PUBLISH_LOG.length;
+
+  const perClient = useMemo(() => {
+    return adminClients.map((client) => {
+      const users = getUserDefsForClient(client.id);
+      const totalCapsGranted = users.reduce((sum, def) => {
+        const liveUser = ctx.allUsers.find((u) => u.id === def.id);
+        if (!liveUser) return sum;
+        // Don't count role-floor caps (viewBuilder for clients) — they
+        // aren't a "grant", they're the floor.
+        const floor = new Set<Capability>(CLIENT_DEFAULTS);
+        let count = 0;
+        for (const cap of liveUser.capabilities) {
+          if (!floor.has(cap)) count++;
+        }
+        return sum + count;
+      }, 0);
+      return { client, userCount: users.length, totalCapsGranted };
+    });
+  }, [ctx.allUsers]);
+
+  const totalCapsGrantedAcrossAll = useMemo(
+    () => perClient.reduce((s, c) => s + c.totalCapsGranted, 0),
+    [perClient],
+  );
+
+  return (
+    <>
+      <Topbar
+        breadcrumb={
+          <TopbarBreadcrumb trail={['Settings']} current="Access" />
+        }
+      />
+      <SettingsShell
+        eyebrow="Workspace · Webnua Perth"
+        title={
+          <>
+            Access <em>across all clients</em>.
+          </>
+        }
+        subtitle={
+          <>
+            <strong>Birds-eye on every client business&rsquo;s user access.</strong>{' '}
+            Triage approvals and audit force-publish events from here. Drill into a
+            client to manage their users.
+          </>
+        }
+        items={adminSettingsNav}
+      >
+        <SettingsPanel>
+          <div className="mb-6">
+            <WorkspaceContextBanner hideReturnButton />
+          </div>
+
+          <SettingsSection
+            heading={
+              <>
+                Workspace <em>at a glance</em>
+              </>
+            }
+            description={
+              <>
+                Quick numbers across every client. Drill into a client below to
+                edit their users&rsquo; capabilities.
+              </>
+            }
+          >
+            <div className="grid grid-cols-4 gap-3.5">
+              <SummaryTile
+                label="Client users"
+                value={totalClientUsers.toString()}
+                meta={`${adminClients.length} clients`}
+              />
+              <SummaryTile
+                label="Pending approvals"
+                value="0"
+                meta="cap-change submissions"
+                tone="quiet"
+              />
+              <SummaryTile
+                label="Force-publish · 30d"
+                value={totalAuditEntries.toString()}
+                meta="audited break-glass events"
+                tone={totalAuditEntries > 0 ? 'warn' : 'quiet'}
+              />
+              <SummaryTile
+                label="Caps granted total"
+                value={totalCapsGrantedAcrossAll.toString()}
+                meta={`${ALL_CAPABILITIES.length} caps × users`}
+              />
+            </div>
+          </SettingsSection>
+
+          <SettingsSection
+            heading={
+              <>
+                Clients <em>roster</em>
+              </>
+            }
+            description={
+              <>
+                Every client business with their user count + granted-cap
+                summary. <strong>&ldquo;Drill in&rdquo; switches your
+                workspace context</strong> — the page re-renders with their
+                user list and the cap grid.
+              </>
+            }
+          >
+            <div className="overflow-hidden rounded-lg border border-rule bg-paper">
+              <div className="grid grid-cols-[40px_1fr_120px_140px_120px] gap-3 border-b border-rule bg-paper-2 px-5 py-3 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+                <span />
+                <span>Client</span>
+                <span>Users</span>
+                <span>Caps granted</span>
+                <span />
+              </div>
+              {perClient.map(({ client, userCount, totalCapsGranted }) => (
+                <AccessClientRosterRow
+                  key={client.id}
+                  client={client}
+                  userCount={userCount}
+                  totalCapsGranted={totalCapsGranted}
+                  onDrillIn={workspace.setActiveClientId}
+                />
+              ))}
+            </div>
+          </SettingsSection>
+
+          <SettingsSection
+            heading={
+              <>
+                Force-publish <em>audit log</em>
+              </>
+            }
+            description={
+              <>
+                Every force-publish event across every client. Each entry is
+                also surfaced inside the affected client&rsquo;s sub-account view
+                and (when publish ships) in their version history.
               </>
             }
           >
@@ -149,5 +382,40 @@ export default function AdminSettingsAccessPage() {
         </SettingsPanel>
       </SettingsShell>
     </>
+  );
+}
+
+function SummaryTile({
+  label,
+  value,
+  meta,
+  tone = 'default',
+}: {
+  label: string;
+  value: string;
+  meta: string;
+  tone?: 'default' | 'warn' | 'quiet';
+}) {
+  return (
+    <div className="rounded-lg border border-rule bg-card px-4 py-3.5">
+      <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+        {label}
+      </p>
+      <p
+        className={
+          'mt-1 text-[26px] font-bold leading-none tracking-[-0.01em] ' +
+          (tone === 'warn'
+            ? 'text-warn'
+            : tone === 'quiet'
+              ? 'text-ink-quiet'
+              : 'text-ink')
+        }
+      >
+        {value}
+      </p>
+      <p className="mt-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
+        {meta}
+      </p>
+    </div>
   );
 }

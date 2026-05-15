@@ -3,6 +3,7 @@ import { Inter_Tight, JetBrains_Mono } from 'next/font/google';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { UserProvider } from '@/lib/auth/user-stub';
+import { WorkspaceProvider } from '@/lib/workspace/workspace-stub';
 
 import './globals.css';
 
@@ -37,7 +38,9 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <UserProvider>
-          <TooltipProvider>{children}</TooltipProvider>
+          <WorkspaceProvider>
+            <TooltipProvider>{children}</TooltipProvider>
+          </WorkspaceProvider>
         </UserProvider>
       </body>
     </html>

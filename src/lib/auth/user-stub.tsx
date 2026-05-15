@@ -45,20 +45,38 @@ export const STUB_VIEW_AS_KEY = 'webnua.dev.view-as-user-id';
 const DEFAULT_USER_ID = 'user-admin-craig';
 
 // Workspace identity for grant scoping. Real websites land in Session 2;
-// for 1b these are placeholders the grant rows reference.
+// for now these are placeholders the grant rows reference. `clientId` ties
+// each website back to the AdminClient roster in lib/nav/admin-clients.ts
+// so the workspace context (agency vs sub-account) can resolve which
+// users / websites belong to a drilled-into client.
 export type StubWebsite = {
   id: string;
+  clientId: string;
   clientName: string;
   domain: string;
 };
 
 export const STUB_WEBSITES: StubWebsite[] = [
-  { id: 'website-voltline', clientName: 'Voltline', domain: 'voltline.webnua.app' },
-  { id: 'website-freshhome', clientName: 'FreshHome', domain: 'freshhome.webnua.app' },
+  {
+    id: 'website-voltline',
+    clientId: 'voltline',
+    clientName: 'Voltline',
+    domain: 'voltline.webnua.app',
+  },
+  {
+    id: 'website-freshhome',
+    clientId: 'freshhome',
+    clientName: 'FreshHome',
+    domain: 'freshhome.webnua.app',
+  },
 ];
 
 export function findWebsite(id: string): StubWebsite | null {
   return STUB_WEBSITES.find((w) => w.id === id) ?? null;
+}
+
+export function getWebsitesForClient(clientId: string): StubWebsite[] {
+  return STUB_WEBSITES.filter((w) => w.clientId === clientId);
 }
 
 type StubUserDef = {
@@ -72,6 +90,9 @@ type StubUserDef = {
   // The website(s) this client user has access to. Operators (`role: admin`)
   // have implicit workspace-wide access — `accessibleWebsiteIds` is empty.
   accessibleWebsiteIds: string[];
+  // Which client business this user belongs to. Operators have null.
+  // Resolves to AdminClient.id (lib/nav/admin-clients.ts).
+  clientId: string | null;
 };
 
 export const STUB_USER_DEFS: StubUserDef[] = [
@@ -82,6 +103,7 @@ export const STUB_USER_DEFS: StubUserDef[] = [
     role: 'admin',
     defaultGrants: [],
     accessibleWebsiteIds: [],
+    clientId: null,
   },
   {
     id: 'user-client-mark',
@@ -96,6 +118,16 @@ export const STUB_USER_DEFS: StubUserDef[] = [
       },
     ],
     accessibleWebsiteIds: ['website-voltline'],
+    clientId: 'voltline',
+  },
+  {
+    id: 'user-client-liam',
+    displayName: 'Liam',
+    email: 'liam@voltline.com.au',
+    role: 'client',
+    defaultGrants: [],
+    accessibleWebsiteIds: ['website-voltline'],
+    clientId: 'voltline',
   },
   {
     id: 'user-client-anna',
@@ -104,8 +136,19 @@ export const STUB_USER_DEFS: StubUserDef[] = [
     role: 'client',
     defaultGrants: [],
     accessibleWebsiteIds: ['website-freshhome'],
+    clientId: 'freshhome',
   },
 ];
+
+/** Stub user defs for a given client business, or all if `clientId` is null. */
+export function getUserDefsForClient(clientId: string): StubUserDef[] {
+  return STUB_USER_DEFS.filter((u) => u.clientId === clientId);
+}
+
+/** Every client (non-admin) user def. */
+export function getClientUserDefs(): StubUserDef[] {
+  return STUB_USER_DEFS.filter((u) => u.role === 'client');
+}
 
 export const ROLE_LANDING: Record<Role, string> = {
   client: '/dashboard',

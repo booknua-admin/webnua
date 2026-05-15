@@ -3,7 +3,7 @@ import { SidebarBrand } from '@/components/shared/SidebarBrand';
 import { SidebarItem } from '@/components/shared/SidebarItem';
 import { SidebarSectionLabel } from '@/components/shared/SidebarSectionLabel';
 import { SidebarUser } from '@/components/shared/SidebarUser';
-import { adminActiveClientId, adminClients } from '@/lib/nav/admin-clients';
+import { adminClients } from '@/lib/nav/admin-clients';
 import {
   adminOverviewNav,
   adminUser,
@@ -25,10 +25,7 @@ function AdminSidebar() {
       ))}
 
       <SidebarSectionLabel>Clients</SidebarSectionLabel>
-      <AdminClientPicker
-        clients={adminClients}
-        activeClientId={adminActiveClientId}
-      />
+      <AdminClientPicker clients={adminClients} />
 
       <SidebarSectionLabel>{adminWorkspaceNav.label}</SidebarSectionLabel>
       {adminWorkspaceNav.items.map((item) => (
