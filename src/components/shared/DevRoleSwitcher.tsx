@@ -6,7 +6,7 @@
 
 import { useRouter } from 'next/navigation';
 
-import { ROLE_LANDING, useRole, type Role } from '@/lib/auth/role-stub';
+import { ROLE_LANDING, useRole, type Role } from '@/lib/auth/user-stub';
 import { cn } from '@/lib/utils';
 
 function DevRoleSwitcher() {

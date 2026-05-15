@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { ROLE_LANDING, useRole } from '@/lib/auth/role-stub';
+import { ROLE_LANDING, useRole } from '@/lib/auth/user-stub';
 
 export default function RootPage() {
   const router = useRouter();

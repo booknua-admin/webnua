@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { Inter_Tight, JetBrains_Mono } from 'next/font/google';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { RoleProvider } from '@/lib/auth/role-stub';
+import { UserProvider } from '@/lib/auth/user-stub';
 
 import './globals.css';
 
@@ -36,9 +36,9 @@ export default function RootLayout({
       className={`${interTight.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <RoleProvider>
+        <UserProvider>
           <TooltipProvider>{children}</TooltipProvider>
-        </RoleProvider>
+        </UserProvider>
       </body>
     </html>
   );

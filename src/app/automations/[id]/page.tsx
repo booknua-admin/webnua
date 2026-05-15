@@ -17,7 +17,7 @@ import { PageHeader } from '@/components/shared/PageHeader';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
 import { adminEditor } from '@/lib/automations/admin-editor';
-import { useRole } from '@/lib/auth/role-stub';
+import { useRole } from '@/lib/auth/user-stub';
 
 export default function AutomationEditorPage() {
   const { role, hydrated } = useRole();

@@ -7,7 +7,7 @@ import { AdminSidebar } from '@/components/admin/AdminSidebar';
 import { ClientSidebar } from '@/components/client/ClientSidebar';
 import { AppShell } from '@/components/shared/AppShell';
 import { DevRoleSwitcher } from '@/components/shared/DevRoleSwitcher';
-import { useRole } from '@/lib/auth/role-stub';
+import { useRole } from '@/lib/auth/user-stub';
 
 export default function AutomationsLayout({
   children,

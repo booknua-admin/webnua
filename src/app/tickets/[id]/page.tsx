@@ -1,6 +1,6 @@
 'use client';
 
-import { useRole } from '@/lib/auth/role-stub';
+import { useRole } from '@/lib/auth/user-stub';
 
 import { AdminTicketDetailContent } from './_admin-content';
 import { ClientTicketDetailContent } from './_client-content';
