@@ -74,6 +74,22 @@ phases ("Reading your brand…" → "Choosing sections…" → "Writing copy…"
 Synthetic delay: 4–8s, randomised per-load (so it feels real-time). Real
 LLM round-trip will hit this same component when backend lands.
 
+**Framing of Q4/Q5 in the generation card matters and is easy to get
+wrong.** The phase copy must NOT echo Q4/Q5 back as if the AI is consuming
+it in real time — during the stub era, the answers are received but not
+consumed by output (see §6), so language like "Reading: <Q4>" would
+miscommunicate. Instead, after the three phase lines, the card surfaces a
+small "// RECEIVED" footer block listing the optional answers as
+acknowledged input:
+- "✓ Got your specifics — will shape the final draft."
+- "✓ Got your avoid notes — will be honoured."
+
+The wording explicitly frames these as **received, will be applied**, not
+**being applied right now**. This is the difference between a user trusting
+the wiring when they later see X in the output (stub limitation, real model
+will respect it) versus assuming the integration is broken. Lock the phrasing
+to this shape; do not let the stub display Q4/Q5 inline with the phase copy.
+
 **On completion** → router push to `/website/[newPageId]` with the editor
 open and the first AI-drafted field selected (so the user sees the AIPill
 on a labelled field immediately).
@@ -280,12 +296,52 @@ After parsing:
    the section's shape. Missing required fields → fall back to the
    registry's `defaultData[field]` and DON'T tag that field as
    AI-drafted (the user should see it as a placeholder, not a confident
-   AI suggestion).
+   AI suggestion). **See §4.4a for the UX consequence.**
 5. **AI tag.** For every field the model successfully populated, push the
    field name into `section.ai.draftedFields[]`.
 6. **Ordering.** Keep the model's order. The model is given the
    page-type-recommended sequence in the prompt and is allowed to
    deviate; review surface flags structural oddities (Session 8 work).
+
+### 4.4a Fallback fields and the "first impression" problem
+
+Step 4 above silently divides every field on a freshly-generated page into
+three states, but the AIPill vocabulary only knows two:
+
+1. **AI-drafted** — model populated, validated, `draftedFields[]` contains it.
+   AIPill renders ("✦ AI-DRAFTED").
+2. **Fallback** — model omitted or model returned an invalid value; system
+   filled from `defaultData`. No AIPill.
+3. **Empty optional** — field is optional and was simply empty.
+   No AIPill, no other indicator.
+
+Without intervention, states 2 and 3 are visually identical to the user.
+They see a freshly-generated page with most fields AI-pilled and a handful
+not, and the natural reading is "the AI decided not to bother with these"
+— which makes the AI look lazy and the user's first impression of the
+whole feature worse than it deserves.
+
+**Decision: visually distinguish fallback fields from empty optionals
+AND log every fallback.** Both, not one — the logging is cheap and serves
+prompt tuning; the visual treatment is the user-facing fix.
+
+- **Visual:** fallback fields render with a `// PLACEHOLDER · NEEDS YOUR
+  EYES` mono uppercase hint inline with the field label (using the existing
+  `BuilderField` `hint` slot, tone `warn`). This signals "the system is
+  being honest — the AI's value didn't pass validation, this is a default
+  you should review" rather than "the AI didn't try." It uses the same hint
+  slot real users already encounter on the "Website (optional · for AI to
+  scrape)" pattern — no new vocabulary.
+- **Logging:** every fallback writes to a per-generation log accessible
+  via `/dev/generation-preview` (§6a). Log shape:
+  `{ generationId, sectionType, fieldName, reason: 'missing' | 'invalid', modelValue? }`.
+  Frequent fallbacks for the same `(sectionType, fieldName)` pair are the
+  signal that the prompt needs tuning. Real backend persists these to a
+  generation_log table; stub keeps them in-memory for the session.
+
+Both pieces ship in Session 6. The visual treatment uses the existing hint
+slot, so it's <20 lines of code; the log is a writable Map in a stub
+module + a list view on the dev surface.
 
 ### 4.5 Per-field AI controls (post-generation)
 
@@ -367,6 +423,56 @@ touching the surface.
 
 ---
 
+### 6a. The `/dev/generation-preview` debug surface
+
+Off-nav developer utility at `src/app/dev/generation-preview/page.tsx`,
+same lifecycle as the other `/dev/*` stubs (gated or deleted when real
+auth ships — see CLAUDE.md "What NOT to touch" and the stub deletion-point
+index in `lib/auth/`).
+
+**Why this exists.** The deterministic stub keyed on `(pageType, intent,
+audience)` silently masks prompt-construction bugs — you can't tell from
+a stub-generated page whether the prompt blocks (brand context, voice
+translation, existing-pages snapshot, section catalog filtering) are
+actually being built correctly. The prompt-construction layer is the
+piece of Session 6 that graduates to production when the real model lands;
+it's the highest-leverage thing to be able to validate in isolation.
+
+**What it shows.** Two columns, both read-only:
+
+- **Left:** `GenerationContext` builder — a small form lets you twiddle the
+  inputs (page type, primary intent, audience, brand fields, existing-pages
+  snapshot toggles). Defaults to the Voltline workspace's current state so
+  the preview is meaningful out of the box.
+- **Right:** the constructed prompt, rendered as expandable sections (one
+  per block from §4.2: system preamble, brand context, page questions,
+  existing-pages snapshot, registry catalog). Voice-tone-to-prose
+  translation is visible inline (you can see "formality: 2 / urgency: 4 /
+  technicality: 2" alongside "Speak casually and with urgency, in plain
+  non-technical language."). Each block has a copy button.
+
+Below the two columns, the stub generator runs against the current context
+and shows:
+- The `GeneratedPage` JSON output
+- The validation log (which fields fell back, which were dropped for
+  failing the container/page-type checks)
+- A live re-render whenever any input changes (no "Generate" button — the
+  whole point is to see the prompt and output update together).
+
+**Implementation cost.** ~50–80 lines. Throwaway. The form is built from
+the existing `BuilderField` primitives; the prompt-block renderer is a
+preformatted text block per block with a header. No new components needed
+in `shared/`.
+
+**What it doesn't do.** Doesn't hit the real model (Session 6 is stub).
+Doesn't persist generations (each input change re-runs from scratch).
+Doesn't simulate failure modes (V2 dev affordance if useful).
+
+Added to the stub-deletion checklist in CLAUDE.md alongside
+`/dev/capabilities` and `/dev/sections`.
+
+---
+
 ## 7. Edge cases worth pinning
 
 - **Refresh during Q&A.** State is in URL search params, so refresh
@@ -415,17 +521,22 @@ touching the surface.
 
 ## 9. File touches expected in Session 6
 
-Roughly 8–10 files:
-- `src/lib/website/generation-stub.ts` — handler + recipes + copy library
+Roughly 10–12 files:
+- `src/lib/website/generation-stub.ts` — handler + recipes + copy library + validation pipeline (§4.4) + fallback log (§4.4a)
 - `src/lib/website/generation-context.ts` — `GenerationContext` + types
+- `src/lib/website/generation-prompt.ts` — prompt-block construction (§4.2), pure functions, no I/O — keeps the part that graduates to backend in its own file
 - `src/app/website/new/page.tsx` — flow root
 - `src/app/website/new/_questions.tsx` — Q1–Q5 cards + review
 - `src/app/website/new/_generating.tsx` — generation card
+- `src/app/dev/generation-preview/page.tsx` — dev debug surface (§6a)
 - `src/components/shared/website/NewPageEntry.tsx` — the "+ New page" CTA on `/website`
 - `src/components/shared/website/QuestionCard.tsx` — single Q&A card primitive
 - `src/components/shared/website/GenerationStatusCard.tsx` — ink-bg progress card
-- CLAUDE.md inventory updates
+- CLAUDE.md inventory updates (new inventory entries + dev-surface deletion-point line)
 
 Touches `lib/website/data-stub.tsx` to wire the generated page into the
 website. Touches `lib/auth/explainers.ts` to add an `editPages` explainer
 string for the manual-new-page fallback (V2; doc-only mention for now).
+Touches `src/components/shared/builder/BuilderField.tsx` only if the `hint`
+slot needs a `warn` tone variant for §4.4a's placeholder treatment —
+inspect first; the slot may already accept arbitrary ReactNode.
