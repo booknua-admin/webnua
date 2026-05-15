@@ -1,21 +1,26 @@
 'use client';
 
 // =============================================================================
-// SectionEditor — the editor shell. Toolbar at top, section rail on the left,
-// preview pane on the right. Two modes (design doc §2.6):
+// SectionEditor — the editor shell. Three columns:
+//
+//   [ section rail | preview pane | fields panel (when selected) ]
+//
+// Two modes (design doc §2.6):
 //
 //   { kind: 'page', page, pages }
 //     → page tabs in toolbar, multi-row rail, preview pane stacks every
-//       enabled section
+//       enabled section. Fields panel appears on section-select; closing
+//       returns to rail+preview.
 //
 //   { kind: 'singleton', section, label }
 //     → breadcrumb in toolbar, single-row rail (no drag/toggle/add),
-//       preview pane renders just the one section
+//       preview pane renders just the one section. Fields panel auto-opens
+//       (the singleton is always the selected section — no other choice).
 //
 // Brand comes from the client (via `website.clientId` → `getBrandForClient`).
 // =============================================================================
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { getBrandForClient } from '@/lib/website/data-stub';
 import type { Page, Section, Website } from '@/lib/website/types';
@@ -25,21 +30,18 @@ import {
   type EditorToolbarTab,
 } from './EditorToolbar';
 import { PagePreviewPane } from './PagePreviewPane';
+import { SectionFieldsPanel } from './SectionFieldsPanel';
 import { SectionListRail } from './SectionListRail';
 
 export type SectionEditorMode =
   | {
       kind: 'page';
-      /** All pages on the website (drives the toolbar's page tabs). */
       pages: Page[];
-      /** The page currently being edited. */
       page: Page;
     }
   | {
       kind: 'singleton';
-      /** The website-level singleton section (header or footer). */
       section: Section;
-      /** Display label, e.g. "Header" or "Footer". */
       label: string;
     };
 
@@ -53,21 +55,40 @@ export function SectionEditor({ website, mode }: SectionEditorProps) {
   const [sections, setSections] = useState<Section[]>(() =>
     mode.kind === 'page' ? mode.page.sections : [mode.section],
   );
-  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+  // In singleton mode the only section is auto-selected. In page mode the
+  // user picks (rail click or preview click).
+  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(
+    () => (mode.kind === 'singleton' ? mode.section.id : null),
+  );
 
   // Reset local state when the source content changes.
   useEffect(() => {
     if (mode.kind === 'page') {
       setSections(mode.page.sections);
+      setSelectedSectionId(null);
     } else {
       setSections([mode.section]);
+      setSelectedSectionId(mode.section.id);
     }
-    setSelectedSectionId(null);
   }, [mode]);
+
+  const selectedSection = useMemo(
+    () => (selectedSectionId ? sections.find((s) => s.id === selectedSectionId) : null) ?? null,
+    [sections, selectedSectionId],
+  );
 
   const handleToggleSectionEnabled = (id: string, enabled: boolean) => {
     setSections((current) =>
       current.map((s) => (s.id === id ? { ...s, enabled } : s)),
+    );
+  };
+
+  const handleSectionDataChange = (
+    id: string,
+    nextData: Record<string, unknown>,
+  ) => {
+    setSections((current) =>
+      current.map((s) => (s.id === id ? { ...s, data: nextData } : s)),
     );
   };
 
@@ -104,6 +125,12 @@ export function SectionEditor({ website, mode }: SectionEditorProps) {
       ? { kind: 'page' as const, title: mode.page.title }
       : { kind: 'singleton' as const, label: mode.label };
 
+  // Three-column grid when a section is selected; two-column otherwise.
+  const isSingleton = mode.kind === 'singleton';
+  const gridCols = selectedSection
+    ? 'grid-cols-[300px_1fr_400px]'
+    : 'grid-cols-[340px_1fr]';
+
   return (
     <div className="flex h-svh flex-col bg-paper">
       <EditorToolbar
@@ -111,7 +138,7 @@ export function SectionEditor({ website, mode }: SectionEditorProps) {
         mode={toolbarMode}
         activePageId={mode.kind === 'page' ? mode.page.id : undefined}
       />
-      <div className="grid min-h-0 flex-1 grid-cols-[340px_1fr] overflow-hidden">
+      <div className={`grid min-h-0 flex-1 overflow-hidden ${gridCols}`}>
         <SectionListRail
           mode={railMode}
           sections={sections}
@@ -125,6 +152,20 @@ export function SectionEditor({ website, mode }: SectionEditorProps) {
           selectedSectionId={selectedSectionId}
           onSelectSection={setSelectedSectionId}
         />
+        {selectedSection ? (
+          <SectionFieldsPanel
+            // Force remount when the selected section changes so the Fields
+            // component gets a fresh internal state (e.g. CopyField's AI
+            // variant index).
+            key={selectedSection.id}
+            section={selectedSection}
+            onChange={(nextData) =>
+              handleSectionDataChange(selectedSection.id, nextData)
+            }
+            onClose={() => setSelectedSectionId(null)}
+            hideClose={isSingleton}
+          />
+        ) : null}
       </div>
     </div>
   );
