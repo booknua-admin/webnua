@@ -3,14 +3,14 @@
 // =============================================================================
 // /clients/new/draft — wizard Step 5, the draft walk-through (design doc §5).
 //
-// Reached after the Q&A steps trigger generation. On mount it shows the
-// generation card for the synthetic delay, then mounts WizardSectionEditor
-// to walk the generated funnel's sections one at a time.
+// Reached when the trust step (Step 4) triggers generation. On mount it runs
+// `generateFunnelStub` and shows the generation card for the synthetic delay,
+// then mounts WizardSectionEditor to walk the generated funnel's sections one
+// at a time.
 //
-// Session 7A: the generation handoff is a timed reveal — the real
-// `generateFunnelStub` wiring (and arrival from the trust step) lands in 7B.
-// The funnel is the stub Voltline funnel; with real backend it's whatever
-// the just-run generation produced.
+// Stub layer: generation is a deterministic passthrough to the Voltline
+// funnel (see lib/funnel/generation-stub.ts). With real backend it's whatever
+// the Q&A answers generated.
 // =============================================================================
 
 import Link from 'next/link';
@@ -22,7 +22,10 @@ import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { GenerationStatusCard } from '@/components/shared/website/GenerationStatusCard';
 import { WizardSectionEditor } from '@/components/shared/website/WizardSectionEditor';
 import { Button } from '@/components/ui/button';
-import { findFunnel, getDraftForFunnel } from '@/lib/funnel/data-stub';
+import {
+  generateFunnelStub,
+  type FunnelGenerationResult,
+} from '@/lib/funnel/generation-stub';
 import {
   ONBOARDING_TOTAL_STEPS,
   getStepNumber,
@@ -30,22 +33,24 @@ import {
 } from '@/lib/onboarding/types';
 import { voltlineBasics } from '@/lib/onboarding/voltline-build';
 
-// Stub layer: onboarding always builds the Voltline funnel.
-const WIZARD_FUNNEL_ID = 'emergency-call-out';
-const GENERATION_MS = 3200;
-
 export default function NewClientDraftPage() {
   const router = useRouter();
-  const [generating, setGenerating] = useState(true);
+  const [result, setResult] = useState<FunnelGenerationResult | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => setGenerating(false), GENERATION_MS);
-    return () => clearTimeout(timer);
+    let cancelled = false;
+    generateFunnelStub()
+      .then((r) => {
+        if (!cancelled) setResult(r);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
-
-  const funnel = findFunnel(WIZARD_FUNNEL_ID);
-  const draft = funnel ? getDraftForFunnel(WIZARD_FUNNEL_ID) : null;
-  const steps = draft?.snapshot.steps ?? [];
 
   const stepNo = getStepNumber('draft');
 
@@ -76,16 +81,7 @@ export default function NewClientDraftPage() {
           }
         />
 
-        {generating ? (
-          <GenerationStatusCard />
-        ) : funnel && steps.length > 0 ? (
-          <WizardSectionEditor
-            funnel={funnel}
-            steps={steps}
-            onExitForward={() => router.push(stepHref('automations'))}
-            onExitBack={() => router.push(stepHref('trust'))}
-          />
-        ) : (
+        {failed ? (
           <div className="rounded-xl border border-rule bg-card px-8 py-7">
             <p className="mb-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-warn">
               {'// DRAFT UNAVAILABLE'}
@@ -97,6 +93,15 @@ export default function NewClientDraftPage() {
               <Link href={stepHref('trust')}>← Back to trust</Link>
             </Button>
           </div>
+        ) : result ? (
+          <WizardSectionEditor
+            funnel={result.funnel}
+            steps={result.steps}
+            onExitForward={() => router.push(stepHref('automations'))}
+            onExitBack={() => router.push(stepHref('trust'))}
+          />
+        ) : (
+          <GenerationStatusCard />
         )}
       </div>
     </>
