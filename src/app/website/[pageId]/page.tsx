@@ -19,6 +19,7 @@ import { SectionEditor } from '@/components/shared/website/SectionEditor';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/lib/auth/user-stub';
 import { findVersion, findWebsiteByClient } from '@/lib/website/data-stub';
+import { mergeGeneratedPages } from '@/lib/website/generated-pages-stub';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 export default function WebsitePageEditorPage() {
@@ -52,7 +53,8 @@ export default function WebsitePageEditorPage() {
   }
 
   const draft = findVersion(website.draftVersionId);
-  const pages = draft?.snapshot.pages ?? [];
+  const seedPages = draft?.snapshot.pages ?? [];
+  const pages = mergeGeneratedPages(website.id, seedPages);
   const page = pages.find((p) => p.id === pageId);
 
   if (!page) {
