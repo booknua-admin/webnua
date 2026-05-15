@@ -19,6 +19,7 @@
 import Link from 'next/link';
 
 import { CapabilityGate } from '@/components/shared/CapabilityGate';
+import { NewPageEntry } from '@/components/shared/website/NewPageEntry';
 import { PageGridCard } from '@/components/shared/website/PageGridCard';
 import { VersionHistoryCard } from '@/components/shared/website/VersionHistoryCard';
 import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
@@ -31,6 +32,7 @@ import {
   findVersion,
   findWebsiteByClient,
 } from '@/lib/website/data-stub';
+import { mergeGeneratedPages } from '@/lib/website/generated-pages-stub';
 import {
   MAX_NAV_LINKS,
   type NavLink as NavLinkType,
@@ -99,7 +101,7 @@ function WebsiteHub({ website }: { website: Website }) {
   }
 
   const snapshot = draftVersion.snapshot;
-  const pages = snapshot.pages;
+  const pages = mergeGeneratedPages(website.id, snapshot.pages);
 
   const history: Version[] = STUB_VERSIONS.filter(
     (v) => v.websiteId === website.id,
@@ -169,9 +171,7 @@ function WebsiteHub({ website }: { website: Website }) {
                 {pages.length === 1 ? 'page' : 'pages'} ·{' '}
                 {website.publishedVersionId ? 'live' : 'unpublished draft'}
               </p>
-              <CapabilityGate capability="editPages" mode="disable">
-                <Button size="sm">+ New page</Button>
-              </CapabilityGate>
+              <NewPageEntry />
             </div>
             {pages.length === 0 ? (
               <p className="rounded-lg border border-dashed border-rule bg-paper px-4 py-6 text-center text-[13px] text-ink-quiet">
