@@ -249,6 +249,35 @@ type UserContextValue = {
 
 const UserContext = createContext<UserContextValue | null>(null);
 
+// ---- Capability override (wizard-frame mode) ----
+//
+// A subtree can lock the effective capability set to a fixed list,
+// regardless of the signed-in user — used by the onboarding wizard's
+// draft-walk step (design doc §5.2: the wizard's flow is its own UX
+// contract). `useCapabilities()` consults this first; when present it wins.
+// When real auth ships this stays — it's a product behaviour, not stub
+// scaffolding — and re-attaches to the Supabase-backed `useCapabilities`.
+
+const CapabilityOverrideContext = createContext<Set<Capability> | null>(null);
+
+export function CapabilityOverrideProvider({
+  capabilities,
+  children,
+}: {
+  capabilities: readonly Capability[];
+  children: React.ReactNode;
+}) {
+  const value = useMemo(
+    () => new Set<Capability>(capabilities),
+    [capabilities],
+  );
+  return (
+    <CapabilityOverrideContext.Provider value={value}>
+      {children}
+    </CapabilityOverrideContext.Provider>
+  );
+}
+
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const storedId = useSyncExternalStore(
     subscribeUser,
@@ -415,11 +444,16 @@ export function useUserContext() {
   return ctx;
 }
 
-/** Returns the effective capability set (viewAs override when active). */
+/**
+ * Returns the effective capability set. A `<CapabilityOverrideProvider>`
+ * subtree wins outright (wizard-frame mode); otherwise it's the viewAs
+ * override when active, else the signed-in user's set.
+ */
 export function useCapabilities(): Set<Capability> {
+  const override = useContext(CapabilityOverrideContext);
   const ctx = useContext(UserContext);
   if (!ctx) throw new Error('useCapabilities must be used within <UserProvider>');
-  return ctx.effectiveCapabilities;
+  return override ?? ctx.effectiveCapabilities;
 }
 
 export function useCan(cap: Capability): boolean {

@@ -5,6 +5,7 @@ export type OnboardingStepSlug =
   | 'idea'
   | 'offer'
   | 'trust'
+  | 'draft'
   | 'automations'
   | 'review'
   | 'published';
@@ -20,8 +21,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   { slug: 'idea', number: 2, label: 'The big idea' },
   { slug: 'offer', number: 3, label: 'The offer' },
   { slug: 'trust', number: 4, label: 'Trust + jobs menu' },
-  { slug: 'automations', number: 5, label: 'Automations' },
-  { slug: 'review', number: 6, label: 'Review + publish' },
+  { slug: 'draft', number: 5, label: 'Polish your draft' },
+  { slug: 'automations', number: 6, label: 'Automations' },
+  { slug: 'review', number: 7, label: 'Review + publish' },
 ];
 
 export const ONBOARDING_TOTAL_STEPS = ONBOARDING_STEPS.length;
