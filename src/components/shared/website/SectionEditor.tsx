@@ -20,13 +20,19 @@
 // Brand comes from the client (via `website.clientId` → `getBrandForClient`).
 // =============================================================================
 
-import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { useUser } from '@/lib/auth/user-stub';
 import { getBrandForClient } from '@/lib/website/data-stub';
 import {
   type DraftSlot,
   loadDraftSections,
 } from '@/lib/website/draft-stub';
+import {
+  publishDraft,
+  submitForApproval,
+} from '@/lib/website/publish-stub';
 import type { Page, Section, Website } from '@/lib/website/types';
 import { useAutosave } from '@/lib/website/use-autosave';
 
@@ -74,6 +80,8 @@ function seedSectionsForMode(mode: SectionEditorMode): Section[] {
 export function SectionEditor({ website, mode, locked = false }: SectionEditorProps) {
   const brand = getBrandForClient(website.clientId);
   const slot = useMemo(() => slotForMode(mode), [mode]);
+  const user = useUser();
+  const router = useRouter();
 
   // Hydrate: prefer any persisted autosave draft over the seed snapshot.
   // Falls back cleanly when localStorage is unavailable.
@@ -115,6 +123,30 @@ export function SectionEditor({ website, mode, locked = false }: SectionEditorPr
     sections,
     disabled: locked,
   });
+
+  // Lane A: promote draft → published. Routes back to the hub on success
+  // so the operator sees the freshly-published version reflected.
+  const handlePublish = useCallback(() => {
+    if (!user) return;
+    const result = publishDraft(website.id, {
+      id: user.id,
+      displayName: user.displayName,
+    });
+    if (result) router.push('/website');
+  }, [user, website.id, router]);
+
+  // Lane B: submit a pending_approval Version. The submitter retains the
+  // draft (§3.3) — recall / reject puts them back; approve promotes.
+  // Submit-mid-edit (§3.1) is handled inside submitForApproval: the
+  // snapshot is whatever has flushed to localStorage at this moment.
+  const handleSubmitForReview = useCallback(() => {
+    if (!user) return;
+    const submission = submitForApproval(website.id, {
+      id: user.id,
+      displayName: user.displayName,
+    });
+    if (submission) router.push('/website');
+  }, [user, website.id, router]);
 
   const selectedSection = useMemo(
     () => (selectedSectionId ? sections.find((s) => s.id === selectedSectionId) : null) ?? null,
@@ -187,6 +219,8 @@ export function SectionEditor({ website, mode, locked = false }: SectionEditorPr
           onRetry: autosave.retry,
         }}
         publishDisabled={locked}
+        onPublish={handlePublish}
+        onSubmitForReview={handleSubmitForReview}
       />
       <div className={`grid min-h-0 flex-1 overflow-hidden ${gridCols}`}>
         <SectionListRail

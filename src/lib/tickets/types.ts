@@ -4,6 +4,7 @@ export type TicketUrgency = 'rush' | 'soon' | 'none';
 
 export type TicketCategory =
   | 'website'
+  | 'website-approval'
   | 'marketing'
   | 'campaigns'
   | 'reviews'
@@ -14,6 +15,7 @@ export type TicketAwaiting = 'operator' | 'client' | null;
 
 export const CATEGORY_LABEL: Record<TicketCategory, string> = {
   website: 'Website',
+  'website-approval': 'Website approval',
   marketing: 'Marketing',
   campaigns: 'Campaigns',
   reviews: 'Reviews',
