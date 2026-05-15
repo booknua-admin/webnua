@@ -915,12 +915,38 @@ two. Each session is still commit-clean.
   by question answers).
 - Drop into editor with `[AI-DRAFTED]` flags on every field.
 
-**Session 7 — Refactor onboarding wizard onto the editor engine.**
+**Session 7 — Funnel editor + wizard refactor.**
+
+Funnel work in one bundle. The wizard generates a `Funnel`; the funnel
+editor is where its output lands; admins need to view funnels the same
+way they view websites. All three depend on each other so they ship
+together.
+
+*Funnel editor + accessibility:*
+- Move `/funnels` from `(client)/` to top-level shared route (same shape
+  as `/website` after Session 3.5). Layout dispatches sidebar by role.
+- Add `/funnels` to `admin-nav.ts` so operators can reach it.
+- `/funnels` page becomes context-aware: admin agency mode → cross-client
+  matrix (mirrors `/websites`); admin sub-account → that client's funnel
+  list; client → their funnels.
+- New route `/funnels/[id]/edit/[stepId]` mounts `SectionEditor` with a
+  new `mode` variant: `{ kind: 'funnelStep', steps, step }`. Toolbar
+  renders step tabs prefixed `01 ·`, `02 ·`, `03 ·` to communicate
+  sequence.
+- Add "Edit funnel →" CTA to `FunnelHero.actions` on `/funnels/[id]`,
+  gated on any edit capability.
+- New `lib/funnel/data-stub.tsx` populating Voltline's funnel against
+  the Session 3.5 types. Coexists with the existing analytics-detail
+  stub at `lib/funnels/`.
+
+*Wizard refactor:*
 - Wizard-frame mode flag for `<SectionEditor>`.
-- Step 5 onwards switches to use the registry-driven section editing.
-- `FunnelLandingPreview` becomes a thin adapter or is deleted in favour of
-  registry `<Preview>` rendering.
+- Step 5 onwards switches to registry-driven section editing.
+- `FunnelLandingPreview` becomes a thin adapter or is deleted in favour
+  of registry `<Preview>` rendering.
 - Wizard's stub data feeds the section registry's seed.
+- Wizard output is now an editable `Funnel` — published funnels land in
+  `/funnels/[id]` after the wizard finishes.
 
 **Session 8 — Preflight + publish UI + rollback + versions panel.**
 - `lib/website/preflight.ts` rule engine.
