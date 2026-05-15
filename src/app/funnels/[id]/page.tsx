@@ -45,7 +45,8 @@ export default function FunnelDetailPage() {
   const funnel = voltlineFunnel;
   const editableFunnel = findFunnel(id);
   const draft = editableFunnel ? getDraftForFunnel(id) : null;
-  const firstStepId = draft?.snapshot.steps[0]?.id;
+  const editorSteps = draft?.snapshot.steps ?? [];
+  const firstStepId = editorSteps[0]?.id;
 
   const heroActions = {
     ...funnel.hero.actions,
@@ -56,6 +57,19 @@ export default function FunnelDetailPage() {
         }
       : {}),
   };
+
+  // Per-step editor deep-links — aligned to the analytics flow steps by
+  // index. Only handed to FunnelFlow when the viewer can edit, so view-only
+  // users get a static (non-clickable) flow.
+  const stepEditHrefs =
+    canEdit && editableFunnel
+      ? funnel.steps.map((_, i) => {
+          const editorStep = editorSteps[i];
+          return editorStep
+            ? `/funnels/${editableFunnel.id}/edit/${editorStep.id}`
+            : undefined;
+        })
+      : undefined;
 
   return (
     <>
@@ -82,6 +96,7 @@ export default function FunnelDetailPage() {
           arrows={funnel.arrows}
           periods={funnel.flow.periods}
           defaultPeriod={funnel.flow.defaultPeriod}
+          stepEditHrefs={stepEditHrefs}
         />
 
         <div className="grid grid-cols-2 gap-3.5">
