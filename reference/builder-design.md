@@ -1,9 +1,11 @@
 # Webnua Builder — design document
 
-> **Status:** draft for review. No code yet. This is the design pass for Cluster 5
-> (the page builder + website management). The prototype is silent on a lot of
-> what's below — every judgement call is flagged inline with **`[JC]`** so you
-> can scan for them.
+> **Status:** revised after first review. No code yet. This is the design
+> pass for Cluster 5 (the page builder + website management). All judgement
+> calls from the initial draft have been resolved inline in their sections;
+> §8 lists what's still genuinely open (the form-to-page question set in
+> §4.2 is the big one — its own design pass before Session 6). The prototype
+> is silent on most of what's below; this document is the spec.
 
 ---
 
@@ -20,6 +22,18 @@ gets a user from "I need a page" to "here's a draft I can edit."
   sharing. The architecture leaves room; we don't build it.
 - Real-time multi-cursor collaboration. Single-editor model with presence
   indicator only.
+
+**V1 boundaries (explicit):**
+- **Editor is desktop-only.** Mobile/tablet editor flow is V2.
+- **Output pages MUST render responsive** across desktop / tablet / mobile.
+  Non-negotiable. The editor's preview-device tabs (existing
+  `PreviewPanelBar`) reflect this, and the preflight rule engine (§7)
+  validates responsive basics before publish.
+- **One default subdomain per workspace** V1 (e.g.
+  `<workspace>.webnua.app`). Custom domain management — DNS verify, SSL
+  pending, alias mapping — is V2. The `Website.domain` field (§2.1) is
+  shaped to support custom domains so the data layer doesn't need rework.
+- **Image storage backend** is deferred to the backend design pass.
 
 **This document supersedes the seven decisions in the prior recon message.**
 Carry-overs from that recon are noted where used.
@@ -61,7 +75,7 @@ operator to reason about who can do what.
 - No per-section-type capability (e.g. `editPricingSection`). The section
   registry could express "this section is operator-only" via metadata, but the
   user-facing capability layer stays page-level. Reasoning: per-section-type
-  permissions explode the matrix and confuse operators. **`[JC]`**
+  permissions explode the matrix and confuse operators.
 
 ### 1.2 How capabilities resolve
 
@@ -143,10 +157,15 @@ A new tab in the existing settings shell — admin-only:
   component (rows = websites, columns = capabilities, cells = `Switch`).
 
 For the V1 onboarding flow, every new client user defaults to view-only. The
-operator opts them into more by toggling caps in this panel. **`[JC]`** —
-alternative is a "DIY tier" preset on the client subscription that grants a
-fixed cap bundle, but I'd push that to V2; per-user explicit grants are more
-flexible and Webnua is operator-mediated anyway.
+operator opts them into more by toggling caps in this panel. Per-user
+explicit grants are V1; "DIY tier" preset bundles are V2.
+
+**Forward-compat note:** the `CapabilityGrant` shape from §1.2
+(`{ userId, websiteId, capabilities }`) does not preclude a future
+named-preset layer (e.g. adding `presetId?: string` that resolves to a cap
+bundle server-side, with `capabilities` becoming the resolved override on
+top). We don't build that V1, but the data shape stays additive-friendly so
+a preset layer can land later without migrating existing grants.
 
 ### 1.5 Preview-as-user (operator-only)
 
@@ -262,13 +281,29 @@ type VoiceTone = {
 }
 ```
 
-The voice-tone sliders are **`[JC]`** — the prototype is silent. I picked three
-axes because: formality dictates word choice, urgency dictates verb
-selection + scarcity language, technicality dictates jargon level. These three
-are largely independent. Could collapse to a single "tone" selector with
-preset values ("Friendly local", "Professional", "Premium") but I think the
-sliders are more honest about how AI-tuning actually works and let an
-operator dial in for an unusual brand. Open to challenge.
+The voice-tone data model is three independent 1–5 sliders. The three axes
+are largely independent (formality → word choice; urgency → verb selection +
+scarcity language; technicality → jargon level), and voice tone feeds every
+AI generation — a bad setting poisons every page.
+
+**The default UI is not raw sliders.** Voice tone is set via a preset
+picker — three named options that map to fixed slider triples:
+
+- **Friendly local** — casual, low-urgency, plain language (default for
+  service businesses).
+- **Professional** — middle-of-road formality, low-urgency, light-technical.
+- **Premium trade** — semi-formal, low-urgency, light-technical with brand
+  confidence.
+
+A "Customise →" affordance reveals the three raw sliders for anyone with
+`editTheme` who needs to dial in something unusual. **Stored value is always
+the slider triple** regardless of how it was set — presets are
+storage-equivalent to their slider state, no separate preset id persists.
+
+Reasoning: the audience is non-technical; surfacing three raw sliders as the
+default is unusable, and a bad voice-tone setting poisons every page the AI
+generates. Presets cover the realistic majority of cases; sliders are the
+escape hatch.
 
 The brand object is populated initially from the onboarding wizard
 (Cluster 3's existing `voltlineBasics` etc. already cover most of it) and is
@@ -299,10 +334,19 @@ type Version = {
   window (default 90 days; older snapshots are deleted from cold storage).
 - Rollback = create a new `draft` from an archived snapshot, then publish
   through the normal flow. **No "instant rollback" button** that skips the
-  approval queue; if a managed client has a publish-blocking cap, even
-  operator rollbacks go through them. Open to challenge — there's an argument
-  for "operator can always force-publish in an emergency" with an audit log
-  entry. **`[JC]`**
+  approval queue under normal operation; rollbacks ride the same lanes as
+  any other publish.
+
+**Break-glass force-publish.** A separate `forcePublish` capability
+(admin-only, granted alongside `publish` by default but split so it can be
+revoked independently) allows bypassing the approval lane for emergency fixes
+— "client's live site is broken and the approver is asleep" is a real case
+a managed product has to handle. Surfaced as a separate confirm-twice action
+under a "Force publish (skip approval)" menu — *not* the default Publish
+button. Every force-publish writes an audit log entry with actor, timestamp,
+and a required free-text reason. The audit log is visible to all admins in
+`/settings/access` and to the affected client user as a read-only entry in
+their version history.
 
 ---
 
@@ -325,6 +369,22 @@ indicator in the top toolbar shows other editors currently active on the
 page ("● Mark editing"). When two users edit the same field within a second
 of each other, the later save wins; the earlier user sees a toast "Mark also
 edited Headline · refreshed". No conflict resolution UI for V1.
+
+**Submit-mid-edit edge case (Lane B client submits while operator is
+editing).** This will happen — two stub users will hit it in Session 5.
+Answer: the `pending_approval` snapshot captures **the current server-side
+draft state at submit-time**, which by definition includes every autosave
+that has flushed (the 5s server flush from §3.2). Any field-edit still
+inside the operator's local 500ms debounce window stays in the operator's
+editor as unsaved local state and is *not* in the submitted snapshot.
+
+Because Lane B keeps the operator with edit access on the resulting pending
+version (§3.3 — operator can "edit further then publish"), the operator's
+next autosave rolls those locally-pending edits forward into the same
+pending snapshot. **Net effect: nothing is lost.** The only observable thing
+is that the snapshot moment is server-time, not operator-keystroke-time, and
+the operator sees a toast "Mark submitted for review · your in-flight edits
+are still in this draft."
 
 ### 3.2 Autosave
 
@@ -365,12 +425,11 @@ publishes through Lane A.
 
 ### 3.4 The approval queue
 
-A new admin surface — `/website-approvals` (or surfaced as a count badge on
-the existing `/tickets` inbox under a "Website approvals" tab; **`[JC]`** I'd
-prefer the latter, it reuses the inbox shell and keeps the operator's
-attention surface unified). Each pending approval shows: client + page +
-diff summary (just "X fields changed in Y sections" for V1, no field-level
-diff view) + Approve / Edit / Reject buttons.
+A new "Website approvals" tab on the existing `/tickets` inbox (not a
+separate route). Reuses the inbox shell and keeps the operator's attention
+surface unified. Each pending approval shows: client + page + diff summary
+(just "X fields changed in Y sections" for V1, no field-level diff view) +
+Approve / Edit / Reject buttons.
 
 ---
 
@@ -396,8 +455,18 @@ registry catalog as a single prompt, returning a full populated `Page`.
 
 ### 4.2 The questions (new-page flavour)
 
-These are the questions for an existing-website new page. **`[JC]`** — the
-exact set is a design call. Starting point:
+> **This section is a sketch, not the locked spec.** The exact questions,
+> their order, their required/optional flags, the chip-vs-free-text choice
+> per question, and the AI prompt construction that consumes them are *the*
+> feature determining whether generated pages are any good — which makes
+> this the single highest-leverage design decision in Cluster 5. Question 4
+> below ("anything specific to say?") is silently doing the heavy content
+> lifting and "free text, optional" undersells it. **Before Session 6, this
+> gets its own focused design pass in a sibling doc**
+> (`reference/builder-generation-design.md`). The sketch below is the
+> starting draft for that pass, nothing more — don't build to it.
+
+Starting-draft questions for an existing-website new page:
 
 1. **What kind of page is this?** (chip select: Landing / Service / About / Contact / Custom)
    → drives `PageType` and the section template chosen.
@@ -490,7 +559,9 @@ The editor supports a **wizard mode** flag that changes its presentation:
   (`BuilderFooterActions` from existing).
 - Locks capabilities to a fixed set (`editCopy` + `editMedia` + `useAI`)
   regardless of the user's actual cap set, since the wizard's flow is its
-  own UX contract.
+  own UX contract. (Wizard mode is operator-initiated during onboarding and
+  doesn't honour the operator's full cap set — the UX flow is the contract,
+  not the user's caps.)
 
 This means the wizard's "preview pane" is no longer the standalone
 `FunnelLandingPreview` — it's the section registry's `<Preview>` components
@@ -560,23 +631,30 @@ No instant-revert; every change goes through review.
 
 ---
 
-## 8. Open questions and judgement calls — index
+## 8. Open questions — index
 
-Scan-target list of every place I'm guessing. Each tagged inline above with
-**`[JC]`**.
+Resolved decisions live in their respective sections above. This list is
+only what's still genuinely open after the review pass.
 
-| § | Question |
-|---|---|
-| 1.1 | Per-section-type capabilities (`editPricingSection` etc.) — leave out, surface via section-registry metadata only? |
-| 1.4 | "DIY tier" preset bundles vs purely-explicit per-cap grants? |
-| 2.3 | Voice tone as 3 sliders vs 1 preset selector? |
-| 2.4 | Should operator emergency rollback bypass approval lane, or always go through it? |
-| 3.4 | Approval queue as new `/website-approvals` route OR a tab on existing `/tickets` inbox? (I lean inbox tab.) |
-| 4.2 | Exact 5 questions for new-page Q&A — what we ask, in what order, which are required. |
-| 5.2 | Should wizard mode lock to a fixed cap set or honour the operator's caps? (I went fixed for simplicity.) |
-| — | Domain management UX (DNS verify, SSL pending) — designed enough to ship V1, or punt to V2 and assume one default subdomain per workspace? |
-| — | Mobile editor — is the editor desktop-only V1, or do we need a mobile editor flow at all? Prototype is desktop-only. |
-| — | Image storage backend — Supabase storage vs Cloudinary vs ...? Decide with the backend pass. |
+| § | Question | Status |
+|---|---|---|
+| 4.2 | The exact question set for form-to-page generation, in what order, which are required, free-text vs chip, and the AI prompt construction that consumes them. | **Deferred to its own design pass** in `reference/builder-generation-design.md` before Session 6. Highest-leverage single decision in this cluster. |
+| 10 | Section registry schema evolution — how to handle changes to an existing section type's data shape when live pages and archived snapshots hold the old shape. | Flagged in §10 as a known sharp edge. Solve in the backend design pass. |
+| — | Image storage backend — Supabase storage vs Cloudinary vs ... | Defer to backend pass. |
+
+Closed in this revision:
+- §1.1 — page-level caps only; per-section-type permissions surfaced via
+  section-registry metadata, not user caps.
+- §1.4 — per-user explicit grants V1; preset bundles V2; `CapabilityGrant`
+  shape stays preset-compatible.
+- §2.3 — preset picker is the default UI; sliders behind "Customise →";
+  data model is always the slider triple.
+- §2.4 — through-the-lane rollback; separate audit-logged `forcePublish`
+  capability as break-glass.
+- §3.4 — approval queue as a tab on `/tickets`, not its own route.
+- §5.2 — wizard mode locks to a fixed cap set, ignoring user caps.
+- Domain management — V2; one default subdomain per workspace V1.
+- Mobile — editor desktop-only V1; output pages MUST be responsive.
 
 ---
 
@@ -586,17 +664,26 @@ The prior recon proposed five sessions starting with a refactor. With the
 capability layer as the spine, the order changes — and the count grows by
 two. Each session is still commit-clean.
 
-**Session 1 — Capability layer + user model evolution.**
-- New `lib/auth/capabilities.ts` defining `Capability`, `User`,
+**Session 1a — Capability model + `<CapabilityGate>`.** The blocking infra.
+- `lib/auth/capabilities.ts` defining `Capability`, `User`, `CapabilityGrant`,
   `useUser`/`useCapabilities`/`useCan`.
 - Evolve role stub to support per-user capability grants. Three stub users:
-  admin (all caps), Mark@Voltline (copy+media+SEO+useAI), Anna@FreshHome
-  (view-only).
-- New `<CapabilityGate>` primitive — wraps any control with hide / disable /
-  request-change-affordance modes.
-- New admin settings tab `/settings/access` with `<CapabilityToggleGrid>`.
-- `viewAsUser` operator override in dev-tools.
-- **No editor work yet.** Pure infra.
+  admin (all caps including `forcePublish`), Mark@Voltline
+  (copy+media+SEO+useAI), Anna@FreshHome (view-only).
+- `<CapabilityGate>` primitive — wraps any control with hide / disable /
+  request-change-affordance modes. Per-cap explainer strings table.
+- **No editor work, no new routes, no settings UI.** Purely the layer every
+  later session depends on. Lands as its own PR; reviewed in isolation
+  before 1b starts.
+
+**Session 1b — Operator UI for caps + `viewAsUser`.**
+- New admin settings tab `/settings/access` with `<CapabilityToggleGrid>`
+  (rows = users × websites, columns = capabilities, cells = `Switch`).
+- `viewAsUser` operator-only mode wired into the dev-tools floating bar
+  (alongside the existing role switcher, which the cap layer evolves rather
+  than replaces — role still drives sidebar shape per §1.2).
+- The force-publish audit log surface (read-only list in `/settings/access`).
+- Depends on 1a being merged first.
 
 **Session 2 — Data model + section registry framework.**
 - `lib/website/types.ts` — `Website`, `Page`, `Section`, `Version`,
@@ -652,16 +739,20 @@ two. Each session is still commit-clean.
 - Versions panel in the website hub with "Restore as draft" affordance.
 - Domain status indicator (UI only — actual DNS work is a backend concern).
 
-Eight sessions total. Sessions 1 and 2 are foundational and small; 3, 4, and
-5 are the meat; 6, 7, 8 are scope-completion.
+Nine sessions total (1a + 1b + 2–8). Sessions 1a, 1b, and 2 are foundational;
+3, 4, and 5 are the meat; 6, 7, 8 are scope-completion.
 
-**Suggested commit cadence:** session 1 lands as its own PR before any other
-session starts. The cap layer touches every later session, and a working
-review of it in isolation is worth the gate.
+**Suggested commit cadence:** session 1a lands as its own PR before anything
+else starts. The cap layer is the spine, touches every later session, and
+deserves a working review in isolation. 1b can land in the same PR as 2 if
+the cap-layer surface area looks small in practice, but default is its own
+PR too.
 
 ---
 
-## 10. What this design intentionally doesn't decide
+## 10. What this design intentionally doesn't decide — and known sharp edges
+
+**Doesn't decide:**
 
 - **Backend technology choices** for the website store / version snapshots /
   AI generation calls — those belong in the backend pass.
@@ -673,7 +764,36 @@ review of it in isolation is worth the gate.
 - **Analytics surfaces inside the editor** — page perf is in the website hub
   via the perf snapshot card; per-section heatmaps / A-B test slots are V2.
 
+**Known sharp edges (flagged, not solved):**
+
+- **Section registry schema evolution.** The registry pattern in §2.2 is
+  great for *adding* section types. It says nothing about *changing* an
+  existing section type's data schema once live pages and archived version
+  snapshots are populated with the old shape. Real cases this will hit:
+  renaming a field (`headline` → `title`), splitting a field in two (a
+  single `cta` field becoming `ctaPrimary` + `ctaSecondary`), deprecating a
+  field, tightening a previously-optional field to required. We don't solve
+  this V1, but the backend design pass should include either schema
+  versioning at the section level (`Section.schemaVersion: number` with
+  per-version migration functions) or a "shadow registry" pattern where the
+  old shape stays readable indefinitely. Flagging it now so we don't ship
+  V1 and then discover we can't rename a field without rewriting every
+  archived snapshot.
+- **AI generation cost / rate limits at scale.** Every page generation is an
+  LLM round-trip; every "show me 3 alternatives" is another. At one client
+  this is invisible; at fifty clients regenerating headlines all afternoon
+  it's a real cost line. The cap layer at least gates who can trigger
+  generation (`useAI`), but per-user/per-workspace generation budgets are a
+  V2 concern surfaced here so the backend pass plans for metering from the
+  start.
+- **Brand-tone drift across pages.** Voice tone is set per-website but the
+  AI may still produce tonally inconsistent copy across pages over time as
+  the model drifts or the prompt context window fills. No automated drift
+  detection in V1; operators eyeball it. If this becomes a real problem,
+  the answer is a per-website "tone reference" snippet (a frozen passage
+  the operator hand-tunes) that gets prepended to every generation prompt.
+
 ---
 
-*End of document. Review notes welcome inline; flag any `[JC]` you want to
-overrule and we'll fold the answer back in before sessions begin.*
+*End of document. Open items tracked in §8. Sibling design pass for §4.2
+generation Q&A to land before Session 6 starts.*
