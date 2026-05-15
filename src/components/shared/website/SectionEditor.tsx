@@ -1,49 +1,69 @@
 'use client';
 
 // =============================================================================
-// SectionEditor — the editor shell. Toolbar at top, section rail on the
-// left, preview pane on the right. Composes the three pieces and owns the
-// local UI state (which section is selected, which sections are enabled).
+// SectionEditor — the editor shell. Toolbar at top, section rail on the left,
+// preview pane on the right. Two modes (design doc §2.6):
 //
-// Session 3 scope:
-//   - Renders the shell with all capability gates active.
-//   - Section enable toggles work locally (visual only — no save yet).
-//   - "Add section" click is a no-op (Session 4 wires the picker).
-//   - Selected section is highlighted in rail + outlined in preview.
-//   - Clicking a section in the preview pane selects it; clicking in the
-//     rail does the same. Editing the section's fields lands in Session 4.
+//   { kind: 'page', page, pages }
+//     → page tabs in toolbar, multi-row rail, preview pane stacks every
+//       enabled section
 //
-// Future sessions extend this:
-//   - Session 4: per-section field editor opens on selection.
-//   - Session 5: real autosave + the three publish lanes wired.
-//   - Session 8: preflight + publish UI.
+//   { kind: 'singleton', section, label }
+//     → breadcrumb in toolbar, single-row rail (no drag/toggle/add),
+//       preview pane renders just the one section
+//
+// Brand comes from the client (via `website.clientId` → `getBrandForClient`).
 // =============================================================================
 
 import { useEffect, useState } from 'react';
 
+import { getBrandForClient } from '@/lib/website/data-stub';
 import type { Page, Section, Website } from '@/lib/website/types';
 
-import { EditorToolbar } from './EditorToolbar';
+import {
+  EditorToolbar,
+  type EditorToolbarTab,
+} from './EditorToolbar';
 import { PagePreviewPane } from './PagePreviewPane';
 import { SectionListRail } from './SectionListRail';
 
+export type SectionEditorMode =
+  | {
+      kind: 'page';
+      /** All pages on the website (drives the toolbar's page tabs). */
+      pages: Page[];
+      /** The page currently being edited. */
+      page: Page;
+    }
+  | {
+      kind: 'singleton';
+      /** The website-level singleton section (header or footer). */
+      section: Section;
+      /** Display label, e.g. "Header" or "Footer". */
+      label: string;
+    };
+
 export type SectionEditorProps = {
   website: Website;
-  /** All pages on the website (drives the toolbar's page tabs). */
-  pages: Page[];
-  /** The page currently being edited (from the URL [pageId]). */
-  page: Page;
+  mode: SectionEditorMode;
 };
 
-export function SectionEditor({ website, pages, page }: SectionEditorProps) {
-  const [sections, setSections] = useState<Section[]>(page.sections);
+export function SectionEditor({ website, mode }: SectionEditorProps) {
+  const brand = getBrandForClient(website.clientId);
+  const [sections, setSections] = useState<Section[]>(() =>
+    mode.kind === 'page' ? mode.page.sections : [mode.section],
+  );
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
 
-  // Reset local state when the page changes (toolbar tabs swap pages).
+  // Reset local state when the source content changes.
   useEffect(() => {
-    setSections(page.sections);
+    if (mode.kind === 'page') {
+      setSections(mode.page.sections);
+    } else {
+      setSections([mode.section]);
+    }
     setSelectedSectionId(null);
-  }, [page.id, page.sections]);
+  }, [mode]);
 
   const handleToggleSectionEnabled = (id: string, enabled: boolean) => {
     setSections((current) =>
@@ -51,12 +71,49 @@ export function SectionEditor({ website, pages, page }: SectionEditorProps) {
     );
   };
 
+  if (!brand) {
+    return (
+      <div className="flex h-svh items-center justify-center bg-paper px-6">
+        <p className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-warn">
+          No brand registered for this client.
+        </p>
+      </div>
+    );
+  }
+
+  const toolbarMode =
+    mode.kind === 'page'
+      ? {
+          kind: 'tabs' as const,
+          tabs: mode.pages.map(
+            (p): EditorToolbarTab => ({
+              id: p.id,
+              label: pageLabel(p),
+              href: `/website/${p.id}`,
+            }),
+          ),
+          activeTabId: mode.page.id,
+        }
+      : {
+          kind: 'breadcrumb' as const,
+          label: `Website · ${mode.label}`,
+        };
+
+  const railMode =
+    mode.kind === 'page'
+      ? { kind: 'page' as const, title: mode.page.title }
+      : { kind: 'singleton' as const, label: mode.label };
+
   return (
     <div className="flex h-svh flex-col bg-paper">
-      <EditorToolbar website={website} pages={pages} activePageId={page.id} />
+      <EditorToolbar
+        website={website}
+        mode={toolbarMode}
+        activePageId={mode.kind === 'page' ? mode.page.id : undefined}
+      />
       <div className="grid min-h-0 flex-1 grid-cols-[340px_1fr] overflow-hidden">
         <SectionListRail
-          pageTitle={page.title}
+          mode={railMode}
           sections={sections}
           selectedSectionId={selectedSectionId}
           onSelectSection={setSelectedSectionId}
@@ -64,11 +121,27 @@ export function SectionEditor({ website, pages, page }: SectionEditorProps) {
         />
         <PagePreviewPane
           sections={sections}
-          brand={website.brand}
+          brand={brand}
           selectedSectionId={selectedSectionId}
           onSelectSection={setSelectedSectionId}
         />
       </div>
     </div>
   );
+}
+
+function pageLabel(p: Page): string {
+  switch (p.type) {
+    case 'home':
+      return 'Home';
+    case 'about':
+      return 'About';
+    case 'services':
+      return 'Services';
+    case 'contact':
+      return 'Contact';
+    case 'generic':
+    default:
+      return p.slug;
+  }
 }

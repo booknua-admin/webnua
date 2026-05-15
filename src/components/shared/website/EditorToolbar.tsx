@@ -3,11 +3,21 @@
 // =============================================================================
 // EditorToolbar — top bar of the section editor. Three slots:
 //
-//   Left  → back link + workspace context indicator + page tabs
-//   Mid   → autosave indicator (Session 5 wires real autosave; visual stub here)
+//   Left  → back link + tabs (page-tabs mode) OR breadcrumb (singleton mode)
+//   Mid   → autosave indicator (Session 5 wires real autosave; visual stub)
 //   Right → preview-live link + Publish / Submit for review (capability-gated)
 //
-// The Publish path follows the design doc §3.3 three-lane model:
+// The toolbar takes a discriminated `mode`:
+//   { kind: 'tabs', ...}        → renders one pill per tab. Used for page
+//                                  editing (one tab per Page in the website's
+//                                  pageOrder). Could later be used for funnel
+//                                  step tabs (Session 7).
+//   { kind: 'breadcrumb', ...}  → renders a static "← Back to {target} ·
+//                                  {label}" line. Used for singleton editors
+//                                  (/website/header, /website/footer) where
+//                                  there's nothing to switch between.
+//
+// The publish path follows design doc §3.3:
 //   - user has `publish`            → "Publish →"
 //   - user has any edit cap, no `publish` → "Submit for review →"
 //   - view-only                     → button hidden entirely
@@ -19,15 +29,35 @@ import { CapabilityGate } from '@/components/shared/CapabilityGate';
 import { Button } from '@/components/ui/button';
 import { useCan, useCanAny } from '@/lib/auth/user-stub';
 import { cn } from '@/lib/utils';
-import type { Page, Website } from '@/lib/website/types';
+import type { Website } from '@/lib/website/types';
+
+export type EditorToolbarTab = {
+  id: string;
+  label: string;
+  href: string;
+};
+
+export type EditorToolbarMode =
+  | {
+      kind: 'tabs';
+      tabs: EditorToolbarTab[];
+      activeTabId: string;
+    }
+  | {
+      kind: 'breadcrumb';
+      label: string;
+      /** Where the breadcrumb "back" link points. Defaults to /website. */
+      backHref?: string;
+    };
 
 export type EditorToolbarProps = {
   website: Website;
-  pages: Page[];
-  activePageId: string;
+  mode: EditorToolbarMode;
+  /** Forwarded to the publish action's request-change context. */
+  activePageId?: string;
 };
 
-export function EditorToolbar({ website, pages, activePageId }: EditorToolbarProps) {
+export function EditorToolbar({ website, mode, activePageId }: EditorToolbarProps) {
   const canPublish = useCan('publish');
   const canEditAnything = useCanAny(
     'editCopy',
@@ -44,37 +74,37 @@ export function EditorToolbar({ website, pages, activePageId }: EditorToolbarPro
     >
       <div className="flex min-w-0 items-center gap-3">
         <Link
-          href="/website"
+          href={mode.kind === 'breadcrumb' ? (mode.backHref ?? '/website') : '/website'}
           className="flex shrink-0 items-center font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet hover:text-ink"
         >
           ← Back
         </Link>
         <span className="text-rule">·</span>
-        <div className="flex min-w-0 items-center gap-1">
-          {pages.map((page) => {
-            const active = page.id === activePageId;
-            return (
-              <Link
-                key={page.id}
-                href={`/website/${page.id}`}
-                className={cn(
-                  'rounded-pill px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em] transition-colors',
-                  active
-                    ? 'bg-ink text-paper'
-                    : 'text-ink-quiet hover:bg-paper-2 hover:text-ink',
-                )}
-              >
-                {page.type === 'landing'
-                  ? 'Landing'
-                  : page.type === 'schedule'
-                    ? 'Schedule'
-                    : page.type === 'thanks'
-                      ? 'Thanks'
-                      : page.slug}
-              </Link>
-            );
-          })}
-        </div>
+        {mode.kind === 'tabs' ? (
+          <div className="flex min-w-0 items-center gap-1">
+            {mode.tabs.map((tab) => {
+              const active = tab.id === mode.activeTabId;
+              return (
+                <Link
+                  key={tab.id}
+                  href={tab.href}
+                  className={cn(
+                    'rounded-pill px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em] transition-colors',
+                    active
+                      ? 'bg-ink text-paper'
+                      : 'text-ink-quiet hover:bg-paper-2 hover:text-ink',
+                  )}
+                >
+                  {tab.label}
+                </Link>
+              );
+            })}
+          </div>
+        ) : (
+          <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink">
+            {mode.label}
+          </span>
+        )}
       </div>
 
       <div className="flex shrink-0 items-center gap-3">
@@ -96,7 +126,7 @@ export function EditorToolbar({ website, pages, activePageId }: EditorToolbarPro
           <CapabilityGate
             capability="publish"
             mode="request"
-            requestContext={{ pageId: activePageId }}
+            requestContext={activePageId ? { pageId: activePageId } : undefined}
           >
             <Button size="sm">Submit for review →</Button>
           </CapabilityGate>

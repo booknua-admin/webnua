@@ -212,5 +212,6 @@ export const offerSection = defineSection<OfferData>({
       'ctaHref',
     ],
   },
+  allowedContainers: ['page', 'funnelStep'],
   implemented: true,
 });

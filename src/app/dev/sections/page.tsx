@@ -21,7 +21,7 @@ import { DevRoleSwitcher } from '@/components/shared/DevRoleSwitcher';
 import { Button } from '@/components/ui/button';
 import {
   DEFAULT_PREVIEW_BRAND,
-  STUB_WEBSITES,
+  getBrandForClient,
 } from '@/lib/website/data-stub';
 import type { SectionTypeDefinition } from '@/lib/website/registry';
 import {
@@ -31,9 +31,9 @@ import {
 import type { BrandObject } from '@/lib/website/types';
 
 const BRAND_OPTIONS: { label: string; brand: BrandObject }[] = [
-  { label: 'Voltline (default)', brand: STUB_WEBSITES[0].brand },
-  { label: 'FreshHome', brand: STUB_WEBSITES[1].brand },
-  { label: 'KeyHero', brand: STUB_WEBSITES[2].brand },
+  { label: 'Voltline (default)', brand: getBrandForClient('voltline') ?? DEFAULT_PREVIEW_BRAND },
+  { label: 'FreshHome', brand: getBrandForClient('freshhome') ?? DEFAULT_PREVIEW_BRAND },
+  { label: 'KeyHero', brand: getBrandForClient('keyhero') ?? DEFAULT_PREVIEW_BRAND },
 ];
 
 export default function SectionRegistryDevPage() {

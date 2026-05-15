@@ -186,5 +186,6 @@ export const heroSection = defineSection<HeroData>({
     ],
     mediaFields: ['heroImageUrl'],
   },
+  allowedContainers: ['page', 'funnelStep'],
   implemented: true,
 });

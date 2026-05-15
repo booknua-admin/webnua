@@ -1,28 +1,19 @@
 // =============================================================================
-// Website data model — the shape every later session builds against.
+// Website data model — see reference/builder-design.md §2 for the design.
 //
-// See reference/builder-design.md §2 for the rationale. The headline shapes:
+// Funnels and Websites are independent artefacts (§2.0). This file holds
+// website types only. Funnel types live in `lib/funnel/types.ts` (shape-
+// only until Session 7 wires them).
 //
-//   Website { id, clientId, brand, pages[], domain, draftVersionId,
-//             publishedVersionId | null }
-//   Page    { id, websiteId, slug, title, type, sections[], seo }
-//   Section { id, type: SectionType, enabled, data, ai? }
-//   Version { id, websiteId, status, snapshot, createdBy/At, ... }
-//
-// Single-shape versioning: drafts and published versions share the Version
-// type, distinguished by `status`. The current draft is referenced by
-// Website.draftVersionId; the live one by Website.publishedVersionId.
-//
-// Section.data is intentionally Record<string, unknown> at the registry
-// boundary. Each section type's actual data shape is exported from its
-// own module (e.g. HeroData from sections/hero.tsx) and asserted at the
-// Fields/Preview component boundary. defaultData() factories keep runtime
-// shape correct.
+// Brand lives on the Client (see lib/website/data-stub.tsx → the brand-by-
+// clientId helper). Both Website and Funnel reference their client's brand
+// via clientId — there is no `brand` field on Website itself in V1.
 // =============================================================================
 
 // ---- Section types --------------------------------------------------------
 
 export type SectionType =
+  // Stackable — appear in Page.sections[] and/or FunnelStep.sections[]
   | 'hero'
   | 'offer'
   | 'trust'
@@ -30,13 +21,22 @@ export type SectionType =
   | 'reviews'
   | 'faq'
   | 'cta'
-  | 'schedulePicker'
-  | 'thanksConfirmation';
+  | 'schedulePicker'      // funnel-only
+  | 'thanksConfirmation'  // funnel-only
+  // Website-level singletons — never in a page's sections[]
+  | 'header'
+  | 'footer';
+
+/** Where a section type can be placed. The registry constraint that
+ *  enforces singletons vs stackables — see design doc §2.2. */
+export type ContainerKind =
+  | 'page'              // Section is added to a Page.sections[]
+  | 'funnelStep'        // Section is added to a FunnelStep.sections[]
+  | 'websiteHeader'     // Section IS Website.header (singleton)
+  | 'websiteFooter';    // Section IS Website.footer (singleton)
 
 export type SectionAIMeta = {
-  /** Field keys whose current value was AI-drafted. */
   draftedFields: string[];
-  /** ISO 8601 timestamp of the last regeneration. */
   lastRegenAt?: string;
 };
 
@@ -51,7 +51,8 @@ export type Section = {
 
 // ---- Pages ----------------------------------------------------------------
 
-export type PageType = 'landing' | 'schedule' | 'thanks' | 'generic';
+/** Website page types (NOT funnel step types — those live in lib/funnel). */
+export type PageType = 'home' | 'about' | 'services' | 'contact' | 'generic';
 
 export type PageSEO = {
   title?: string;
@@ -62,15 +63,29 @@ export type PageSEO = {
 export type Page = {
   id: string;
   websiteId: string;
-  slug: string;
+  slug: string;            // 'home' | 'about' | 'services' | 'contact'
   title: string;
   type: PageType;
   sections: Section[];
   seo: PageSEO;
-  /** ISO 8601 timestamps. */
   createdAt: string;
   updatedAt: string;
 };
+
+// ---- Navigation -----------------------------------------------------------
+
+/** Internal page link OR external href. */
+export type NavLinkTarget =
+  | { kind: 'page'; pageId: string }
+  | { kind: 'href'; href: string };
+
+export type NavLink = {
+  label: string;
+  target: NavLinkTarget;
+};
+
+/** V1 cap on flat nav size — forcing function, not arbitrary. See design doc §2.5. */
+export const MAX_NAV_LINKS = 6;
 
 // ---- Brand ----------------------------------------------------------------
 
@@ -85,8 +100,6 @@ export type VoiceTone = {
   technicality: VoiceToneAxis;
 };
 
-/** Three named presets that map to fixed VoiceTone triples. Stored value is
- *  always the triple; preset is just a UI affordance (see design doc §2.3). */
 export const VOICE_TONE_PRESETS = {
   friendlyLocal: { formality: 4, urgency: 2, technicality: 2 },
   professional: { formality: 3, urgency: 2, technicality: 3 },
@@ -94,16 +107,12 @@ export const VOICE_TONE_PRESETS = {
 } as const satisfies Record<string, VoiceTone>;
 
 export type BrandObject = {
-  /** Hex string, e.g. "#d24317". Drives accent color in section previews. */
   accentColor: string;
   logoUrl: string | null;
   faviconUrl: string | null;
   voice: VoiceTone;
-  /** One-line description of the audience, e.g. "tradies in Perth's outer
-   *  suburbs". Prepended to every AI generation prompt. */
   audienceLine: string;
   industryCategory: string;
-  /** 3–5 short phrases pulled from services menu. Prepended to AI prompts. */
   topJobsToBeBooked: string[];
 };
 
@@ -115,9 +124,12 @@ export type VersionStatus =
   | 'published'
   | 'archived';
 
+/** Snapshot of a website's editable content at a point in time. */
 export type VersionSnapshot = {
   pages: Page[];
-  brand: BrandObject;
+  header: Section;
+  footer: Section;
+  nav: NavLink[];
   pageOrder: string[];
 };
 
@@ -126,15 +138,11 @@ export type Version = {
   websiteId: string;
   status: VersionStatus;
   snapshot: VersionSnapshot;
-  /** User id of the actor. */
   createdBy: string;
-  /** ISO 8601. */
   createdAt: string;
   publishedAt?: string;
   publishedBy?: string;
-  /** Optional human note ("Fixed phone number" / "Q3 offer refresh" etc). */
   notes?: string;
-  /** When this version branched from a prior published version. */
   parentVersionId?: string;
 };
 
@@ -143,29 +151,24 @@ export type Version = {
 export type DomainSSLStatus = 'pending' | 'live' | 'error';
 
 export type WebsiteDomain = {
-  /** e.g. "voltline.webnua.app" (V1 subdomain) or "voltline.com.au" (V2). */
   primary: string;
   aliases: string[];
   sslStatus: DomainSSLStatus;
 };
 
-// ---- Website (top-level) --------------------------------------------------
+// ---- Website --------------------------------------------------------------
 
 export type Website = {
   id: string;
-  /** FK to AdminClient.id (lib/nav/admin-clients.ts). */
+  /** FK to AdminClient.id. Brand resolves through the client. */
   clientId: string;
-  /** Display name for the website (typically the client business name). */
   name: string;
   domain: WebsiteDomain;
-  brand: BrandObject;
-  /** Page ids in nav order. */
-  pageOrder: string[];
-  /** The current editable draft. Always populated. */
+  /** The current editable draft. Always populated; contains pages /
+   *  header / footer / nav in its snapshot. */
   draftVersionId: string;
   /** The currently-live published version. null = never published. */
   publishedVersionId: string | null;
-  /** ISO 8601 timestamps. */
   createdAt: string;
   updatedAt: string;
 };

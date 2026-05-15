@@ -27,6 +27,10 @@ export type SectionRailRowProps = {
   selected: boolean;
   onSelect: () => void;
   onToggleEnabled: (enabled: boolean) => void;
+  /** True when this row is the only section in a website-level singleton
+   *  rail (header / footer). Suppresses drag handle, enable switch, and
+   *  the numbered index — singletons are always-on and unreorderable. */
+  singleton?: boolean;
 };
 
 export function SectionRailRow({
@@ -35,6 +39,7 @@ export function SectionRailRow({
   selected,
   onSelect,
   onToggleEnabled,
+  singleton = false,
 }: SectionRailRowProps) {
   const def = getSectionDefinition(section.type);
   if (!def) return null;
@@ -47,30 +52,32 @@ export function SectionRailRow({
         selected
           ? 'border-rust bg-rust-soft/40'
           : 'border-rule hover:border-ink/20',
-        !section.enabled && 'opacity-60',
+        !section.enabled && !singleton && 'opacity-60',
       )}
     >
       <div className="flex items-start gap-2.5">
-        <CapabilityGate capability="editLayout" mode="disable">
-          <button
-            type="button"
-            aria-label="Drag to reorder"
-            className="mt-0.5 cursor-grab font-mono text-[14px] text-ink-quiet hover:text-ink"
-            tabIndex={-1}
-          >
-            ⋮⋮
-          </button>
-        </CapabilityGate>
+        {singleton ? null : (
+          <CapabilityGate capability="editLayout" mode="disable">
+            <button
+              type="button"
+              aria-label="Drag to reorder"
+              className="mt-0.5 cursor-grab font-mono text-[14px] text-ink-quiet hover:text-ink"
+              tabIndex={-1}
+            >
+              ⋮⋮
+            </button>
+          </CapabilityGate>
+        )}
         <button
           type="button"
           onClick={onSelect}
           className="flex-1 text-left"
         >
           <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust">
-            {def.label} · {String(index + 1).padStart(2, '0')}
+            {singleton ? def.label : `${def.label} · ${String(index + 1).padStart(2, '0')}`}
           </p>
           <p className="mt-1 text-[13px] font-semibold text-ink">
-            {summarizeSection(section)}
+            {summarizeSection(section, def.description)}
           </p>
           {!def.implemented ? (
             <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.14em] text-ink-quiet">
@@ -78,20 +85,22 @@ export function SectionRailRow({
             </p>
           ) : null}
         </button>
-        <CapabilityGate capability="editLayout" mode="hide">
-          <Switch
-            checked={section.enabled}
-            onCheckedChange={onToggleEnabled}
-            aria-label={`Toggle ${def.label}`}
-            className="mt-0.5"
-          />
-        </CapabilityGate>
+        {singleton ? null : (
+          <CapabilityGate capability="editLayout" mode="hide">
+            <Switch
+              checked={section.enabled}
+              onCheckedChange={onToggleEnabled}
+              aria-label={`Toggle ${def.label}`}
+              className="mt-0.5"
+            />
+          </CapabilityGate>
+        )}
       </div>
     </div>
   );
 }
 
-function summarizeSection(section: Section): string {
+function summarizeSection(section: Section, fallback: string): string {
   // Best-effort one-line summary of the section. Each section type
   // exposes its primary identifier under a different key; we look up
   // a few common keys without forcing a typed view here.
@@ -101,7 +110,7 @@ function summarizeSection(section: Section): string {
   if (typeof candidate === 'string' && candidate.trim().length > 0) {
     return truncate(candidate, 64);
   }
-  return `${section.type} section`;
+  return fallback;
 }
 
 function truncate(s: string, max: number): string {

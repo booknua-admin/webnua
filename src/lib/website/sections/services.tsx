@@ -268,5 +268,6 @@ export const servicesSection = defineSection<ServicesData>({
   capabilityHints: {
     copyFields: ['title', 'intro', 'services'],
   },
+  allowedContainers: ['page', 'funnelStep'],
   implemented: true,
 });

@@ -1,29 +1,19 @@
 'use client';
 
 // =============================================================================
-// /website/[pageId] — section editor for one page on the active workspace's
-// website. Workspace context determines the active website; the [pageId]
-// URL segment picks the page.
-//
-// Two URL slugs are reserved for the website-level singletons rather than
-// being page ids — they live as sibling routes:
-//   /website/header  → singleton editor for Website.header
-//   /website/footer  → singleton editor for Website.footer
-// Both are static routes that take precedence over this dynamic [pageId].
+// /website/footer — singleton editor for the website's Footer section.
+// Mirror of /website/header. See design doc §2.6.
 // =============================================================================
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
-
-import { SectionEditor } from '@/components/shared/website/SectionEditor';
-import { Button } from '@/components/ui/button';
 import { useUser } from '@/lib/auth/user-stub';
 import { findVersion, findWebsiteByClient } from '@/lib/website/data-stub';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
-export default function WebsitePageEditorPage() {
-  const params = useParams<{ pageId: string }>();
-  const pageId = params?.pageId;
+import { SectionEditor } from '@/components/shared/website/SectionEditor';
+import { Button } from '@/components/ui/button';
+
+export default function WebsiteFooterEditorPage() {
   const user = useUser();
   const workspace = useWorkspace();
 
@@ -41,9 +31,7 @@ export default function WebsitePageEditorPage() {
     user.role === 'client' ? user.clientId : workspace.activeClientId;
 
   if (!activeClientId) {
-    return (
-      <NotFoundState message="No active workspace. Pick a client from the picker." />
-    );
+    return <NotFoundState message="No active workspace. Pick a client from the picker." />;
   }
 
   const website = findWebsiteByClient(activeClientId);
@@ -52,21 +40,14 @@ export default function WebsitePageEditorPage() {
   }
 
   const draft = findVersion(website.draftVersionId);
-  const pages = draft?.snapshot.pages ?? [];
-  const page = pages.find((p) => p.id === pageId);
-
-  if (!page) {
-    return (
-      <NotFoundState
-        message={`No page "${pageId}" on ${website.name}'s website.`}
-      />
-    );
+  if (!draft) {
+    return <NotFoundState message={`No draft version on ${website.name}.`} />;
   }
 
   return (
     <SectionEditor
       website={website}
-      mode={{ kind: 'page', pages, page }}
+      mode={{ kind: 'singleton', section: draft.snapshot.footer, label: 'Footer' }}
     />
   );
 }
@@ -76,7 +57,7 @@ function NotFoundState({ message }: { message: string }) {
     <div className="flex h-svh items-center justify-center bg-paper px-6">
       <div className="max-w-[480px] text-center">
         <p className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust">
-          {'// PAGE NOT FOUND'}
+          {'// FOOTER NOT AVAILABLE'}
         </p>
         <p className="mb-5 text-[16px] text-ink">{message}</p>
         <Button asChild variant="secondary">

@@ -19,16 +19,18 @@ export type PageGridCardProps = {
 };
 
 const PAGE_TYPE_LABEL: Record<Page['type'], string> = {
-  landing: 'Landing',
-  schedule: 'Schedule',
-  thanks: 'Thanks',
+  home: 'Home',
+  about: 'About',
+  services: 'Services',
+  contact: 'Contact',
   generic: 'Page',
 };
 
 const PAGE_TYPE_TONE: Record<Page['type'], string> = {
-  landing: 'bg-rust text-paper',
-  schedule: 'bg-ink text-paper',
-  thanks: 'bg-good text-paper',
+  home: 'bg-rust text-paper',
+  about: 'bg-ink text-paper',
+  services: 'bg-good text-paper',
+  contact: 'bg-info/15 text-info',
   generic: 'bg-paper-2 text-ink',
 };
 

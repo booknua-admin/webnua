@@ -13,6 +13,8 @@ import { offerSection } from './offer';
 import {
   ctaSection,
   faqSection,
+  footerSection,
+  headerSection,
   reviewsSection,
   schedulePickerSection,
   thanksConfirmationSection,
@@ -20,7 +22,10 @@ import {
 } from './placeholders';
 import { servicesSection } from './services';
 
+import type { ContainerKind } from '../types';
+
 export const SECTION_REGISTRY: readonly SectionTypeDefinition[] = [
+  // Stackable on pages and funnel steps
   heroSection,
   offerSection,
   trustSection,
@@ -28,9 +33,22 @@ export const SECTION_REGISTRY: readonly SectionTypeDefinition[] = [
   reviewsSection,
   faqSection,
   ctaSection,
+  // Funnel-only stackable
   schedulePickerSection,
   thanksConfirmationSection,
+  // Website-level singletons
+  headerSection,
+  footerSection,
 ] as readonly SectionTypeDefinition[];
+
+/** Section types that can be added inside the given container. */
+export function getSectionsForContainer(
+  container: ContainerKind,
+): SectionTypeDefinition[] {
+  return SECTION_REGISTRY.filter((d) =>
+    d.allowedContainers.includes(container),
+  );
+}
 
 export function getSectionDefinition(
   type: SectionType,

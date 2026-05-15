@@ -17,7 +17,12 @@
 
 import type { ComponentType } from 'react';
 
-import type { BrandObject, PageType, SectionType } from './types';
+import type {
+  BrandObject,
+  ContainerKind,
+  PageType,
+  SectionType,
+} from './types';
 
 export type SectionFieldsProps<TData> = {
   data: TData;
@@ -47,8 +52,21 @@ export type SectionTypeDefinition<TData = unknown> = {
   Fields: ComponentType<SectionFieldsProps<TData>>;
   Preview: ComponentType<SectionPreviewProps<TData>>;
   capabilityHints?: SectionCapabilityHints;
-  /** Page types this section is allowed on. Omit / empty = all pages. */
-  allowedPageTypes?: readonly PageType[];
+  /** Where this section type can be used (design doc §2.2). Drives the
+   *  "Add section" picker and enforces singleton vs stackable semantics:
+   *
+   *   page          → stackable in Page.sections[]
+   *   funnelStep    → stackable in FunnelStep.sections[]
+   *   websiteHeader → singleton, IS the Website.header
+   *   websiteFooter → singleton, IS the Website.footer
+   *
+   *  `header` and `footer` are website-level singletons — they implement
+   *  the section interface but are NOT stackable. Don't add them to a
+   *  page's section array even if the type system permits it through
+   *  loose typing; the registry constraint refuses. */
+  allowedContainers: readonly ContainerKind[];
+  /** Page/step types this section is allowed on. Omit / empty = all. */
+  allowedPageTypes?: readonly (PageType | string)[];
   /** False for section types whose Fields/Preview are still placeholders. */
   implemented: boolean;
 };
