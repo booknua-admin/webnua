@@ -3,11 +3,12 @@
 // =============================================================================
 // DEV ONLY — capability matrix for visual review of the cap layer in
 // isolation. Off-nav. Lives under app/dev/ per the convention that dev
-// pages are stub-era only and get gated/wiped when real auth ships.
+// pages are stub-era only and get gated/wiped when real auth lands.
 //
 // Renders every capability × every <CapabilityGate> mode against the
-// currently-active stub user. Switch users via the DevRoleSwitcher in
-// the bottom-right corner.
+// currently-active stub user (or the view-as user when an operator has
+// the override active). Switch users via the DevRoleSwitcher in the
+// bottom-right corner; cycle view-as from the same pill.
 // =============================================================================
 
 import { useState } from 'react';
@@ -20,7 +21,7 @@ import {
   type Capability,
 } from '@/lib/auth/capabilities';
 import { CAP_EXPLAINER } from '@/lib/auth/explainers';
-import { STUB_USERS, useUser } from '@/lib/auth/user-stub';
+import { useUserContext } from '@/lib/auth/user-stub';
 
 const MODES = ['hide', 'disable', 'request'] as const;
 type Mode = (typeof MODES)[number];
@@ -34,7 +35,8 @@ function SyntheticControl({ label }: { label: string }) {
 }
 
 export default function CapabilityDevMatrix() {
-  const user = useUser();
+  const { user, viewAsUser, effectiveCapabilities, allUsers } = useUserContext();
+  const effectiveUser = viewAsUser ?? user;
   const [requestLog, setRequestLog] = useState<string[]>([]);
 
   const onRequestChange = (cap: Capability) => () => {
@@ -53,23 +55,30 @@ export default function CapabilityDevMatrix() {
             </p>
             <h1 className="text-[32px] font-extrabold leading-[1.05] tracking-[-0.02em] text-ink">
               <em className="font-extrabold not-italic text-rust">
-                {user?.displayName ?? 'no user'}
+                {effectiveUser?.displayName ?? 'no user'}
               </em>
-              {user ? ` · ${user.role}` : ''}
+              {effectiveUser ? ` · ${effectiveUser.role}` : ''}
             </h1>
+            {viewAsUser ? (
+              <p className="mt-2 inline-flex items-center gap-2 rounded-pill border border-rust-light/40 bg-rust-light/10 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust">
+                <span aria-hidden>●</span>
+                viewing as {viewAsUser.displayName} · cap checks resolve to
+                their set
+              </p>
+            ) : null}
             <p className="mt-2 max-w-[640px] text-[13px] leading-relaxed text-ink-mid">
-              Switch users with the dev pill at bottom-right. Each row is a
-              capability; each column is a <code>{'<CapabilityGate>'}</code>{' '}
-              mode. Cells render a synthetic control wrapped in the gate.
-              Holding the cap → control renders unchanged. Lacking the cap →
-              behaviour per mode.
+              Switch users with the dev pill at bottom-right; admin sessions
+              can cycle the view-as override from the same pill. Each row is
+              a capability; each column is a{' '}
+              <code>{'<CapabilityGate>'}</code> mode. Cells render a
+              synthetic control wrapped in the gate.
             </p>
           </div>
           <div className="flex flex-col items-end gap-1">
             <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
               {'// ACTIVE STUB USERS'}
             </p>
-            {STUB_USERS.map((u) => (
+            {allUsers.map((u) => (
               <p
                 key={u.id}
                 className={
@@ -79,6 +88,7 @@ export default function CapabilityDevMatrix() {
                 }
               >
                 {u.displayName.toLowerCase()} · {u.capabilities.size} caps
+                {u.id === viewAsUser?.id ? ' · viewing-as' : ''}
               </p>
             ))}
           </div>
@@ -94,7 +104,7 @@ export default function CapabilityDevMatrix() {
           </div>
 
           {ALL_CAPABILITIES.map((cap) => {
-            const held = user?.capabilities.has(cap) ?? false;
+            const held = effectiveCapabilities.has(cap);
             const explainer = CAP_EXPLAINER[cap];
             return (
               <div
@@ -122,7 +132,7 @@ export default function CapabilityDevMatrix() {
                     </span>
                   )}
                 </div>
-                {MODES.map((mode) => (
+                {MODES.map((mode: Mode) => (
                   <div key={mode}>
                     <CapabilityGate
                       capability={cap}

@@ -1,10 +1,9 @@
 'use client';
 
 // STUB — part of the user-stub deletion set (see src/lib/auth/user-stub.tsx).
-// Floating dev-only pill that lets you switch between the three stubbed users
-// and clear the active user. The caps↗ link opens the capability matrix at
-// /dev/capabilities for visual review of <CapabilityGate> behaviour across
-// users × modes. Remove this component when real auth ships.
+// Floating dev-only pill. Switches between the three stub users, surfaces
+// the view-as override for admin sessions, links to the /dev/capabilities
+// matrix, and signs out. Remove when real auth ships.
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -12,13 +11,21 @@ import { useRouter } from 'next/navigation';
 import {
   ROLE_LANDING,
   STUB_USERS,
+  STUB_USER_DEFS,
   useUserContext,
 } from '@/lib/auth/user-stub';
 import { cn } from '@/lib/utils';
 
 function DevRoleSwitcher() {
   const router = useRouter();
-  const { user, hydrated, setUserId, clearUser } = useUserContext();
+  const {
+    user,
+    viewAsUser,
+    hydrated,
+    setUserId,
+    clearUser,
+    setViewAsUserId,
+  } = useUserContext();
 
   if (!hydrated) return null;
 
@@ -33,6 +40,16 @@ function DevRoleSwitcher() {
     router.push('/login');
   };
 
+  // View-as is admin-only. Cycle button: none → first client → second client → none.
+  const isAdmin = user?.role === 'admin';
+  const clientUserDefs = STUB_USER_DEFS.filter((u) => u.role === 'client');
+  const cycleViewAs = () => {
+    const cycle = [null, ...clientUserDefs.map((u) => u.id)];
+    const currentIdx = cycle.indexOf(viewAsUser?.id ?? null);
+    const nextIdx = (currentIdx + 1) % cycle.length;
+    setViewAsUserId(cycle[nextIdx]);
+  };
+
   return (
     <div
       data-slot="dev-role-switcher"
@@ -40,7 +57,13 @@ function DevRoleSwitcher() {
     >
       <span className="text-paper/55">{'// STUB'}</span>
       <span className="text-rust">
-        user: {user ? `${user.displayName.toLowerCase()} (${user.role})` : 'none'}
+        user:{' '}
+        {user ? `${user.displayName.toLowerCase()} (${user.role})` : 'none'}
+        {viewAsUser ? (
+          <span className="ml-1 text-rust-light">
+            [as {viewAsUser.displayName.toLowerCase()}]
+          </span>
+        ) : null}
       </span>
       <span className="text-paper/30">|</span>
       {STUB_USERS.map((u) => (
@@ -59,6 +82,24 @@ function DevRoleSwitcher() {
           {u.displayName.toLowerCase()}
         </button>
       ))}
+      {isAdmin && clientUserDefs.length > 0 ? (
+        <>
+          <span className="text-paper/30">|</span>
+          <button
+            type="button"
+            onClick={cycleViewAs}
+            className={cn(
+              'rounded px-2 py-0.5 transition-colors',
+              viewAsUser
+                ? 'bg-rust-light/20 text-rust-light'
+                : 'text-paper/55 hover:text-paper',
+            )}
+            title="Cycle view-as override (admin only)"
+          >
+            view as: {viewAsUser?.displayName.toLowerCase() ?? 'none'}
+          </button>
+        </>
+      ) : null}
       <span className="text-paper/30">|</span>
       <Link
         href="/dev/capabilities"
