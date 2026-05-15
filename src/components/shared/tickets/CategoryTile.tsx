@@ -3,6 +3,7 @@ import type { TicketCategory } from '@/lib/tickets/types';
 
 const CATEGORY_GLYPH: Record<TicketCategory, string> = {
   website: '▦',
+  'website-approval': '✓',
   marketing: '↗',
   campaigns: '⌖',
   reviews: '★',
@@ -12,6 +13,7 @@ const CATEGORY_GLYPH: Record<TicketCategory, string> = {
 
 const CATEGORY_BG: Record<TicketCategory, string> = {
   website: 'bg-rust',
+  'website-approval': 'bg-rust',
   marketing: 'bg-info',
   campaigns: 'bg-plum',
   reviews: 'bg-amber',

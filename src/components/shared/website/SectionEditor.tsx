@@ -20,15 +20,30 @@
 // Brand comes from the client (via `website.clientId` → `getBrandForClient`).
 // =============================================================================
 
-import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { useUser } from '@/lib/auth/user-stub';
 import { getBrandForClient } from '@/lib/website/data-stub';
+import {
+  type DraftSlot,
+  loadDraftSections,
+} from '@/lib/website/draft-stub';
+import {
+  publishDraft,
+  submitForApproval,
+} from '@/lib/website/publish-stub';
 import type { Page, Section, Website } from '@/lib/website/types';
+import { useAutosave } from '@/lib/website/use-autosave';
+import { useUserPendingSubmission } from '@/lib/website/use-publish-state';
+
+import { WebsiteEditorPendingBanner } from './WebsiteEditorPendingBanner';
 
 import {
   EditorToolbar,
   type EditorToolbarTab,
 } from './EditorToolbar';
+import { ForcePublishMenu } from './ForcePublishMenu';
 import { PagePreviewPane } from './PagePreviewPane';
 import { SectionFieldsPanel } from './SectionFieldsPanel';
 import { SectionListRail } from './SectionListRail';
@@ -50,27 +65,98 @@ export type SectionEditorProps = {
   mode: SectionEditorMode;
 };
 
+// Derive the draft slot from the editor mode. Page mode → `page` slot keyed
+// by pageId; singleton mode → `header` / `footer` slot keyed by section type.
+function slotForMode(mode: SectionEditorMode): DraftSlot {
+  if (mode.kind === 'page') return { kind: 'page', pageId: mode.page.id };
+  if (mode.section.type === 'header') return { kind: 'header' };
+  return { kind: 'footer' };
+}
+
+function seedSectionsForMode(mode: SectionEditorMode): Section[] {
+  return mode.kind === 'page' ? mode.page.sections : [mode.section];
+}
+
 export function SectionEditor({ website, mode }: SectionEditorProps) {
   const brand = getBrandForClient(website.clientId);
-  const [sections, setSections] = useState<Section[]>(() =>
-    mode.kind === 'page' ? mode.page.sections : [mode.section],
+  const slot = useMemo(() => slotForMode(mode), [mode]);
+  const user = useUser();
+  const router = useRouter();
+
+  // Lane B lock: this user owns a pending submission on this website. The
+  // banner mounts above the toolbar, the rail / preview opacity-dim, the
+  // fields panel hides, autosave pauses. Operator view never sees this —
+  // it only lights up for the submitter (design doc §3.3 Lane B).
+  const pendingForUser = useUserPendingSubmission(
+    website.id,
+    user?.id ?? null,
   );
+  const locked = pendingForUser != null;
+
+  // Hydrate: prefer any persisted autosave draft over the seed snapshot.
+  // Falls back cleanly when localStorage is unavailable.
+  const [sections, setSections] = useState<Section[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = loadDraftSections(website.id, slot);
+      if (saved) return saved;
+    }
+    return seedSectionsForMode(mode);
+  });
+
   // In singleton mode the only section is auto-selected. In page mode the
   // user picks (rail click or preview click).
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(
     () => (mode.kind === 'singleton' ? mode.section.id : null),
   );
 
-  // Reset local state when the source content changes.
+  // Reset local state when the source content changes (e.g. tab swap).
+  // Re-hydrate from the autosave draft for the new slot if present.
   useEffect(() => {
-    if (mode.kind === 'page') {
-      setSections(mode.page.sections);
-      setSelectedSectionId(null);
+    if (typeof window !== 'undefined') {
+      const saved = loadDraftSections(website.id, slot);
+      if (saved) {
+        setSections(saved);
+      } else {
+        setSections(seedSectionsForMode(mode));
+      }
     } else {
-      setSections([mode.section]);
-      setSelectedSectionId(mode.section.id);
+      setSections(seedSectionsForMode(mode));
     }
-  }, [mode]);
+    setSelectedSectionId(mode.kind === 'singleton' ? mode.section.id : null);
+  }, [mode, slot, website.id]);
+
+  // Autosave wired off the live sections array. Disabled when the editor
+  // is locked — submitters waiting on review mustn't keep writing.
+  const autosave = useAutosave({
+    websiteId: website.id,
+    slot,
+    sections,
+    disabled: locked,
+  });
+
+  // Lane A: promote draft → published. Routes back to the hub on success
+  // so the operator sees the freshly-published version reflected.
+  const handlePublish = useCallback(() => {
+    if (!user) return;
+    const result = publishDraft(website.id, {
+      id: user.id,
+      displayName: user.displayName,
+    });
+    if (result) router.push('/website');
+  }, [user, website.id, router]);
+
+  // Lane B: submit a pending_approval Version. The submitter retains the
+  // draft (§3.3) — recall / reject puts them back; approve promotes.
+  // Submit-mid-edit (§3.1) is handled inside submitForApproval: the
+  // snapshot is whatever has flushed to localStorage at this moment.
+  const handleSubmitForReview = useCallback(() => {
+    if (!user) return;
+    const submission = submitForApproval(website.id, {
+      id: user.id,
+      displayName: user.displayName,
+    });
+    if (submission) router.push('/website');
+  }, [user, website.id, router]);
 
   const selectedSection = useMemo(
     () => (selectedSectionId ? sections.find((s) => s.id === selectedSectionId) : null) ?? null,
@@ -126,19 +212,39 @@ export function SectionEditor({ website, mode }: SectionEditorProps) {
       : { kind: 'singleton' as const, label: mode.label };
 
   // Three-column grid when a section is selected; two-column otherwise.
+  // Locked editors (Lane B submitter waiting on review) hide the fields
+  // panel entirely — the dimmed rail + preview show *what* was submitted
+  // but you can't edit until the operator acts.
   const isSingleton = mode.kind === 'singleton';
-  const gridCols = selectedSection
+  const showFields = !locked && selectedSection != null;
+  const gridCols = showFields
     ? 'grid-cols-[300px_1fr_400px]'
     : 'grid-cols-[340px_1fr]';
 
   return (
     <div className="flex h-svh flex-col bg-paper">
+      {pendingForUser ? (
+        <WebsiteEditorPendingBanner submission={pendingForUser} />
+      ) : null}
       <EditorToolbar
         website={website}
         mode={toolbarMode}
         activePageId={mode.kind === 'page' ? mode.page.id : undefined}
+        autosave={{
+          status: autosave.status,
+          lastSavedAt: autosave.lastSavedAt,
+          onRetry: autosave.retry,
+        }}
+        publishDisabled={locked}
+        onPublish={handlePublish}
+        onSubmitForReview={handleSubmitForReview}
+        publishMenu={<ForcePublishMenu websiteId={website.id} hidden={locked} />}
       />
-      <div className={`grid min-h-0 flex-1 overflow-hidden ${gridCols}`}>
+      <div
+        className={`grid min-h-0 flex-1 overflow-hidden grid-rows-[minmax(0,1fr)] ${gridCols} ${
+          locked ? 'opacity-65 [&_*]:pointer-events-none' : ''
+        }`}
+      >
         <SectionListRail
           mode={railMode}
           sections={sections}
@@ -152,7 +258,7 @@ export function SectionEditor({ website, mode }: SectionEditorProps) {
           selectedSectionId={selectedSectionId}
           onSelectSection={setSelectedSectionId}
         />
-        {selectedSection ? (
+        {showFields && selectedSection ? (
           <SectionFieldsPanel
             // Force remount when the selected section changes so the Fields
             // component gets a fresh internal state (e.g. CopyField's AI

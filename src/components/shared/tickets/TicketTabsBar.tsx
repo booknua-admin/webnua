@@ -8,11 +8,30 @@ import type { TicketTab } from '@/lib/tickets/types';
 type TicketTabsBarProps = {
   tabs: TicketTab[];
   defaultActiveId?: string;
+  /** Controlled active tab id. When provided, the bar surrenders local
+   *  state and the parent owns activeId via onChange. */
+  value?: string;
+  onChange?: (id: string) => void;
   className?: string;
 };
 
-function TicketTabsBar({ tabs, defaultActiveId, className }: TicketTabsBarProps) {
-  const [activeId, setActiveId] = useState(defaultActiveId ?? tabs[0]?.id);
+function TicketTabsBar({
+  tabs,
+  defaultActiveId,
+  value,
+  onChange,
+  className,
+}: TicketTabsBarProps) {
+  const [internalActiveId, setInternalActiveId] = useState(
+    defaultActiveId ?? tabs[0]?.id,
+  );
+  const isControlled = value !== undefined;
+  const activeId = isControlled ? value : internalActiveId;
+
+  const handleSelect = (id: string) => {
+    if (!isControlled) setInternalActiveId(id);
+    onChange?.(id);
+  };
 
   return (
     <div
@@ -29,7 +48,7 @@ function TicketTabsBar({ tabs, defaultActiveId, className }: TicketTabsBarProps)
             role="tab"
             aria-selected={isActive}
             data-state={isActive ? 'active' : 'inactive'}
-            onClick={() => setActiveId(tab.id)}
+            onClick={() => handleSelect(tab.id)}
             className={cn(
               'inline-flex items-center gap-1.5 rounded-full border border-transparent px-3.5 py-2 text-[13px] transition-colors',
               isActive

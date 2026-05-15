@@ -48,7 +48,7 @@ export function PagePreviewPane({
   }
 
   return (
-    <div className="overflow-y-auto bg-paper-2 px-6 py-6 md:px-10">
+    <div className="h-full min-h-0 overflow-y-auto bg-paper-2 px-6 py-6 md:px-10">
       <div className="mx-auto flex max-w-[760px] flex-col gap-4">
         {enabled.map((section) => {
           const def = getSectionDefinition(section.type);

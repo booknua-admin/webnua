@@ -91,6 +91,7 @@ function UrgencyPill({ urgency, className }: UrgencyPillProps) {
 
 const CATEGORY_CLASS: Record<TicketCategory, string> = {
   website: 'bg-rust/12 text-rust',
+  'website-approval': 'bg-rust/18 text-rust',
   marketing: 'bg-info/12 text-info',
   campaigns: 'bg-plum/12 text-plum',
   reviews: 'bg-amber/15 text-amber',

@@ -5,7 +5,7 @@
 // by the workspace context (see lib/workspace/workspace-stub.tsx).
 //
 //   Agency mode  → birds-eye summary across all clients. Per-client roster,
-//                  force-publish audit log, pending-approval empty state.
+//                  force-publish audit log, pending-approval surface.
 //                  No per-user cap editing here.
 //   Sub-account  → that client's users + per-user cap grid + audit log
 //                  entries scoped to this client. This is where actual
@@ -16,7 +16,7 @@
 // scales beyond what fits on one screen.
 // =============================================================================
 
-import { useMemo } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 
 import { AccessClientRosterRow } from '@/components/shared/settings/AccessClientRosterRow';
 import {
@@ -32,7 +32,8 @@ import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
 import { Button } from '@/components/ui/button';
 import {
-  STUB_FORCE_PUBLISH_LOG,
+  getEffectiveAuditLog,
+  subscribeAudit,
   type ForcePublishEntry,
 } from '@/lib/auth/audit-stub';
 import {
@@ -50,7 +51,17 @@ import { adminClients } from '@/lib/nav/admin-clients';
 import { adminSettingsNav } from '@/lib/nav/admin-settings-nav';
 import { findWebsite, getWebsitesForClient } from '@/lib/website/data-stub';
 import type { Website } from '@/lib/website/types';
+import { useAllPendingApprovals } from '@/lib/website/use-publish-state';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
+
+/** Reactive read of the merged seed + overlay audit log. */
+function useAuditLog(): ForcePublishEntry[] {
+  return useSyncExternalStore(
+    subscribeAudit,
+    () => getEffectiveAuditLog(),
+    () => [],
+  );
+}
 
 /** Project a full Website into the minimal display shape the cap grid needs. */
 function projectWebsite(website: Website): CapabilityGridWebsite {
@@ -151,12 +162,11 @@ function SubAccountView({
     ctx.setUserGrant(userId, websiteId, explicit);
   };
 
+  const auditEntries = useAuditLog();
   const clientAuditEntries: ForcePublishEntry[] = useMemo(() => {
     const websiteIds = new Set(websites.map((w) => w.id));
-    return STUB_FORCE_PUBLISH_LOG.filter((e) =>
-      websiteIds.has(e.target.websiteId),
-    );
-  }, [websites]);
+    return auditEntries.filter((e) => websiteIds.has(e.target.websiteId));
+  }, [websites, auditEntries]);
 
   return (
     <>
@@ -246,7 +256,10 @@ function AgencyOverview() {
   const workspace = useWorkspace();
   const clientUserDefs = getClientUserDefs();
   const totalClientUsers = clientUserDefs.length;
-  const totalAuditEntries = STUB_FORCE_PUBLISH_LOG.length;
+  const auditEntries = useAuditLog();
+  const totalAuditEntries = auditEntries.length;
+  const pendingApprovals = useAllPendingApprovals();
+  const pendingCount = pendingApprovals.length;
 
   const perClient = useMemo(() => {
     return adminClients.map((client) => {
@@ -321,9 +334,9 @@ function AgencyOverview() {
               />
               <SummaryTile
                 label="Pending approvals"
-                value="0"
-                meta="cap-change submissions"
-                tone="quiet"
+                value={pendingCount.toString()}
+                meta="website submissions waiting"
+                tone={pendingCount > 0 ? 'warn' : 'quiet'}
               />
               <SummaryTile
                 label="Force-publish · 30d"
@@ -388,7 +401,7 @@ function AgencyOverview() {
               </>
             }
           >
-            <ForcePublishLog entries={STUB_FORCE_PUBLISH_LOG} />
+            <ForcePublishLog entries={auditEntries} />
           </SettingsSection>
         </SettingsPanel>
       </SettingsShell>
