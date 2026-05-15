@@ -35,6 +35,11 @@
 // =============================================================================
 
 import {
+  appendForcePublishEntry,
+  type ForcePublishEntry,
+} from '@/lib/auth/audit-stub';
+import { adminClients } from '@/lib/nav/admin-clients';
+import {
   APPROVAL_EVENT,
   type WebsiteApprovalDiff,
   type WebsiteApprovalSubmission,
@@ -328,6 +333,8 @@ function diffSnapshots(
 export type PublishActor = {
   id: string;
   displayName: string;
+  /** Required for force-publish audit entries; optional for normal publish. */
+  email?: string;
 };
 
 export type PublishOptions = {
@@ -414,6 +421,31 @@ export function publishDraft(
 
   // Wipe draft slots — the new published version IS the new baseline.
   clearDraftsForWebsite(websiteId);
+
+  // Force-publish audit entry (design doc §2.4). Every break-glass publish
+  // gets a row with actor, target, reason, and the resulting version id.
+  if (options.force) {
+    const website = findWebsite(websiteId);
+    const clientName = website
+      ? adminClients.find((c) => c.id === website.clientId)?.name ?? website.name
+      : websiteId;
+    // The target page is the most-changed page in the snapshot; cheap
+    // approximation for a stub. In real backend this would be the page
+    // the operator was on when they triggered force-publish.
+    const firstPage = snapshot.pages[0]?.title ?? 'Website-level change';
+    const entry: ForcePublishEntry = {
+      id: `fp-${Date.now()}`,
+      at: now,
+      actor: {
+        displayName: actor.displayName,
+        email: actor.email ?? `${actor.id}@webnua.com`,
+      },
+      target: { clientName, websiteId, pageTitle: firstPage },
+      reason: options.force.reason,
+      newVersionId,
+    };
+    appendForcePublishEntry(entry);
+  }
 
   notify();
   return { newVersionId };

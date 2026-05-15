@@ -2,10 +2,13 @@
 // STUB — force-publish audit log shape + example entries.
 //
 // The real audit log fires whenever an admin uses the "Force publish (skip
-// approval)" affordance — Session 5+. The shape is captured here in 1b so
-// the surface in /settings/access can be designed and reviewed alongside
-// the capability grid. Replace with backend-resolved entries when the
-// publish flow lands.
+// approval)" affordance. Session 5 (F) wires the overlay write path:
+// `appendForcePublishEntry` pushes new entries into a localStorage overlay
+// (`webnua.dev.audit-log`) that getEffectiveAuditLog merges with the seed
+// list before returning. ForcePublishLog renders the merged result.
+//
+// When real backend ships: this module's seed + overlay both disappear,
+// replaced by Supabase reads against an `audit_log` table.
 // =============================================================================
 
 export type ForcePublishEntry = {
@@ -21,6 +24,62 @@ export type ForcePublishEntry = {
   /** Version id that became live as a result. */
   newVersionId: string;
 };
+
+const AUDIT_KEY = 'webnua.dev.audit-log';
+export const AUDIT_EVENT = 'webnua:audit-change';
+
+function safeGet(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSet(key: string, value: string): boolean {
+  try {
+    window.localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readOverlay(): ForcePublishEntry[] {
+  const raw = safeGet(AUDIT_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed as ForcePublishEntry[];
+  } catch {
+    return [];
+  }
+}
+
+/** Merged seed + overlay, newest first. */
+export function getEffectiveAuditLog(): ForcePublishEntry[] {
+  const overlay = typeof window === 'undefined' ? [] : readOverlay();
+  const merged = [...STUB_FORCE_PUBLISH_LOG, ...overlay];
+  return merged.sort((a, b) => (a.at < b.at ? 1 : -1));
+}
+
+export function appendForcePublishEntry(entry: ForcePublishEntry): void {
+  if (typeof window === 'undefined') return;
+  const overlay = readOverlay();
+  overlay.push(entry);
+  safeSet(AUDIT_KEY, JSON.stringify(overlay));
+  window.dispatchEvent(new Event(AUDIT_EVENT));
+}
+
+export function subscribeAudit(callback: () => void): () => void {
+  window.addEventListener('storage', callback);
+  window.addEventListener(AUDIT_EVENT, callback);
+  return () => {
+    window.removeEventListener('storage', callback);
+    window.removeEventListener(AUDIT_EVENT, callback);
+  };
+}
 
 export const STUB_FORCE_PUBLISH_LOG: ForcePublishEntry[] = [
   {

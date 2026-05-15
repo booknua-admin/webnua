@@ -43,6 +43,7 @@ import {
   EditorToolbar,
   type EditorToolbarTab,
 } from './EditorToolbar';
+import { ForcePublishMenu } from './ForcePublishMenu';
 import { PagePreviewPane } from './PagePreviewPane';
 import { SectionFieldsPanel } from './SectionFieldsPanel';
 import { SectionListRail } from './SectionListRail';
@@ -237,6 +238,7 @@ export function SectionEditor({ website, mode }: SectionEditorProps) {
         publishDisabled={locked}
         onPublish={handlePublish}
         onSubmitForReview={handleSubmitForReview}
+        publishMenu={<ForcePublishMenu websiteId={website.id} hidden={locked} />}
       />
       <div
         className={`grid min-h-0 flex-1 overflow-hidden ${gridCols} ${
