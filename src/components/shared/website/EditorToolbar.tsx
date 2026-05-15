@@ -73,9 +73,17 @@ export type EditorToolbarProps = {
    *  current user (Lane B submitter waiting on review) or when the surface
    *  doesn't have publish wired yet (funnel-step editor, Session 7). */
   publishDisabled?: boolean;
-  /** Fired on the rust "Publish →" button (Lane A). */
+  /** Session 8 — when set, the lane buttons collapse into a single
+   *  "Review →" link routing here. The review surface owns the actual
+   *  publish / submit calls so preflight is a mandatory gate (design §7).
+   *  When omitted, falls back to the direct `onPublish` / `onSubmitForReview`
+   *  buttons (funnel-step editor still uses the direct path). */
+  reviewHref?: string;
+  /** Fired on the rust "Publish →" button (Lane A). Ignored when
+   *  `reviewHref` is set. */
   onPublish?: () => void;
-  /** Fired on the ghost "Submit for review →" button (Lane B). */
+  /** Fired on the ghost "Submit for review →" button (Lane B). Ignored
+   *  when `reviewHref` is set. */
   onSubmitForReview?: () => void;
   /** Render a chevron menu next to Publish with the force-publish item.
    *  Wired in by chunk F; omit to hide the menu. */
@@ -88,6 +96,7 @@ export function EditorToolbar({
   activePageId,
   autosave,
   publishDisabled = false,
+  reviewHref,
   onPublish,
   onSubmitForReview,
   publishMenu,
@@ -159,7 +168,18 @@ export function EditorToolbar({
         >
           View live ↗
         </a>
-        {publishDisabled ? null : canPublish ? (
+        {publishDisabled ? null : reviewHref ? (
+          // Session 8 — review surface is the publish gate. Both lanes
+          // route here; the surface renders the lane-correct action.
+          (canPublish || canEditAnything) ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Button size="sm" asChild>
+                <Link href={reviewHref}>Review &amp; publish →</Link>
+              </Button>
+              {canPublish ? publishMenu : null}
+            </span>
+          ) : null
+        ) : canPublish ? (
           <span className="inline-flex items-center gap-1.5">
             <Button size="sm" onClick={onPublish}>
               Publish →

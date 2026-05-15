@@ -201,6 +201,15 @@ export function findPendingForUser(
 // The single shared draft per website (§3.1). Combines the seed draft
 // Version with any localStorage draft slots — slot wins where present.
 
+/** Public accessor for the effective draft snapshot — seed draft Version
+ *  merged with any localStorage draft slots. Used by the Session 8 review
+ *  surface to run preflight against exactly what would publish. */
+export function getEffectiveDraftSnapshot(
+  websiteId: string,
+): VersionSnapshot | null {
+  return buildCurrentSnapshot(websiteId);
+}
+
 function buildCurrentSnapshot(websiteId: string): VersionSnapshot | null {
   const draft = getDraftForWebsite(websiteId);
   if (!draft) return null;
@@ -653,4 +662,66 @@ export function recallSubmission(submissionId: string): WebsiteApprovalSubmissio
 
   notify();
   return next;
+}
+
+/**
+ * Restore a prior version's snapshot as the current draft. Session 8
+ * (design doc §7). Does NOT auto-publish — the restored draft enters the
+ * normal lanes; the operator must publish or submit-for-review through
+ * the editor + review surface like any other change. Pending submissions
+ * on this website block the restore (the submitter's pending content
+ * would be silently overwritten otherwise).
+ */
+export function restoreVersionAsDraft(
+  websiteId: string,
+  sourceVersionId: string,
+  actor: PublishActor,
+): { newDraftId: string } | null {
+  const source = resolveVersion(sourceVersionId);
+  if (!source || source.websiteId !== websiteId) return null;
+
+  // Refuse while a pending submission is in flight — restore would
+  // silently overwrite the submitter's diff.
+  const approvals = readApprovals();
+  const hasPending = approvals.some(
+    (a) => a.websiteId === websiteId && a.status === 'pending',
+  );
+  if (hasPending) return null;
+
+  const versions = readVersionsOverlay();
+  const now = new Date().toISOString();
+  const newDraftId = `v-${websiteId}-restore-${Date.now()}`;
+
+  // Archive any existing draft (overlay or seed) so the new restored
+  // draft is the sole draft for this website. Mirrors publishDraft's
+  // pattern of archiving prior versions of the same status.
+  const allVersions = getAllVersions().filter((v) => v.websiteId === websiteId);
+  for (const v of allVersions) {
+    if (v.status === 'draft') {
+      versions[v.id] = { ...v, status: 'archived' };
+    }
+  }
+
+  const restored: Version = {
+    id: newDraftId,
+    websiteId,
+    status: 'draft',
+    // Deep-copy the snapshot so future edits to the restored draft don't
+    // mutate the source version's snapshot.
+    snapshot: JSON.parse(JSON.stringify(source.snapshot)) as VersionSnapshot,
+    createdBy: actor.id,
+    createdAt: now,
+    parentVersionId: source.id,
+    notes: `Restored from ${source.status} version ${source.id}`,
+  };
+
+  versions[newDraftId] = restored;
+  writeVersionsOverlay(versions);
+
+  // Wipe local draft slots so the editor rehydrates from the restored
+  // snapshot rather than stale per-section overrides.
+  clearDraftsForWebsite(websiteId);
+
+  notify();
+  return { newDraftId };
 }

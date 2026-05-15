@@ -19,6 +19,7 @@
 import Link from 'next/link';
 
 import { CapabilityGate } from '@/components/shared/CapabilityGate';
+import { DomainStatusIndicator } from '@/components/shared/website/DomainStatusIndicator';
 import { NewPageEntry } from '@/components/shared/website/NewPageEntry';
 import { PageGridCard } from '@/components/shared/website/PageGridCard';
 import { VersionHistoryCard } from '@/components/shared/website/VersionHistoryCard';
@@ -145,6 +146,14 @@ function WebsiteHub({ website }: { website: Website }) {
           <WorkspaceContextBanner />
         </div>
 
+        {/* Domain status + review entry point */}
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <DomainStatusIndicator domain={website.domain} />
+          <Button asChild>
+            <Link href="/website/review">Review &amp; publish →</Link>
+          </Button>
+        </div>
+
         {/* Header + Footer + Nav — website-level singletons */}
         <div className="mb-6 grid gap-3 md:grid-cols-3">
           <SingletonCard
@@ -201,6 +210,7 @@ function WebsiteHub({ website }: { website: Website }) {
             }
             versions={history}
             currentPublishedId={publishedVersion?.id ?? null}
+            websiteId={website.id}
           />
         </div>
       </div>

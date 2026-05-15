@@ -29,8 +29,7 @@
 // (design doc §2.3 — brand lives on the Client).
 // =============================================================================
 
-import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { useUser } from '@/lib/auth/user-stub';
 import type { Funnel, FunnelStep } from '@/lib/funnel/types';
@@ -39,10 +38,6 @@ import {
   type DraftSlot,
   loadDraftSections,
 } from '@/lib/website/draft-stub';
-import {
-  publishDraft,
-  submitForApproval,
-} from '@/lib/website/publish-stub';
 import type { Page, Section, Website } from '@/lib/website/types';
 import { useAutosave } from '@/lib/website/use-autosave';
 import { useUserPendingSubmission } from '@/lib/website/use-publish-state';
@@ -124,7 +119,6 @@ export function SectionEditor({ mode }: SectionEditorProps) {
   const brand = getBrandForClient(clientIdForMode(mode));
   const slot = useMemo(() => slotForMode(mode), [mode]);
   const user = useUser();
-  const router = useRouter();
 
   // Lane B lock applies only to websites. Funnel-step editing has no
   // approval queue yet (Session 7 is the shell; mechanics later).
@@ -172,27 +166,6 @@ export function SectionEditor({ mode }: SectionEditorProps) {
     sections,
     disabled: locked,
   });
-
-  // Lane A: promote draft → published. Routes back to the hub on success.
-  // Website-only — funnel publish is a later session.
-  const handlePublish = useCallback(() => {
-    if (!user || mode.kind === 'funnelStep') return;
-    const result = publishDraft(mode.website.id, {
-      id: user.id,
-      displayName: user.displayName,
-    });
-    if (result) router.push('/website');
-  }, [user, mode, router]);
-
-  // Lane B: submit a pending_approval Version. Website-only.
-  const handleSubmitForReview = useCallback(() => {
-    if (!user || mode.kind === 'funnelStep') return;
-    const submission = submitForApproval(mode.website.id, {
-      id: user.id,
-      displayName: user.displayName,
-    });
-    if (submission) router.push('/website');
-  }, [user, mode, router]);
 
   const selectedSection = useMemo(
     () => (selectedSectionId ? sections.find((s) => s.id === selectedSectionId) : null) ?? null,
@@ -294,8 +267,9 @@ export function SectionEditor({ mode }: SectionEditorProps) {
           onRetry: autosave.retry,
         }}
         publishDisabled={locked || isFunnelStep}
-        onPublish={handlePublish}
-        onSubmitForReview={handleSubmitForReview}
+        // Session 8 — website editing routes publish through the review
+        // surface (preflight is the gate). Funnel mode has no publish yet.
+        reviewHref={isFunnelStep ? undefined : '/website/review'}
         publishMenu={
           mode.kind === 'funnelStep' ? null : (
             <ForcePublishMenu websiteId={mode.website.id} hidden={locked} />
