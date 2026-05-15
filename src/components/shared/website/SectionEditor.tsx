@@ -35,6 +35,9 @@ import {
 } from '@/lib/website/publish-stub';
 import type { Page, Section, Website } from '@/lib/website/types';
 import { useAutosave } from '@/lib/website/use-autosave';
+import { useUserPendingSubmission } from '@/lib/website/use-publish-state';
+
+import { WebsiteEditorPendingBanner } from './WebsiteEditorPendingBanner';
 
 import {
   EditorToolbar,
@@ -59,10 +62,6 @@ export type SectionEditorMode =
 export type SectionEditorProps = {
   website: Website;
   mode: SectionEditorMode;
-  /** When true, autosave is suspended and the publish actions hide.
-   *  Used when this user has submitted-for-review (Lane B) and is waiting
-   *  on the operator (chunk D — WebsiteEditorPendingBanner sits above us). */
-  locked?: boolean;
 };
 
 // Derive the draft slot from the editor mode. Page mode → `page` slot keyed
@@ -77,11 +76,21 @@ function seedSectionsForMode(mode: SectionEditorMode): Section[] {
   return mode.kind === 'page' ? mode.page.sections : [mode.section];
 }
 
-export function SectionEditor({ website, mode, locked = false }: SectionEditorProps) {
+export function SectionEditor({ website, mode }: SectionEditorProps) {
   const brand = getBrandForClient(website.clientId);
   const slot = useMemo(() => slotForMode(mode), [mode]);
   const user = useUser();
   const router = useRouter();
+
+  // Lane B lock: this user owns a pending submission on this website. The
+  // banner mounts above the toolbar, the rail / preview opacity-dim, the
+  // fields panel hides, autosave pauses. Operator view never sees this —
+  // it only lights up for the submitter (design doc §3.3 Lane B).
+  const pendingForUser = useUserPendingSubmission(
+    website.id,
+    user?.id ?? null,
+  );
+  const locked = pendingForUser != null;
 
   // Hydrate: prefer any persisted autosave draft over the seed snapshot.
   // Falls back cleanly when localStorage is unavailable.
@@ -202,13 +211,20 @@ export function SectionEditor({ website, mode, locked = false }: SectionEditorPr
       : { kind: 'singleton' as const, label: mode.label };
 
   // Three-column grid when a section is selected; two-column otherwise.
+  // Locked editors (Lane B submitter waiting on review) hide the fields
+  // panel entirely — the dimmed rail + preview show *what* was submitted
+  // but you can't edit until the operator acts.
   const isSingleton = mode.kind === 'singleton';
-  const gridCols = selectedSection
+  const showFields = !locked && selectedSection != null;
+  const gridCols = showFields
     ? 'grid-cols-[300px_1fr_400px]'
     : 'grid-cols-[340px_1fr]';
 
   return (
     <div className="flex h-svh flex-col bg-paper">
+      {pendingForUser ? (
+        <WebsiteEditorPendingBanner submission={pendingForUser} />
+      ) : null}
       <EditorToolbar
         website={website}
         mode={toolbarMode}
@@ -222,7 +238,11 @@ export function SectionEditor({ website, mode, locked = false }: SectionEditorPr
         onPublish={handlePublish}
         onSubmitForReview={handleSubmitForReview}
       />
-      <div className={`grid min-h-0 flex-1 overflow-hidden ${gridCols}`}>
+      <div
+        className={`grid min-h-0 flex-1 overflow-hidden ${gridCols} ${
+          locked ? 'opacity-65 [&_*]:pointer-events-none' : ''
+        }`}
+      >
         <SectionListRail
           mode={railMode}
           sections={sections}
@@ -236,7 +256,7 @@ export function SectionEditor({ website, mode, locked = false }: SectionEditorPr
           selectedSectionId={selectedSectionId}
           onSelectSection={setSelectedSectionId}
         />
-        {selectedSection ? (
+        {showFields && selectedSection ? (
           <SectionFieldsPanel
             // Force remount when the selected section changes so the Fields
             // component gets a fresh internal state (e.g. CopyField's AI
