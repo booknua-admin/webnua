@@ -1,27 +1,35 @@
 'use client';
 
-// STUB — part of the role-stub deletion set (see src/lib/auth/role-stub.tsx).
-// This floating dev-only pill lets you flip between client/admin and clear the
-// stubbed role. Remove this component when real auth ships.
+// STUB — part of the user-stub deletion set (see src/lib/auth/user-stub.tsx).
+// Floating dev-only pill that lets you switch between the three stubbed users
+// and clear the active user. The caps↗ link opens the capability matrix at
+// /dev/capabilities for visual review of <CapabilityGate> behaviour across
+// users × modes. Remove this component when real auth ships.
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
-import { ROLE_LANDING, useRole, type Role } from '@/lib/auth/user-stub';
+import {
+  ROLE_LANDING,
+  STUB_USERS,
+  useUserContext,
+} from '@/lib/auth/user-stub';
 import { cn } from '@/lib/utils';
 
 function DevRoleSwitcher() {
   const router = useRouter();
-  const { role, hydrated, setRole, clearRole } = useRole();
+  const { user, hydrated, setUserId, clearUser } = useUserContext();
 
   if (!hydrated) return null;
 
-  const handleSwitch = (next: Role) => {
-    setRole(next);
-    router.push(ROLE_LANDING[next]);
+  const handleSwitch = (id: string) => {
+    setUserId(id);
+    const next = STUB_USERS.find((u) => u.id === id);
+    if (next) router.push(ROLE_LANDING[next.role]);
   };
 
   const handleSignOut = () => {
-    clearRole();
+    clearUser();
     router.push('/login');
   };
 
@@ -31,32 +39,33 @@ function DevRoleSwitcher() {
       className="fixed right-4 bottom-4 z-50 flex items-center gap-2 rounded-pill border border-rule bg-ink/95 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-paper shadow-card"
     >
       <span className="text-paper/55">{'// STUB'}</span>
-      <span className="text-rust">role: {role ?? 'none'}</span>
+      <span className="text-rust">
+        user: {user ? `${user.displayName.toLowerCase()} (${user.role})` : 'none'}
+      </span>
       <span className="text-paper/30">|</span>
-      <button
-        type="button"
-        onClick={() => handleSwitch('client')}
-        className={cn(
-          'rounded px-2 py-0.5 transition-colors',
-          role === 'client'
-            ? 'bg-rust text-paper'
-            : 'text-paper/55 hover:text-paper',
-        )}
+      {STUB_USERS.map((u) => (
+        <button
+          key={u.id}
+          type="button"
+          onClick={() => handleSwitch(u.id)}
+          className={cn(
+            'rounded px-2 py-0.5 transition-colors',
+            user?.id === u.id
+              ? 'bg-rust text-paper'
+              : 'text-paper/55 hover:text-paper',
+          )}
+          title={`${u.displayName} · ${u.email} · ${u.capabilities.size} caps`}
+        >
+          {u.displayName.toLowerCase()}
+        </button>
+      ))}
+      <span className="text-paper/30">|</span>
+      <Link
+        href="/dev/capabilities"
+        className="rounded px-2 py-0.5 text-paper/55 transition-colors hover:text-paper"
       >
-        client
-      </button>
-      <button
-        type="button"
-        onClick={() => handleSwitch('admin')}
-        className={cn(
-          'rounded px-2 py-0.5 transition-colors',
-          role === 'admin'
-            ? 'bg-rust text-paper'
-            : 'text-paper/55 hover:text-paper',
-        )}
-      >
-        admin
-      </button>
+        caps ↗
+      </Link>
       <span className="text-paper/30">|</span>
       <button
         type="button"
