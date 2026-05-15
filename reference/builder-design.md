@@ -693,57 +693,179 @@ managed-tier clients the entire generation flow is operator-only.
 
 ## 5. The wizard as constrained wrapper
 
+> **Revised — wizard-refactor reconciliation pass.** The §5.1 / §5.2 / §9
+> inconsistency flagged before Session 7 completion is resolved here. The
+> wizard adopts the **hybrid model**: the Session-6 Q&A flow drives
+> generation, then a dedicated wizard-frame editor step walks the generated
+> draft, then the review surface gates publish. This §5 is now concrete
+> enough to build from with no further interpretation; the Session 7
+> completion plan is written against the §5.1 table once this is committed.
+
 The onboarding wizard at `/clients/new/<step>` is **the form-to-page
-generation flow for the first page of a new website**, plus the brand-object
-initialisation, plus a guided edit of the AI-generated draft. It should not
-be a parallel implementation of the editor.
+generation flow for the first funnel of a new client**, plus brand-object
+initialisation, plus a guided edit of the AI-generated draft. It is **not** a
+parallel implementation of the editor — the steps that edit sections run the
+same `SectionEditor`, in a constrained mode.
 
-### 5.1 What the wizard becomes, post-Cluster-5
+A note on artefact: the wizard produces a **`Funnel`** (landing → schedule →
+thanks), not a `Website` (see §2.0). The funnel data model is
+`lib/funnel/types.ts`; the generated funnel lands on `/funnels/[id]`.
 
-- **Step 1 (Basics)** stays as-is — populates `BrandObject.audienceLine`,
-  `industryCategory`, business name, etc.
-- **Steps 2–4 (Idea / Offer / Trust)** become the §4.2-style Q&A questions
-  that drive form-to-page generation for the landing page. Same primitives,
-  same data, just a different visual frame.
-- **The transition from Step 4 to Step 5** triggers AI generation of the full
-  3-page funnel (landing + schedule + thanks).
-- **Step 5 (Automations)** stays as-is — separate concern, doesn't change.
-- **Step 6 (Review)** becomes the editor's review surface (§7) running in
-  wizard-frame mode — same `PreflightChecklist`, same per-page review cards.
-- **Step 7 (Published)** is the publish event.
+### 5.1 The eight wizard steps — post-refactor
 
-After publish, the operator lands on the website hub for that client — the
-editor is fully unlocked from there on.
+The refactor grows the wizard from 7 steps to **8**: a new **Draft
+walk-through** step is inserted after generation — the explicit home for the
+guided section edit, which is the gap the old §5.1/§5.2 left unplaced.
+`ONBOARDING_STEPS` gains a `draft` entry, `ONBOARDING_TOTAL_STEPS` becomes 8,
+and every "Step N of 7" label shifts — a deliberate, tracked consequence.
 
-### 5.2 The "wizard frame" mode
+Generation is **not a routed step** — it is the Step 4 → Step 5 transition,
+surfaced by the Session-6 `GenerationStatusCard` (ink-bg, rotating ✦) during
+the synthetic delay, after which the router pushes to `/clients/new/draft`.
 
-The editor supports a **wizard mode** flag that changes its presentation:
-- Hides the section list and "Add section" UI (the wizard pre-determines
-  which sections are present).
-- Hides page tabs (only the landing page exists during the wizard).
-- Shows only one section's `<Fields>` at a time, advancing on "Continue →".
-- Replaces the autosave indicator + "Publish" button with the wizard footer
-  (`BuilderFooterActions` from existing).
-- Locks capabilities to a fixed set (`editCopy` + `editMedia` + `useAI`)
-  regardless of the user's actual cap set, since the wizard's flow is its
-  own UX contract. (Wizard mode is operator-initiated during onboarding and
-  doesn't honour the operator's full cap set — the UX flow is the contract,
-  not the user's caps.)
+| # | Step (slug) | Data it edits | UI mode | Current preview snapshot | Replaces with |
+|---|---|---|---|---|---|
+| 1 | Basics (`basics`) | `BrandObject` — business name, owner, trade, service area, licence, response promise, website URL | Static form, single column | `previewAfterBasics` (skeleton) | **No preview** — basics is a brand form; the Q&A flow has no preview pane |
+| 2 | Idea (`idea`) | `GenerationContext` — primary intent, audience, big-idea reframe choice, voice tone | Q&A card(s) — chip / select (`QuestionCard`) | `previewAfterIdea` | **No preview** — Q&A cards are single-column |
+| 3 | Offer (`offer`) | `GenerationContext` — offer specifics (anchor, rates, guarantee) as structured input fields | Q&A card / structured form | `previewAfterOffer` | **No preview** |
+| 4 | Trust (`trust`) | `GenerationContext` — trust signals + jobs menu (prompt context). Continue → generation | Q&A card / structured form (`JobsMenuEditor` stays as input UI) | `previewAfterTrust` | **No preview** |
+| 5 | Draft walk-through (`draft`) — **NEW** | The generated `Funnel`'s `Section[]` — copy + media of every section across all 3 funnel steps | **Wizard-frame mode** — `SectionEditor` `{ kind: 'wizard' }` (§5.2) | n/a (new step) | Registry `<Preview>` rendering of live `Section` data |
+| 6 | Automations (`automations`) | The funnel's automation set | Static surface — existing `AutomationCard` list | none (full-width) | Unchanged |
+| 7 | Review (`review`) | Nothing — read-only verification | **Review surface** — `PreflightChecklist` + per-step review cards (Session 8's `/website/review` surface, funnel-flavoured) | none | Review surface |
+| 8 | Published (`published`) | Nothing — publish event | Static success screen | none | Unchanged — publishes the `Funnel`, lands on `/funnels/[id]` |
 
-This means the wizard's "preview pane" is no longer the standalone
-`FunnelLandingPreview` — it's the section registry's `<Preview>` components
-driven by the live draft state. **`FunnelLandingPreview` becomes a thin
-adapter** that pulls draft state and dispatches to per-section previews. The
-section-optional behaviour is preserved by the registry naturally (sections
-with `enabled: false` or unfilled-required-fields don't render).
+After publish, the operator lands on the funnel hub for that client; the
+funnel editor is fully unlocked from there.
 
-### 5.3 Migration cost
+### 5.2 Wizard-frame mode — concrete spec
 
-The wizard's existing per-step pages keep their URLs and routing — they're
-the visual presentation. Their internal forms swap from one-off field
-components to the section-registry's `<Fields>` components. Stub data
-(`voltlineBasics`, `voltlineOffer`, etc.) becomes the seed for the
-wizard-generated draft. Estimated ~6–8 file touches.
+Wizard-frame mode is a **fourth `SectionEditor` mode discriminator**, alongside
+the existing `page` / `singleton` / `funnelStep`:
+
+```ts
+{ kind: 'wizard', funnel, steps, walkIndex }
+```
+
+`steps` is the generated funnel's `FunnelStep[]`; `walkIndex` is the position
+in a **flattened section walk** — every section of every step, in step order
+(landing's hero / offer / trust / services / cta, then schedule's
+schedulePicker, then thanks's thanksConfirmation). Exactly one section is
+"current" at a time.
+
+Concrete differences from the standard editor:
+
+- **No `EditorToolbar`.** The wizard page's own chrome (`Topbar` +
+  `BuilderStepHeader`) sits above; the editor renders no toolbar of its own.
+  → no page/step tabs, no Publish / Submit / Force-publish, no "View live",
+  no autosave indicator.
+- **No section rail.** The wizard pre-determines which sections exist; the
+  user cannot reorder, add, remove, or toggle them. `SectionListRail` is not
+  rendered.
+- **Preview pane** renders the **current funnel step's** full section stack
+  (registry `<Preview>` components), with the section under edit
+  ring-highlighted — context, not just the isolated section.
+- **Fields panel** is always open, showing exactly one section's `<Fields>`
+  (the current section in the walk). No close button — there is no
+  "deselected" state in wizard mode.
+- **Footer** is `BuilderFooterActions` (the wizard footer), not editor chrome:
+  a `Section N of M` progress label + Back / Continue. Continue advances
+  `walkIndex`; Continue on the last section routes to Step 6 (Automations);
+  Back on the first section routes to Step 4 (Trust).
+- **Capabilities locked** to a fixed `{ editCopy, editMedia, useAI }` triple,
+  resolved via a session-local override regardless of who launched
+  onboarding. The wizard's flow is its own UX contract — no `editLayout` /
+  `editSections` / `editTheme` / `publish` affordances mid-wizard (most are
+  already absent with the rail + toolbar gone; the lock is what guarantees
+  `CopyField` / `MediaField` render editable, not as the request-change
+  affordance, for any launcher).
+- **Autosave still runs** — edits persist to a funnel-keyed `DraftSlot` so
+  backing out and resuming loses nothing. Only the *indicator* is gone; the
+  `BuilderFooterActions` progress label is the wizard's chrome.
+
+Layout: two columns (`preview | fields`) — no third rail column, since the
+rail is suppressed.
+
+### 5.3 `FunnelLandingPreview` — deleted, not adapted
+
+§5.2's earlier draft offered "thin adapter or deleted." **Decision: deleted.**
+
+Post-refactor, **zero** wizard steps consume `FunnelPreviewState`: steps 2–4
+(Q&A) have no preview pane; step 5 (draft walk) and step 7 (review) render the
+registry `<Preview>` components against real `Section[]`. The "thin adapter"
+option only made sense in a world where the wizard kept a bespoke preview
+shape fed from draft state — and that world is gone, because the wizard-frame
+editor *is* `SectionEditor`, which already renders registry `<Preview>`s via
+`PagePreviewPane`. An adapter would be a wrapper with no distinct caller —
+dead code wearing a compatibility label, which CLAUDE.md's "no dead code"
+rule forbids.
+
+Deleting `FunnelLandingPreview` also retires its dependents: the four
+`previewAfter*` snapshots and the `FunnelPreviewState` / `FunnelHeader` /
+`FunnelEyebrowConfig` / `FunnelHeadlineConfig` / `FunnelSubConfig` /
+`FunnelOfferCardConfig` / `FunnelCtaConfig` / `FunnelTrustConfig` /
+`FunnelJobsConfig` types in `lib/onboarding/types.ts`. Net result: one preview
+implementation across the whole platform — the section registry's `<Preview>`.
+
+### 5.4 Stub-data consolidation
+
+Today `lib/onboarding/voltline-build.tsx` and `lib/funnel/data-stub.tsx` are
+parallel representations of the same Voltline funnel. The refactor resolves
+this:
+
+- **`lib/funnel/data-stub.tsx` survives as the single source of truth for the
+  generated funnel's section content.** It is already registry-backed
+  (hero / offer / trust / services / cta + schedulePicker +
+  thanksConfirmation). The wizard's funnel-generation stub returns this funnel
+  for Voltline's deterministic Q&A inputs.
+- **`lib/onboarding/voltline-build.tsx` slims down.** Deleted from it: the
+  funnel-*content* stubs now superseded by `data-stub.tsx` — `voltlineOffer`,
+  `voltlineTrust`, `voltlineJobs` — and the four `previewAfter*` snapshots.
+  Surviving in it: `voltlineBasics` (brand seed — feeds the Step 1 form and
+  the Client's `BrandObject`), `voltlineReframes` (Q&A answer options for the
+  Big Idea step), `voltlineAutomations` (Step 6's data — a separate concern),
+  `voltlineNextSteps` (Step 8's cards).
+- The wizard's Step 3/4 form fields are now generation **inputs**, not stores
+  of final funnel content — the final content is whatever generation emits
+  (= `data-stub.tsx`). There is therefore no duplication of *content*, only of
+  *input shape* vs *output shape*, which is correct and intended.
+- Optional tidy: with its funnel-content gone, `voltline-build.tsx` is now
+  "Voltline onboarding inputs"; a rename to `voltline-onboarding.tsx` is
+  reasonable but not required — left to the implementing session's discretion.
+
+### 5.5 Migration shape
+
+The wizard's per-step routes keep their URLs (a `draft` route is added). Steps
+2–4 swap one-off field components for Q&A cards emitting a `GenerationContext`;
+Step 5 mounts `SectionEditor` in wizard mode; Step 7 mounts the review
+surface. The funnel-generation stub composes Session 6's single-page
+generator three times (landing / schedule / thanks, per
+generation-design §8) to produce the draft. This is no longer the original
+"~6–8 file touches" estimate — with the new step, the new editor mode, and the
+stub consolidation it is a substantial session. The concrete file-by-file
+plan is written against this §5 once it is reviewed and committed.
+
+### 5.6 Forward note — self-serve onboarding
+
+Webnua is operator-mediated today; a self-serve SaaS tier where the account
+owner onboards themselves is on the near horizon. The hybrid model holds up
+well for that future — the Q&A flow is the low-friction entry self-serve
+users expect, and the wizard-frame walk (Step 5) is a gentle, hand-held
+on-ramp to content editing before the user ever meets the full editor. Two
+things the implementing session should keep self-serve-ready, without building
+for it yet:
+
+- **Route / access.** The wizard lives at `/clients/new/*` under the
+  `(admin)` route group — operator-only by URL shape. Self-serve onboarding
+  must be runnable by the signing-up account owner. Don't deepen the
+  `(admin)` coupling; when the wizard routes are touched, treat the
+  operator-only placement as provisional (same reasoning as §6's "editor URL
+  must not be operator-only by shape").
+- **Initiator framing.** §5.2 says wizard mode is "operator-initiated." Read
+  that as "onboarding-initiated" — the locked cap set is a UX contract that
+  applies identically whether an operator or a self-serve user is driving.
+
+This is a forward note, not Session 7 scope — recorded so the hybrid choice
+isn't quietly re-litigated when the SaaS tier lands.
 
 ---
 
@@ -820,6 +942,9 @@ Closed in this revision:
   capability as break-glass.
 - §3.4 — approval queue as a tab on `/tickets`, not its own route.
 - §5.2 — wizard mode locks to a fixed cap set, ignoring user caps.
+- §5 — wizard-refactor model reconciled (hybrid: Q&A → generate →
+  wizard-frame draft walk → review); the §5.1 / §5.2 / §9 inconsistency is
+  fixed, and §5.1 now carries a concrete 8-step build table.
 - Domain management — V2; one default subdomain per workspace V1.
 - Mobile — editor desktop-only V1; output pages MUST be responsive.
 
@@ -939,14 +1064,24 @@ together.
   the Session 3.5 types. Coexists with the existing analytics-detail
   stub at `lib/funnels/`.
 
-*Wizard refactor:*
-- Wizard-frame mode flag for `<SectionEditor>`.
-- Step 5 onwards switches to registry-driven section editing.
-- `FunnelLandingPreview` becomes a thin adapter or is deleted in favour
-  of registry `<Preview>` rendering.
-- Wizard's stub data feeds the section registry's seed.
-- Wizard output is now an editable `Funnel` — published funnels land in
-  `/funnels/[id]` after the wizard finishes.
+*Wizard refactor* — **outstanding: the funnel-editor half above shipped,
+this half did not.** Reconciled in the §5 revision (hybrid model); build to
+the §5.1 table, not to the bullets below:
+- Wizard grows to 8 steps — a `draft` walk-through step is inserted after
+  generation (§5.1). `ONBOARDING_TOTAL_STEPS` 7 → 8.
+- Wizard-frame mode added as a fourth `<SectionEditor>` discriminator
+  (`{ kind: 'wizard' }`) — concrete spec in §5.2.
+- Steps 2–4 become Q&A cards emitting a `GenerationContext`; Step 7 becomes
+  the review surface.
+- `FunnelLandingPreview` is **deleted**, not adapted — §5.3 — along with the
+  `previewAfter*` snapshots and the `FunnelPreview*` types.
+- `lib/funnel/data-stub.tsx` is the single source of truth for funnel
+  content; `voltline-build.tsx` slims to brand seed + Q&A config +
+  automations + next-steps — §5.4.
+- The funnel-generation stub composes three Session-6 single-page
+  generations (landing / schedule / thanks) per generation-design §8.
+- Wizard output is an editable `Funnel`; published funnels land on
+  `/funnels/[id]`.
 
 **Session 8 — Preflight + publish UI + rollback + versions panel.**
 - `lib/website/preflight.ts` rule engine.
@@ -954,6 +1089,23 @@ together.
   cards.
 - Versions panel in the website hub with "Restore as draft" affordance.
 - Domain status indicator (UI only — actual DNS work is a backend concern).
+
+**Pre-Cluster-6 cleanup — tracked, not yet scheduled.** Surfaced by the
+pre-Session-7 codebase audit; to be done either bundled with the Session 7
+wizard refactor or as its own tiny session before Cluster 6 — but not
+allowed to drift again:
+- Extract `lib/calendar/tones.ts` — the `CalendarClientTone` parked
+  decision's trigger fired when booking-detail landed (Cluster 2 ·
+  Session 2); inline hex still lives in `BookingPill` / `AdminBookingHero` /
+  `CalendarTodayPanel`.
+- `TicketSideCard` → `RailCard` rename + migrate the 3 rail surfaces
+  (tickets / leads / bookings) + absorb `LeadRailCard`'s tone vocabulary —
+  the parked decision says "trigger has fired, extract pending"; CLAUDE.md
+  insists this be its own session, not bundled with feature work.
+- The `bg-card` vocabulary hole — Webnua-authored files use the shadcn alias
+  `bg-card` (76×) because there is no Webnua-named white-surface token.
+  Resolve: add a `--color-surface` token, or document `bg-card` as the
+  sanctioned white-surface exception in CLAUDE.md's bright-line rule.
 
 Nine sessions total (1a + 1b + 2–8). Sessions 1a, 1b, and 2 are foundational;
 3, 4, and 5 are the meat; 6, 7, 8 are scope-completion.
