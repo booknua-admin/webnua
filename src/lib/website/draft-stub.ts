@@ -6,15 +6,20 @@
 // `saveDraftSections`, `clearDraft*`, `subscribeDraft`) is shaped to survive
 // that swap.
 //
-// Key shape (decision recorded in the Session 5 plan message):
+// Key shape:
 //
-//   webnua.dev.draft.{websiteId}.{pageId|header|footer}  →  Section[] (JSON)
+//   webnua.dev.draft.{websiteId}.{pageId|header|footer}      →  Section[] (JSON)
+//   webnua.dev.draft.funnel.{funnelId}.{stepId}              →  Section[] (JSON)
 //
-// Per-page / per-singleton granularity, not a single website blob — keeps
-// writes small at editor scale and makes the "operator edits header while
-// client edits Home page" case naturally isolated. The trade-off is that
-// publish has to wipe N+2 keys instead of one, which `clearDraftsForWebsite`
-// handles by listing localStorage and filtering by the key prefix.
+// Per-page / per-singleton / per-funnel-step granularity, not a single
+// blob — keeps writes small at editor scale and makes concurrent edits
+// across surfaces naturally isolated. The trade-off is that publish has
+// to wipe N keys instead of one, which `clearDraftsForWebsite` /
+// `clearDraftsForFunnel` handle by prefix-scanning localStorage.
+//
+// Session 7 added the `funnelStep` slot kind alongside the website slots.
+// The DraftSlot itself now carries its scope id (websiteId or funnelId) so
+// helpers take a single slot argument.
 //
 // Deletion points when Supabase ships: this file, plus the localStorage
 // snapshot in `submitForApproval` / `publishDraft` (publish-stub.ts).
@@ -25,16 +30,22 @@ import type { Section } from './types';
 // ---- Slot discriminator ---------------------------------------------------
 
 export type DraftSlot =
-  | { kind: 'page'; pageId: string }
-  | { kind: 'header' }
-  | { kind: 'footer' };
+  | { kind: 'page'; websiteId: string; pageId: string }
+  | { kind: 'header'; websiteId: string }
+  | { kind: 'footer'; websiteId: string }
+  | { kind: 'funnelStep'; funnelId: string; stepId: string };
 
-function slotSegment(slot: DraftSlot): string {
-  return slot.kind === 'page' ? slot.pageId : slot.kind;
-}
-
-export function draftKey(websiteId: string, slot: DraftSlot): string {
-  return `webnua.dev.draft.${websiteId}.${slotSegment(slot)}`;
+export function draftKey(slot: DraftSlot): string {
+  switch (slot.kind) {
+    case 'page':
+      return `webnua.dev.draft.${slot.websiteId}.${slot.pageId}`;
+    case 'header':
+      return `webnua.dev.draft.${slot.websiteId}.header`;
+    case 'footer':
+      return `webnua.dev.draft.${slot.websiteId}.footer`;
+    case 'funnelStep':
+      return `webnua.dev.draft.funnel.${slot.funnelId}.${slot.stepId}`;
+  }
 }
 
 // ---- Stored shape ---------------------------------------------------------
@@ -72,11 +83,8 @@ function safeRemove(key: string): void {
   }
 }
 
-export function loadDraft(
-  websiteId: string,
-  slot: DraftSlot,
-): StoredDraft | null {
-  const raw = safeGet(draftKey(websiteId, slot));
+export function loadDraft(slot: DraftSlot): StoredDraft | null {
+  const raw = safeGet(draftKey(slot));
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as StoredDraft;
@@ -88,36 +96,28 @@ export function loadDraft(
 }
 
 /** Convenience accessor used by SectionEditor's initial-state seeding. */
-export function loadDraftSections(
-  websiteId: string,
-  slot: DraftSlot,
-): Section[] | null {
-  return loadDraft(websiteId, slot)?.sections ?? null;
+export function loadDraftSections(slot: DraftSlot): Section[] | null {
+  return loadDraft(slot)?.sections ?? null;
 }
 
 export function saveDraftSections(
-  websiteId: string,
   slot: DraftSlot,
   sections: Section[],
 ): boolean {
   const payload: StoredDraft = { sections, savedAt: Date.now() };
-  const ok = safeSet(draftKey(websiteId, slot), JSON.stringify(payload));
+  const ok = safeSet(draftKey(slot), JSON.stringify(payload));
   if (ok) {
     window.dispatchEvent(new Event(DRAFT_EVENT));
   }
   return ok;
 }
 
-export function clearDraft(websiteId: string, slot: DraftSlot): void {
-  safeRemove(draftKey(websiteId, slot));
+export function clearDraft(slot: DraftSlot): void {
+  safeRemove(draftKey(slot));
   window.dispatchEvent(new Event(DRAFT_EVENT));
 }
 
-/** Wipe every draft slot for a website. Called by publish-stub on a
- *  successful publish — the new published version becomes the new draft
- *  parent so any prior local draft state is stale. */
-export function clearDraftsForWebsite(websiteId: string): void {
-  const prefix = `webnua.dev.draft.${websiteId}.`;
+function clearByPrefix(prefix: string): void {
   try {
     const toRemove: string[] = [];
     for (let i = 0; i < window.localStorage.length; i++) {
@@ -129,6 +129,20 @@ export function clearDraftsForWebsite(websiteId: string): void {
   } catch {
     // localStorage unavailable
   }
+}
+
+/** Wipe every draft slot for a website. Called by publish-stub on a
+ *  successful publish — the new published version becomes the new draft
+ *  parent so any prior local draft state is stale. */
+export function clearDraftsForWebsite(websiteId: string): void {
+  clearByPrefix(`webnua.dev.draft.${websiteId}.`);
+}
+
+/** Wipe every draft slot for a funnel. Funnel publish lands in a later
+ *  session; this helper is here for symmetry and for the funnel editor's
+ *  "Discard draft" path. */
+export function clearDraftsForFunnel(funnelId: string): void {
+  clearByPrefix(`webnua.dev.draft.funnel.${funnelId}.`);
 }
 
 // ---- Subscription ---------------------------------------------------------

@@ -207,16 +207,17 @@ function buildCurrentSnapshot(websiteId: string): VersionSnapshot | null {
   const base = draft.snapshot;
 
   const mergedPages: Page[] = base.pages.map((page) => {
-    const slotSections = loadDraftSections(websiteId, {
+    const slotSections = loadDraftSections({
       kind: 'page',
+      websiteId,
       pageId: page.id,
     });
     if (!slotSections) return page;
     return { ...page, sections: slotSections };
   });
 
-  const headerOverride = loadDraftSections(websiteId, { kind: 'header' });
-  const footerOverride = loadDraftSections(websiteId, { kind: 'footer' });
+  const headerOverride = loadDraftSections({ kind: 'header', websiteId });
+  const footerOverride = loadDraftSections({ kind: 'footer', websiteId });
 
   const header: Section =
     headerOverride && headerOverride[0] ? headerOverride[0] : base.header;

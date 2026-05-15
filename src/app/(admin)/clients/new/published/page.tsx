@@ -61,6 +61,11 @@ export default function NewClientPublishedPage() {
               <Button variant="secondary" asChild>
                 <Link href="/dashboard">← Back to dashboard</Link>
               </Button>
+              <Button variant="secondary" asChild>
+                <Link href="/funnels/emergency-call-out/edit/step-voltline-landing">
+                  Open funnel editor →
+                </Link>
+              </Button>
               <Button asChild>
                 <Link href="/dashboard">Open {b.businessName} workspace →</Link>
               </Button>

@@ -22,6 +22,11 @@ type FunnelHeroProps = {
     viewLiveHref: string;
     requestChangeLabel: string;
     requestChangeHref: string;
+    /** Session 7 — operator-facing "Edit funnel →" CTA. Caller decides
+     *  whether to show it (cap-gated upstream); when omitted the third
+     *  button is suppressed. */
+    editFunnelLabel?: string;
+    editFunnelHref?: string;
   };
   agg: {
     label: string;
@@ -102,7 +107,7 @@ function FunnelHero({
             </div>
           ) : null}
 
-          <div className="mt-4 flex gap-2">
+          <div className="mt-4 flex flex-wrap gap-2">
             <Button asChild variant="ghost" size="sm" className="border border-paper/15 bg-paper/[0.08] text-paper hover:bg-paper/15 hover:text-paper">
               <a
                 href={actions.viewLiveHref}
@@ -117,6 +122,18 @@ function FunnelHero({
                 {actions.requestChangeLabel}
               </Link>
             </Button>
+            {actions.editFunnelLabel && actions.editFunnelHref ? (
+              <Button
+                asChild
+                variant="ghost"
+                size="sm"
+                className="border border-rust-light/40 bg-rust/[0.18] text-rust-light hover:bg-rust/30 hover:text-paper"
+              >
+                <Link href={actions.editFunnelHref}>
+                  {actions.editFunnelLabel}
+                </Link>
+              </Button>
+            ) : null}
           </div>
         </div>
 

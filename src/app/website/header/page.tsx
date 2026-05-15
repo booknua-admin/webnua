@@ -47,8 +47,12 @@ export default function WebsiteHeaderEditorPage() {
 
   return (
     <SectionEditor
-      website={website}
-      mode={{ kind: 'singleton', section: draft.snapshot.header, label: 'Header' }}
+      mode={{
+        kind: 'singleton',
+        website,
+        section: draft.snapshot.header,
+        label: 'Header',
+      }}
     />
   );
 }

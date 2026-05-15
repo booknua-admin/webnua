@@ -30,7 +30,6 @@ import { Button } from '@/components/ui/button';
 import { useCan, useCanAny } from '@/lib/auth/user-stub';
 import { cn } from '@/lib/utils';
 import type { AutosaveStatus } from '@/lib/website/use-autosave';
-import type { Website } from '@/lib/website/types';
 
 import { AutosaveIndicator } from './AutosaveIndicator';
 
@@ -45,6 +44,9 @@ export type EditorToolbarMode =
       kind: 'tabs';
       tabs: EditorToolbarTab[];
       activeTabId: string;
+      /** Where the "← Back" link points. Defaults to /website. Funnel
+       *  editors pass `/funnels/[id]` (Session 7). */
+      backHref?: string;
     }
   | {
       kind: 'breadcrumb';
@@ -60,14 +62,16 @@ export type EditorToolbarAutosave = {
 };
 
 export type EditorToolbarProps = {
-  website: Website;
+  /** Domain to deep-link the "View live ↗" affordance to. */
+  domain: string;
   mode: EditorToolbarMode;
   /** Forwarded to the publish action's request-change context. */
   activePageId?: string;
   /** Live autosave state. Hidden when omitted (used by static demos). */
   autosave?: EditorToolbarAutosave;
   /** Hide both publish actions — used when the editor is locked for the
-   *  current user (Lane B submitter waiting on review). */
+   *  current user (Lane B submitter waiting on review) or when the surface
+   *  doesn't have publish wired yet (funnel-step editor, Session 7). */
   publishDisabled?: boolean;
   /** Fired on the rust "Publish →" button (Lane A). */
   onPublish?: () => void;
@@ -79,7 +83,7 @@ export type EditorToolbarProps = {
 };
 
 export function EditorToolbar({
-  website,
+  domain,
   mode,
   activePageId,
   autosave,
@@ -97,6 +101,8 @@ export function EditorToolbar({
     'editSections',
   );
 
+  const backHref = mode.backHref ?? '/website';
+
   return (
     <div
       data-slot="editor-toolbar"
@@ -104,7 +110,7 @@ export function EditorToolbar({
     >
       <div className="flex min-w-0 items-center gap-3">
         <Link
-          href={mode.kind === 'breadcrumb' ? (mode.backHref ?? '/website') : '/website'}
+          href={backHref}
           className="flex shrink-0 items-center font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet hover:text-ink"
         >
           ← Back
@@ -146,7 +152,7 @@ export function EditorToolbar({
           />
         ) : null}
         <a
-          href={`https://${website.domain.primary}`}
+          href={`https://${domain}`}
           target="_blank"
           rel="noreferrer"
           className="hidden font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet hover:text-ink md:inline"
