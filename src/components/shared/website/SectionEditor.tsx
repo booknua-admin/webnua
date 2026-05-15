@@ -241,7 +241,7 @@ export function SectionEditor({ website, mode }: SectionEditorProps) {
         publishMenu={<ForcePublishMenu websiteId={website.id} hidden={locked} />}
       />
       <div
-        className={`grid min-h-0 flex-1 overflow-hidden ${gridCols} ${
+        className={`grid min-h-0 flex-1 overflow-hidden grid-rows-[minmax(0,1fr)] ${gridCols} ${
           locked ? 'opacity-65 [&_*]:pointer-events-none' : ''
         }`}
       >

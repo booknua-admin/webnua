@@ -50,7 +50,7 @@ export function SectionListRail({
     <aside
       data-slot="section-list-rail"
       data-rail-mode={mode.kind}
-      className="flex h-full flex-col border-r border-rule bg-paper"
+      className="flex h-full min-h-0 flex-col border-r border-rule bg-paper"
     >
       <div className="border-b border-rule px-4 py-4">
         {isSingleton ? (
