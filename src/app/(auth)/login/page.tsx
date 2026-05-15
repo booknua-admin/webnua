@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/card';
 import { Eyebrow } from '@/components/ui/eyebrow';
 import { Input } from '@/components/ui/input';
-import { ROLE_LANDING, useRole, type Role } from '@/lib/auth/role-stub';
+import { ROLE_LANDING, useRole, type Role } from '@/lib/auth/user-stub';
 
 export default function LoginPage() {
   const router = useRouter();

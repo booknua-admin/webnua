@@ -37,5 +37,3 @@ export const adminClients: AdminClient[] = [
     meta: 'Cleaning · Dublin',
   },
 ];
-
-export const adminActiveClientId = 'voltline';

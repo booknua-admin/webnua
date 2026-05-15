@@ -1,6 +1,6 @@
 'use client';
 
-import { useRole } from '@/lib/auth/role-stub';
+import { useRole } from '@/lib/auth/user-stub';
 
 import { AdminLeadConversationContent } from './_admin-content';
 import { ClientLeadConversationContent } from './_client-content';
