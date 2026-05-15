@@ -60,6 +60,9 @@ export type User = {
   displayName: string;
   email: string;
   role: Role;
+  /** The client business this user belongs to. Operators have null
+   *  (workspace-wide via role). Resolves to AdminClient.id. */
+  clientId: string | null;
   // Resolved capability set: role defaults + grants applied.
   capabilities: Set<Capability>;
 };

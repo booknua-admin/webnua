@@ -159,6 +159,7 @@ function buildUser(def: StubUserDef, grants: CapabilityGrant[]): User {
     displayName: def.displayName,
     email: def.email,
     role: def.role,
+    clientId: def.clientId,
     capabilities: resolveCapabilities(def.role, grants),
   };
 }
