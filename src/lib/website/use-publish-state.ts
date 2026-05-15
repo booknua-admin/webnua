@@ -15,9 +15,8 @@ import {
 
 import {
   findPendingForUser,
-  getAllApprovals,
-  getEffectivePublishedVersionId,
   getPendingApprovals,
+  getWebsitePublishSnapshot,
 } from './publish-stub';
 
 export type WebsitePublishState = {
@@ -37,16 +36,7 @@ const SERVER_STATE: WebsitePublishState = {
 export function useWebsitePublishState(websiteId: string): WebsitePublishState {
   return useSyncExternalStore(
     subscribeApprovals,
-    () => {
-      const all = getAllApprovals().filter((a) => a.websiteId === websiteId);
-      const livePending =
-        all.find((a) => a.status === 'pending') ?? null;
-      return {
-        publishedVersionId: getEffectivePublishedVersionId(websiteId),
-        approvalsForWebsite: all,
-        livePendingSubmission: livePending,
-      };
-    },
+    () => getWebsitePublishSnapshot(websiteId),
     () => SERVER_STATE,
   );
 }

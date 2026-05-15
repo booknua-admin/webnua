@@ -169,15 +169,85 @@ export function getAllVersions(): Version[] {
   return Object.values(merged);
 }
 
-/** All approval submissions, oldest first. */
+// Snapshot caches. `getSnapshot` for `useSyncExternalStore` MUST return a
+// referentially-stable value while the store is unchanged — otherwise React
+// detects a "changed" store on every render and spins into an infinite
+// loop. We key each cache on the raw localStorage string (or an upstream
+// cached reference): same input in → same array/object reference out.
+
+const EMPTY_APPROVALS: readonly WebsiteApprovalSubmission[] = [];
+
+let allApprovalsRaw: string | null = null;
+let allApprovalsCache: WebsiteApprovalSubmission[] = [];
+
+/** All approval submissions, oldest first. Reference-stable between calls
+ *  until the underlying localStorage record actually changes. */
 export function getAllApprovals(): WebsiteApprovalSubmission[] {
-  if (typeof window === 'undefined') return [];
-  return readApprovals();
+  if (typeof window === 'undefined') return EMPTY_APPROVALS as WebsiteApprovalSubmission[];
+  const raw = safeGet(APPROVALS_KEY);
+  if (raw === allApprovalsRaw) return allApprovalsCache;
+  allApprovalsRaw = raw;
+  allApprovalsCache = readApprovals();
+  return allApprovalsCache;
 }
 
-/** Pending approval submissions for an operator to triage. */
+let pendingSource: WebsiteApprovalSubmission[] | null = null;
+let pendingCache: WebsiteApprovalSubmission[] = [];
+
+/** Pending approval submissions for an operator to triage. Reference-stable
+ *  between calls until the approvals record changes. */
 export function getPendingApprovals(): WebsiteApprovalSubmission[] {
-  return getAllApprovals().filter((a) => a.status === 'pending');
+  const all = getAllApprovals();
+  if (all === pendingSource) return pendingCache;
+  pendingSource = all;
+  pendingCache = all.filter((a) => a.status === 'pending');
+  return pendingCache;
+}
+
+export type WebsitePublishSnapshot = {
+  publishedVersionId: string | null;
+  approvalsForWebsite: WebsiteApprovalSubmission[];
+  livePendingSubmission: WebsiteApprovalSubmission | null;
+};
+
+const publishSnapshotCache = new Map<
+  string,
+  {
+    approvalsSource: WebsiteApprovalSubmission[];
+    publishedVersionId: string | null;
+    snapshot: WebsitePublishSnapshot;
+  }
+>();
+
+/** Per-website publish snapshot for `useWebsitePublishState`. Reference-stable
+ *  between calls until the approvals record or the website pointer changes. */
+export function getWebsitePublishSnapshot(
+  websiteId: string,
+): WebsitePublishSnapshot {
+  const all = getAllApprovals();
+  const publishedVersionId = getEffectivePublishedVersionId(websiteId);
+  const cached = publishSnapshotCache.get(websiteId);
+  if (
+    cached &&
+    cached.approvalsSource === all &&
+    cached.publishedVersionId === publishedVersionId
+  ) {
+    return cached.snapshot;
+  }
+  const approvalsForWebsite = all.filter((a) => a.websiteId === websiteId);
+  const livePendingSubmission =
+    approvalsForWebsite.find((a) => a.status === 'pending') ?? null;
+  const snapshot: WebsitePublishSnapshot = {
+    publishedVersionId,
+    approvalsForWebsite,
+    livePendingSubmission,
+  };
+  publishSnapshotCache.set(websiteId, {
+    approvalsSource: all,
+    publishedVersionId,
+    snapshot,
+  });
+  return snapshot;
 }
 
 /** Find the live pending submission this user owns for this website,
