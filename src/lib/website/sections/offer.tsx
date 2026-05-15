@@ -1,20 +1,12 @@
 'use client';
 
-import { useCallback } from 'react';
-
-import {
-  BuilderField,
-  BuilderFormRow,
-  BuilderFormSection,
-  BuilderInput,
-  BuilderTextarea,
-} from '@/components/shared/builder/BuilderField';
+import { BuilderFormRow, BuilderFormSection } from '@/components/shared/builder/BuilderField';
 
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import { CopyField } from './_shared/CopyField';
 
 // =============================================================================
-// Offer section — the single-offer card that anchors a funnel. Used in the
-// onboarding wizard's Step 3, but generalised here for reuse across pages.
+// Offer section — single-offer card that anchors a funnel or service page.
 // =============================================================================
 
 export type OfferData = {
@@ -22,30 +14,43 @@ export type OfferData = {
   title: string;
   priceLabel: string;
   priceCaption: string;
-  /** Newline-separated list of inclusions. Stored as a string for easy
-   *  textarea editing; parsed to rows in the preview. */
+  /** Newline-separated list of inclusions; parsed to rows at render time. */
   includedText: string;
   scarcityCopy: string;
   ctaLabel: string;
   ctaHref: string;
 };
 
+const DEFAULTS: OfferData = {
+  tag: '// THE OFFER',
+  title: 'Local sparkie, $99 callout, on-site in under 60 minutes.',
+  priceLabel: '$99',
+  priceCaption: 'Fixed call-out fee',
+  includedText: [
+    'No call-out surcharges, ever',
+    'Same-day repair quote, written',
+    'All work covered by our 12-month workmanship guarantee',
+  ].join('\n'),
+  scarcityCopy: 'Limited to 5 emergency slots per day.',
+  ctaLabel: 'Book my callout',
+  ctaHref: '/schedule',
+};
+
 function defaultData(): OfferData {
-  return {
-    tag: '// THE OFFER',
-    title: 'Local sparkie, $99 callout, on-site in under 60 minutes.',
-    priceLabel: '$99',
-    priceCaption: 'Fixed call-out fee',
-    includedText: [
-      'No call-out surcharges, ever',
-      'Same-day repair quote, written',
-      'All work covered by our 12-month workmanship guarantee',
-    ].join('\n'),
-    scarcityCopy: 'Limited to 5 emergency slots per day.',
-    ctaLabel: 'Book my callout',
-    ctaHref: '/schedule',
-  };
+  return { ...DEFAULTS };
 }
+
+const TITLE_ALTS = [
+  DEFAULTS.title,
+  '$99 emergency callout — sparkie at your door inside the hour.',
+  'Same-day electrical work. $99 callout. Written quote before we start.',
+] as const;
+
+const SCARCITY_ALTS = [
+  DEFAULTS.scarcityCopy,
+  'Only 5 emergency slots per day. Book now to lock yours in.',
+  'After-hours slots fill fast — typically gone by 6pm on weekdays.',
+] as const;
 
 function parseIncluded(text: string): string[] {
   return text
@@ -55,77 +60,76 @@ function parseIncluded(text: string): string[] {
 }
 
 function OfferFields({ data, onChange }: SectionFieldsProps<OfferData>) {
-  const set = useCallback(
-    <K extends keyof OfferData>(key: K, value: OfferData[K]) =>
-      onChange({ ...data, [key]: value }),
-    [data, onChange],
-  );
+  const set = <K extends keyof OfferData>(key: K, value: OfferData[K]) =>
+    onChange({ ...data, [key]: value });
 
   return (
     <>
       <BuilderFormSection>
-        <BuilderField label="Tag">
-          <BuilderInput
-            value={data.tag}
-            onChange={(e) => set('tag', e.target.value)}
-          />
-        </BuilderField>
-        <BuilderField label="Title">
-          <BuilderTextarea
-            rows={2}
-            value={data.title}
-            onChange={(e) => set('title', e.target.value)}
-          />
-        </BuilderField>
+        <CopyField
+          label="Tag"
+          value={data.tag}
+          originalValue={DEFAULTS.tag}
+          onChange={(v) => set('tag', v)}
+        />
+        <CopyField
+          label="Title"
+          value={data.title}
+          originalValue={DEFAULTS.title}
+          alternatives={TITLE_ALTS}
+          onChange={(v) => set('title', v)}
+          multiline
+          rows={2}
+        />
       </BuilderFormSection>
       <BuilderFormSection>
         <BuilderFormRow>
-          <BuilderField label="Price · label">
-            <BuilderInput
-              value={data.priceLabel}
-              onChange={(e) => set('priceLabel', e.target.value)}
-              placeholder="$99"
-            />
-          </BuilderField>
-          <BuilderField label="Price · caption">
-            <BuilderInput
-              value={data.priceCaption}
-              onChange={(e) => set('priceCaption', e.target.value)}
-              placeholder="Fixed call-out fee"
-            />
-          </BuilderField>
+          <CopyField
+            label="Price · label"
+            value={data.priceLabel}
+            originalValue={DEFAULTS.priceLabel}
+            onChange={(v) => set('priceLabel', v)}
+            placeholder="$99"
+          />
+          <CopyField
+            label="Price · caption"
+            value={data.priceCaption}
+            originalValue={DEFAULTS.priceCaption}
+            onChange={(v) => set('priceCaption', v)}
+            placeholder="Fixed call-out fee"
+          />
         </BuilderFormRow>
-        <BuilderField
+        <CopyField
           label="Included"
-          helper={<>One line per inclusion. Lines starting with a hyphen are auto-cleaned.</>}
-        >
-          <BuilderTextarea
-            rows={5}
-            value={data.includedText}
-            onChange={(e) => set('includedText', e.target.value)}
-          />
-        </BuilderField>
-        <BuilderField label="Scarcity copy">
-          <BuilderInput
-            value={data.scarcityCopy}
-            onChange={(e) => set('scarcityCopy', e.target.value)}
-          />
-        </BuilderField>
+          value={data.includedText}
+          originalValue={DEFAULTS.includedText}
+          onChange={(v) => set('includedText', v)}
+          multiline
+          rows={5}
+          helper={<>One line per inclusion.</>}
+        />
+        <CopyField
+          label="Scarcity copy"
+          value={data.scarcityCopy}
+          originalValue={DEFAULTS.scarcityCopy}
+          alternatives={SCARCITY_ALTS}
+          onChange={(v) => set('scarcityCopy', v)}
+        />
       </BuilderFormSection>
       <BuilderFormSection>
         <BuilderFormRow>
-          <BuilderField label="CTA · label">
-            <BuilderInput
-              value={data.ctaLabel}
-              onChange={(e) => set('ctaLabel', e.target.value)}
-            />
-          </BuilderField>
-          <BuilderField label="CTA · href">
-            <BuilderInput
-              value={data.ctaHref}
-              onChange={(e) => set('ctaHref', e.target.value)}
-            />
-          </BuilderField>
+          <CopyField
+            label="CTA · label"
+            value={data.ctaLabel}
+            originalValue={DEFAULTS.ctaLabel}
+            onChange={(v) => set('ctaLabel', v)}
+          />
+          <CopyField
+            label="CTA · href"
+            value={data.ctaHref}
+            originalValue={DEFAULTS.ctaHref}
+            onChange={(v) => set('ctaHref', v)}
+          />
         </BuilderFormRow>
       </BuilderFormSection>
     </>

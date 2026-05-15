@@ -6,17 +6,17 @@ import {
   BuilderField,
   BuilderFormRow,
   BuilderFormSection,
-  BuilderInput,
-  BuilderTextarea,
 } from '@/components/shared/builder/BuilderField';
+import { CapabilityGate } from '@/components/shared/CapabilityGate';
 import { Button } from '@/components/ui/button';
 
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import { CopyField } from './_shared/CopyField';
 
 // =============================================================================
-// Services section — the services menu / jobs list. Rows of name + price-from
-// + duration + optional description. Each row is independently editable; rows
-// can be added and removed.
+// Services section — services menu / jobs list. Rows of name + price-from +
+// duration + optional description. Rows can be added and removed
+// (editLayout). Individual row text is editCopy-gated.
 // =============================================================================
 
 export type ServiceItem = {
@@ -34,40 +34,55 @@ export type ServicesData = {
 };
 
 function makeId(): string {
-  // Stub-layer id factory. Real backend mints these; we don't need
-  // strong uniqueness in the stub.
   return `svc-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+const DEFAULTS: ServicesData = {
+  title: 'What we fix',
+  intro: 'Fixed prices on the common stuff. Free quote for the rest.',
+  services: [
+    {
+      id: makeId(),
+      name: 'Switchboard upgrades',
+      priceFrom: 'from $1,250',
+      durationLabel: '2–3 hours',
+      description: 'Old fuses to modern RCDs. Inspection report included.',
+    },
+    {
+      id: makeId(),
+      name: 'Power point installs',
+      priceFrom: 'from $180',
+      durationLabel: '~45 min',
+      description: 'Single or double, indoor or weatherproof outdoor.',
+    },
+    {
+      id: makeId(),
+      name: 'Hot water diagnostics',
+      priceFrom: 'Quoted',
+      durationLabel: '1 hour',
+      description: 'Find why it tripped and quote a fix on the spot.',
+    },
+  ],
+};
+
 function defaultData(): ServicesData {
   return {
-    title: 'What we fix',
-    intro: 'Fixed prices on the common stuff. Free quote for the rest.',
-    services: [
-      {
-        id: makeId(),
-        name: 'Switchboard upgrades',
-        priceFrom: 'from $1,250',
-        durationLabel: '2–3 hours',
-        description: 'Old fuses to modern RCDs. Inspection report included.',
-      },
-      {
-        id: makeId(),
-        name: 'Power point installs',
-        priceFrom: 'from $180',
-        durationLabel: '~45 min',
-        description: 'Single or double, indoor or weatherproof outdoor.',
-      },
-      {
-        id: makeId(),
-        name: 'Hot water diagnostics',
-        priceFrom: 'Quoted',
-        durationLabel: '1 hour',
-        description: 'Find why it tripped and quote a fix on the spot.',
-      },
-    ],
+    ...DEFAULTS,
+    services: DEFAULTS.services.map((s) => ({ ...s, id: makeId() })),
   };
 }
+
+const TITLE_ALTS = [
+  'What we fix',
+  'Service menu',
+  'Common jobs · fixed prices',
+] as const;
+
+const INTRO_ALTS = [
+  'Fixed prices on the common stuff. Free quote for the rest.',
+  'Most jobs are a fixed price. Anything custom, we quote on arrival.',
+  'Standard work is priced upfront. Bespoke work gets a written quote.',
+] as const;
 
 function ServicesFields({ data, onChange }: SectionFieldsProps<ServicesData>) {
   const setField = useCallback(
@@ -114,19 +129,22 @@ function ServicesFields({ data, onChange }: SectionFieldsProps<ServicesData>) {
   return (
     <>
       <BuilderFormSection>
-        <BuilderField label="Section title">
-          <BuilderInput
-            value={data.title}
-            onChange={(e) => setField('title', e.target.value)}
-          />
-        </BuilderField>
-        <BuilderField label="Intro">
-          <BuilderTextarea
-            rows={2}
-            value={data.intro}
-            onChange={(e) => setField('intro', e.target.value)}
-          />
-        </BuilderField>
+        <CopyField
+          label="Section title"
+          value={data.title}
+          originalValue={DEFAULTS.title}
+          alternatives={TITLE_ALTS}
+          onChange={(v) => setField('title', v)}
+        />
+        <CopyField
+          label="Intro"
+          value={data.intro}
+          originalValue={DEFAULTS.intro}
+          alternatives={INTRO_ALTS}
+          onChange={(v) => setField('intro', v)}
+          multiline
+          rows={2}
+        />
       </BuilderFormSection>
       <BuilderFormSection>
         {data.services.map((service, i) => (
@@ -138,61 +156,56 @@ function ServicesFields({ data, onChange }: SectionFieldsProps<ServicesData>) {
               <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
                 Service {i + 1}
               </p>
-              <button
-                type="button"
-                onClick={() => removeService(service.id)}
-                className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust hover:text-rust-deep"
-              >
-                Remove ×
-              </button>
+              <CapabilityGate capability="editLayout" mode="hide">
+                <button
+                  type="button"
+                  onClick={() => removeService(service.id)}
+                  className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust hover:text-rust-deep"
+                >
+                  Remove ×
+                </button>
+              </CapabilityGate>
             </div>
             <BuilderFormRow>
-              <BuilderField label="Name">
-                <BuilderInput
-                  value={service.name}
-                  onChange={(e) =>
-                    setService(i, { ...service, name: e.target.value })
-                  }
-                />
-              </BuilderField>
-              <BuilderField label="Price from">
-                <BuilderInput
-                  value={service.priceFrom}
-                  onChange={(e) =>
-                    setService(i, { ...service, priceFrom: e.target.value })
-                  }
-                  placeholder="from $180"
-                />
-              </BuilderField>
+              <CopyField
+                label="Name"
+                value={service.name}
+                onChange={(v) => setService(i, { ...service, name: v })}
+              />
+              <CopyField
+                label="Price from"
+                value={service.priceFrom}
+                onChange={(v) => setService(i, { ...service, priceFrom: v })}
+                placeholder="from $180"
+              />
             </BuilderFormRow>
-            <BuilderField label="Duration">
-              <BuilderInput
-                value={service.durationLabel}
-                onChange={(e) =>
-                  setService(i, { ...service, durationLabel: e.target.value })
-                }
-                placeholder="~45 min"
-              />
-            </BuilderField>
-            <BuilderField label="Description">
-              <BuilderTextarea
-                rows={2}
-                value={service.description}
-                onChange={(e) =>
-                  setService(i, { ...service, description: e.target.value })
-                }
-              />
-            </BuilderField>
+            <CopyField
+              label="Duration"
+              value={service.durationLabel}
+              onChange={(v) => setService(i, { ...service, durationLabel: v })}
+              placeholder="~45 min"
+            />
+            <CopyField
+              label="Description"
+              value={service.description}
+              onChange={(v) => setService(i, { ...service, description: v })}
+              multiline
+              rows={2}
+            />
           </div>
         ))}
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={addService}
-          className="w-full"
-        >
-          + Add service
-        </Button>
+        <CapabilityGate capability="editLayout" mode="disable">
+          <BuilderField label="">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={addService}
+              className="w-full"
+            >
+              + Add service
+            </Button>
+          </BuilderField>
+        </CapabilityGate>
       </BuilderFormSection>
     </>
   );

@@ -1,13 +1,12 @@
 'use client';
 
 import {
-  BuilderField,
   BuilderFormSection,
-  BuilderInput,
-  BuilderTextarea,
 } from '@/components/shared/builder/BuilderField';
 
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import { CopyField } from './_shared/CopyField';
+import { MediaField } from './_shared/MediaField';
 
 // =============================================================================
 // Hero section — above-the-fold lead with eyebrow + headline + sub + CTAs +
@@ -25,18 +24,32 @@ export type HeroData = {
   heroImageUrl: string;
 };
 
+const DEFAULTS: HeroData = {
+  eyebrow: '// LOCAL · TRUSTED',
+  headline: 'Power back on — guaranteed within the hour.',
+  sub: 'Licensed sparkies covering Perth metro. Fixed callout, transparent quote, no surprises.',
+  ctaPrimaryLabel: 'Book a callout',
+  ctaPrimaryHref: '/schedule',
+  ctaSecondaryLabel: 'Call now',
+  ctaSecondaryHref: 'tel:0400000000',
+  heroImageUrl: '',
+};
+
 function defaultData(): HeroData {
-  return {
-    eyebrow: '// LOCAL · TRUSTED',
-    headline: 'Power back on — guaranteed within the hour.',
-    sub: 'Licensed sparkies covering Perth metro. Fixed callout, transparent quote, no surprises.',
-    ctaPrimaryLabel: 'Book a callout',
-    ctaPrimaryHref: '/schedule',
-    ctaSecondaryLabel: 'Call now',
-    ctaSecondaryHref: 'tel:0400000000',
-    heroImageUrl: '',
-  };
+  return { ...DEFAULTS };
 }
+
+const HEADLINE_ALTS = [
+  'Power back on — guaranteed within the hour.',
+  'Local sparkies. Fast callouts. Honest pricing.',
+  'Same-day electrical work, fixed quote before we touch a wire.',
+] as const;
+
+const SUB_ALTS = [
+  'Licensed sparkies covering Perth metro. Fixed callout, transparent quote, no surprises.',
+  'Vetted local sparkies. Same-day response. Twelve-month workmanship guarantee on every job.',
+  'On-call electricians across Perth. We answer the phone. We quote on arrival. We stand behind the work.',
+] as const;
 
 function HeroFields({ data, onChange }: SectionFieldsProps<HeroData>) {
   const set = <K extends keyof HeroData>(key: K, value: HeroData[K]) =>
@@ -45,65 +58,65 @@ function HeroFields({ data, onChange }: SectionFieldsProps<HeroData>) {
   return (
     <>
       <BuilderFormSection>
-        <BuilderField label="Eyebrow">
-          <BuilderInput
-            value={data.eyebrow}
-            onChange={(e) => set('eyebrow', e.target.value)}
-            placeholder="// LOCAL · TRUSTED"
-          />
-        </BuilderField>
-        <BuilderField label="Headline">
-          <BuilderTextarea
-            rows={2}
-            value={data.headline}
-            onChange={(e) => set('headline', e.target.value)}
-          />
-        </BuilderField>
-        <BuilderField label="Sub">
-          <BuilderTextarea
-            rows={3}
-            value={data.sub}
-            onChange={(e) => set('sub', e.target.value)}
-          />
-        </BuilderField>
+        <CopyField
+          label="Eyebrow"
+          value={data.eyebrow}
+          originalValue={DEFAULTS.eyebrow}
+          onChange={(v) => set('eyebrow', v)}
+          placeholder="// LOCAL · TRUSTED"
+        />
+        <CopyField
+          label="Headline"
+          value={data.headline}
+          originalValue={DEFAULTS.headline}
+          alternatives={HEADLINE_ALTS}
+          onChange={(v) => set('headline', v)}
+          multiline
+          rows={2}
+        />
+        <CopyField
+          label="Sub"
+          value={data.sub}
+          originalValue={DEFAULTS.sub}
+          alternatives={SUB_ALTS}
+          onChange={(v) => set('sub', v)}
+          multiline
+          rows={3}
+        />
       </BuilderFormSection>
       <BuilderFormSection>
-        <BuilderField label="Primary CTA · label">
-          <BuilderInput
-            value={data.ctaPrimaryLabel}
-            onChange={(e) => set('ctaPrimaryLabel', e.target.value)}
-          />
-        </BuilderField>
-        <BuilderField label="Primary CTA · href">
-          <BuilderInput
-            value={data.ctaPrimaryHref}
-            onChange={(e) => set('ctaPrimaryHref', e.target.value)}
-          />
-        </BuilderField>
-        <BuilderField label="Secondary CTA · label">
-          <BuilderInput
-            value={data.ctaSecondaryLabel}
-            onChange={(e) => set('ctaSecondaryLabel', e.target.value)}
-          />
-        </BuilderField>
-        <BuilderField label="Secondary CTA · href">
-          <BuilderInput
-            value={data.ctaSecondaryHref}
-            onChange={(e) => set('ctaSecondaryHref', e.target.value)}
-          />
-        </BuilderField>
+        <CopyField
+          label="Primary CTA · label"
+          value={data.ctaPrimaryLabel}
+          originalValue={DEFAULTS.ctaPrimaryLabel}
+          onChange={(v) => set('ctaPrimaryLabel', v)}
+        />
+        <CopyField
+          label="Primary CTA · href"
+          value={data.ctaPrimaryHref}
+          originalValue={DEFAULTS.ctaPrimaryHref}
+          onChange={(v) => set('ctaPrimaryHref', v)}
+        />
+        <CopyField
+          label="Secondary CTA · label"
+          value={data.ctaSecondaryLabel}
+          originalValue={DEFAULTS.ctaSecondaryLabel}
+          onChange={(v) => set('ctaSecondaryLabel', v)}
+        />
+        <CopyField
+          label="Secondary CTA · href"
+          value={data.ctaSecondaryHref}
+          originalValue={DEFAULTS.ctaSecondaryHref}
+          onChange={(v) => set('ctaSecondaryHref', v)}
+        />
       </BuilderFormSection>
       <BuilderFormSection>
-        <BuilderField
+        <MediaField
           label="Hero image URL"
+          value={data.heroImageUrl}
+          onChange={(v) => set('heroImageUrl', v)}
           helper="Paste a URL or leave blank for the placeholder."
-        >
-          <BuilderInput
-            value={data.heroImageUrl}
-            onChange={(e) => set('heroImageUrl', e.target.value)}
-            placeholder="https://..."
-          />
-        </BuilderField>
+        />
       </BuilderFormSection>
     </>
   );

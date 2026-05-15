@@ -5,24 +5,20 @@
 // Adding a new section type is one entry here + a new module under sections/.
 // =============================================================================
 
-import type { SectionType } from '../types';
+import type { ContainerKind, SectionType } from '../types';
 import type { SectionTypeDefinition } from '../registry';
 
+import { ctaSection } from './cta';
+import { faqSection } from './faq';
+import { footerSection } from './footer';
+import { headerSection } from './header';
 import { heroSection } from './hero';
 import { offerSection } from './offer';
-import {
-  ctaSection,
-  faqSection,
-  footerSection,
-  headerSection,
-  reviewsSection,
-  schedulePickerSection,
-  thanksConfirmationSection,
-  trustSection,
-} from './placeholders';
+import { reviewsSection } from './reviews';
+import { schedulePickerSection } from './schedulePicker';
 import { servicesSection } from './services';
-
-import type { ContainerKind } from '../types';
+import { thanksConfirmationSection } from './thanksConfirmation';
+import { trustSection } from './trust';
 
 export const SECTION_REGISTRY: readonly SectionTypeDefinition[] = [
   // Stackable on pages and funnel steps
@@ -41,15 +37,6 @@ export const SECTION_REGISTRY: readonly SectionTypeDefinition[] = [
   footerSection,
 ] as readonly SectionTypeDefinition[];
 
-/** Section types that can be added inside the given container. */
-export function getSectionsForContainer(
-  container: ContainerKind,
-): SectionTypeDefinition[] {
-  return SECTION_REGISTRY.filter((d) =>
-    d.allowedContainers.includes(container),
-  );
-}
-
 export function getSectionDefinition(
   type: SectionType,
 ): SectionTypeDefinition | undefined {
@@ -64,8 +51,24 @@ export function getPlaceholderSections(): SectionTypeDefinition[] {
   return SECTION_REGISTRY.filter((d) => !d.implemented);
 }
 
-// Re-export per-section data types for typed consumers (e.g. when a caller
-// reads section.data and wants a typed handle on it).
+/** Section types that can be added inside the given container. */
+export function getSectionsForContainer(
+  container: ContainerKind,
+): SectionTypeDefinition[] {
+  return SECTION_REGISTRY.filter((d) =>
+    d.allowedContainers.includes(container),
+  );
+}
+
+// Re-export per-section data types for typed consumers.
+export type { CTAData } from './cta';
+export type { FAQData, FAQItem } from './faq';
+export type { FooterData } from './footer';
+export type { HeaderData } from './header';
 export type { HeroData } from './hero';
 export type { OfferData } from './offer';
+export type { ReviewsData, ReviewItem } from './reviews';
+export type { SchedulePickerData } from './schedulePicker';
 export type { ServiceItem, ServicesData } from './services';
+export type { ThanksConfirmationData } from './thanksConfirmation';
+export type { TrustData } from './trust';
