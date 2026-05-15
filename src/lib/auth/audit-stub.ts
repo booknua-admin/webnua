@@ -58,10 +58,24 @@ function readOverlay(): ForcePublishEntry[] {
 }
 
 /** Merged seed + overlay, newest first. */
+// Snapshot cache. `getSnapshot` for `useSyncExternalStore` must return a
+// reference-stable value while the store is unchanged — a fresh array each
+// call spins React into an infinite render loop. Keyed on the raw overlay
+// string; `undefined` sentinel forces the first call to compute.
+let auditLogRaw: string | null | undefined;
+let auditLogCache: ForcePublishEntry[] = [];
+
+/** Merged seed + overlay, newest first. Reference-stable between calls
+ *  until the overlay record actually changes. */
 export function getEffectiveAuditLog(): ForcePublishEntry[] {
-  const overlay = typeof window === 'undefined' ? [] : readOverlay();
-  const merged = [...STUB_FORCE_PUBLISH_LOG, ...overlay];
-  return merged.sort((a, b) => (a.at < b.at ? 1 : -1));
+  const raw = typeof window === 'undefined' ? null : safeGet(AUDIT_KEY);
+  if (raw === auditLogRaw) return auditLogCache;
+  auditLogRaw = raw;
+  const overlay = raw ? readOverlay() : [];
+  auditLogCache = [...STUB_FORCE_PUBLISH_LOG, ...overlay].sort((a, b) =>
+    a.at < b.at ? 1 : -1,
+  );
+  return auditLogCache;
 }
 
 export function appendForcePublishEntry(entry: ForcePublishEntry): void {

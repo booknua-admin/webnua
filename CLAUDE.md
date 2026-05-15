@@ -114,6 +114,7 @@ When a design decision isn't covered by a token, **ask rather than inventing** �
 - **Naming:** descriptive and specific. `ProofPageStepper` not `Stepper2`. No numbered suffixes ever — a numbered suffix means a duplicate that should have been a reuse.
 - **State:** local state for local concerns. Lift only when genuinely shared. Don't reach for global state by default.
 - **Error handling:** [decide the pattern on first real use, then document it HERE so it's consistent everywhere].
+- **`useSyncExternalStore` snapshots MUST be reference-stable.** `getSnapshot` cannot return a fresh array/object each call (no `.filter()`/`.map()`/`{...}`/`.sort()` inline) — React then sees the store "change" every render and spins into an infinite loop that crashes the route in production. The stub stores (`publish-stub`, `audit-stub`) cache their snapshots keyed on the raw localStorage string. Any new store accessor read through `useSyncExternalStore` must do the same.
 - **No dead code.** Don't leave commented-out blocks "just in case" — git remembers.
 
 ---
