@@ -24,16 +24,24 @@ import {
   type Capability,
   type Role,
 } from '@/lib/auth/capabilities';
-import type { StubWebsite } from '@/lib/auth/user-stub';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
+
+/** Minimal website shape needed for grid display. Decoupled from the full
+ *  Website type so the grid doesn't pull in brand/version/page-tree fields
+ *  it never reads. Callers project from `Website` to this shape. */
+export type CapabilityGridWebsite = {
+  id: string;
+  clientName: string;
+  domain: string;
+};
 
 export type CapabilityToggleGridUser = {
   id: string;
   displayName: string;
   email: string;
   role: Role;
-  websites: StubWebsite[];
+  websites: CapabilityGridWebsite[];
   /** Resolved capability set for this user across all their websites. */
   capabilities: Set<Capability>;
 };
@@ -133,7 +141,7 @@ function WebsiteGrantRow({
   isLast,
 }: {
   user: CapabilityToggleGridUser;
-  website: StubWebsite;
+  website: CapabilityGridWebsite;
   roleFloor: Set<Capability>;
   onToggle: CapabilityToggleGridProps['onToggle'];
   isLast: boolean;

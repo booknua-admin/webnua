@@ -44,40 +44,12 @@ export const STUB_VIEW_AS_KEY = 'webnua.dev.view-as-user-id';
 
 const DEFAULT_USER_ID = 'user-admin-craig';
 
-// Workspace identity for grant scoping. Real websites land in Session 2;
-// for now these are placeholders the grant rows reference. `clientId` ties
-// each website back to the AdminClient roster in lib/nav/admin-clients.ts
-// so the workspace context (agency vs sub-account) can resolve which
-// users / websites belong to a drilled-into client.
-export type StubWebsite = {
-  id: string;
-  clientId: string;
-  clientName: string;
-  domain: string;
-};
-
-export const STUB_WEBSITES: StubWebsite[] = [
-  {
-    id: 'website-voltline',
-    clientId: 'voltline',
-    clientName: 'Voltline',
-    domain: 'voltline.webnua.app',
-  },
-  {
-    id: 'website-freshhome',
-    clientId: 'freshhome',
-    clientName: 'FreshHome',
-    domain: 'freshhome.webnua.app',
-  },
-];
-
-export function findWebsite(id: string): StubWebsite | null {
-  return STUB_WEBSITES.find((w) => w.id === id) ?? null;
-}
-
-export function getWebsitesForClient(clientId: string): StubWebsite[] {
-  return STUB_WEBSITES.filter((w) => w.clientId === clientId);
-}
+// Website data moved into the real model in Session 2 (see
+// `src/lib/website/data-stub.tsx`). Helpers are re-exported here only for
+// the brief moment between sessions where downstream code still imports
+// from `@/lib/auth/user-stub`. Prefer importing directly from
+// `@/lib/website/data-stub` going forward.
+export { findWebsite, getWebsitesForClient } from '@/lib/website/data-stub';
 
 type StubUserDef = {
   id: string;

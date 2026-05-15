@@ -21,6 +21,7 @@ import { useMemo } from 'react';
 import { AccessClientRosterRow } from '@/components/shared/settings/AccessClientRosterRow';
 import {
   CapabilityToggleGrid,
+  type CapabilityGridWebsite,
   type CapabilityToggleGridUser,
 } from '@/components/shared/settings/CapabilityToggleGrid';
 import { ForcePublishLog } from '@/components/shared/settings/ForcePublishLog';
@@ -41,15 +42,24 @@ import {
   type Capability,
 } from '@/lib/auth/capabilities';
 import {
-  findWebsite,
   getClientUserDefs,
   getUserDefsForClient,
-  getWebsitesForClient,
   useUserContext,
 } from '@/lib/auth/user-stub';
 import { adminClients } from '@/lib/nav/admin-clients';
 import { adminSettingsNav } from '@/lib/nav/admin-settings-nav';
+import { findWebsite, getWebsitesForClient } from '@/lib/website/data-stub';
+import type { Website } from '@/lib/website/types';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
+
+/** Project a full Website into the minimal display shape the cap grid needs. */
+function projectWebsite(website: Website): CapabilityGridWebsite {
+  return {
+    id: website.id,
+    clientName: website.name,
+    domain: website.domain.primary,
+  };
+}
 
 export default function AdminSettingsAccessPage() {
   const workspace = useWorkspace();
@@ -106,7 +116,8 @@ function SubAccountView({
       const liveUser = ctx.allUsers.find((u) => u.id === def.id);
       const userWebsites = def.accessibleWebsiteIds
         .map((id) => findWebsite(id))
-        .filter((w): w is NonNullable<typeof w> => w != null);
+        .filter((w): w is NonNullable<typeof w> => w != null)
+        .map(projectWebsite);
       return {
         id: def.id,
         displayName: def.displayName,
