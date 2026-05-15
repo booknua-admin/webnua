@@ -51,14 +51,17 @@ export function useWebsitePublishState(websiteId: string): WebsitePublishState {
   );
 }
 
-/** Returns the pending submission this user owns on this website, if any. */
+/** Returns the pending submission this user owns on this website, if any.
+ *  `websiteId === null` short-circuits to null — used by the funnel-step
+ *  editor, which has no Lane B yet (Session 7 funnel mode). */
 export function useUserPendingSubmission(
-  websiteId: string,
+  websiteId: string | null,
   userId: string | null,
 ): WebsiteApprovalSubmission | null {
   return useSyncExternalStore(
     subscribeApprovals,
-    () => (userId ? findPendingForUser(websiteId, userId) : null),
+    () =>
+      websiteId && userId ? findPendingForUser(websiteId, userId) : null,
     () => null,
   );
 }

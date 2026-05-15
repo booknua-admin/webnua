@@ -30,7 +30,6 @@ import { Button } from '@/components/ui/button';
 import { useCan, useCanAny } from '@/lib/auth/user-stub';
 import { cn } from '@/lib/utils';
 import type { AutosaveStatus } from '@/lib/website/use-autosave';
-import type { Website } from '@/lib/website/types';
 
 import { AutosaveIndicator } from './AutosaveIndicator';
 
@@ -45,6 +44,9 @@ export type EditorToolbarMode =
       kind: 'tabs';
       tabs: EditorToolbarTab[];
       activeTabId: string;
+      /** Where the "← Back" link points. Defaults to /website. Funnel
+       *  editors pass `/funnels/[id]` (Session 7). */
+      backHref?: string;
     }
   | {
       kind: 'breadcrumb';
@@ -60,18 +62,28 @@ export type EditorToolbarAutosave = {
 };
 
 export type EditorToolbarProps = {
-  website: Website;
+  /** Domain to deep-link the "View live ↗" affordance to. */
+  domain: string;
   mode: EditorToolbarMode;
   /** Forwarded to the publish action's request-change context. */
   activePageId?: string;
   /** Live autosave state. Hidden when omitted (used by static demos). */
   autosave?: EditorToolbarAutosave;
   /** Hide both publish actions — used when the editor is locked for the
-   *  current user (Lane B submitter waiting on review). */
+   *  current user (Lane B submitter waiting on review) or when the surface
+   *  doesn't have publish wired yet (funnel-step editor, Session 7). */
   publishDisabled?: boolean;
-  /** Fired on the rust "Publish →" button (Lane A). */
+  /** Session 8 — when set, the lane buttons collapse into a single
+   *  "Review →" link routing here. The review surface owns the actual
+   *  publish / submit calls so preflight is a mandatory gate (design §7).
+   *  When omitted, falls back to the direct `onPublish` / `onSubmitForReview`
+   *  buttons (funnel-step editor still uses the direct path). */
+  reviewHref?: string;
+  /** Fired on the rust "Publish →" button (Lane A). Ignored when
+   *  `reviewHref` is set. */
   onPublish?: () => void;
-  /** Fired on the ghost "Submit for review →" button (Lane B). */
+  /** Fired on the ghost "Submit for review →" button (Lane B). Ignored
+   *  when `reviewHref` is set. */
   onSubmitForReview?: () => void;
   /** Render a chevron menu next to Publish with the force-publish item.
    *  Wired in by chunk F; omit to hide the menu. */
@@ -79,11 +91,12 @@ export type EditorToolbarProps = {
 };
 
 export function EditorToolbar({
-  website,
+  domain,
   mode,
   activePageId,
   autosave,
   publishDisabled = false,
+  reviewHref,
   onPublish,
   onSubmitForReview,
   publishMenu,
@@ -97,6 +110,8 @@ export function EditorToolbar({
     'editSections',
   );
 
+  const backHref = mode.backHref ?? '/website';
+
   return (
     <div
       data-slot="editor-toolbar"
@@ -104,7 +119,7 @@ export function EditorToolbar({
     >
       <div className="flex min-w-0 items-center gap-3">
         <Link
-          href={mode.kind === 'breadcrumb' ? (mode.backHref ?? '/website') : '/website'}
+          href={backHref}
           className="flex shrink-0 items-center font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet hover:text-ink"
         >
           ← Back
@@ -146,14 +161,25 @@ export function EditorToolbar({
           />
         ) : null}
         <a
-          href={`https://${website.domain.primary}`}
+          href={`https://${domain}`}
           target="_blank"
           rel="noreferrer"
           className="hidden font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet hover:text-ink md:inline"
         >
           View live ↗
         </a>
-        {publishDisabled ? null : canPublish ? (
+        {publishDisabled ? null : reviewHref ? (
+          // Session 8 — review surface is the publish gate. Both lanes
+          // route here; the surface renders the lane-correct action.
+          (canPublish || canEditAnything) ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Button size="sm" asChild>
+                <Link href={reviewHref}>Review &amp; publish →</Link>
+              </Button>
+              {canPublish ? publishMenu : null}
+            </span>
+          ) : null
+        ) : canPublish ? (
           <span className="inline-flex items-center gap-1.5">
             <Button size="sm" onClick={onPublish}>
               Publish →

@@ -16,6 +16,11 @@ type FunnelFlowProps = {
   arrows: FunnelArrowData[];
   periods: FunnelPeriod[];
   defaultPeriod?: FunnelPeriod;
+  /** Per-step editor deep-links, aligned to `steps` by index. When a step's
+   *  entry is set, that step card becomes a link into the funnel-step
+   *  editor. Omit (or leave entries undefined) for a static, non-clickable
+   *  flow — e.g. for view-only users. */
+  stepEditHrefs?: (string | undefined)[];
   className?: string;
 };
 
@@ -25,6 +30,7 @@ function FunnelFlow({
   arrows,
   periods,
   defaultPeriod,
+  stepEditHrefs,
   className,
 }: FunnelFlowProps) {
   return (
@@ -46,7 +52,11 @@ function FunnelFlow({
         {steps.flatMap((step, idx) => {
           const arrow = arrows[idx];
           const nodes: ReactNode[] = [
-            <FunnelStepCard key={step.id} step={step} />,
+            <FunnelStepCard
+              key={step.id}
+              step={step}
+              editHref={stepEditHrefs?.[idx]}
+            />,
           ];
           if (arrow) {
             nodes.push(<FunnelArrow key={arrow.id} arrow={arrow} />);

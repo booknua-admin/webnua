@@ -65,12 +65,7 @@ export default function WebsitePageEditorPage() {
     );
   }
 
-  return (
-    <SectionEditor
-      website={website}
-      mode={{ kind: 'page', pages, page }}
-    />
-  );
+  return <SectionEditor mode={{ kind: 'page', website, pages, page }} />;
 }
 
 function NotFoundState({ message }: { message: string }) {

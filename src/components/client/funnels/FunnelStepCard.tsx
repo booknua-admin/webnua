@@ -1,32 +1,38 @@
+import Link from 'next/link';
+
 import { cn } from '@/lib/utils';
 import { FunnelStepThumbnail } from '@/components/client/funnels/FunnelStepThumbnail';
 import type { FunnelStep } from '@/lib/funnels/types';
 
 type FunnelStepCardProps = {
   step: FunnelStep;
+  /** When set, the whole card becomes a `next/link` into the step editor.
+   *  When omitted the card is static (no false clickable affordance). */
+  editHref?: string;
   className?: string;
 };
 
-function FunnelStepCard({ step, className }: FunnelStepCardProps) {
+function FunnelStepCard({ step, editHref, className }: FunnelStepCardProps) {
   const isFirst = step.tone === 'first';
   const isLast = step.tone === 'last';
   const accent = isLast ? 'good' : 'rust';
 
-  return (
-    <div
-      data-slot="funnel-step-card"
-      data-tone={step.tone}
-      className={cn(
-        'group flex cursor-pointer flex-col rounded-[12px] border-[1.5px] px-5 py-[18px] transition-all',
-        'hover:-translate-y-0.5 hover:shadow-card',
-        isFirst &&
-          'border-rust/30 bg-gradient-to-br from-rust-soft to-paper hover:border-rust',
-        isLast &&
-          'border-good/30 bg-gradient-to-br from-good-soft to-paper hover:border-good',
-        !isFirst && !isLast && 'border-rule bg-paper hover:border-rust',
-        className,
-      )}
-    >
+  const cardClass = cn(
+    'group flex flex-col rounded-[12px] border-[1.5px] px-5 py-[18px] transition-all',
+    editHref && 'cursor-pointer hover:-translate-y-0.5 hover:shadow-card',
+    isFirst &&
+      'border-rust/30 bg-gradient-to-br from-rust-soft to-paper',
+    isFirst && editHref && 'hover:border-rust',
+    isLast &&
+      'border-good/30 bg-gradient-to-br from-good-soft to-paper',
+    isLast && editHref && 'hover:border-good',
+    !isFirst && !isLast && 'border-rule bg-paper',
+    !isFirst && !isLast && editHref && 'hover:border-rust',
+    className,
+  );
+
+  const inner = (
+    <>
       <div
         className={cn(
           'mb-2.5 inline-flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-[0.1em]',
@@ -75,6 +81,35 @@ function FunnelStepCard({ step, className }: FunnelStepCardProps) {
           </div>
         ))}
       </div>
+      {editHref ? (
+        <div
+          className={cn(
+            'mt-3 border-t border-dotted border-rule pt-2.5 font-mono text-[9px] font-bold uppercase tracking-[0.1em]',
+            accent === 'good' ? 'text-good' : 'text-rust',
+          )}
+        >
+          Edit this step →
+        </div>
+      ) : null}
+    </>
+  );
+
+  if (editHref) {
+    return (
+      <Link
+        href={editHref}
+        data-slot="funnel-step-card"
+        data-tone={step.tone}
+        className={cardClass}
+      >
+        {inner}
+      </Link>
+    );
+  }
+
+  return (
+    <div data-slot="funnel-step-card" data-tone={step.tone} className={cardClass}>
+      {inner}
     </div>
   );
 }

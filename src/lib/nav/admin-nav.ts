@@ -16,6 +16,7 @@ export const adminWorkspaceNav: NavSection = {
     },
     { label: 'Tickets', href: '/tickets', icon: '◉', badge: { text: '7' } },
     { label: 'Websites', href: '/websites', icon: '▦' },
+    { label: 'Funnels', href: '/funnels', icon: '⇶' },
     { label: 'Internal automations', href: '/automations', icon: '⤿' },
     { label: 'Campaigns', href: '/campaigns', icon: '↗' },
     { label: 'Reviews', href: '/reviews', icon: '★' },

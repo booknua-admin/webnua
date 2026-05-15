@@ -45,16 +45,14 @@ export type UseAutosaveResult = {
 };
 
 export type UseAutosaveOptions = {
-  websiteId: string;
   slot: DraftSlot;
   sections: Section[];
   /** Disable autosave entirely — used when the editor is locked (Lane B
-   *  submitter waiting on review). */
+   *  submitter waiting on review) or in funnel-step mode pre-publish-stub. */
   disabled?: boolean;
 };
 
 export function useAutosave({
-  websiteId,
   slot,
   sections,
   disabled = false,
@@ -65,7 +63,6 @@ export function useAutosave({
   // Refs so the debounce closure always reads the latest values without
   // restarting the effect on every keystroke.
   const sectionsRef = useRef(sections);
-  const websiteIdRef = useRef(websiteId);
   const slotRef = useRef(slot);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Skip the first effect tick — initial mount shouldn't mark dirty.
@@ -73,17 +70,12 @@ export function useAutosave({
 
   useEffect(() => {
     sectionsRef.current = sections;
-    websiteIdRef.current = websiteId;
     slotRef.current = slot;
   });
 
   const flush = useCallback(() => {
     setStatus('saving');
-    const ok = saveDraftSections(
-      websiteIdRef.current,
-      slotRef.current,
-      sectionsRef.current,
-    );
+    const ok = saveDraftSections(slotRef.current, sectionsRef.current);
     if (ok) {
       setStatus('synced');
       setLastSavedAt(Date.now());
