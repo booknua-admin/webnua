@@ -183,18 +183,63 @@ changes — purely a session-local capability override. Critical for support
 
 ## 2. Data model
 
+### 2.0 Funnels and websites — two independent artefacts
+
+The platform builds **two kinds of buildable artefact**, often for the same
+client business. They share section vocabulary and brand, but they are
+**not** the same thing and the data model must not blur them.
+
+**Funnel** — a linear, conversion-focused sequence. Typically 2–4 steps
+(landing → schedule → thanks, or landing → optin → thanks). One purpose
+per funnel: one offer, one signup, one bookable thing. **No shared
+chrome** — funnel steps are designed to be conversion-optimised in
+isolation. Has its own analytics (visitors per step, drop-off,
+conversion). A business can have many funnels (one per offer / campaign).
+Built initially by the onboarding wizard (see §5); editable in Session 7's
+funnel-step editor.
+
+**Website** — a traditional multi-page presence. Pages like Home / About /
+Services / Contact. **Shared `Header` and `Footer`** wrapping every
+page. A flat **`nav: NavLink[]`** structures the top navigation (capped
+at 6 items V1 — see §2.5). One website per business in V1. Pages aren't
+sequenced — a visitor can land on any page, navigate freely between them.
+
+**The hard rule:** a client's home page is not their funnel's landing
+page. They are different surfaces serving different jobs:
+
+- **Home page** lives on the website. Brand-establishing, multi-CTA, links
+  out to services / about / contact / a funnel. Indexed by search.
+- **Funnel landing page** lives inside a funnel. Single CTA, no header
+  navigation (every link out is an exit), built around one offer. Often
+  not indexed (ad-traffic only).
+
+The two reference the same `Section` registry as building blocks and the
+same `BrandObject` (one brand per client). Everything else is separate
+data, separate routes, separate publish surfaces.
+
 ### 2.1 Core types
 
 ```ts
-// A website belongs to a client. One client = one website (V1).
-// Multiple websites per client is V2; the data shape supports it.
+// Brand lives on the Client, NOT on Website or Funnel. Both reference
+// the client's brand via clientId. One brand per business in V1.
+type Client = {
+  id: string;
+  name: string;
+  brand: BrandObject;
+  // ...other client fields (status, meta, etc.)
+}
+
+// -- Website (multi-page, with shared chrome) ----------------------------
 type Website = {
   id: string;
-  clientId: string;
-  name: string;          // "Voltline"
+  clientId: string;       // → Client.brand for rendering
+  name: string;
   domain: { primary: string; aliases: string[]; sslStatus: 'pending' | 'live' | 'error' };
-  brand: BrandObject;
-  pageOrder: string[];   // page ids in nav order
+  pages: Page[];          // unsequenced — visitor lands on any
+  header: Section;        // website-level singleton (see §2.5)
+  footer: Section;        // website-level singleton
+  nav: NavLink[];         // capped at 6 V1 (forcing function — see §2.5)
+  pageOrder: string[];    // page ids; drives the "Pages" menu order
   draftVersionId: string;
   publishedVersionId: string | null;
   createdAt: string;
@@ -204,22 +249,55 @@ type Website = {
 type Page = {
   id: string;
   websiteId: string;
-  slug: string;             // 'home' | 'emergency-callout' | etc.
+  slug: string;             // 'home' | 'about' | 'services' | 'contact'
   title: string;
-  type: PageType;           // see registry below
-  sections: Section[];      // ordered
+  type: PageType;           // see below
+  sections: Section[];      // ordered; rendered between header & footer
   seo: { title?: string; description?: string; ogImageUrl?: string };
   createdAt: string;
   updatedAt: string;
 }
 
-type PageType = 'landing' | 'schedule' | 'thanks' | 'generic';
-// V1 ships landing/schedule/thanks; 'generic' is the V2 escape hatch
-// for free-form pages. Data shape supports it today.
+type PageType = 'home' | 'about' | 'services' | 'contact' | 'generic';
 
+type NavLink = {
+  label: string;
+  target: { kind: 'page'; pageId: string } | { kind: 'href'; href: string };
+}
+
+// -- Funnel (linear, conversion sequence) --------------------------------
+// Types defined now to lock the shape for Session 7's funnel editor.
+// Not yet referenced by any route, stub data, or UI in Session 3.5.
+type Funnel = {
+  id: string;
+  clientId: string;       // → Client.brand for rendering
+  name: string;
+  domain: { primary: string; aliases: string[]; sslStatus: 'pending' | 'live' | 'error' };
+  steps: FunnelStep[];    // ordered sequence
+  draftVersionId: string;
+  publishedVersionId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+type FunnelStep = {
+  id: string;
+  funnelId: string;
+  slug: string;
+  title: string;
+  type: FunnelStepType;
+  sections: Section[];    // ordered; no header/footer wrapping
+  seo: { title?: string; description?: string; ogImageUrl?: string };
+  // step-level concerns: gating ("can only reach step 2 from step 1"),
+  // analytics ids, etc. — fleshed out in Session 7.
+}
+
+type FunnelStepType = 'landing' | 'schedule' | 'thanks' | 'optin' | 'upsell';
+
+// -- Shared (used by both Website pages and Funnel steps) ----------------
 type Section = {
   id: string;
-  type: SectionType;        // 'hero' | 'offer' | 'trust' | 'services' | ...
+  type: SectionType;        // 'hero' | 'offer' | 'header' | 'footer' | ...
   enabled: boolean;
   data: Record<string, unknown>;   // schema validated by the registry per type
   ai?: { draftedFields: string[]; lastRegenAt?: string };
@@ -228,21 +306,35 @@ type Section = {
 
 ### 2.2 The section registry
 
-Every section type registers itself with three pieces:
+Every section type registers itself with a definition:
 
 ```ts
 type SectionTypeDefinition<TData> = {
   type: SectionType;
   label: string;                   // "// HERO"
-  schema: ZodSchema<TData>;        // validates the data blob
-  defaultData: () => TData;        // for "Add section"
+  description: string;
+  defaultData: () => TData;
   Fields: ComponentType<{ data: TData; onChange: (next: TData) => void }>;
   Preview: ComponentType<{ data: TData; brand: BrandObject }>;
   capabilityHints?: { copyFields: string[]; mediaFields: string[] };
+  // Where this section type can be used. Drives the "Add section" picker
+  // and lets us enforce singleton vs stackable semantics in the editor
+  // and any backend validation.
+  allowedContainers: readonly ContainerKind[];
+  allowedPageTypes?: readonly (PageType | FunnelStepType)[];
+  implemented: boolean;
 }
+
+type ContainerKind =
+  | 'page'              // section is added to a Page.sections[]
+  | 'funnelStep'        // section is added to a FunnelStep.sections[]
+  | 'websiteHeader'     // section IS Website.header (singleton)
+  | 'websiteFooter';    // section IS Website.footer (singleton)
 ```
 
-V1 section types (mirrors the prototype's landing-page section list):
+**V1 section types — stackable (appear in `Page.sections` and/or
+`FunnelStep.sections`):**
+
 - `hero` — eyebrow + headline + sub + CTA + hero image
 - `offer` — offer card with price + included list + scarcity copy
 - `trust` — trust signals row (badges, GBP rating)
@@ -250,22 +342,86 @@ V1 section types (mirrors the prototype's landing-page section list):
 - `reviews` — reviews carousel (auto-pulls from GBP integration)
 - `faq` — Q&A list
 - `cta` — final CTA block
-- `schedulePicker` — only valid in `schedule` page type
-- `thanksConfirmation` — only valid in `thanks` page type
+- `schedulePicker` — `allowedContainers: ['funnelStep']`, only on
+  `funnelStep` of type `'schedule'`
+- `thanksConfirmation` — `allowedContainers: ['funnelStep']`, only on
+  `funnelStep` of type `'thanks'`
 
-The registry's `capabilityHints` tells the editor which fields are pure-copy vs
-media-bearing, so the per-field capability check ("can this user edit this
-specific field?") doesn't need to be hard-coded in each section's `Fields`.
+**V1 section types — website-level singletons:**
 
-**Why a registry, not hard-coded section components in the editor:** adding a
-new section type later (V2) becomes a one-file addition, not an editor
-refactor. Also makes the form-to-page generation cleaner — the AI prompt
-includes the registry's section catalog.
+- `header` — `allowedContainers: ['websiteHeader']`. Logo + nav links +
+  optional global CTA. **Implements the same Fields/Preview interface as
+  every other section type, but is not stackable.** A Website has exactly
+  one `header` (`Website.header`); pages do not have headers in their
+  `sections[]`. Wraps every page render automatically.
+- `footer` — `allowedContainers: ['websiteFooter']`. Same shape rule:
+  exactly one per Website (`Website.footer`); never appears in a page's
+  `sections[]`.
+
+**The "section interface ≠ stackable" point matters.** Header and footer
+look like sections (they have Fields, Preview, brand-aware rendering)
+because reusing the section registry buys us editor parity — the same
+shell that edits a hero section edits the header. But they are
+**website-level singletons**, not page-level building blocks. The
+`allowedContainers` constraint is the data-model enforcement; the §2.6
+single-section editor variant is the UX enforcement. Don't add `header`
+or `footer` to a `Page.sections[]` even if the type system allows it
+slipping through — it would render twice (once from the website wrap and
+once inline) and the runtime checks the registry constraint and refuses.
+
+The registry's `capabilityHints` tells the editor which fields are
+pure-copy vs media-bearing, so the per-field capability check doesn't
+need to be hard-coded in each section's `Fields`.
+
+**Why a registry, not hard-coded section components in the editor:**
+adding a new section type later (V2) becomes a one-file addition, not an
+editor refactor. Also makes form-to-page generation cleaner — the AI
+prompt includes the registry's section catalog.
+
+### 2.5 Website navigation
+
+`Website.nav: NavLink[]` is a flat array of nav links, capped at **6
+items V1**. Each link targets either an internal page (`{ kind: 'page',
+pageId }`) or an arbitrary href (`{ kind: 'href', href }`).
+
+The cap is a forcing function, not an arbitrary restriction. Any
+unbounded flat nav with 11+ items needs dropdowns to stay usable; we
+won't build dropdowns V1, so the limit ensures the unstructured-flat
+nav stays in its lane. V2 introduces dropdowns + sub-pages and the cap
+relaxes.
+
+### 2.6 Single-section editor variant
+
+When the operator opens `/website/header` or `/website/footer`, the
+editor runs in **`'website-singleton'`** mode. Same `SectionEditor`
+shell as page editing — same toolbar, rail, preview pane composition —
+with three explicit differences:
+
+- **Toolbar tabs replaced by breadcrumb.** Page-editing mode shows page
+  tabs (Home / About / Services / Contact). Singleton mode shows
+  `← Back to website hub · Header` (or `Footer`) as a static breadcrumb.
+- **Rail header changes.** `// SECTIONS` becomes `// WEBSITE-LEVEL ·
+  HEADER` (or `· FOOTER`). The single row shows the section's summary
+  but with no drag handle (you can't reorder a singleton), no enable
+  switch (singletons are always on, by definition), and no "+ Add
+  section" footer button. In place of the add button: a small explainer
+  card reading *"Wraps every page on this website. Editing fields above
+  changes what every page renders. — Field editing lands in Session 4."*
+- **Preview pane renders only the singleton.** Full-width preview of just
+  the header (or footer) — no surrounding page sections — so the
+  operator sees the singleton in isolation.
+
+Implementation: `SectionEditor` takes a discriminated `mode` prop:
+`{ kind: 'page', page }` or `{ kind: 'singleton', section, label }`.
+Toolbar + rail + preview branch on `mode.kind`. The rest stays shared.
 
 ### 2.3 The brand object
 
-Lives on the website, prepended to every AI generation prompt, and used by
-section `Preview` components for visual on-brand rendering:
+**Lives on the `Client`**, referenced by both `Website` and `Funnel` via
+`clientId`. One brand per business in V1 — both the website's pages and
+the business's funnels render against the same brand tokens, voice tone,
+and audience context. Prepended to every AI generation prompt, and used
+by section `Preview` components for visual on-brand rendering:
 
 ```ts
 type BrandObject = {
@@ -706,15 +862,38 @@ two. Each session is still commit-clean.
   website (mid-edit draft, one pending approval), KeyHero website (just
   generated, never published).
 
-**Session 3 — Website hub + read-only mode editor shell.**
-- `/website` route — page grid, version history (reuse `FunnelHistoryCard`
-  shape), publish state, "+ New page" CTA gated on `editPages`.
+**Session 3 — Website hub + read-only mode editor shell.** ✅ shipped.
+- `/website` route — page grid, version history, publish state, "+ New page"
+  CTA gated on `editPages`.
 - `/websites` route — admin-only cross-client matrix.
-- `<SectionEditor>` shell — top toolbar (page tabs, autosave indicator,
-  presence, publish/submit button), left rail (section list with toggles, all
+- `<SectionEditor>` shell — toolbar (page tabs, autosave indicator,
+  publish/submit), left rail (section list with toggles, all
   capability-gated), right pane (per-section `<Preview>` components).
-- All capability gating active from session-one — Anna sees fully read-only,
-  Mark sees copy+media-active, admin sees everything.
+- **Discovered post-ship:** what shipped renders pages as a funnel, not as a
+  website. Funnel/website distinction wasn't pinned in §2 at that time —
+  doc has since been corrected (§2.0). Fix-up work moved to Session 3.5.
+
+**Session 3.5 — Funnel/website split + website chrome.**
+- Pin the funnel-vs-website distinction in `lib/`: `lib/website/types.ts`
+  becomes website-only (Home / About / Services / Contact / generic page
+  types; `header` / `footer` / `nav` on `Website`); new `lib/funnel/types.ts`
+  holds editable `Funnel` + `FunnelStep` types **shape-only** — no stub
+  data, no routes, no UI references (locks the model for Session 7).
+- Brand migrates from `Website` to `Client` (`AdminClient.brand` in the
+  stub layer). Website and Funnel both reference brand via `clientId`.
+- `header` and `footer` join the section registry as website-level
+  singletons with `allowedContainers: ['websiteHeader' | 'websiteFooter']`.
+- Stub data restructure: Voltline gets a small Website (Home + About +
+  Contact partial-build; Services empty — demonstrates partial state);
+  FreshHome gets a real Website (4 pages, published); KeyHero gets a
+  Website (draft, never published); NeatWorks empty. Voltline's existing
+  funnel data (under `lib/funnels/`) stays untouched — analytics-detail
+  stub from Cluster 4, unrelated to the editable Funnel model.
+- `/website` hub redesigned: header/footer cards with their own Edit
+  affordances, page grid by type, nav-config card capped at 6 items.
+- `EditorToolbar` page-tabs prop generalised to `{ id, label, href }[]`.
+- New routes `/website/header` and `/website/footer` mount `SectionEditor`
+  in singleton mode (see §2.6) — same shell, different content.
 
 **Session 4 — Per-section editors + capability-gated field editing.**
 - Build `<Fields>` + `<Preview>` for the remaining six section types
@@ -797,12 +976,23 @@ PR too.
   generation (`useAI`), but per-user/per-workspace generation budgets are a
   V2 concern surfaced here so the backend pass plans for metering from the
   start.
-- **Brand-tone drift across pages.** Voice tone is set per-website but the
+- **Brand-tone drift across pages.** Voice tone is set per-client but the
   AI may still produce tonally inconsistent copy across pages over time as
   the model drifts or the prompt context window fills. No automated drift
   detection in V1; operators eyeball it. If this becomes a real problem,
-  the answer is a per-website "tone reference" snippet (a frozen passage
+  the answer is a per-client "tone reference" snippet (a frozen passage
   the operator hand-tunes) that gets prepended to every generation prompt.
+- **`lib/funnel/` vs `lib/funnels/` namespace overlap.** Session 3.5 adds
+  editable `Funnel` + `FunnelStep` types in `lib/funnel/types.ts`. The
+  existing `lib/funnels/` (plural, Cluster 4) holds the analytics-detail
+  types for `/funnels/[id]` (`FunnelDetail`, `FunnelVersion`,
+  `FunnelAggMetric`, etc.) — a different concern (read-only detail view,
+  not editable build model). The dir names disambiguate (singular = build
+  model; plural = analytics-detail) but the overlap is uncomfortable. When
+  Session 7 wires the funnel-step editor and the two domains start
+  interacting, consider hoisting analytics into `lib/funnels-analytics/`
+  or merging both under `lib/funnel/{builder,analytics}/`. Don't refactor
+  preemptively; act on the first real friction.
 
 ---
 
