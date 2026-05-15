@@ -64,10 +64,14 @@ operator to reason about who can do what.
 | `editTheme` | Brand tokens (accent, fonts, voice) — site-wide effect | ✓ | — |
 | `editPages` | Create / rename / delete pages, change page type | ✓ | — |
 | `useAI` | Invoke AI draft / regenerate / "show me 3 alternatives" | ✓ | — (gated under copy) |
-| `publish` | Promote draft → live | ✓ | — |
+| `publish` | Promote draft → live (covers normal publish AND break-glass force-publish; see §2.4) | ✓ | — |
 | `approve` | Approve another user's pending draft | ✓ | — |
 | `rollback` | Restore a prior published version as the new draft | ✓ | — |
 | `manageDomain` | Point custom domain, SSL, DNS verify | ✓ | — |
+
+13 capabilities total. Force-publish is **not** its own capability — see §2.4
+for why (it's a UI affordance + audit log on top of `publish`, gated at the
+call site by `role === 'admin'`).
 
 **Two intentional omissions:**
 - No separate `commentOnPage` capability. Threaded comments aren't planned for
@@ -337,16 +341,23 @@ type Version = {
   approval queue under normal operation; rollbacks ride the same lanes as
   any other publish.
 
-**Break-glass force-publish.** A separate `forcePublish` capability
-(admin-only, granted alongside `publish` by default but split so it can be
-revoked independently) allows bypassing the approval lane for emergency fixes
-— "client's live site is broken and the approver is asleep" is a real case
-a managed product has to handle. Surfaced as a separate confirm-twice action
-under a "Force publish (skip approval)" menu — *not* the default Publish
-button. Every force-publish writes an audit log entry with actor, timestamp,
-and a required free-text reason. The audit log is visible to all admins in
-`/settings/access` and to the affected client user as a read-only entry in
-their version history.
+**Break-glass force-publish.** Bypassing the approval lane for emergency
+fixes — "client's live site is broken and the approver is asleep" — is a
+real case a managed product has to handle. Implementation: **not a separate
+capability** (a separate cap either lives in admin-defaults and undercuts
+the break-glass framing, or sits outside defaults and forces every admin to
+self-grant on first use). Instead, force-publish is a UI affordance + audit
+discipline layered on top of the existing `publish` cap:
+
+- Surfaced as a separate confirm-twice action under a "Force publish (skip
+  approval)" menu — *not* the default Publish button.
+- The menu item is conditioned at the call site on `role === 'admin'`.
+  Clients never have `publish` in their default cap set anyway, so the
+  `role` check is the meaningful gate.
+- Every force-publish writes an audit log entry with actor, timestamp, and
+  a required free-text reason.
+- The audit log is visible to all admins in `/settings/access` and to the
+  affected client user as a read-only entry in their version history.
 
 ---
 
@@ -668,8 +679,8 @@ two. Each session is still commit-clean.
 - `lib/auth/capabilities.ts` defining `Capability`, `User`, `CapabilityGrant`,
   `useUser`/`useCapabilities`/`useCan`.
 - Evolve role stub to support per-user capability grants. Three stub users:
-  admin (all caps including `forcePublish`), Mark@Voltline
-  (copy+media+SEO+useAI), Anna@FreshHome (view-only).
+  admin (all 13 caps), Mark@Voltline (copy+media+SEO+useAI), Anna@FreshHome
+  (view-only).
 - `<CapabilityGate>` primitive — wraps any control with hide / disable /
   request-change-affordance modes. Per-cap explainer strings table.
 - **No editor work, no new routes, no settings UI.** Purely the layer every
