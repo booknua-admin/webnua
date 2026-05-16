@@ -39,6 +39,27 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   'manageDomain',
 ] as const;
 
+// Affirmative display name per capability — the single source of truth for
+// how a capability is labelled in any human-facing UI (the team-invite
+// permissions preview, future role-management surfaces). Sits alongside
+// CAP_EXPLAINER in explainers.ts: capability name → label → explainer all
+// live in the same orbit.
+export const CAPABILITY_LABEL: Record<Capability, string> = {
+  viewBuilder: 'View the page builder',
+  editCopy: 'Edit page copy',
+  editMedia: 'Edit images + media',
+  editSEO: 'Edit SEO settings',
+  editLayout: 'Reorder + resize layout',
+  editSections: 'Add + remove sections',
+  editTheme: 'Edit brand + theme',
+  editPages: 'Create + manage pages',
+  useAI: 'Use AI drafting tools',
+  publish: 'Publish changes live',
+  approve: 'Approve submitted changes',
+  rollback: 'Roll back to past versions',
+  manageDomain: 'Manage domains + DNS',
+};
+
 export type Role = 'client' | 'admin';
 
 // Default capability sets per role. Per-user grants apply on top (V1: pre-

@@ -1,9 +1,9 @@
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
+import { InviteTeamButton } from '@/components/admin/team/InviteTeamButton';
 import { TeamRow } from '@/components/shared/settings/TeamRow';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { adminSettingsNav } from '@/lib/nav/admin-settings-nav';
 import { adminTeamMembers, adminTeamPermissions } from '@/lib/settings/admin-team';
@@ -41,7 +41,7 @@ export default function AdminSettingsTeamPage() {
               <span className="font-mono text-[11px] font-bold uppercase tracking-[0.08em] text-ink-quiet">
                 <strong className="text-ink">3</strong> members · 1 invite pending
               </span>
-              <Button size="sm">+ Invite member</Button>
+              <InviteTeamButton />
             </div>
             {adminTeamMembers.map((member) => (
               <TeamRow
