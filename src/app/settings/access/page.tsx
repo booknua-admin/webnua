@@ -19,6 +19,7 @@
 import { useMemo, useSyncExternalStore } from 'react';
 
 import { AccessClientRosterRow } from '@/components/shared/settings/AccessClientRosterRow';
+import { ClientSeatLimitCard } from '@/components/shared/settings/ClientSeatLimitCard';
 import {
   CapabilityToggleGrid,
   type CapabilityGridWebsite,
@@ -225,6 +226,28 @@ function SubAccountView({
               </Button>
             </div>
             <CapabilityToggleGrid users={gridUsers} onToggle={handleToggle} />
+          </SettingsSection>
+
+          <SettingsSection
+            heading={
+              <>
+                Seat <em>limit</em>
+              </>
+            }
+            description={
+              <>
+                A <strong>contract axis</strong>, separate from capabilities
+                above — it caps how many users {clientName} can have, not what
+                they can do. The client&apos;s teammate-invite flow enforces
+                this limit.
+              </>
+            }
+          >
+            <ClientSeatLimitCard
+              clientId={clientId}
+              clientName={clientName}
+              actorId={ctx.user?.id ?? 'unknown'}
+            />
           </SettingsSection>
 
           <SettingsSection

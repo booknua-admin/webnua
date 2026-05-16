@@ -8,13 +8,12 @@
 // interpretation. (Same discipline as lib/dashboard/client-hub.ts.)
 // =============================================================================
 
+import type { InviteStatus } from '@/lib/invites/shared-types';
 import type { TeamRole } from './roles';
 
-// Full machine union. Only `pending` is reachable in the stub layer — the
-// other three are declared now so the backend doesn't have to widen the type
-// later. accepted: magic link used. expired: 7-day window elapsed.
-// revoked: operator cancelled before acceptance.
-export type TeamInviteStatus = 'pending' | 'accepted' | 'expired' | 'revoked';
+// The invite lifecycle union is shared with the client-side teammate invite
+// (lib/invites/shared-types) — single-sourced so the two siblings can't drift.
+export type TeamInviteStatus = InviteStatus;
 
 // The mutable form state while the operator fills out the 3-step modal.
 // Not a persisted record — `TeamInvite` is what gets committed on send.
