@@ -36,13 +36,13 @@ export default function NewClientReviewPage() {
         breadcrumb={
           <TopbarBreadcrumb
             trail={['Clients', 'New']}
-            current={`Step 6 of ${ONBOARDING_TOTAL_STEPS} · Review + publish`}
+            current={`Step 7 of ${ONBOARDING_TOTAL_STEPS} · Review + publish`}
           />
         }
       />
       <div className="px-10 py-10">
         <BuilderStepHeader
-          eyebrow={`// ${b.businessName} · Step 6 of ${ONBOARDING_TOTAL_STEPS}`}
+          eyebrow={`// ${b.businessName} · Step 7 of ${ONBOARDING_TOTAL_STEPS}`}
           title={
             <>
               Review + <em>publish</em>.
@@ -72,7 +72,7 @@ export default function NewClientReviewPage() {
           />
           <ReviewCard
             heading="Big idea"
-            editHref={stepHref('idea')}
+            editHref={stepHref('draft')}
             details={[
               { label: '// HERO LINE', value: picked.text },
               {
@@ -87,7 +87,7 @@ export default function NewClientReviewPage() {
           />
           <ReviewCard
             heading="Offer + guarantee"
-            editHref={stepHref('offer')}
+            editHref={stepHref('draft')}
             details={[
               {
                 label: '// ANCHOR',
@@ -106,7 +106,7 @@ export default function NewClientReviewPage() {
           />
           <ReviewCard
             heading="Trust + jobs menu"
-            editHref={stepHref('trust')}
+            editHref={stepHref('draft')}
             details={[
               {
                 label: '// TRUST SIGNALS',
@@ -181,7 +181,7 @@ export default function NewClientReviewPage() {
         <BuilderFooterActions
           progress={
             <>
-              Step <strong>6</strong> of {ONBOARDING_TOTAL_STEPS} · all ready
+              Step <strong>7</strong> of {ONBOARDING_TOTAL_STEPS} · all ready
             </>
           }
           actions={

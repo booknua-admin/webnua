@@ -3,19 +3,13 @@
 import Link from 'next/link';
 import { useState } from 'react';
 
-import { FunnelLandingPreview } from '@/components/admin/onboarding/FunnelLandingPreview';
 import { ReframeOptionCard } from '@/components/admin/onboarding/ReframeOptionCard';
 import { BuilderFooterActions } from '@/components/shared/builder/BuilderFooterActions';
-import { BuilderLayout } from '@/components/shared/builder/BuilderLayout';
 import { BuilderStepHeader } from '@/components/shared/builder/BuilderStepHeader';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
+import { ONBOARDING_TOTAL_STEPS, stepHref } from '@/lib/onboarding/types';
 import {
-  ONBOARDING_TOTAL_STEPS,
-  stepHref,
-} from '@/lib/onboarding/types';
-import {
-  previewAfterIdea,
   voltlineBasics,
   voltlineReframes,
   voltlineSelectedReframeId,
@@ -51,49 +45,44 @@ export default function NewClientIdeaPage() {
             </>
           }
         />
-        <BuilderLayout
-          form={
-            <>
-              <div className="flex flex-col gap-3">
-                {voltlineReframes.map((option) => (
-                  <ReframeOptionCard
-                    key={option.id}
-                    tag={option.tag}
-                    text={option.text}
-                    reason={option.reason}
-                    selected={selectedId === option.id}
-                    onSelect={() => setSelectedId(option.id)}
-                  />
-                ))}
-                <div className="mt-2.5 border-t border-paper-2 pt-3.5">
-                  <Button variant="secondary" className="w-full justify-center">
-                    ✦ Regenerate · try 3 more
-                  </Button>
-                </div>
-              </div>
-              <BuilderFooterActions
-                progress={
-                  <>
-                    Step <strong>2</strong> of {ONBOARDING_TOTAL_STEPS}
-                  </>
-                }
-                actions={
-                  <>
-                    <Button variant="ghost" asChild>
-                      <Link href={stepHref('basics')}>← Back</Link>
-                    </Button>
-                    <Button asChild>
-                      <Link href={stepHref('offer')}>
-                        Continue · build the funnel →
-                      </Link>
-                    </Button>
-                  </>
-                }
+        <div className="max-w-[760px] rounded-xl border border-rule bg-card p-7">
+          <div className="flex flex-col gap-3">
+            {voltlineReframes.map((option) => (
+              <ReframeOptionCard
+                key={option.id}
+                tag={option.tag}
+                text={option.text}
+                reason={option.reason}
+                selected={selectedId === option.id}
+                onSelect={() => setSelectedId(option.id)}
               />
-            </>
-          }
-          preview={<FunnelLandingPreview state={previewAfterIdea} />}
-        />
+            ))}
+            <div className="mt-2.5 border-t border-paper-2 pt-3.5">
+              <Button variant="secondary" className="w-full justify-center">
+                ✦ Regenerate · try 3 more
+              </Button>
+            </div>
+          </div>
+          <BuilderFooterActions
+            progress={
+              <>
+                Step <strong>2</strong> of {ONBOARDING_TOTAL_STEPS}
+              </>
+            }
+            actions={
+              <>
+                <Button variant="ghost" asChild>
+                  <Link href={stepHref('basics')}>← Back</Link>
+                </Button>
+                <Button asChild>
+                  <Link href={stepHref('offer')}>
+                    Continue · build the funnel →
+                  </Link>
+                </Button>
+              </>
+            }
+          />
+        </div>
       </div>
     </>
   );

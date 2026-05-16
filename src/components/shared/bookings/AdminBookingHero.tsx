@@ -1,5 +1,6 @@
-import { cn } from '@/lib/utils';
+import { CALENDAR_TONE_BORDER_L } from '@/lib/calendar/tones';
 import type { CalendarClientTone } from '@/lib/calendar/types';
+import { cn } from '@/lib/utils';
 
 type AdminBookingHeroProps = {
   /** Border-left tint matches the calendar client tone */
@@ -19,14 +20,6 @@ type AdminBookingHeroProps = {
   className?: string;
 };
 
-const TONE_BORDER: Record<CalendarClientTone, string> = {
-  voltline: 'border-l-rust',
-  freshhome: 'border-l-[#4a7ba6]',
-  keyhero: 'border-l-[#8a5cb8]',
-  neatworks: 'border-l-[#2d8a4e]',
-  generic: 'border-l-ink',
-};
-
 function AdminBookingHero({
   tone,
   timeRow,
@@ -40,7 +33,7 @@ function AdminBookingHero({
       data-slot="admin-booking-hero"
       className={cn(
         'rounded-[12px] border border-rule border-l-[6px] bg-card px-7.5 py-6.5',
-        TONE_BORDER[tone],
+        CALENDAR_TONE_BORDER_L[tone],
         className,
       )}
     >

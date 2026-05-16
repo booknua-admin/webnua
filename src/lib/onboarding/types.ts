@@ -5,6 +5,7 @@ export type OnboardingStepSlug =
   | 'idea'
   | 'offer'
   | 'trust'
+  | 'draft'
   | 'automations'
   | 'review'
   | 'published';
@@ -20,8 +21,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   { slug: 'idea', number: 2, label: 'The big idea' },
   { slug: 'offer', number: 3, label: 'The offer' },
   { slug: 'trust', number: 4, label: 'Trust + jobs menu' },
-  { slug: 'automations', number: 5, label: 'Automations' },
-  { slug: 'review', number: 6, label: 'Review + publish' },
+  { slug: 'draft', number: 5, label: 'Polish your draft' },
+  { slug: 'automations', number: 6, label: 'Automations' },
+  { slug: 'review', number: 7, label: 'Review + publish' },
 ];
 
 export const ONBOARDING_TOTAL_STEPS = ONBOARDING_STEPS.length;
@@ -97,55 +99,6 @@ export type Automation = {
   enabled: boolean;
   trigger: string;
   steps: AutomationStep[];
-};
-
-export type FunnelHeader = {
-  logo: ReactNode;
-  phone: string;
-};
-
-export type FunnelEyebrowConfig = {
-  text: string;
-};
-
-export type FunnelHeadlineConfig = {
-  text: ReactNode;
-};
-
-export type FunnelSubConfig = {
-  text: ReactNode;
-};
-
-export type FunnelOfferCardConfig = {
-  num: ReactNode;
-  headline: string;
-  sub: string;
-};
-
-export type FunnelCtaConfig = {
-  primary: string;
-  secondary: string;
-};
-
-export type FunnelTrustConfig = {
-  items: { num: ReactNode; label: string }[];
-};
-
-export type FunnelJobsConfig = {
-  title: string;
-  rows: { name: string; price: string }[];
-};
-
-export type FunnelPreviewState = {
-  domain: string;
-  header: FunnelHeader;
-  eyebrow?: FunnelEyebrowConfig;
-  headline?: FunnelHeadlineConfig;
-  sub?: FunnelSubConfig;
-  offerCard?: FunnelOfferCardConfig;
-  cta?: FunnelCtaConfig;
-  trust?: FunnelTrustConfig;
-  jobs?: FunnelJobsConfig;
 };
 
 export type NextStep = {

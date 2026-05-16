@@ -1,21 +1,11 @@
+import { CALENDAR_TONE_BG } from '@/lib/calendar/tones';
+import type { CalendarLegendItem } from '@/lib/calendar/types';
 import { cn } from '@/lib/utils';
-import type {
-  CalendarClientTone,
-  CalendarLegendItem,
-} from '@/lib/calendar/types';
 
 type CalendarLegendProps = {
   items: CalendarLegendItem[];
   meta?: React.ReactNode;
   className?: string;
-};
-
-const TONE_BG: Record<CalendarClientTone, string> = {
-  voltline: 'bg-rust',
-  freshhome: 'bg-[#4a7ba6]',
-  keyhero: 'bg-[#8a5cb8]',
-  neatworks: 'bg-[#2d8a4e]',
-  generic: 'bg-ink',
 };
 
 function CalendarLegend({ items, meta, className }: CalendarLegendProps) {
@@ -31,7 +21,7 @@ function CalendarLegend({ items, meta, className }: CalendarLegendProps) {
         <span key={item.label} className="inline-flex items-center gap-1.5">
           <span
             aria-hidden
-            className={cn('h-3 w-3 rounded-[3px]', TONE_BG[item.tone])}
+            className={cn('h-3 w-3 rounded-[3px]', CALENDAR_TONE_BG[item.tone])}
           />
           {item.label}
         </span>

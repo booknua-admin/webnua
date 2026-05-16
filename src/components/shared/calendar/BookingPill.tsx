@@ -1,7 +1,8 @@
 import Link from 'next/link';
 
-import { cn } from '@/lib/utils';
+import { CALENDAR_TONE_BG } from '@/lib/calendar/tones';
 import type { CalendarClientTone } from '@/lib/calendar/types';
+import { cn } from '@/lib/utils';
 
 type BookingPillProps = {
   time: string;
@@ -17,14 +18,6 @@ type BookingPillProps = {
   className?: string;
 };
 
-const TONE_BG: Record<CalendarClientTone, string> = {
-  voltline: 'bg-rust',
-  freshhome: 'bg-[#4a7ba6]',
-  keyhero: 'bg-[#8a5cb8]',
-  neatworks: 'bg-[#2d8a4e]',
-  generic: 'bg-ink',
-};
-
 function BookingPill({
   time,
   title,
@@ -35,7 +28,7 @@ function BookingPill({
   href,
   className,
 }: BookingPillProps) {
-  const toneBg = tone ? TONE_BG[tone] : 'bg-rust';
+  const toneBg = tone ? CALENDAR_TONE_BG[tone] : 'bg-rust';
   const baseClasses = cn(
     'absolute left-1 right-1 z-[3] overflow-hidden rounded-md px-2 py-1.5 text-paper shadow-card transition-transform hover:scale-[1.02] hover:z-[6]',
     toneBg,

@@ -23,13 +23,13 @@ export default function NewClientAutomationsPage() {
         breadcrumb={
           <TopbarBreadcrumb
             trail={['Clients', 'New']}
-            current={`Step 5 of ${ONBOARDING_TOTAL_STEPS} · Automations`}
+            current={`Step 6 of ${ONBOARDING_TOTAL_STEPS} · Automations`}
           />
         }
       />
       <div className="px-10 py-10">
         <BuilderStepHeader
-          eyebrow={`// ${voltlineBasics.businessName} · Step 5 of ${ONBOARDING_TOTAL_STEPS}`}
+          eyebrow={`// ${voltlineBasics.businessName} · Step 6 of ${ONBOARDING_TOTAL_STEPS}`}
           title={
             <>
               Pre-built <em>automations</em>.
@@ -52,7 +52,7 @@ export default function NewClientAutomationsPage() {
         <BuilderFooterActions
           progress={
             <>
-              Step <strong>5</strong> of {ONBOARDING_TOTAL_STEPS} ·{' '}
+              Step <strong>6</strong> of {ONBOARDING_TOTAL_STEPS} ·{' '}
               <strong>
                 {activeCount} of {voltlineAutomations.length}
               </strong>{' '}
@@ -62,7 +62,7 @@ export default function NewClientAutomationsPage() {
           actions={
             <>
               <Button variant="ghost" asChild>
-                <Link href={stepHref('trust')}>← Back</Link>
+                <Link href={stepHref('draft')}>← Back</Link>
               </Button>
               <Button asChild>
                 <Link href={stepHref('review')}>Continue to publish →</Link>
