@@ -17,6 +17,48 @@ These are **not two apps.** They are one codebase, one component library, one de
 
 ---
 
+## Agency / sub-account model (the operator's two tiers)
+
+The operator view is a **two-tier agency model** (GoHighLevel-style). The agency does two kinds of work, separated by *what* is being managed:
+
+- **Agency level** — HQ. Cross-sub-account policy: default rules, capability floors, integration defaults, seat limits (later: plan catalog + billing). Done in **agency mode** (no sub-account selected). No drilldown.
+- **Sub-account level** — one client. Their funnels, automations, campaigns, leads, integrations, profile. Reached by picking the sub-account from the sidebar `AdminClientPicker` → **sub-account mode**.
+
+Mode is **state-driven** (`useIsAgencyMode()` from `lib/workspace/workspace-stub.tsx`), not URL-driven. Surfaces that exist at both levels **dispatch on the mode** — the settled pattern (`/dashboard`, `/website`, `/settings/access`; `/settings/*` joins it in Cluster 8). URL stays clean.
+
+**Three-layer resolution.** Every agency-level setting resolves down three layers:
+
+1. **Platform defaults** — code constants (`CLIENT_DEFAULTS`, section registry…).
+2. **Agency policy** — what the agency sets HQ-wide.
+3. **Sub-account** — inherits Layer 2; may **override** it. Override-anywhere model: every policy key is overridable per sub-account, flagged `inherited` vs `overridden`.
+
+Effective value = resolve down the stack. Generalises the existing capability pattern (role defaults + grants). Built in **Cluster 8 · Session 2** as `lib/agency/` — agency policy store + per-sub-account override store + a typed `resolvePolicy` resolver returning `{ effectiveValue, source: 'agency' | 'override', agencyValue }`.
+
+**Policy keys — the closed typed union.** A policy key is something that flows through the resolver. This is the *complete* set — the resolver is typed to this union, **NOT** `Record<string, unknown>`:
+
+| Key | Value type | Cluster 8 status |
+|---|---|---|
+| `defaultClientCapabilities` | `Capability[]` | wired (S3/S4) |
+| `integrationDefaults` | integration provider config | wired (S3/S4) |
+| `defaultSeatLimit` | `number \| null` | wired (S3/S4) — resolves the misplaced seat-limit |
+| `brandDefaults` | brand tokens (font / accent) | typed now, wired later |
+| `automationDefaults` | `Record<string, boolean>` on/off flags | typed now, wired later |
+| `pricingDefaults` | currency + buffer rules | typed now, wired later |
+
+Deferred keys are named in the union *now* so Session 2's resolver is shaped right. Don't add a key outside this list without amending it here first — "we'll discover them as we go" is the grab-bag warning sign.
+
+**NOT a policy key — structured templates (deferred, needs its own design).** Agency-provided *default funnel structures, default automation flow copy, default review-request templates* are nested structured data, not flat policy. "Override-anywhere" means something different there (override a whole template? a field? fork it?). Bigger shape — out of Cluster 8, and explicitly **not** shoehorned into the policy resolver.
+
+**Webnua-as-sub-account — deferred, kept drop-in-ready.** The agency's own marketing account (Webnua) is structurally identical to a client sub-account but is *not* in the sidebar picker yet (deliberate). Cluster 8 must not introduce anything that makes the future drop-in harder — sub-account surfaces stay shape-agnostic about *which* client is active; no `clientId === 'webnua'` special-casing.
+
+**Settings classification.** `/settings/*` becomes mode-dispatched in Cluster 8. Tab homes:
+
+- **Agency-level** (agency mode): Workspace (agency identity), Team (agency operators), Access (cap policy + drill), Defaults, Integration defaults, Default seat limit, API + webhooks, Danger zone. (Plan catalog → later billing cluster.)
+- **Sub-account-level** (sub-account mode / client role): Profile, Integrations (per-account keys/overrides), Notifications, Billing (assigned plan), Team (client teammates + seats), Danger.
+- **User-level** (orthogonal axis — the signed-in person, not a workspace): Login + security. Help is global/static.
+
+---
+
 ## Stack — these are decided. Do not introduce alternatives.
 
 - **Framework:** Next.js (App Router) + React + TypeScript
@@ -817,7 +859,7 @@ first.
 
 - ~~**Wizard preview (`FunnelLandingPreview`) ≠ funnel editor preview.**~~ **Resolved** — Session 7 (the wizard refactor): `FunnelLandingPreview` + `FunnelPreviewState` + the `previewAfter*` snapshots are deleted. The wizard's Step 5 (`/clients/new/draft`) is a wizard-frame `SectionEditor` walk (`WizardSectionEditor`) rendering the section registry's per-section `<Preview>` components — one preview implementation platform-wide. The wizard now produces an editable `Funnel`; steps 1-4 are single-column Q&A forms, the trust step triggers `generateFunnelStub`. See `builder-design.md §5`. **Still deferred:** the wizard does not yet fold its Q&A answers into a real `GenerationContext` (the stub generation ignores them — same as Session 6's specifics/avoid), and funnel publish/preflight is unbuilt (see the funnel-publish parked item above).
 
-- **Agency vs sub-account two-tier model — `/settings/access`, `/website`, `/dashboard` are the references (Phase 6 · Cluster 5–6).** GoHighLevel-style. Workspace context driven by `lib/workspace/workspace-stub.tsx` and switched via `AdminClientPicker`. **Agency mode** = cross-client birds-eye for triage. **Sub-account mode** = drill into one client to make changes. `/settings/access` (Cluster 5 · Session 1b) and `/website` (Cluster 5 · Session 3) are built native against this — agency mode shows a cross-client overview; sub-account mode renders the active client's content. **Cluster 6 · Session 1a added the third reference: `/dashboard`** — `app/dashboard/page.tsx` dispatches on `useIsAgencyMode()`, agency mode → the cross-client roster (`AdminDashboardContent`), sub-account mode → the single-client overview hub. **The state-driven dispatch pattern (branch on `useIsAgencyMode()` inside the route, no URL change) now has three precedent points — it is the settled platform pattern; a future fourth surface adopts it, it does not get re-decided.** Their agency-level cross-client matrices live at `/settings/access` (agency view) and `/websites` (admin-only). **Surfaces still agency-only that need sub-account variants when next touched:** `/automations` (admin roster — inline groups don't scale past ~5 clients), `/campaigns` (admin roster — same), `/leads` (admin cross-client inbox is correct as triage; but editing/managing a specific lead should land you in sub-account), `/calendar` (cross-client overview correct as triage; booking-edit work should be sub-account), `/reviews` (per-client cards is OK as a hybrid). **Don't refactor the legacy agency-only roster surfaces now** — adopt the pattern surface-by-surface as scope reaches each one.
+- **Agency vs sub-account two-tier model — `/settings/access`, `/website`, `/dashboard` are the references (Phase 6 · Cluster 5–6).** GoHighLevel-style. Workspace context driven by `lib/workspace/workspace-stub.tsx` and switched via `AdminClientPicker`. **Agency mode** = cross-client birds-eye for triage. **Sub-account mode** = drill into one client to make changes. `/settings/access` (Cluster 5 · Session 1b) and `/website` (Cluster 5 · Session 3) are built native against this — agency mode shows a cross-client overview; sub-account mode renders the active client's content. **Cluster 6 · Session 1a added the third reference: `/dashboard`** — `app/dashboard/page.tsx` dispatches on `useIsAgencyMode()`, agency mode → the cross-client roster (`AdminDashboardContent`), sub-account mode → the single-client overview hub. **The state-driven dispatch pattern (branch on `useIsAgencyMode()` inside the route, no URL change) now has three precedent points — it is the settled platform pattern; a future fourth surface adopts it, it does not get re-decided.** Their agency-level cross-client matrices live at `/settings/access` (agency view) and `/websites` (admin-only). **Surfaces still agency-only that need sub-account variants when next touched:** `/automations` (admin roster — inline groups don't scale past ~5 clients), `/campaigns` (admin roster — same), `/leads` (admin cross-client inbox is correct as triage; but editing/managing a specific lead should land you in sub-account), `/calendar` (cross-client overview correct as triage; booking-edit work should be sub-account), `/reviews` (per-client cards is OK as a hybrid). **Don't refactor the legacy agency-only roster surfaces now** — adopt the pattern surface-by-surface as scope reaches each one. **Cluster 8 (in progress)** formalises the model — see the `## Agency / sub-account model` section near the top: three-layer resolution, the closed policy-key union, and `/settings/*` joining the mode-dispatch pattern. Cluster 8 scope is the IA reshape + the agency settings home; plans/billing is a separate later cluster.
 
 - **Auth + capability mechanism — STUB in place.** The current user boundary is a localStorage-backed React context with four hardcoded stub users (Craig admin / Mark@Voltline editor / Liam@Voltline view-only / Anna@FreshHome view-only). Capability layer is real; user-resolution + publish + version + approval state are all the stub. **Five deletion points** when real auth ships:
   1. `src/lib/auth/user-stub.tsx` + `src/lib/auth/audit-stub.ts` — the provider + `useUser`/`useCapabilities`/`useCan`/`useCanAny`/`useCanAll`/`useIsViewingAs` + the legacy `useRole` shim + the stub users + the force-publish audit stub (seed + overlay path). Replace `audit-stub.ts` with backend-resolved entries; keep `capabilities.ts` and `explainers.ts`.
