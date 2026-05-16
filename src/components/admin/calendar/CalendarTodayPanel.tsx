@@ -1,24 +1,16 @@
 import Link from 'next/link';
 
-import { cn } from '@/lib/utils';
+import { CALENDAR_TONE_BORDER_L } from '@/lib/calendar/tones';
 import {
   CALENDAR_BOOKING_STATUS_LABEL,
-  type CalendarClientTone,
   type CalendarTodayJob,
   type CalendarTodayPanel as CalendarTodayPanelData,
 } from '@/lib/calendar/types';
+import { cn } from '@/lib/utils';
 
 type CalendarTodayPanelProps = {
   panel: CalendarTodayPanelData;
   className?: string;
-};
-
-const TONE_BORDER: Record<CalendarClientTone, string> = {
-  voltline: 'border-l-rust',
-  freshhome: 'border-l-[#4a7ba6]',
-  keyhero: 'border-l-[#8a5cb8]',
-  neatworks: 'border-l-[#2d8a4e]',
-  generic: 'border-l-ink',
 };
 
 function CalendarTodayPanel({ panel, className }: CalendarTodayPanelProps) {
@@ -53,7 +45,7 @@ function CalendarTodayRow({ job }: { job: CalendarTodayJob }) {
 
   const rowClasses = cn(
     'grid grid-cols-[100px_36px_1fr_auto_auto] items-center gap-3.5 rounded-lg border-l-[3px] bg-paper px-3.5 py-2.5',
-    TONE_BORDER[job.tone],
+    CALENDAR_TONE_BORDER_L[job.tone],
     job.href && 'cursor-pointer transition-colors hover:bg-paper-2',
   );
 
