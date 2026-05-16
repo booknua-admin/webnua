@@ -16,6 +16,7 @@ import { useWorkspace } from '@/lib/workspace/workspace-stub';
 // wrong-mode tab — this only guards direct navigation.
 const AGENCY_ONLY = [
   '/settings/workspace',
+  '/settings/plans',
   '/settings/defaults',
   '/settings/integration-defaults',
   '/settings/seats',
