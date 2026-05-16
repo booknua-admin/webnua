@@ -18,9 +18,7 @@ import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
-import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
 import { Switch } from '@/components/ui/switch';
-import { adminSettingsNav } from '@/lib/nav/admin-settings-nav';
 
 type ProviderMeta = {
   id: string;
@@ -96,13 +94,8 @@ export default function IntegrationDefaultsPage() {
             inherits these unless an operator overrides per client.
           </>
         }
-        items={adminSettingsNav}
       >
         <SettingsPanel>
-          <div className="mb-6">
-            <WorkspaceContextBanner hideReturnButton />
-          </div>
-
           <SettingsSection
             heading={
               <>

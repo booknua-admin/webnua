@@ -5,7 +5,6 @@ import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
-import { clientSettingsNav } from '@/lib/nav/client-settings-nav';
 import {
   clientBillingIncluded,
   clientBillingInvoices,
@@ -25,7 +24,6 @@ export function ClientBillingContent() {
           </>
         }
         subtitle="Your Webnua plan, payment method, and invoice history. Billed monthly in AUD."
-        items={clientSettingsNav}
       >
         <SettingsPanel>
           <SettingsSection>

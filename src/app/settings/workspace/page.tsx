@@ -4,7 +4,6 @@ import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
-import { adminSettingsNav } from '@/lib/nav/admin-settings-nav';
 import { adminConnectedIntegrations } from '@/lib/settings/admin-integrations';
 import { adminWorkspaceFields, adminWorkspacePlanFields } from '@/lib/settings/admin-workspace';
 
@@ -26,7 +25,6 @@ export default function AdminSettingsWorkspacePage() {
             forget.
           </>
         }
-        items={adminSettingsNav}
       >
         <SettingsPanel>
           <SettingsSection

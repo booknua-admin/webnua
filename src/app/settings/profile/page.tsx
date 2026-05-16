@@ -3,7 +3,6 @@ import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
-import { clientSettingsNav } from '@/lib/nav/client-settings-nav';
 import { clientProfileBusiness, clientProfileManagedByWebnua } from '@/lib/settings/client-profile';
 
 export default function ClientSettingsProfilePage() {
@@ -24,7 +23,6 @@ export default function ClientSettingsProfilePage() {
             on Craig&apos;s side.
           </>
         }
-        items={clientSettingsNav}
       >
         <SettingsPanel>
           <SettingsSection

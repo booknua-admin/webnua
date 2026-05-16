@@ -5,7 +5,6 @@ import { InviteTeamButton } from '@/components/admin/team/InviteTeamButton';
 import { TeamRow } from '@/components/shared/settings/TeamRow';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { cn } from '@/lib/utils';
-import { adminSettingsNav } from '@/lib/nav/admin-settings-nav';
 import { adminTeamMembers, adminTeamPermissions } from '@/lib/settings/admin-team';
 
 export function AdminSettingsTeamContent() {
@@ -20,7 +19,6 @@ export function AdminSettingsTeamContent() {
           </>
         }
         subtitle="Manage your team, who they can access, and what they're allowed to do across your clients."
-        items={adminSettingsNav}
       >
         <SettingsPanel>
           <SettingsSection

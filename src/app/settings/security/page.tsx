@@ -5,7 +5,6 @@ import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
-import { clientSettingsNav } from '@/lib/nav/client-settings-nav';
 import {
   clientSecurityCredentials,
   clientSecuritySessions,
@@ -30,7 +29,6 @@ export default function ClientSettingsSecurityPage() {
             bookings, and customer data.
           </>
         }
-        items={clientSettingsNav}
       >
         <SettingsPanel>
           <SettingsSection

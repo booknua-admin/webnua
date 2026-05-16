@@ -3,16 +3,16 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
+import { useSettingsNav } from '@/lib/nav/use-settings-nav';
 import { cn } from '@/lib/utils';
-import type { SettingsNavItem } from '@/lib/nav/types';
 
 type SettingsNavProps = {
-  items: SettingsNavItem[];
   className?: string;
 };
 
-function SettingsNav({ items, className }: SettingsNavProps) {
+function SettingsNav({ className }: SettingsNavProps) {
   const pathname = usePathname();
+  const items = useSettingsNav();
 
   return (
     <nav data-slot="settings-nav" className={cn('flex flex-col gap-0.5', className)}>

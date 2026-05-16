@@ -3,7 +3,6 @@ import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
-import { adminSettingsNav } from '@/lib/nav/admin-settings-nav';
 import {
   adminAvailableIntegrations,
   adminConnectedIntegrations,
@@ -21,7 +20,6 @@ export function AdminIntegrationsContent() {
           </>
         }
         subtitle="Connected services and integrations across your workspace. Health status visible at a glance."
-        items={adminSettingsNav}
       >
         <SettingsPanel>
           <SettingsSection

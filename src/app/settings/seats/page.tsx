@@ -18,10 +18,8 @@ import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
-import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { adminSettingsNav } from '@/lib/nav/admin-settings-nav';
 
 export default function DefaultSeatLimitPage() {
   const currentLimit = useAgencyPolicy('defaultSeatLimit');
@@ -76,13 +74,8 @@ export default function DefaultSeatLimitPage() {
             from Access in sub-account mode.
           </>
         }
-        items={adminSettingsNav}
       >
         <SettingsPanel>
-          <div className="mb-6">
-            <WorkspaceContextBanner hideReturnButton />
-          </div>
-
           <SettingsSection
             heading={
               <>

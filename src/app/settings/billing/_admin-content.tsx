@@ -5,7 +5,6 @@ import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
-import { adminSettingsNav } from '@/lib/nav/admin-settings-nav';
 import {
   adminBillingInvoices,
   adminBillingMethod,
@@ -29,7 +28,6 @@ export function AdminBillingContent() {
             <strong>Webnua Perth is billed monthly in AUD</strong> — base plan plus usage.
           </>
         }
-        items={adminSettingsNav}
       >
         <SettingsPanel>
           <SettingsSection>

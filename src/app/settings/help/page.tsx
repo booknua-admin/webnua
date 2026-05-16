@@ -4,7 +4,6 @@ import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
-import { clientSettingsNav } from '@/lib/nav/client-settings-nav';
 import { clientHelpFaqs, clientHelpRecentSupport } from '@/lib/settings/client-help';
 
 export default function ClientSettingsHelpPage() {
@@ -24,7 +23,6 @@ export default function ClientSettingsHelpPage() {
             directly. <strong>No tier-1 chatbots, no tickets that die in a queue.</strong>
           </>
         }
-        items={clientSettingsNav}
       >
         <SettingsPanel>
           <SettingsSection>

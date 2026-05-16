@@ -21,7 +21,6 @@ import {
 } from '@/lib/invites/client-invite-stub';
 import type { ClientUserInvite } from '@/lib/invites/client-invite';
 import { useClientSeatUsage } from '@/lib/invites/use-seat-usage';
-import { clientSettingsNav } from '@/lib/nav/client-settings-nav';
 import { adminClients } from '@/lib/nav/admin-clients';
 
 const EMPTY_INVITES: ClientUserInvite[] = [];
@@ -68,7 +67,6 @@ export function ClientSettingsTeamContent() {
             access is granted by Webnua.
           </>
         }
-        items={clientSettingsNav}
       >
         <SettingsPanel>
           <SettingsSection
