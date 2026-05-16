@@ -6,7 +6,6 @@ import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Switch } from '@/components/ui/switch';
 import { Eyebrow } from '@/components/ui/eyebrow';
-import { clientSettingsNav } from '@/lib/nav/client-settings-nav';
 import { clientNotifications, clientQuietHours } from '@/lib/settings/client-notifications';
 
 export default function ClientSettingsNotificationsPage() {
@@ -26,7 +25,6 @@ export default function ClientSettingsNotificationsPage() {
             <strong>SMS hits fast, email is good for end-of-day.</strong>
           </>
         }
-        items={clientSettingsNav}
       >
         <SettingsPanel>
           <SettingsSection

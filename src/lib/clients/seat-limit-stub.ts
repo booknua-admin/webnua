@@ -1,91 +1,108 @@
 // =============================================================================
-// STUB — per-client seat-limit store.
+// STUB — seat-limit facade over the agency policy resolver.
 //
-// The seed limit lives on AdminClient.seatLimit (lib/nav/admin-clients.ts).
-// This store holds operator overrides + the full change history. The effective
-// limit for a client is its override entry's limit if one exists, else the
-// seed. `null` = unconfigured = uncapped.
+// Cluster 8 · Session 4b: the seat limit is a policy key (`defaultSeatLimit`),
+// not a standalone store. The effective limit for a client resolves down the
+// three layers via lib/agency/ —
+//   Layer 2 : agency default        — set on /settings/seats
+//   Layer 3 : per-sub-account override — override-stub (seeded from the
+//             former AdminClient.seatLimit values)
 //
-// When real auth ships, replaced by reads/writes against a `clients` column
-// (current limit) + a `seat_limit_changes` table (history); the accessor
-// surface keeps its shape.
+// This module is the seat-limit-specific facade: it keeps the export surface
+// the rest of the app already uses (getSeatLimit / setSeatLimit / …) and owns
+// the change-history log — an attributable audit trail (vision §7) that the
+// generic override store does not track.
 //
-// Snapshot discipline (CLAUDE.md): getSnapshot must be reference-stable, so
-// the parsed blob is cached keyed on the raw localStorage string.
+// When real auth ships, the resolver swaps to Supabase reads and this history
+// log becomes a `seat_limit_changes` table; the accessor surface is unchanged.
+//
+// Snapshot discipline (CLAUDE.md): the parsed history blob is cached keyed on
+// the raw localStorage string so reads through useSyncExternalStore stay
+// reference-stable.
 // =============================================================================
 
-import { adminClients } from '@/lib/nav/admin-clients';
+import { subscribeAgencyPolicy } from '@/lib/agency/agency-policy-stub';
+import {
+  clearOverride,
+  hasOverride,
+  setOverride,
+  subscribeOverrides,
+} from '@/lib/agency/override-stub';
+import { resolvePolicy } from '@/lib/agency/resolver';
 import type { SeatLimitChange } from './seat-limit';
 
-const STORE_KEY = 'webnua.dev.seat-limits';
-const CHANGE_EVENT = 'webnua:seat-limits-change';
+const HISTORY_KEY = 'webnua.dev.seat-limit-history';
+const HISTORY_EVENT = 'webnua:seat-limit-history-change';
 
-type SeatLimitEntry = {
-  limit: number | null;
-  history: SeatLimitChange[];
-};
-type SeatLimitStore = Record<string, SeatLimitEntry>;
+// --- Effective limit (resolved) ----------------------------------------------
 
-function safeRead(): string | null {
+/** Effective seat limit for a client — resolved down the policy layers.
+ *  `null` = uncapped. */
+export function getSeatLimit(clientId: string): number | null {
+  return resolvePolicy('defaultSeatLimit', clientId).effectiveValue;
+}
+
+/** The agency-default seat limit a client inherits when not overridden. */
+export function getAgencySeatLimit(clientId: string): number | null {
+  return resolvePolicy('defaultSeatLimit', clientId).agencyValue;
+}
+
+/** True when the client's seat limit is a per-account override, not inherited. */
+export function isSeatLimitOverridden(clientId: string): boolean {
+  return hasOverride(clientId, 'defaultSeatLimit');
+}
+
+// --- Change history ----------------------------------------------------------
+
+type HistoryStore = Record<string, SeatLimitChange[]>;
+
+function safeReadHistory(): string | null {
   try {
-    return window.localStorage.getItem(STORE_KEY);
+    return window.localStorage.getItem(HISTORY_KEY);
   } catch {
     return null;
   }
 }
 
-let cacheRaw: string | null = null;
-let cacheValue: SeatLimitStore = {};
+let historyCacheRaw: string | null | undefined;
+let historyCacheValue: HistoryStore = {};
 
-function readStore(): SeatLimitStore {
-  const raw = safeRead();
-  if (raw === cacheRaw) return cacheValue;
-  cacheRaw = raw;
+function readHistory(): HistoryStore {
+  const raw = safeReadHistory();
+  if (raw === historyCacheRaw) return historyCacheValue;
+  historyCacheRaw = raw;
   if (!raw) {
-    cacheValue = {};
-    return cacheValue;
+    historyCacheValue = {};
+    return historyCacheValue;
   }
   try {
-    const parsed = JSON.parse(raw) as SeatLimitStore;
-    cacheValue = parsed && typeof parsed === 'object' ? parsed : {};
+    const parsed = JSON.parse(raw) as HistoryStore;
+    historyCacheValue = parsed && typeof parsed === 'object' ? parsed : {};
   } catch {
-    cacheValue = {};
+    historyCacheValue = {};
   }
-  return cacheValue;
+  return historyCacheValue;
 }
 
-/** Seed seat limit from the static client record. */
-function seedLimit(clientId: string): number | null {
-  return adminClients.find((c) => c.id === clientId)?.seatLimit ?? null;
-}
-
-/** Effective seat limit for a client — override if set, else the seed. */
-export function getSeatLimit(clientId: string): number | null {
-  const entry = readStore()[clientId];
-  return entry ? entry.limit : seedLimit(clientId);
-}
-
-// Shared empty array — getSeatLimitHistory is read through useSyncExternalStore,
-// so it MUST return a reference-stable value when there is no history (a fresh
-// `[]` each call spins React into an infinite render loop — CLAUDE.md).
+// Shared empty array — getSeatLimitHistory is read through useSyncExternalStore
+// so it MUST be reference-stable when there is no history (CLAUDE.md).
 const EMPTY_HISTORY: readonly SeatLimitChange[] = Object.freeze([]);
 
-/** Change history for a client, newest-first. Empty until the first override. */
-export function getSeatLimitHistory(clientId: string): readonly SeatLimitChange[] {
-  return readStore()[clientId]?.history ?? EMPTY_HISTORY;
+/** Change history for a client, newest-first. Empty until the first change. */
+export function getSeatLimitHistory(
+  clientId: string,
+): readonly SeatLimitChange[] {
+  return readHistory()[clientId] ?? EMPTY_HISTORY;
 }
 
-/** Set a new seat limit and record the change as an attributable event. */
-export function setSeatLimit(
+function recordChange(
   clientId: string,
+  previousLimit: number | null,
   newLimit: number | null,
   changedBy: string,
 ): void {
-  const previousLimit = getSeatLimit(clientId);
-  if (previousLimit === newLimit) return;
   try {
-    const store = { ...readStore() };
-    const prevHistory = store[clientId]?.history ?? [];
+    const store = { ...readHistory() };
     const change: SeatLimitChange = {
       changedBy,
       changedAt: new Date().toISOString(),
@@ -93,19 +110,63 @@ export function setSeatLimit(
       previousLimit,
       newLimit,
     };
-    store[clientId] = { limit: newLimit, history: [change, ...prevHistory] };
-    window.localStorage.setItem(STORE_KEY, JSON.stringify(store));
-    window.dispatchEvent(new Event(CHANGE_EVENT));
+    store[clientId] = [change, ...(store[clientId] ?? [])];
+    window.localStorage.setItem(HISTORY_KEY, JSON.stringify(store));
+    window.dispatchEvent(new Event(HISTORY_EVENT));
   } catch {
     // localStorage unavailable — stub layer, nothing to recover.
   }
 }
 
-export function subscribeSeatLimits(callback: () => void): () => void {
+// --- Writes ------------------------------------------------------------------
+
+/** Set a per-account seat-limit override and record the change. */
+export function setSeatLimit(
+  clientId: string,
+  newLimit: number | null,
+  changedBy: string,
+): void {
+  const previousLimit = getSeatLimit(clientId);
+  // No-op only when the value is unchanged AND already an explicit override —
+  // setting the same value on an inherited client is still a real change
+  // (inherited → overridden).
+  if (previousLimit === newLimit && isSeatLimitOverridden(clientId)) return;
+  setOverride(clientId, 'defaultSeatLimit', newLimit);
+  recordChange(clientId, previousLimit, newLimit, changedBy);
+}
+
+/** Drop the per-account override — the client reverts to inheriting the
+ *  agency default. Records the change (the effective limit may move). */
+export function inheritSeatLimit(clientId: string, changedBy: string): void {
+  if (!isSeatLimitOverridden(clientId)) return;
+  const previousLimit = getSeatLimit(clientId);
+  clearOverride(clientId, 'defaultSeatLimit');
+  recordChange(clientId, previousLimit, getSeatLimit(clientId), changedBy);
+}
+
+// --- Subscriptions -----------------------------------------------------------
+
+function subscribeHistory(callback: () => void): () => void {
   window.addEventListener('storage', callback);
-  window.addEventListener(CHANGE_EVENT, callback);
+  window.addEventListener(HISTORY_EVENT, callback);
   return () => {
     window.removeEventListener('storage', callback);
-    window.removeEventListener(CHANGE_EVENT, callback);
+    window.removeEventListener(HISTORY_EVENT, callback);
   };
+}
+
+/** Subscribe to everything that can move a client's effective seat limit —
+ *  the agency default (Layer 2) and per-account overrides (Layer 3). */
+export function subscribeSeatLimits(callback: () => void): () => void {
+  const offOverrides = subscribeOverrides(callback);
+  const offPolicy = subscribeAgencyPolicy(callback);
+  return () => {
+    offOverrides();
+    offPolicy();
+  };
+}
+
+/** Subscribe to seat-limit change-history writes. */
+export function subscribeSeatLimitHistory(callback: () => void): () => void {
+  return subscribeHistory(callback);
 }

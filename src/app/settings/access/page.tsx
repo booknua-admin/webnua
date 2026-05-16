@@ -30,7 +30,6 @@ import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
-import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
 import { Button } from '@/components/ui/button';
 import {
   getEffectiveAuditLog,
@@ -49,7 +48,6 @@ import {
   useUserContext,
 } from '@/lib/auth/user-stub';
 import { adminClients } from '@/lib/nav/admin-clients';
-import { adminSettingsNav } from '@/lib/nav/admin-settings-nav';
 import { findWebsite, getWebsitesForClient } from '@/lib/website/data-stub';
 import type { Website } from '@/lib/website/types';
 import { useAllPendingApprovals } from '@/lib/website/use-publish-state';
@@ -90,7 +88,6 @@ export default function AdminSettingsAccessPage() {
             </>
           }
           subtitle="Loading access context..."
-          items={adminSettingsNav}
         >
           <SettingsPanel>
             <div className="h-32" />
@@ -193,13 +190,8 @@ function SubAccountView({
             agency birds-eye to triage across all clients.
           </>
         }
-        items={adminSettingsNav}
       >
         <SettingsPanel>
-          <div className="mb-6">
-            <WorkspaceContextBanner />
-          </div>
-
           <SettingsSection
             heading={
               <>
@@ -329,13 +321,8 @@ function AgencyOverview() {
             client to manage their users.
           </>
         }
-        items={adminSettingsNav}
       >
         <SettingsPanel>
-          <div className="mb-6">
-            <WorkspaceContextBanner hideReturnButton />
-          </div>
-
           <SettingsSection
             heading={
               <>

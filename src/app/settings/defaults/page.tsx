@@ -5,7 +5,6 @@ import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
-import { adminSettingsNav } from '@/lib/nav/admin-settings-nav';
 import {
   adminDefaultsAutomations,
   adminDefaultsBranding,
@@ -30,7 +29,6 @@ export default function AdminSettingsDefaultsPage() {
             still possible.
           </>
         }
-        items={adminSettingsNav}
       >
         <SettingsPanel>
           <SettingsSection

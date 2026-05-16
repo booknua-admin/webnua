@@ -3,7 +3,6 @@ import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
-import { adminSettingsNav } from '@/lib/nav/admin-settings-nav';
 import { adminDangerClient, adminDangerWorkspace } from '@/lib/settings/admin-danger';
 
 export default function AdminSettingsDangerPage() {
@@ -23,7 +22,6 @@ export default function AdminSettingsDangerPage() {
             can&apos;t be undone. Owner role only.
           </>
         }
-        items={adminSettingsNav}
       >
         <SettingsPanel>
           <SettingsSection

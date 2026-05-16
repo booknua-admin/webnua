@@ -5,7 +5,6 @@ import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { WebhookEventRow } from '@/components/shared/settings/WebhookEventRow';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
-import { adminSettingsNav } from '@/lib/nav/admin-settings-nav';
 import { adminApiKeys, adminWebhookEndpoint, adminWebhookEvents } from '@/lib/settings/admin-api';
 
 export default function AdminSettingsApiPage() {
@@ -26,7 +25,6 @@ export default function AdminSettingsApiPage() {
             data into third-party CRMs or building custom workflows.
           </>
         }
-        items={adminSettingsNav}
       >
         <SettingsPanel>
           <SettingsSection

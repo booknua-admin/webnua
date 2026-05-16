@@ -2,7 +2,6 @@ import { IntegrationCard } from '@/components/shared/settings/IntegrationCard';
 import { IntegrationProgressHero } from '@/components/shared/settings/IntegrationProgressHero';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
-import { clientSettingsNav } from '@/lib/nav/client-settings-nav';
 import { clientIntegrations, clientIntegrationsHero } from '@/lib/settings/client-integrations';
 
 export function ClientIntegrationsContent() {
@@ -23,7 +22,6 @@ export function ClientIntegrationsContent() {
             get stuck.
           </>
         }
-        items={clientSettingsNav}
       >
         <IntegrationProgressHero
           tag={clientIntegrationsHero.tag}

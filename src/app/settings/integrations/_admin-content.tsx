@@ -1,27 +1,49 @@
+'use client';
+
+// The operator's /settings/integrations branch. Dispatches on workspace mode
+// (Cluster 8 · Session 4b): agency mode → the workspace-wide connected +
+// available services; sub-account mode → the per-client integration policy
+// (which providers this client inherits from the agency vs overrides).
+
+import { SubAccountIntegrationsContent } from './_sub-account-content';
 import { IntegrationCard } from '@/components/shared/settings/IntegrationCard';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
-import { adminSettingsNav } from '@/lib/nav/admin-settings-nav';
 import {
   adminAvailableIntegrations,
   adminConnectedIntegrations,
 } from '@/lib/settings/admin-integrations';
+import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 export function AdminIntegrationsContent() {
+  const { activeClient } = useWorkspace();
+
+  if (activeClient) {
+    return (
+      <SubAccountIntegrationsContent
+        clientId={activeClient.id}
+        clientName={activeClient.name}
+      />
+    );
+  }
+
+  return <AgencyIntegrationsView />;
+}
+
+function AgencyIntegrationsView() {
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="Integrations" />} />
       <SettingsShell
-        eyebrow="Workspace · Webnua Perth"
+        eyebrow="Agency · Webnua Perth"
         title={
           <>
             Settings + <em>integrations</em>.
           </>
         }
         subtitle="Connected services and integrations across your workspace. Health status visible at a glance."
-        items={adminSettingsNav}
       >
         <SettingsPanel>
           <SettingsSection
