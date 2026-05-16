@@ -2,10 +2,10 @@ import Link from 'next/link';
 
 import { LeadDetailHeader } from '@/components/shared/leads/LeadDetailHeader';
 import { LeadQuickActions } from '@/components/shared/leads/LeadQuickActions';
-import { LeadRailCard } from '@/components/shared/leads/LeadRailCard';
 import { LeadStatusSwitcher } from '@/components/shared/leads/LeadStatusSwitcher';
 import { LeadTimeline } from '@/components/shared/leads/LeadTimeline';
 import { PageHeader } from '@/components/shared/PageHeader';
+import { RailCard } from '@/components/shared/RailCard';
 import { TicketDetailLayout } from '@/components/shared/tickets/TicketDetailLayout';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { freshhomeLeadDetail } from '@/lib/leads/admin-leads';
@@ -56,11 +56,11 @@ function AdminLeadDetailContent() {
           }
           side={
             <>
-              <LeadRailCard heading="// QUICK ACTIONS">
+              <RailCard heading="// QUICK ACTIONS">
                 <LeadQuickActions actions={lead.quickActions} />
-              </LeadRailCard>
+              </RailCard>
               {lead.rail.map((card) => (
-                <LeadRailCard
+                <RailCard
                   key={card.heading}
                   heading={card.heading}
                   rows={card.rows}

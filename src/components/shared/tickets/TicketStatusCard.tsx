@@ -4,7 +4,7 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
-import { TicketSideCard } from '@/components/shared/tickets/TicketSideCard';
+import { RailCard } from '@/components/shared/RailCard';
 import type { TicketStatus } from '@/lib/tickets/types';
 
 type DisplayProps = {
@@ -28,7 +28,7 @@ type TicketStatusCardProps = DisplayProps | PickProps;
 function TicketStatusCard(props: TicketStatusCardProps) {
   if (props.mode === 'display') {
     return (
-      <TicketSideCard heading="// Status" tone="dark" className={props.className}>
+      <RailCard heading="// Status" tone="dark" className={props.className}>
         <div className="mb-2.5 flex items-center gap-2.5">
           <span className="size-2.5 rounded-full bg-rust" />
           <div className="text-[16px] font-semibold [&_em]:not-italic [&_em]:text-rust-light">
@@ -40,7 +40,7 @@ function TicketStatusCard(props: TicketStatusCardProps) {
             {props.description}
           </div>
         ) : null}
-      </TicketSideCard>
+      </RailCard>
     );
   }
 
@@ -51,7 +51,7 @@ function StatusPicker({ options, activeStatus, className }: PickProps) {
   const [active, setActive] = useState<TicketStatus>(activeStatus);
 
   return (
-    <TicketSideCard heading="// Status" tone="dark" className={className}>
+    <RailCard heading="// Status" tone="dark" className={className}>
       <div className="flex flex-col gap-1.5">
         {options.map((opt) => {
           const isActive = opt.status === active;
@@ -75,7 +75,7 @@ function StatusPicker({ options, activeStatus, className }: PickProps) {
           );
         })}
       </div>
-    </TicketSideCard>
+    </RailCard>
   );
 }
 

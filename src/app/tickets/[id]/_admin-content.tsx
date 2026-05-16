@@ -1,3 +1,5 @@
+import { RailCard } from '@/components/shared/RailCard';
+import { RailPropertyRow } from '@/components/shared/RailPropertyRow';
 import {
   CategoryPill,
   StatusPill,
@@ -6,9 +8,7 @@ import {
 import { TicketActionRow } from '@/components/shared/tickets/TicketActionRow';
 import { TicketDetailHeader, TicketIdLabel } from '@/components/shared/tickets/TicketDetailHeader';
 import { TicketDetailLayout } from '@/components/shared/tickets/TicketDetailLayout';
-import { TicketPropertyRow } from '@/components/shared/tickets/TicketPropertyRow';
 import { TicketReply } from '@/components/shared/tickets/TicketReply';
-import { TicketSideCard } from '@/components/shared/tickets/TicketSideCard';
 import { TicketStatusCard } from '@/components/shared/tickets/TicketStatusCard';
 import { TicketThreadMessage } from '@/components/shared/tickets/TicketThreadMessage';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
@@ -99,17 +99,17 @@ function AdminTicketDetailContent() {
                 options={t.statusOptions}
                 activeStatus={t.status}
               />
-              <TicketSideCard heading="// Properties">
+              <RailCard heading="// Properties">
                 {t.properties.map((p) => (
-                  <TicketPropertyRow
+                  <RailPropertyRow
                     key={p.label}
                     label={p.label}
                     value={p.value}
                     editable={p.editable}
                   />
                 ))}
-              </TicketSideCard>
-              <TicketSideCard heading="// Quick actions">
+              </RailCard>
+              <RailCard heading="// Quick actions">
                 {t.actions.map((a) => (
                   <TicketActionRow
                     key={a.label}
@@ -117,7 +117,7 @@ function AdminTicketDetailContent() {
                     label={a.label}
                   />
                 ))}
-              </TicketSideCard>
+              </RailCard>
             </>
           }
         />

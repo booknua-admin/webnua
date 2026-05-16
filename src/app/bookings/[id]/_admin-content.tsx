@@ -6,8 +6,8 @@ import { BookingSection } from '@/components/shared/bookings/BookingSection';
 import { RescheduleBookingButton } from '@/components/shared/bookings/RescheduleBookingButton';
 import { freshhomeReschedule } from '@/lib/bookings/reschedule-modal';
 import { PageHeader } from '@/components/shared/PageHeader';
-import { TicketPropertyRow } from '@/components/shared/tickets/TicketPropertyRow';
-import { TicketSideCard } from '@/components/shared/tickets/TicketSideCard';
+import { RailCard } from '@/components/shared/RailCard';
+import { RailPropertyRow } from '@/components/shared/RailPropertyRow';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
 import { freshhomeBooking } from '@/lib/bookings/admin-booking';
@@ -69,9 +69,9 @@ function AdminBookingDetailContent() {
           </div>
 
           <div className="sticky top-[100px] flex flex-col gap-3.5">
-            <TicketSideCard heading="// CUSTOMER VALUE">
+            <RailCard heading="// CUSTOMER VALUE">
               {b.customerValue.map((row, i) => (
-                <TicketPropertyRow
+                <RailPropertyRow
                   key={i}
                   label={row.label}
                   value={
@@ -83,9 +83,9 @@ function AdminBookingDetailContent() {
                   }
                 />
               ))}
-            </TicketSideCard>
+            </RailCard>
 
-            <TicketSideCard heading="// LOCATION">
+            <RailCard heading="// LOCATION">
               <div className="relative mb-3 flex h-[140px] items-center justify-center rounded-lg border border-rule-soft bg-paper text-ink-quiet">
                 <span aria-hidden className="text-[24px] text-rust">
                   ⊕
@@ -97,13 +97,13 @@ function AdminBookingDetailContent() {
               <Button variant="secondary" className="h-9 w-full text-[12px]">
                 Open in Maps ↗
               </Button>
-            </TicketSideCard>
+            </RailCard>
 
-            <TicketSideCard heading="// AUTOMATIONS">
+            <RailCard heading="// AUTOMATIONS">
               {b.automations.map((row, i) => (
-                <TicketPropertyRow key={i} label={row.label} value={row.value} />
+                <RailPropertyRow key={i} label={row.label} value={row.value} />
               ))}
-            </TicketSideCard>
+            </RailCard>
           </div>
         </div>
       </div>
