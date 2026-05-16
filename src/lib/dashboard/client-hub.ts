@@ -281,8 +281,8 @@ export const freshhomeHub: ClientHub = {
   insight: {
     severity: 'opportunity',
     target: 'booked-to-reviewed',
-    suggestedAction: 'fire the review-request loop one day earlier',
+    suggestedAction: 'fire the review-request loop a day earlier to lift booked-to-reviewed',
     reasoning:
-      'Form conversion at 12.8% is above the 8–10% residential-cleaning benchmark. Booked-to-reviewed sits at 36% — strong, but an earlier review request would lift it further.',
+      'form conversion at 12.8% is above the 8–10% residential-cleaning benchmark, and booked-to-reviewed is a strong 36%.',
   },
 };

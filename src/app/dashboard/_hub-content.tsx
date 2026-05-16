@@ -2,8 +2,12 @@ import Link from 'next/link';
 
 import { CalendarTodayPanel } from '@/components/admin/calendar/CalendarTodayPanel';
 import { ClientHubHero } from '@/components/admin/hub/ClientHubHero';
+import { FunnelConversionBars } from '@/components/admin/hub/FunnelConversionBars';
+import { HubInsightBand } from '@/components/admin/hub/HubInsightBand';
+import { OperatorActionBar } from '@/components/admin/hub/OperatorActionBar';
 import { ActivityFeed } from '@/components/shared/ActivityFeed';
 import type { ActivityRowData, ActivityTone } from '@/components/shared/ActivityRow';
+import { MiniTrendBars } from '@/components/shared/MiniTrendBars';
 import { RailCard } from '@/components/shared/RailCard';
 import { StatCard } from '@/components/shared/StatCard';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
@@ -62,6 +66,8 @@ function ClientHubContent() {
       <div className="flex flex-col gap-7 px-10 py-10">
         <WorkspaceContextBanner />
 
+        <OperatorActionBar actions={hub.operatorActions} />
+
         <ClientHubHero hero={hub.hero} />
 
         <div className="grid grid-cols-3 gap-3.5">
@@ -114,10 +120,18 @@ function ClientHubContent() {
                 value={stat.value}
                 trend={`${DELTA_ARROW[stat.delta.direction]} ${stat.delta.label}`}
                 trendTone={stat.delta.direction === 'up' ? 'good' : 'quiet'}
+                chart={<MiniTrendBars data={stat.trend} />}
               />
             ))}
           </div>
         </section>
+
+        <FunnelConversionBars funnel={hub.funnel} />
+
+        <HubInsightBand
+          insight={hub.insight}
+          cta={{ label: 'View full analytics →', href: '/campaigns' }}
+        />
       </div>
     </>
   );

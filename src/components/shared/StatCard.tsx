@@ -6,16 +6,14 @@ type StatCardProps = {
   value: React.ReactNode;
   trend?: React.ReactNode;
   trendTone?: 'good' | 'quiet';
+  /** Optional visual rendered below the trend — e.g. a `MiniTrendBars`
+   *  sparkline. Additive: it renders alongside value/trend, never replaces
+   *  them. */
+  chart?: React.ReactNode;
   className?: string;
 };
 
-function StatCard({
-  label,
-  value,
-  trend,
-  trendTone = 'good',
-  className,
-}: StatCardProps) {
+function StatCard({ label, value, trend, trendTone = 'good', chart, className }: StatCardProps) {
   return (
     <div
       data-slot="stat-card"
@@ -38,6 +36,7 @@ function StatCard({
           {trend}
         </div>
       ) : null}
+      {chart ? <div className="mt-1">{chart}</div> : null}
     </div>
   );
 }
