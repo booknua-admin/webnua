@@ -9,6 +9,7 @@ import { ActivityFeed } from '@/components/shared/ActivityFeed';
 import type { ActivityRowData, ActivityTone } from '@/components/shared/ActivityRow';
 import { MiniTrendBars } from '@/components/shared/MiniTrendBars';
 import { RailCard } from '@/components/shared/RailCard';
+import { GlobalSearchInput } from '@/components/shared/search/GlobalSearchInput';
 import { StatCard } from '@/components/shared/StatCard';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
@@ -62,7 +63,10 @@ function ClientHubContent() {
 
   return (
     <>
-      <Topbar breadcrumb={<TopbarBreadcrumb trail={['Clients']} current={hub.hero.clientName} />} />
+      <Topbar
+        breadcrumb={<TopbarBreadcrumb trail={['Clients']} current={hub.hero.clientName} />}
+        search={<GlobalSearchInput />}
+      />
       <div className="flex flex-col gap-7 px-10 py-10">
         <WorkspaceContextBanner />
 

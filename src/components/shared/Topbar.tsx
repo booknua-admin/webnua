@@ -3,11 +3,15 @@ import { cn } from '@/lib/utils';
 type TopbarProps = {
   breadcrumb: React.ReactNode;
   middle?: React.ReactNode;
+  /** Optional global-search field, rendered centred. Mutually exclusive with
+   *  `middle` (a page using the step-tracker would not also carry search). */
+  search?: React.ReactNode;
   actions?: React.ReactNode;
   className?: string;
 };
 
-function Topbar({ breadcrumb, middle, actions, className }: TopbarProps) {
+function Topbar({ breadcrumb, middle, search, actions, className }: TopbarProps) {
+  const centre = middle ?? search;
   return (
     <div
       data-slot="topbar"
@@ -19,14 +23,12 @@ function Topbar({ breadcrumb, middle, actions, className }: TopbarProps) {
       <div className="flex min-w-0 items-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
         {breadcrumb}
       </div>
-      {middle ? (
-        <div className="flex flex-1 items-center justify-center">{middle}</div>
+      {centre ? (
+        <div className="flex flex-1 items-center justify-center">{centre}</div>
       ) : (
         <div className="flex-1" />
       )}
-      {actions ? (
-        <div className="flex items-center gap-3">{actions}</div>
-      ) : null}
+      {actions ? <div className="flex items-center gap-3">{actions}</div> : null}
     </div>
   );
 }
