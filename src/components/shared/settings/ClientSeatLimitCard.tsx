@@ -131,7 +131,7 @@ export function ClientSeatLimitCard({
   );
 }
 
-const EMPTY_HISTORY: SeatLimitChange[] = [];
+const EMPTY_HISTORY: readonly SeatLimitChange[] = [];
 
 function LastChange({ change }: { change: SeatLimitChange | undefined }) {
   if (!change) return null;

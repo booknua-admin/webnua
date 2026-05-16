@@ -65,9 +65,14 @@ export function getSeatLimit(clientId: string): number | null {
   return entry ? entry.limit : seedLimit(clientId);
 }
 
+// Shared empty array — getSeatLimitHistory is read through useSyncExternalStore,
+// so it MUST return a reference-stable value when there is no history (a fresh
+// `[]` each call spins React into an infinite render loop — CLAUDE.md).
+const EMPTY_HISTORY: readonly SeatLimitChange[] = Object.freeze([]);
+
 /** Change history for a client, newest-first. Empty until the first override. */
-export function getSeatLimitHistory(clientId: string): SeatLimitChange[] {
-  return readStore()[clientId]?.history ?? [];
+export function getSeatLimitHistory(clientId: string): readonly SeatLimitChange[] {
+  return readStore()[clientId]?.history ?? EMPTY_HISTORY;
 }
 
 /** Set a new seat limit and record the change as an attributable event. */
