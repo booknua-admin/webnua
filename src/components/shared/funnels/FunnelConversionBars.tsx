@@ -11,10 +11,12 @@ type FunnelConversionBarsProps = {
 const HUB_FUNNEL_PERIODS: FunnelPeriod[] = ['7d', '14d', '30d', '90d'];
 
 /**
- * The single-client overview hub's funnel — six horizontal conversion bars
- * (Screen 20). New to Cluster 6: distinct from `FunnelFlow` (3-step cards) and
- * `CampaignTrendChart` (grouped bars). Lives in `admin/hub/` until a second
- * conversion-bar surface earns a move to `shared/`.
+ * Six horizontal conversion bars (landing → … → reviewed). Distinct from
+ * `FunnelFlow` (3-step cards) and `CampaignTrendChart` (grouped bars).
+ *
+ * Promoted to `shared/` in Cluster 7 (second-surface trigger): used by both the
+ * admin single-client overview hub (Screen 20) and the client dashboard
+ * (Screen 1).
  */
 function FunnelConversionBars({ funnel, className }: FunnelConversionBarsProps) {
   return (
