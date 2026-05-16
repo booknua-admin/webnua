@@ -1,15 +1,23 @@
 'use client';
 
 import { useState } from 'react';
-import { XIcon } from 'lucide-react';
-import { Dialog as DialogPrimitive } from 'radix-ui';
 
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  INVITE_DIALOG_CONTENT_CLASS,
+  InviteCopyLinkRow,
+  InviteFieldLabel,
+  InviteModalFooter,
+  InviteModalHeader,
+  InviteSection,
+  inviteInitials,
+} from '@/components/shared/invite/InviteModalChrome';
 import { cn } from '@/lib/utils';
 import { useUser } from '@/lib/auth/user-stub';
+import { INVITE_TTL_DAYS } from '@/lib/invites/shared-types';
 import { adminClients, type AdminClient } from '@/lib/nav/admin-clients';
 import { TEAM_ROLES, getTeamRoleDef, type TeamRole } from '@/lib/team/roles';
 import type { TeamInvite, TeamInviteDraft } from '@/lib/team/types';
@@ -29,8 +37,6 @@ const EMPTY_DRAFT: TeamInviteDraft = {
   assignedClientIds: [],
   personalNote: '',
 };
-
-const INVITE_TTL_DAYS = 7;
 
 function TeamInviteModal({ open, onOpenChange }: TeamInviteModalProps) {
   const user = useUser();
@@ -107,9 +113,9 @@ function TeamInviteModal({ open, onOpenChange }: TeamInviteModalProps) {
       <DialogContent
         size="lg"
         showCloseButton={false}
-        className="flex max-h-[calc(100vh-4rem)] flex-col gap-0 overflow-hidden rounded-[14px] border-rule bg-card p-0"
+        className={INVITE_DIALOG_CONTENT_CLASS}
       >
-        <ModalHeader
+        <InviteModalHeader
           tag={
             step === 3
               ? '// Invite sent · Step 3 of 3'
@@ -169,7 +175,7 @@ function TeamInviteModal({ open, onOpenChange }: TeamInviteModalProps) {
           ) : null}
         </div>
 
-        <ModalFooter
+        <InviteModalFooter
           info={
             step === 1
               ? 'Step 1 of 3 · Next: review permissions'
@@ -236,7 +242,7 @@ function TeamInviteModal({ open, onOpenChange }: TeamInviteModalProps) {
               </Button>
             </>
           ) : null}
-        </ModalFooter>
+        </InviteModalFooter>
       </DialogContent>
     </Dialog>
   );
@@ -269,7 +275,7 @@ function Step1({
         heading="Who are you inviting?"
         sub="Enter their work email. We'll send the invite immediately."
       >
-        <FieldLabel required>Email address</FieldLabel>
+        <InviteFieldLabel required>Email address</InviteFieldLabel>
         <Input
           type="email"
           className="bg-paper"
@@ -277,12 +283,12 @@ function Step1({
           value={draft.email}
           onChange={(e) => onPatch({ email: e.target.value })}
         />
-        <FieldLabel className="mt-3.5">
+        <InviteFieldLabel className="mt-3.5">
           Full name{' '}
           <span className="font-semibold text-ink-quiet">
             (optional · they can edit)
           </span>
-        </FieldLabel>
+        </InviteFieldLabel>
         <Input
           className="bg-paper"
           placeholder="First Last"
@@ -439,7 +445,7 @@ function Step2({
     <>
       <div className="mb-3.5 grid grid-cols-[44px_1fr_auto] items-center gap-3.5 rounded-xl bg-ink px-5.5 py-4.5">
         <span className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-rust-light to-rust font-sans text-[15px] font-extrabold text-paper">
-          {initials(draft.fullName, draft.email)}
+          {inviteInitials(draft.fullName, draft.email)}
         </span>
         <span>
           <span className="block font-sans text-[15px] font-bold text-paper">
@@ -525,7 +531,7 @@ function Step3({
         &ldquo;invite pending&rdquo; on the Team screen until they accept.
       </p>
 
-      <CopyLinkRow url={invite.magicLink} />
+      <InviteCopyLinkRow url={invite.magicLink} />
 
       <div className="rounded-[10px] bg-paper px-5 py-4">
         <div className="mb-2.5 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
@@ -548,140 +554,9 @@ function Step3({
   );
 }
 
-function CopyLinkRow({ url }: { url: string }) {
-  const [copied, setCopied] = useState(false);
-
-  function copy() {
-    void navigator.clipboard?.writeText(url).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    });
-  }
-
-  return (
-    <div className="mb-3.5 grid grid-cols-[1fr_auto] items-center gap-3 rounded-lg border border-dashed border-rule bg-paper px-4 py-3">
-      <span className="overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[11px] tracking-[0.02em] text-ink-soft">
-        {url}
-      </span>
-      <button
-        type="button"
-        onClick={copy}
-        className="rounded-md bg-ink px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-paper transition-colors hover:bg-rust"
-      >
-        {copied ? 'Copied ✓' : 'Copy link'}
-      </button>
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
-// Shared modal chrome
+// Operator-specific helper
 // ---------------------------------------------------------------------------
-
-type ModalHeaderProps = {
-  tag: string;
-  tagTone: 'rust' | 'good';
-  title: React.ReactNode;
-  subtitle: string;
-  onClose: () => void;
-};
-
-function ModalHeader({ tag, tagTone, title, subtitle, onClose }: ModalHeaderProps) {
-  return (
-    <div className="flex shrink-0 items-start justify-between gap-4 border-b border-paper-2 px-7 pt-5.5 pb-4">
-      <div className="flex-1">
-        <div
-          className={cn(
-            'mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em]',
-            tagTone === 'good' ? 'text-good' : 'text-rust',
-          )}
-        >
-          {tag}
-        </div>
-        <DialogTitle className="mb-1.5 text-[24px] font-extrabold leading-[1.1] tracking-[-0.025em] text-ink [&_em]:not-italic [&_em]:text-rust">
-          {title}
-        </DialogTitle>
-        <p className="text-[13px] leading-[1.45] text-ink-quiet">{subtitle}</p>
-      </div>
-      <DialogPrimitive.Close
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-paper-2 font-mono text-[16px] text-ink-quiet transition-colors hover:bg-ink hover:text-paper"
-        aria-label="Close"
-        onClick={onClose}
-      >
-        <XIcon className="size-4" />
-      </DialogPrimitive.Close>
-    </div>
-  );
-}
-
-function ModalFooter({
-  info,
-  children,
-}: {
-  info: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex shrink-0 items-center justify-between gap-3 border-t border-paper-2 bg-paper px-7 py-4">
-      <div className="flex-1 font-mono text-[11px] uppercase tracking-[0.06em] text-ink-quiet">
-        {info}
-      </div>
-      <div className="flex gap-2">{children}</div>
-    </div>
-  );
-}
-
-type InviteSectionProps = {
-  heading: React.ReactNode;
-  sub: React.ReactNode;
-  last?: boolean;
-  children: React.ReactNode;
-};
-
-function InviteSection({ heading, sub, last, children }: InviteSectionProps) {
-  return (
-    <div className={cn(last ? 'mb-0' : 'mb-5.5')}>
-      <div className="mb-1 font-sans text-[15px] font-extrabold tracking-[-0.015em] text-ink">
-        {heading}
-      </div>
-      <div className="mb-4 font-sans text-[13px] leading-[1.5] text-ink-quiet [&_strong]:font-semibold [&_strong]:text-ink">
-        {sub}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function FieldLabel({
-  children,
-  required,
-  className,
-}: {
-  children: React.ReactNode;
-  required?: boolean;
-  className?: string;
-}) {
-  return (
-    <label
-      className={cn(
-        'mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet',
-        className,
-      )}
-    >
-      {children}
-      {required ? <span className="text-rust"> *</span> : null}
-    </label>
-  );
-}
-
-function initials(fullName: string, email: string): string {
-  const name = fullName.trim();
-  if (name) {
-    const parts = name.split(/\s+/);
-    return (parts[0][0] + (parts[1]?.[0] ?? '')).toUpperCase();
-  }
-  return (email.trim()[0] ?? '?').toUpperCase();
-}
 
 function joinNames(names: string[]): string {
   if (names.length <= 1) return names[0] ?? '';
