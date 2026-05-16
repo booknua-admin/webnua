@@ -753,15 +753,18 @@ funnel editor is fully unlocked from there.
 
 ### 5.2 Wizard-frame mode — concrete spec
 
-Wizard-frame mode is a **fourth `SectionEditor` mode discriminator**, alongside
-the existing `page` / `singleton` / `funnelStep`:
+Wizard-frame mode is the section editor running under a constrained frame.
+**Implementation note (Session 7):** it was built as a sibling component,
+`WizardSectionEditor`, rather than a fourth `SectionEditor` mode discriminator
+— the three existing `SectionEditor` modes share helpers keyed on a
+`{ website }` / `{ funnel }` shape the per-step walk doesn't fit, and keeping
+the working 3-mode editor untouched avoided regression risk. It composes the
+same `PagePreviewPane` + `SectionFieldsPanel` + `useAutosave`. Props:
+`{ funnel, steps, onExitForward, onExitBack }`; the walk index is internal
+state.
 
-```ts
-{ kind: 'wizard', funnel, steps, walkIndex }
-```
-
-`steps` is the generated funnel's `FunnelStep[]`; `walkIndex` is the position
-in a **flattened section walk** — every section of every step, in step order
+The editor walks a **flattened section list** — every section of every step,
+in step order
 (landing's hero / offer / trust / services / cta, then schedule's
 schedulePicker, then thanks's thanksConfirmation). Exactly one section is
 "current" at a time.
@@ -1091,26 +1094,22 @@ together.
   the Session 3.5 types. Coexists with the existing analytics-detail
   stub at `lib/funnels/`.
 
-*Wizard refactor* — **outstanding: the funnel-editor half above shipped,
-this half did not.** Reconciled in the §5 revision (hybrid model); build to
-the §5.1 table, not to the bullets below:
-- Wizard grows by one step — a `draft` walk-through step is inserted after
-  generation (§5.1). `ONBOARDING_STEPS` 6 → 7 entries, `ONBOARDING_TOTAL_STEPS`
-  6 → 7 (the const excludes the post-publish step; the §5.1 table is 8 rows
-  because it counts it).
-- Wizard-frame mode added as a fourth `<SectionEditor>` discriminator
-  (`{ kind: 'wizard' }`) — concrete spec in §5.2.
-- Steps 2–4 become Q&A cards emitting a `GenerationContext`; Step 7 becomes
-  the review surface.
-- `FunnelLandingPreview` is **deleted**, not adapted — §5.3 — along with the
-  `previewAfter*` snapshots and the `FunnelPreview*` types.
-- `lib/funnel/data-stub.tsx` is the single source of truth for funnel
-  content; `voltline-build.tsx` slims to brand seed + Q&A config +
-  automations + next-steps — §5.4.
-- The funnel-generation stub composes three Session-6 single-page
-  generations (landing / schedule / thanks) per generation-design §8.
-- Wizard output is an editable `Funnel`; published funnels land on
-  `/funnels/[id]`.
+*Wizard refactor* — **shipped (Session 7A / 7B / 7C).** Built to the §5
+revision (hybrid model) and the §5.1 table:
+- Wizard grew by one step — a `draft` walk-through inserted after generation.
+  `ONBOARDING_STEPS` 6 → 7 entries.
+- Wizard-frame mode built as `WizardSectionEditor`, a sibling of
+  `SectionEditor` (see §5.2 implementation note) — mounted at
+  `/clients/new/draft`. `CapabilityOverrideProvider` locks its cap set.
+- Steps 1–4 dropped `FunnelLandingPreview` → single-column forms; the trust
+  step triggers `generateFunnelStub` (a deterministic passthrough to the
+  Voltline funnel — §5.5). Step 7 (review) is a content summary (§5.1 note).
+- `FunnelLandingPreview` + `FunnelPreviewState` + the `previewAfter*`
+  snapshots **deleted** — §5.3. `lib/funnel/data-stub.tsx` is the single
+  source of truth for funnel content — §5.4.
+- **Not done (deferred):** the wizard does not yet fold its Q&A answers into
+  a real `GenerationContext` (the stub generation ignores them); funnel
+  publish / preflight is unbuilt (see the funnel-publish deferral above).
 
 **Session 8 — Preflight + publish UI + rollback + versions panel.**
 - `lib/website/preflight.ts` rule engine.
