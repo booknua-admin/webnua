@@ -2,7 +2,7 @@ import Link from 'next/link';
 
 import { CalendarTodayPanel } from '@/components/admin/calendar/CalendarTodayPanel';
 import { ClientHubHero } from '@/components/admin/hub/ClientHubHero';
-import { FunnelConversionBars } from '@/components/admin/hub/FunnelConversionBars';
+import { FunnelConversionBars } from '@/components/shared/funnels/FunnelConversionBars';
 import { HubInsightBand } from '@/components/admin/hub/HubInsightBand';
 import { OperatorActionBar } from '@/components/admin/hub/OperatorActionBar';
 import { ActivityFeed } from '@/components/shared/ActivityFeed';
