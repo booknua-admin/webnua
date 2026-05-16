@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from 'react';
 
-import { AdminTicketsFilterBar } from '@/components/admin/tickets/AdminTicketsFilterBar';
 import { WebsiteApprovalRow } from '@/components/admin/tickets/WebsiteApprovalRow';
+import { FilterChips } from '@/components/shared/FilterChips';
 import { TicketRow } from '@/components/shared/tickets/TicketRow';
 import { TicketTabsBar } from '@/components/shared/tickets/TicketTabsBar';
 import {
@@ -11,8 +11,8 @@ import {
   TicketsHeroStat,
 } from '@/components/shared/tickets/TicketsHero';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
+import { Input } from '@/components/ui/input';
 import {
-  adminTicketFilters,
   adminTickets,
   adminTicketsHero,
   adminTicketTabs,
@@ -37,18 +37,51 @@ function matchesTab(ticket: AdminTicketRow, tabId: string): boolean {
   return status === undefined || status === 'all' || ticket.status === status;
 }
 
+function matchesSearch(ticket: AdminTicketRow, query: string): boolean {
+  if (!query.trim()) return true;
+  const q = query.trim().toLowerCase();
+  return (
+    ticket.title.toLowerCase().includes(q) ||
+    ticket.preview.toLowerCase().includes(q)
+  );
+}
+
 function AdminTicketsContent() {
   const pendingApprovals = useAllPendingApprovals();
 
-  // Augment the static tab list with a live website-approvals tab whose
-  // count tracks the overlay store. Inserted as the second tab so it sits
-  // next to "All" — the queue you most want when you log in.
+  const [activeTabId, setActiveTabId] = useState<string>('all');
+  const [activeClient, setActiveClient] = useState('all');
+  const [search, setSearch] = useState('');
+  const onApprovalsTab = activeTabId === APPROVALS_TAB_ID;
+
+  // Client filter chips, derived from the tickets' own clients.
+  const clientChips = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const t of adminTickets) names.set(t.client.id, t.client.name);
+    return [
+      { id: 'all', label: 'All clients', count: adminTickets.length },
+      ...[...names].map(([id, label]) => ({
+        id,
+        label,
+        count: adminTickets.filter((t) => t.client.id === id).length,
+      })),
+    ];
+  }, []);
+
+  // The client filter narrows the pool; tab counts + the visible list are
+  // computed against it so the filters compose.
+  const clientPool = useMemo(
+    () =>
+      activeClient === 'all'
+        ? adminTickets
+        : adminTickets.filter((t) => t.client.id === activeClient),
+    [activeClient],
+  );
+
   const tabs = useMemo<TicketTab[]>(() => {
-    // Recompute status-tab counts from the data so badges match the
-    // filtered list. The live approvals tab keeps its overlay-store count.
     const withCounts = adminTicketTabs.map((tab) => ({
       ...tab,
-      count: adminTickets.filter((t) => matchesTab(t, tab.id)).length,
+      count: clientPool.filter((t) => matchesTab(t, tab.id)).length,
     }));
     const approvalsTab: TicketTab = {
       id: APPROVALS_TAB_ID,
@@ -56,14 +89,14 @@ function AdminTicketsContent() {
       count: pendingApprovals.length,
     };
     return [withCounts[0], approvalsTab, ...withCounts.slice(1)];
-  }, [pendingApprovals.length]);
-
-  const [activeTabId, setActiveTabId] = useState<string>('all');
-  const onApprovalsTab = activeTabId === APPROVALS_TAB_ID;
+  }, [clientPool, pendingApprovals.length]);
 
   const visibleTickets = useMemo(
-    () => adminTickets.filter((t) => matchesTab(t, activeTabId)),
-    [activeTabId],
+    () =>
+      clientPool
+        .filter((t) => matchesTab(t, activeTabId))
+        .filter((t) => matchesSearch(t, search)),
+    [clientPool, activeTabId, search],
   );
 
   return (
@@ -92,6 +125,15 @@ function AdminTicketsContent() {
           }
         />
 
+        {onApprovalsTab ? null : (
+          <FilterChips
+            label="// CLIENT"
+            chips={clientChips}
+            value={activeClient}
+            onChange={setActiveClient}
+          />
+        )}
+
         <div className="flex items-center justify-between gap-4">
           <TicketTabsBar
             tabs={tabs}
@@ -99,9 +141,11 @@ function AdminTicketsContent() {
             onChange={setActiveTabId}
           />
           {onApprovalsTab ? null : (
-            <AdminTicketsFilterBar
-              active={adminTicketFilters.active}
-              available={adminTicketFilters.available}
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="⌕ Search tickets"
+              className="h-9 w-[220px] rounded-full"
             />
           )}
         </div>

@@ -107,6 +107,8 @@ export type AdminCampaignStatus = 'active' | 'paused' | 'pending';
 
 export type AdminCampaignRow = {
   id: string;
+  /** The client this campaign belongs to — matches the filter-chip id. */
+  clientId: string;
   logoInitial: string;
   /** Plain-text name, e.g. "FreshHome · $99 first clean". */
   name: string;

@@ -310,7 +310,7 @@ Components for the operator-only `/integrations` screen — workspace-wide view 
 
 ### `admin/tickets/` — admin-only ticket-inbox extras (Phase 5 session A)
 
-- **`AdminTicketsFilterBar`** (`tickets/AdminTicketsFilterBar.tsx`) — `'use client'` filter-chip strip + search input. Right-side of the admin inbox toolbar; pairs with `TicketTabsBar` on the left in a flex `justify-between` row. Props: `active: string[]` (rust-filled chips with `×`) + `available: string[]` (paper-2 outlined chips like "+ Category" / "+ Client"). Search input uses `Input` with a `⌕` placeholder. Stubbed interactivity — chips don't filter yet, search input is local-state only.
+> The admin inbox's client filter is the shared `FilterChips` (client chips derived from the tickets' own clients) + an `Input` search box, composed directly in `app/tickets/_admin-content.tsx` — the same pattern as the admin leads inbox. The former decorative `AdminTicketsFilterBar` (non-functional `active`/`available` label chips) was deleted once real filtering landed.
 
 ### `shared/builder/` — generic wizard primitives (Phase 5)
 
