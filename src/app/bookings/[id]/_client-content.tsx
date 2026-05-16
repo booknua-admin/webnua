@@ -5,7 +5,7 @@ import { BookingNotesBox } from '@/components/shared/bookings/BookingNotesBox';
 import { BookingSection } from '@/components/shared/bookings/BookingSection';
 import { ClientBookingHero } from '@/components/shared/bookings/ClientBookingHero';
 import { RescheduleBookingButton } from '@/components/shared/bookings/RescheduleBookingButton';
-import { TicketSideCard } from '@/components/shared/tickets/TicketSideCard';
+import { RailCard } from '@/components/shared/RailCard';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { voltlineBooking } from '@/lib/bookings/client-booking';
 import { voltlineReschedule } from '@/lib/bookings/reschedule-modal';
@@ -67,7 +67,7 @@ function ClientBookingDetailContent() {
 
           <div className="sticky top-[100px] flex flex-col gap-3">
             {b.actions.map((group) => (
-              <TicketSideCard key={group.heading} heading={group.heading}>
+              <RailCard key={group.heading} heading={group.heading}>
                 {group.actions.map((a, i) =>
                   a.label === 'Reschedule' ? (
                     <RescheduleBookingButton
@@ -87,14 +87,14 @@ function ClientBookingDetailContent() {
                     />
                   ),
                 )}
-              </TicketSideCard>
+              </RailCard>
             ))}
             {b.nextNote ? (
-              <TicketSideCard heading="// NEXT">
+              <RailCard heading="// NEXT">
                 <div className="text-[13px] leading-[1.5] text-ink-soft [&_strong]:font-bold [&_strong]:text-ink">
                   {b.nextNote}
                 </div>
-              </TicketSideCard>
+              </RailCard>
             ) : null}
           </div>
         </div>

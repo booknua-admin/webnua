@@ -3,8 +3,8 @@ import Link from 'next/link';
 import { ConversationComposer } from '@/components/shared/leads/ConversationComposer';
 import { ConversationHeader } from '@/components/shared/leads/ConversationHeader';
 import { ConversationThread } from '@/components/shared/leads/ConversationThread';
-import { LeadRailCard } from '@/components/shared/leads/LeadRailCard';
 import { PageHeader } from '@/components/shared/PageHeader';
+import { RailCard } from '@/components/shared/RailCard';
 import { TicketDetailLayout } from '@/components/shared/tickets/TicketDetailLayout';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { freshhomeConversation } from '@/lib/leads/admin-leads';
@@ -60,14 +60,14 @@ function AdminLeadConversationContent() {
               {conv.rail
                 .slice(0, 1)
                 .map((card) => (
-                  <LeadRailCard
+                  <RailCard
                     key={card.heading}
                     heading={card.heading}
                     rows={card.rows}
                   />
                 ))}
               {conv.quickReplies && conv.quickReplies.length > 0 ? (
-                <LeadRailCard heading="// QUICK REPLIES">
+                <RailCard heading="// QUICK REPLIES">
                   <div className="flex flex-col gap-1.5">
                     {conv.quickReplies.map((reply) => (
                       <button
@@ -80,10 +80,10 @@ function AdminLeadConversationContent() {
                       </button>
                     ))}
                   </div>
-                </LeadRailCard>
+                </RailCard>
               ) : null}
               {conv.rail.slice(1).map((card) => (
-                <LeadRailCard
+                <RailCard
                   key={card.heading}
                   heading={card.heading}
                   rows={card.rows}

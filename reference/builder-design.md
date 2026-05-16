@@ -1128,14 +1128,14 @@ The pre-Cluster-6 cleanup session did the two genuinely-tiny items; the
 - ✅ **Done** — `bg-card` documented as the one sanctioned shadcn-role-token
   exception in CLAUDE.md's bright-line rule (no Webnua white token exists;
   a dedicated `bg-surface` token can supersede it later).
-- ⏳ **Outstanding — its own session.** `TicketSideCard` → `RailCard` /
-  `TicketPropertyRow` → `RailPropertyRow` rename, migrate the 3 rail
-  surfaces (tickets / leads / bookings), and absorb `LeadRailCard`'s
-  `tone` + `accent` row vocabulary. NOT a tiny cleanup — `TicketPropertyRow`
-  and `LeadRailRowItem` have divergent label styling (plain vs mono) and
-  value vocabularies, so this is a real component merge with regression
-  surface across three feature detail pages. CLAUDE.md insists it be its
-  own focused session, not bundled with feature work — keep it that way.
+- ✅ **Done** (Cluster 6, first commit) — `TicketSideCard` → `shared/RailCard` /
+  `TicketPropertyRow` → `shared/RailPropertyRow` rename, with `LeadRailCard` /
+  `LeadRailRowItem` merged in (the `rows` shorthand + `tone`/`accent` row
+  vocabulary absorbed). All four old files deleted, no re-export shims; the
+  3 rail surfaces (tickets / leads / bookings) migrated. The divergent label
+  styling (plain vs mono) is covered by a `labelStyle` knob on
+  `RailPropertyRow`. Landed as its own focused commit, no feature work woven
+  in — the single-client overview hub then composes `RailCard` from day one.
 
 Nine sessions total (1a + 1b + 2–8). Sessions 1a, 1b, and 2 are foundational;
 3, 4, and 5 are the meat; 6, 7, 8 are scope-completion.

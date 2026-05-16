@@ -3,8 +3,8 @@ import Link from 'next/link';
 import { ConversationComposer } from '@/components/shared/leads/ConversationComposer';
 import { ConversationHeader } from '@/components/shared/leads/ConversationHeader';
 import { ConversationThread } from '@/components/shared/leads/ConversationThread';
-import { LeadRailCard } from '@/components/shared/leads/LeadRailCard';
 import { PageHeader } from '@/components/shared/PageHeader';
+import { RailCard } from '@/components/shared/RailCard';
 import { TicketDetailLayout } from '@/components/shared/tickets/TicketDetailLayout';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { voltlineConversation } from '@/lib/leads/client-leads';
@@ -60,7 +60,7 @@ function ClientLeadConversationContent() {
           side={
             <>
               {conv.rail.map((card) => (
-                <LeadRailCard
+                <RailCard
                   key={card.heading}
                   heading={card.heading}
                   rows={card.rows}
