@@ -1118,22 +1118,24 @@ revision (hybrid model) and the §5.1 table:
 - Versions panel in the website hub with "Restore as draft" affordance.
 - Domain status indicator (UI only — actual DNS work is a backend concern).
 
-**Pre-Cluster-6 cleanup — tracked, not yet scheduled.** Surfaced by the
-pre-Session-7 codebase audit; to be done either bundled with the Session 7
-wizard refactor or as its own tiny session before Cluster 6 — but not
-allowed to drift again:
-- Extract `lib/calendar/tones.ts` — the `CalendarClientTone` parked
-  decision's trigger fired when booking-detail landed (Cluster 2 ·
-  Session 2); inline hex still lives in `BookingPill` / `AdminBookingHero` /
-  `CalendarTodayPanel`.
-- `TicketSideCard` → `RailCard` rename + migrate the 3 rail surfaces
-  (tickets / leads / bookings) + absorb `LeadRailCard`'s tone vocabulary —
-  the parked decision says "trigger has fired, extract pending"; CLAUDE.md
-  insists this be its own session, not bundled with feature work.
-- The `bg-card` vocabulary hole — Webnua-authored files use the shadcn alias
-  `bg-card` (76×) because there is no Webnua-named white-surface token.
-  Resolve: add a `--color-surface` token, or document `bg-card` as the
-  sanctioned white-surface exception in CLAUDE.md's bright-line rule.
+**Pre-Cluster-6 cleanup.** Surfaced by the pre-Session-7 codebase audit.
+The pre-Cluster-6 cleanup session did the two genuinely-tiny items; the
+`RailCard` rename was found to be larger than "tiny" and held back:
+- ✅ **Done** — extracted `lib/calendar/tones.ts` (`CALENDAR_TONE_BG` /
+  `CALENDAR_TONE_BORDER_L`), replacing the per-client hex maps duplicated
+  across `BookingPill` / `CalendarLegend` / `CalendarTodayPanel` /
+  `AdminBookingHero`.
+- ✅ **Done** — `bg-card` documented as the one sanctioned shadcn-role-token
+  exception in CLAUDE.md's bright-line rule (no Webnua white token exists;
+  a dedicated `bg-surface` token can supersede it later).
+- ⏳ **Outstanding — its own session.** `TicketSideCard` → `RailCard` /
+  `TicketPropertyRow` → `RailPropertyRow` rename, migrate the 3 rail
+  surfaces (tickets / leads / bookings), and absorb `LeadRailCard`'s
+  `tone` + `accent` row vocabulary. NOT a tiny cleanup — `TicketPropertyRow`
+  and `LeadRailRowItem` have divergent label styling (plain vs mono) and
+  value vocabularies, so this is a real component merge with regression
+  surface across three feature detail pages. CLAUDE.md insists it be its
+  own focused session, not bundled with feature work — keep it that way.
 
 Nine sessions total (1a + 1b + 2–8). Sessions 1a, 1b, and 2 are foundational;
 3, 4, and 5 are the meat; 6, 7, 8 are scope-completion.
