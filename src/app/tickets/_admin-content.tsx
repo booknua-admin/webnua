@@ -16,11 +16,26 @@ import {
   adminTickets,
   adminTicketsHero,
   adminTicketTabs,
+  type AdminTicketRow,
 } from '@/lib/tickets/admin-tickets';
-import type { TicketTab } from '@/lib/tickets/types';
+import type { TicketStatus, TicketTab } from '@/lib/tickets/types';
 import { useAllPendingApprovals } from '@/lib/website/use-publish-state';
 
 const APPROVALS_TAB_ID = 'website-approvals';
+
+// Status-tab ids → TicketStatus. `all` matches everything.
+const TAB_STATUS: Record<string, TicketStatus | 'all'> = {
+  all: 'all',
+  open: 'open',
+  'in-progress': 'in_progress',
+  blocked: 'blocked',
+  done: 'done',
+};
+
+function matchesTab(ticket: AdminTicketRow, tabId: string): boolean {
+  const status = TAB_STATUS[tabId];
+  return status === undefined || status === 'all' || ticket.status === status;
+}
 
 function AdminTicketsContent() {
   const pendingApprovals = useAllPendingApprovals();
@@ -29,16 +44,27 @@ function AdminTicketsContent() {
   // count tracks the overlay store. Inserted as the second tab so it sits
   // next to "All" — the queue you most want when you log in.
   const tabs = useMemo<TicketTab[]>(() => {
+    // Recompute status-tab counts from the data so badges match the
+    // filtered list. The live approvals tab keeps its overlay-store count.
+    const withCounts = adminTicketTabs.map((tab) => ({
+      ...tab,
+      count: adminTickets.filter((t) => matchesTab(t, tab.id)).length,
+    }));
     const approvalsTab: TicketTab = {
       id: APPROVALS_TAB_ID,
       label: 'Website approvals',
       count: pendingApprovals.length,
     };
-    return [adminTicketTabs[0], approvalsTab, ...adminTicketTabs.slice(1)];
+    return [withCounts[0], approvalsTab, ...withCounts.slice(1)];
   }, [pendingApprovals.length]);
 
   const [activeTabId, setActiveTabId] = useState<string>('all');
   const onApprovalsTab = activeTabId === APPROVALS_TAB_ID;
+
+  const visibleTickets = useMemo(
+    () => adminTickets.filter((t) => matchesTab(t, activeTabId)),
+    [activeTabId],
+  );
 
   return (
     <>
@@ -83,14 +109,14 @@ function AdminTicketsContent() {
         {onApprovalsTab ? (
           <ApprovalsList submissions={pendingApprovals} />
         ) : (
-          <RegularTicketsList />
+          <RegularTicketsList tickets={visibleTickets} />
         )}
       </div>
     </>
   );
 }
 
-function RegularTicketsList() {
+function RegularTicketsList({ tickets }: { tickets: AdminTicketRow[] }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-ink/8 bg-card">
       <div className="grid grid-cols-[20px_180px_1fr_110px_120px_110px_80px] items-center gap-3 border-b border-ink/8 bg-paper-2/40 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
@@ -102,21 +128,27 @@ function RegularTicketsList() {
         <div>{'// Urgency'}</div>
         <div className="text-right">{'// Age'}</div>
       </div>
-      {adminTickets.map((ticket) => (
-        <TicketRow
-          key={ticket.id}
-          variant="admin"
-          title={ticket.title}
-          preview={ticket.preview}
-          category={ticket.category}
-          status={ticket.status}
-          urgency={ticket.urgency}
-          age={ticket.age}
-          unread={ticket.unread}
-          client={ticket.client}
-          href={ticket.href}
-        />
-      ))}
+      {tickets.length === 0 ? (
+        <p className="px-[18px] py-12 text-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+          {'// No tickets in this view'}
+        </p>
+      ) : (
+        tickets.map((ticket) => (
+          <TicketRow
+            key={ticket.id}
+            variant="admin"
+            title={ticket.title}
+            preview={ticket.preview}
+            category={ticket.category}
+            status={ticket.status}
+            urgency={ticket.urgency}
+            age={ticket.age}
+            unread={ticket.unread}
+            client={ticket.client}
+            href={ticket.href}
+          />
+        ))
+      )}
     </div>
   );
 }
