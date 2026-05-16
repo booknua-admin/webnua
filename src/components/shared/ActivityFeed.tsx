@@ -9,6 +9,8 @@ type ActivityFeedProps = {
   title: ReactNode;
   /** Optional intro line. `<strong>` renders ink-bold. */
   sub?: ReactNode;
+  /** Optional header-right affordance, e.g. an "All →" link. */
+  action?: ReactNode;
   items: ActivityRowData[];
   className?: string;
 };
@@ -22,14 +24,17 @@ type ActivityFeedProps = {
  * here: a timeline (dot-spine, scheduled-future pending events, tinted
  * snippet quotes) is a different structural concern from a flat feed.
  */
-function ActivityFeed({ title, sub, items, className }: ActivityFeedProps) {
+function ActivityFeed({ title, sub, action, items, className }: ActivityFeedProps) {
   return (
     <div
       data-slot="activity-feed"
       className={cn('rounded-xl border border-rule bg-card px-6 py-5.5', className)}
     >
-      <div className="mb-1.5 text-[16px] font-extrabold tracking-[-0.015em] text-ink [&_em]:not-italic [&_em]:text-rust">
-        {title}
+      <div className="mb-1.5 flex items-center justify-between gap-3">
+        <div className="text-[16px] font-extrabold tracking-[-0.015em] text-ink [&_em]:not-italic [&_em]:text-rust">
+          {title}
+        </div>
+        {action}
       </div>
       {sub ? (
         <p className="mb-4.5 text-[13px] leading-[1.5] text-ink-quiet [&_strong]:font-semibold [&_strong]:text-ink">
