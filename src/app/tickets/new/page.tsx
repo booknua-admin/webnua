@@ -1,19 +1,13 @@
-import { PagePlaceholder } from '@/components/shared/PagePlaceholder';
-import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
+import { Suspense } from 'react';
 
+import { NewTicketForm } from './_form';
+
+// /tickets/new — the ticket submit form. `NewTicketForm` reads the request
+// URL via useSearchParams, so it sits behind a Suspense boundary.
 export default function NewTicketPage() {
   return (
-    <>
-      <Topbar
-        breadcrumb={
-          <TopbarBreadcrumb trail={['Home', 'Tickets']} current="New" />
-        }
-      />
-      <PagePlaceholder
-        eyebrow="Tickets · submit"
-        title="New ticket."
-        description="The submit-a-ticket form arrives in a follow-up session. This route exists so the inbox CTA is clickable end-to-end."
-      />
-    </>
+    <Suspense fallback={null}>
+      <NewTicketForm />
+    </Suspense>
   );
 }
