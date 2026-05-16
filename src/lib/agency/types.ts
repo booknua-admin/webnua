@@ -73,13 +73,18 @@ export type PolicyValueMap = {
 
 // --- Resolution ---------------------------------------------------------------
 
-/** The resolver's output for one key: the effective value, whether it came
- *  from agency policy or a sub-account override, and the agency value either
- *  way (so a surface can show "inherited X / overridden to Y"). */
+/** The resolver's output for one key. The effective value is resolved down the
+ *  stack — sub-account override, else the assigned plan's bundle, else the
+ *  agency default (Cluster 9 · Session 1 inserted the plan layer). `source`
+ *  says which layer won; `agencyValue` and `planValue` carry the lower-layer
+ *  values either way so a surface can show "inherited X / overridden to Y".
+ *  `planValue` is undefined when the client has no plan, or the plan's bundle
+ *  omits this key. */
 export type PolicyResolution<K extends PolicyKey> = {
   effectiveValue: PolicyValueMap[K];
-  source: 'agency' | 'override';
+  source: 'agency' | 'plan' | 'override';
   agencyValue: PolicyValueMap[K];
+  planValue: PolicyValueMap[K] | undefined;
 };
 
 /** Every key resolved at once, for one workspace context. */

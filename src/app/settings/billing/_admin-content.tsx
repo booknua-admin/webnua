@@ -1,3 +1,10 @@
+'use client';
+
+// The operator's /settings/billing branch. Dispatches on workspace mode
+// (Cluster 9 · Session 3): agency mode → Webnua Perth's own billing (a stub);
+// sub-account mode → the drilled-in client's plan assignment + resolved policy
+// bundle + invoices.
+
 import { BillingPlanCard } from '@/components/shared/settings/BillingPlanCard';
 import { InvoiceList } from '@/components/shared/settings/InvoiceList';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
@@ -10,8 +17,26 @@ import {
   adminBillingMethod,
   adminBillingPlan,
 } from '@/lib/settings/admin-billing';
+import { useWorkspace } from '@/lib/workspace/workspace-stub';
+
+import { SubAccountBillingContent } from './_sub-account-content';
 
 export function AdminBillingContent() {
+  const { activeClient } = useWorkspace();
+
+  if (activeClient) {
+    return (
+      <SubAccountBillingContent
+        clientId={activeClient.id}
+        clientName={activeClient.name}
+      />
+    );
+  }
+
+  return <AgencyBillingView />;
+}
+
+function AgencyBillingView() {
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="Billing" />} />

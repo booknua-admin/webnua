@@ -29,6 +29,8 @@ import {
   subscribeOverrides,
 } from '@/lib/agency/override-stub';
 import { resolvePolicy } from '@/lib/agency/resolver';
+import { subscribePlanAssignments } from '@/lib/billing/plan-assignment-stub';
+import { subscribePlanCatalog } from '@/lib/billing/plan-catalog-stub';
 import type { SeatLimitChange } from './seat-limit';
 
 const HISTORY_KEY = 'webnua.dev.seat-limit-history';
@@ -42,9 +44,18 @@ export function getSeatLimit(clientId: string): number | null {
   return resolvePolicy('defaultSeatLimit', clientId).effectiveValue;
 }
 
-/** The agency-default seat limit a client inherits when not overridden. */
-export function getAgencySeatLimit(clientId: string): number | null {
-  return resolvePolicy('defaultSeatLimit', clientId).agencyValue;
+/** The seat limit a client inherits when not overridden — and whether that
+ *  inherited value comes from the assigned plan or the agency default. The
+ *  plan layer (Cluster 9 · Session 1) sits between the two: a client on a plan
+ *  that sets a seat limit inherits the plan's value, not the agency's. */
+export function getInheritedSeatLimit(clientId: string): {
+  limit: number | null;
+  source: 'plan' | 'agency';
+} {
+  const resolved = resolvePolicy('defaultSeatLimit', clientId);
+  return resolved.planValue !== undefined
+    ? { limit: resolved.planValue, source: 'plan' }
+    : { limit: resolved.agencyValue, source: 'agency' };
 }
 
 /** True when the client's seat limit is a per-account override, not inherited. */
@@ -156,13 +167,18 @@ function subscribeHistory(callback: () => void): () => void {
 }
 
 /** Subscribe to everything that can move a client's effective seat limit —
- *  the agency default (Layer 2) and per-account overrides (Layer 3). */
+ *  the agency default (Layer 2), the assigned plan (Layer 2.5 — catalog edits
+ *  + reassignment), and per-account overrides (Layer 3). */
 export function subscribeSeatLimits(callback: () => void): () => void {
   const offOverrides = subscribeOverrides(callback);
   const offPolicy = subscribeAgencyPolicy(callback);
+  const offCatalog = subscribePlanCatalog(callback);
+  const offAssignments = subscribePlanAssignments(callback);
   return () => {
     offOverrides();
     offPolicy();
+    offCatalog();
+    offAssignments();
   };
 }
 
