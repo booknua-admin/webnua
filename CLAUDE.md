@@ -746,6 +746,7 @@ The two-tier GoHighLevel-style workspace model. Operator's default view is **age
 - **`resolver.ts`** — pure functions over the two stores. `resolvePolicy(key, clientId)` → `PolicyResolution<K>` (clientId null = agency mode; override present = `source: 'override'`). `resolveAllPolicies(clientId)`.
 - **`use-policy.ts`** — `'use client'`. `usePolicy(key)` resolves against the active workspace (`useWorkspace`), reactive to both stores; `useAgencyPolicy(key)` is the raw Layer-2 value. Resolution snapshots cached per `(key, clientId)` against a JSON key (snapshot-stability rule).
 - Verified by `/dev/agency-policy` (see `app/dev/` convention) — the resolution matrix: every key × agency + each sub-account, with source flags + per-cell test-override toggle.
+- **Consuming surfaces (Cluster 8 · Session 3):** `/settings/integration-defaults` (sets the `integrationDefaults` policy key — per-provider agency-supplied vs per-sub-account toggles) and `/settings/seats` (sets `defaultSeatLimit`). Both are agency-level pages reading/writing Layer 2 directly via `useAgencyPolicy` + `setAgencyPolicy`, reachable from `adminSettingsNav`. The mode-dispatch of `/settings/*` (agency vs sub-account) + the sub-account override UI land in Session 4.
 
 ### `lib/website/` (cont'd) — form-to-page generation (Phase 6 · Cluster 5 · Session 6)
 
