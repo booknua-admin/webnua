@@ -16,6 +16,8 @@
 
 import { useSyncExternalStore } from 'react';
 
+import { subscribePlanAssignments } from '@/lib/billing/plan-assignment-stub';
+import { subscribePlanCatalog } from '@/lib/billing/plan-catalog-stub';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 import {
   AGENCY_POLICY_SEED,
@@ -26,13 +28,18 @@ import { subscribeOverrides } from './override-stub';
 import { resolvePolicy } from './resolver';
 import type { PolicyKey, PolicyResolution, PolicyValueMap } from './types';
 
-/** Subscribe to every store the resolver reads from. */
+/** Subscribe to every store the resolver reads from — the agency policy, the
+ *  per-sub-account overrides, and (Cluster 9 · Session 1) the plan layer. */
 function subscribeResolver(callback: () => void): () => void {
   const offPolicy = subscribeAgencyPolicy(callback);
   const offOverrides = subscribeOverrides(callback);
+  const offCatalog = subscribePlanCatalog(callback);
+  const offAssignments = subscribePlanAssignments(callback);
   return () => {
     offPolicy();
     offOverrides();
+    offCatalog();
+    offAssignments();
   };
 }
 

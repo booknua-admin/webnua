@@ -21,7 +21,7 @@ import { PolicySourceBadge } from '@/components/shared/settings/PolicyOverrideRo
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
-  getAgencySeatLimit,
+  getInheritedSeatLimit,
   getSeatLimitHistory,
   inheritSeatLimit,
   isSeatLimitOverridden,
@@ -56,10 +56,17 @@ export function ClientSeatLimitCard({
     () => isSeatLimitOverridden(clientId),
     () => false,
   );
-  const agencyLimit = useSyncExternalStore(
+  // Two primitive reads rather than the {limit, source} object — a fresh
+  // object each call would break useSyncExternalStore's reference check.
+  const inheritedLimit = useSyncExternalStore(
     subscribeSeatLimits,
-    () => getAgencySeatLimit(clientId),
+    () => getInheritedSeatLimit(clientId).limit,
     () => null,
+  );
+  const inheritedSource = useSyncExternalStore(
+    subscribeSeatLimits,
+    () => getInheritedSeatLimit(clientId).source,
+    () => 'agency' as const,
   );
   const history = useSyncExternalStore(
     subscribeSeatLimitHistory,
@@ -111,7 +118,7 @@ export function ClientSeatLimitCard({
           <PolicySourceBadge source={overridden ? 'overridden' : 'inherited'} />
           {!overridden ? (
             <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-ink-quiet">
-              from agency · {formatLimit(agencyLimit)}
+              from {inheritedSource} · {formatLimit(inheritedLimit)}
             </span>
           ) : null}
         </div>
@@ -170,7 +177,9 @@ export function ClientSeatLimitCard({
           <p className="mt-2 font-sans text-[12px] leading-[1.5] text-ink-quiet">
             {overridden
               ? `${clientName} has a per-account limit. `
-              : `${clientName} inherits the agency default. Saving a different value sets a per-account override. `}
+              : `${clientName} inherits the ${
+                  inheritedSource === 'plan' ? 'assigned plan' : 'agency default'
+                }. Saving a different value sets a per-account override. `}
             Existing users and pending invites both count toward the limit.
           </p>
         )}
