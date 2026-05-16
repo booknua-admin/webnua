@@ -6,22 +6,27 @@
 // Mounted on /settings/access in sub-account mode (the operator has drilled
 // into one client). Rendered as a visually-distinct SettingsSection, separate
 // from the capability grid: the seat limit is a CONTRACT/PLAN axis (how many
-// users the plan permits), not the CAPABILITY axis (what users can do). Same
-// page, different concern.
+// users the plan permits), not the CAPABILITY axis (what users can do).
 //
-// Admin-only — placed in shared/settings/ following the CapabilityToggleGrid
-// precedent. Every limit change is recorded as an attributable SeatLimitChange
-// event (vision §7), surfaced here as the "last changed" line.
+// Cluster 8 · Session 4b: the limit resolves through the agency policy layer.
+// A client either INHERITS the agency default (/settings/seats) or carries a
+// per-account OVERRIDE. The card shows which, and "Revert to agency" drops the
+// override. Every change is an attributable SeatLimitChange event.
 // =============================================================================
 
 import { useState, useSyncExternalStore } from 'react';
 
 import { SeatUsageMeter } from '@/components/client/team/SeatUsageMeter';
+import { PolicySourceBadge } from '@/components/shared/settings/PolicyOverrideRow';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
+  getAgencySeatLimit,
   getSeatLimitHistory,
+  inheritSeatLimit,
+  isSeatLimitOverridden,
   setSeatLimit,
+  subscribeSeatLimitHistory,
   subscribeSeatLimits,
 } from '@/lib/clients/seat-limit-stub';
 import type { SeatLimitChange } from '@/lib/clients/seat-limit';
@@ -34,14 +39,30 @@ type ClientSeatLimitCardProps = {
   actorId: string;
 };
 
+const EMPTY_HISTORY: readonly SeatLimitChange[] = [];
+
+function formatLimit(limit: number | null): string {
+  return limit === null ? 'no limit' : String(limit);
+}
+
 export function ClientSeatLimitCard({
   clientId,
   clientName,
   actorId,
 }: ClientSeatLimitCardProps) {
   const usage = useClientSeatUsage(clientId);
-  const history = useSyncExternalStore(
+  const overridden = useSyncExternalStore(
     subscribeSeatLimits,
+    () => isSeatLimitOverridden(clientId),
+    () => false,
+  );
+  const agencyLimit = useSyncExternalStore(
+    subscribeSeatLimits,
+    () => getAgencySeatLimit(clientId),
+    () => null,
+  );
+  const history = useSyncExternalStore(
+    subscribeSeatLimitHistory,
     () => getSeatLimitHistory(clientId),
     () => EMPTY_HISTORY,
   );
@@ -52,11 +73,9 @@ export function ClientSeatLimitCard({
     currentLimit === null ? '' : String(currentLimit),
   );
 
-  // Re-sync the draft to the stored limit when it changes from outside this
-  // component — hydration (the SSR fallback resolves to the real limit) or a
-  // change in another tab. React's "store info from previous render" pattern
-  // (https://react.dev/reference/react/useState#storing-information-from-
-  // previous-renders) — preferred over an effect.
+  // Re-sync the draft to the effective limit when it changes from outside
+  // this component — hydration, an agency-default change, or another tab.
+  // React's "store info from a previous render" pattern.
   const [syncedLimit, setSyncedLimit] = useState(currentLimit);
   if (syncedLimit !== currentLimit) {
     setSyncedLimit(currentLimit);
@@ -74,12 +93,40 @@ export function ClientSeatLimitCard({
   const dirty = draftLimit !== currentLimit;
 
   function handleSave() {
-    if (draftInvalid) return;
+    if (draftInvalid || !dirty) return;
     setSeatLimit(clientId, draftLimit, actorId);
+  }
+
+  function handleRevert() {
+    inheritSeatLimit(clientId, actorId);
   }
 
   return (
     <div className="rounded-[10px] border border-rule bg-paper px-5 py-[18px]">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
+            Seat limit
+          </span>
+          <PolicySourceBadge source={overridden ? 'overridden' : 'inherited'} />
+          {!overridden ? (
+            <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-ink-quiet">
+              from agency · {formatLimit(agencyLimit)}
+            </span>
+          ) : null}
+        </div>
+        {overridden ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleRevert}
+            className="-my-1 h-auto shrink-0 px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-rust hover:bg-rust/10"
+          >
+            Revert to agency
+          </Button>
+        ) : null}
+      </div>
+
       <SeatUsageMeter usage={usage} />
 
       <div className="mt-4 border-t border-paper-2 pt-4">
@@ -121,8 +168,10 @@ export function ClientSeatLimitCard({
           </p>
         ) : (
           <p className="mt-2 font-sans text-[12px] leading-[1.5] text-ink-quiet">
-            Caps how many users {clientName} can have. Existing users and
-            pending invites both count toward the limit.
+            {overridden
+              ? `${clientName} has a per-account limit. `
+              : `${clientName} inherits the agency default. Saving a different value sets a per-account override. `}
+            Existing users and pending invites both count toward the limit.
           </p>
         )}
         <LastChange change={history[0]} />
@@ -131,19 +180,16 @@ export function ClientSeatLimitCard({
   );
 }
 
-const EMPTY_HISTORY: readonly SeatLimitChange[] = [];
-
 function LastChange({ change }: { change: SeatLimitChange | undefined }) {
   if (!change) return null;
   const when = new Date(change.changedAt).toLocaleDateString([], {
     month: 'short',
     day: 'numeric',
   });
-  const fmt = (n: number | null) => (n === null ? 'no limit' : String(n));
   return (
     <p className="mt-2.5 border-t border-paper-2 pt-2.5 font-mono text-[10px] uppercase tracking-[0.06em] text-ink-quiet">
       {'// Last changed '}
-      {when} · {fmt(change.previousLimit)} → {fmt(change.newLimit)}
+      {when} · {formatLimit(change.previousLimit)} → {formatLimit(change.newLimit)}
     </p>
   );
 }

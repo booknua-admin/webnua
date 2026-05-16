@@ -13,56 +13,13 @@
 // =============================================================================
 
 import { setAgencyPolicy } from '@/lib/agency/agency-policy-stub';
+import { INTEGRATION_PROVIDERS } from '@/lib/agency/integration-providers';
 import { useAgencyPolicy } from '@/lib/agency/use-policy';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Switch } from '@/components/ui/switch';
-
-type ProviderMeta = {
-  id: string;
-  name: string;
-  description: string;
-};
-
-// Display metadata for the providers tracked in the integrationDefaults
-// policy. The policy stores only the boolean per id; names + copy live here.
-const PROVIDERS: ProviderMeta[] = [
-  {
-    id: 'resend',
-    name: 'Resend',
-    description: 'Transactional email — confirmations, follow-ups, summaries.',
-  },
-  {
-    id: 'twilio',
-    name: 'Twilio',
-    description: 'SMS — lead alerts, booking reminders, review requests.',
-  },
-  {
-    id: 'meta-ads',
-    name: 'Meta Ads',
-    description:
-      'Ad campaign management. Each client usually runs their own ad account.',
-  },
-  {
-    id: 'gbp',
-    name: 'Google Business Profile',
-    description:
-      'Reviews + business listing — tied to the client’s own Google account.',
-  },
-  {
-    id: 'vercel',
-    name: 'Vercel',
-    description: 'Hosting + deployment for published funnels and websites.',
-  },
-  {
-    id: 'anthropic',
-    name: 'Anthropic',
-    description:
-      'AI drafting — funnel copy, automation messages, page generation.',
-  },
-];
 
 export default function IntegrationDefaultsPage() {
   const defaults = useAgencyPolicy('integrationDefaults');
@@ -112,7 +69,7 @@ export default function IntegrationDefaultsPage() {
             }
           >
             <div className="flex flex-col gap-4">
-              {PROVIDERS.map((provider) => {
+              {INTEGRATION_PROVIDERS.map((provider) => {
                 const shared = defaults.sharedProviders[provider.id] ?? false;
                 return (
                   <div

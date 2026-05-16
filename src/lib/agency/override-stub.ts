@@ -21,6 +21,18 @@ const CHANGE_EVENT = 'webnua:policy-overrides-change';
 /** clientId → the subset of policy keys overridden for that sub-account. */
 type OverrideStore = Record<string, Partial<PolicyValueMap>>;
 
+// Seed — per-sub-account overrides that exist at platform start. Migrated
+// from the former `AdminClient.seatLimit` field (Cluster 8 · Session 4b):
+// Voltline is capped tighter than the agency default, KeyHero + NeatWorks are
+// explicitly uncapped. FreshHome equals the agency default (5) so it inherits
+// — no seed entry. The first localStorage write bakes the seed in, after
+// which the overlay is authoritative (clears can then truly clear).
+export const SUB_ACCOUNT_OVERRIDE_SEED: OverrideStore = {
+  voltline: { defaultSeatLimit: 3 },
+  keyhero: { defaultSeatLimit: null },
+  neatworks: { defaultSeatLimit: null },
+};
+
 function safeRead(): string | null {
   try {
     return window.localStorage.getItem(STORE_KEY);
@@ -30,21 +42,22 @@ function safeRead(): string | null {
 }
 
 let cacheRaw: string | null | undefined;
-let cacheValue: OverrideStore = {};
+let cacheValue: OverrideStore = SUB_ACCOUNT_OVERRIDE_SEED;
 
 function readStore(): OverrideStore {
   const raw = safeRead();
   if (raw === cacheRaw) return cacheValue;
   cacheRaw = raw;
   if (!raw) {
-    cacheValue = {};
+    cacheValue = SUB_ACCOUNT_OVERRIDE_SEED;
     return cacheValue;
   }
   try {
     const parsed = JSON.parse(raw) as OverrideStore;
-    cacheValue = parsed && typeof parsed === 'object' ? parsed : {};
+    cacheValue =
+      parsed && typeof parsed === 'object' ? parsed : SUB_ACCOUNT_OVERRIDE_SEED;
   } catch {
-    cacheValue = {};
+    cacheValue = SUB_ACCOUNT_OVERRIDE_SEED;
   }
   return cacheValue;
 }
