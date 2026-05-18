@@ -1,14 +1,14 @@
 'use client';
 
 // =============================================================================
-// /funnels/[id]/edit/[stepId] — funnel-step editor (Session 7).
+// /funnels/[id]/edit/[stepId] — funnel-step editor (Session 7 · wired Phase 4).
 //
-// Mounts SectionEditor in `funnelStep` mode. Sections come from the funnel's
-// draft version; toolbar surfaces one tab per step (prefixed `01 ·`, `02 ·`,
-// `03 ·`) so the sequence is visible at a glance. Publish/Submit hide for
-// funnel mode in Session 7 — funnel publish + approval mechanics land in a
-// later session; the shell is here so the funnel data model + editor wiring
-// are exercised end-to-end.
+// Mounts SectionEditor in `funnelStep` mode. The funnel + its draft version
+// resolve live from Supabase (`lib/funnel/queries`); the [stepId] segment
+// picks the step out of the draft snapshot. Toolbar surfaces one tab per step.
+// Publish/Submit hide for funnel mode — funnel publish + approval mechanics
+// are still unbuilt (CLAUDE.md parked decision); the editor autosaves to a
+// localStorage draft slot.
 // =============================================================================
 
 import Link from 'next/link';
@@ -16,38 +16,30 @@ import { useParams } from 'next/navigation';
 
 import { SectionEditor } from '@/components/shared/website/SectionEditor';
 import { Button } from '@/components/ui/button';
-import {
-  findFunnel,
-  findStep,
-  getDraftForFunnel,
-} from '@/lib/funnel/data-stub';
+import { useFunnelWithDraft } from '@/lib/funnel/queries';
 
 export default function FunnelStepEditorPage() {
   const params = useParams<{ id: string; stepId: string }>();
   const funnelId = params?.id ?? '';
   const stepId = params?.stepId ?? '';
 
-  const funnel = findFunnel(funnelId);
-  if (!funnel) {
+  const { data, isLoading, isError } = useFunnelWithDraft(funnelId);
+
+  if (isLoading) {
+    return <StatusState message="// Resolving funnel…" tone="quiet" />;
+  }
+
+  if (isError || !data) {
     return (
       <NotFoundState
-        message={`No funnel resolves to "${funnelId}".`}
+        message={`No funnel resolves to "${funnelId}", or it's outside your workspace.`}
         backHref="/funnels"
       />
     );
   }
 
-  const draft = getDraftForFunnel(funnelId);
-  if (!draft) {
-    return (
-      <NotFoundState
-        message={`Funnel "${funnel.name}" has no draft version.`}
-        backHref={`/funnels/${funnelId}`}
-      />
-    );
-  }
-
-  const step = findStep(funnelId, stepId);
+  const { funnel, draft } = data;
+  const step = draft.snapshot.steps.find((s) => s.id === stepId);
   if (!step) {
     return (
       <NotFoundState
@@ -66,6 +58,26 @@ export default function FunnelStepEditorPage() {
         step,
       }}
     />
+  );
+}
+
+function StatusState({
+  message,
+  tone,
+}: {
+  message: string;
+  tone: 'quiet' | 'warn';
+}) {
+  return (
+    <div className="flex h-svh items-center justify-center bg-paper px-6">
+      <p
+        className={`font-mono text-[11px] font-bold uppercase tracking-[0.14em] ${
+          tone === 'warn' ? 'text-warn' : 'text-ink-quiet'
+        }`}
+      >
+        {message}
+      </p>
+    </div>
   );
 }
 

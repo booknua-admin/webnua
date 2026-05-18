@@ -7,10 +7,8 @@
 //   admin agency mode  → cross-client roster
 //   admin sub-account  → that client's funnel list
 //
-// Mirrors `/website/page.tsx` in shape — context resolution + per-mode
-// rendering. The cross-client roster here is intentionally simpler than the
-// websites matrix (no per-integration columns yet); we'll grow it as the
-// agency surface needs surface.
+// Phase 4 — funnel data reads live Supabase (`lib/funnel/queries`). Mirrors
+// `/website/page.tsx` in shape — context resolution + per-mode rendering.
 // =============================================================================
 
 import Link from 'next/link';
@@ -23,10 +21,7 @@ import { Badge } from '@/components/ui/badge';
 import { Eyebrow } from '@/components/ui/eyebrow';
 import { StatusDot } from '@/components/ui/status-dot';
 import { useUser } from '@/lib/auth/user-stub';
-import {
-  STUB_FUNNELS,
-  getFunnelsForClient,
-} from '@/lib/funnel/data-stub';
+import { useAllFunnels, useFunnelsForClient } from '@/lib/funnel/queries';
 import type { Funnel } from '@/lib/funnel/types';
 import { adminClients } from '@/lib/nav/admin-clients';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
@@ -40,9 +35,7 @@ export default function FunnelsHubPage() {
       <>
         <Topbar breadcrumb={<TopbarBreadcrumb current="Funnels" />} />
         <div className="px-10 py-10">
-          <p className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
-            {'// Resolving workspace…'}
-          </p>
+          <StatusLine tone="quiet">{'// Resolving workspace…'}</StatusLine>
         </div>
       </>
     );
@@ -59,10 +52,8 @@ export default function FunnelsHubPage() {
     return <NoFunnelsState reason="missing-client-membership" />;
   }
 
-  const funnels = getFunnelsForClient(activeClientId);
   return (
     <ClientFunnelsList
-      funnels={funnels}
       isOperator={user.role === 'admin'}
       activeClientId={activeClientId}
     />
@@ -72,15 +63,16 @@ export default function FunnelsHubPage() {
 // -- Client / sub-account list --------------------------------------------
 
 function ClientFunnelsList({
-  funnels,
   isOperator,
   activeClientId,
 }: {
-  funnels: Funnel[];
   isOperator: boolean;
   activeClientId: string;
 }) {
+  const { data, isLoading, isError } = useFunnelsForClient(activeClientId);
+  const funnels = data ?? [];
   const client = adminClients.find((c) => c.id === activeClientId);
+
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb current="Funnels" />} />
@@ -109,7 +101,13 @@ function ClientFunnelsList({
           <WorkspaceContextBanner />
         </div>
 
-        {funnels.length === 0 ? (
+        {isLoading ? (
+          <StatusLine tone="quiet">{'// Loading funnels…'}</StatusLine>
+        ) : isError ? (
+          <StatusLine tone="warn">
+            {'// Could not load funnels. Try again.'}
+          </StatusLine>
+        ) : funnels.length === 0 ? (
           <EmptyFunnelsState clientName={client?.name ?? null} />
         ) : (
           <div className="grid grid-cols-1 gap-3.5">
@@ -182,9 +180,9 @@ function NoFunnelsState({ reason }: { reason: string }) {
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb current="Funnels" />} />
       <div className="px-10 py-10">
-        <p className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-warn">
+        <StatusLine tone="warn">
           {`// CAN'T RESOLVE WORKSPACE (${reason})`}
-        </p>
+        </StatusLine>
       </div>
     </>
   );
@@ -193,6 +191,10 @@ function NoFunnelsState({ reason }: { reason: string }) {
 // -- Admin agency roster --------------------------------------------------
 
 function AdminAgencyRoster() {
+  const { data, isLoading, isError } = useAllFunnels();
+  const funnels = data ?? [];
+  const totalLive = funnels.filter((f) => f.publishedVersionId).length;
+
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb current="Funnels" />} />
@@ -217,73 +219,107 @@ function AdminAgencyRoster() {
           <WorkspaceContextBanner />
         </div>
 
-        <div className="grid grid-cols-1 gap-3">
-          {adminClients.map((client) => {
-            const funnels = getFunnelsForClient(client.id);
-            const live = funnels.filter((f) => f.publishedVersionId).length;
-            return (
-              <Link
-                key={client.id}
-                href={`/funnels`}
-                onClick={(e) => {
-                  // Pure client-side context switch — the sidebar picker
-                  // owns persistence; this row is a convenience.
-                  e.preventDefault();
-                  try {
-                    window.localStorage.setItem(
-                      'webnua.dev.active-client-id',
-                      client.id,
-                    );
-                    window.dispatchEvent(new Event('storage'));
-                  } catch {
-                    // localStorage unavailable — fall through to navigate
-                  }
-                  window.location.href = '/funnels';
-                }}
-                className="group grid grid-cols-[48px_1fr_120px_120px_70px] items-center gap-5 rounded-[14px] border border-rule bg-card px-6 py-4 transition-colors hover:border-rust"
-              >
-                <div className="flex size-12 items-center justify-center rounded-md bg-ink font-extrabold text-rust-light">
-                  {client.name.charAt(0)}
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[16px] font-extrabold tracking-[-0.02em] text-ink">
-                    {client.name}
-                  </div>
-                  <div className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
-                    {client.id}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-[20px] font-extrabold leading-none tracking-[-0.02em] text-ink">
-                    {funnels.length}
-                  </div>
-                  <div className="mt-1 font-mono text-[9px] font-bold uppercase tracking-[0.1em] text-ink-quiet">
-                    Total
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-[20px] font-extrabold leading-none tracking-[-0.02em] text-good">
-                    {live}
-                  </div>
-                  <div className="mt-1 font-mono text-[9px] font-bold uppercase tracking-[0.1em] text-ink-quiet">
-                    Live
-                  </div>
-                </div>
-                <span className="text-right font-mono text-[12px] font-bold tracking-[0.04em] text-rust transition-transform group-hover:translate-x-0.5">
-                  {funnels.length > 0 ? 'Drill in →' : 'Open →'}
-                </span>
-              </Link>
-            );
-          })}
-        </div>
+        {isLoading ? (
+          <StatusLine tone="quiet">{'// Loading funnels…'}</StatusLine>
+        ) : isError ? (
+          <StatusLine tone="warn">
+            {'// Could not load funnels. Try again.'}
+          </StatusLine>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 gap-3">
+              {adminClients.map((client) => {
+                const clientFunnels = funnels.filter(
+                  (f) => f.clientId === client.id,
+                );
+                const live = clientFunnels.filter(
+                  (f) => f.publishedVersionId,
+                ).length;
+                return (
+                  <Link
+                    key={client.id}
+                    href={`/funnels`}
+                    onClick={(e) => {
+                      // Pure client-side context switch — the sidebar picker
+                      // owns persistence; this row is a convenience.
+                      e.preventDefault();
+                      try {
+                        window.localStorage.setItem(
+                          'webnua.dev.active-client-id',
+                          client.id,
+                        );
+                        window.dispatchEvent(new Event('storage'));
+                      } catch {
+                        // localStorage unavailable — fall through to navigate
+                      }
+                      window.location.href = '/funnels';
+                    }}
+                    className="group grid grid-cols-[48px_1fr_120px_120px_70px] items-center gap-5 rounded-[14px] border border-rule bg-card px-6 py-4 transition-colors hover:border-rust"
+                  >
+                    <div className="flex size-12 items-center justify-center rounded-md bg-ink font-extrabold text-rust-light">
+                      {client.name.charAt(0)}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[16px] font-extrabold tracking-[-0.02em] text-ink">
+                        {client.name}
+                      </div>
+                      <div className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
+                        {client.id}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[20px] font-extrabold leading-none tracking-[-0.02em] text-ink">
+                        {clientFunnels.length}
+                      </div>
+                      <div className="mt-1 font-mono text-[9px] font-bold uppercase tracking-[0.1em] text-ink-quiet">
+                        Total
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[20px] font-extrabold leading-none tracking-[-0.02em] text-good">
+                        {live}
+                      </div>
+                      <div className="mt-1 font-mono text-[9px] font-bold uppercase tracking-[0.1em] text-ink-quiet">
+                        Live
+                      </div>
+                    </div>
+                    <span className="text-right font-mono text-[12px] font-bold tracking-[0.04em] text-rust transition-transform group-hover:translate-x-0.5">
+                      {clientFunnels.length > 0 ? 'Drill in →' : 'Open →'}
+                    </span>
+                  </Link>
+                );
+              })}
+            </div>
 
-        <p className="mt-6 max-w-[640px] font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-quiet">
-          {'// '}Total funnels across the workspace:{' '}
-          <strong className="text-ink">{STUB_FUNNELS.length}</strong>
-          {' · '}
-          {STUB_FUNNELS.filter((f) => f.publishedVersionId).length} live.
-        </p>
+            <p className="mt-6 max-w-[640px] font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-quiet">
+              {'// '}Total funnels across the workspace:{' '}
+              <strong className="text-ink">{funnels.length}</strong>
+              {' · '}
+              {totalLive} live.
+            </p>
+          </>
+        )}
       </div>
     </>
+  );
+}
+
+// -- Status line helper ---------------------------------------------------
+
+function StatusLine({
+  tone,
+  children,
+}: {
+  tone: 'quiet' | 'warn';
+  children: React.ReactNode;
+}) {
+  return (
+    <p
+      className={`font-mono text-[11px] font-bold uppercase tracking-[0.14em] ${
+        tone === 'warn' ? 'text-warn' : 'text-ink-quiet'
+      }`}
+    >
+      {children}
+    </p>
   );
 }
