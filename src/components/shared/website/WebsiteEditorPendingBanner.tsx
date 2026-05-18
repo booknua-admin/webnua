@@ -24,7 +24,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { recallSubmission } from '@/lib/website/publish-stub';
+import { recallSubmission } from '@/lib/website/mutations';
 import type { WebsiteApprovalSubmission } from '@/lib/tickets/website-approval-stub';
 
 const TIME_FORMAT = new Intl.DateTimeFormat('en-AU', {
@@ -54,13 +54,13 @@ export function WebsiteEditorPendingBanner({
 }: WebsiteEditorPendingBannerProps) {
   const router = useRouter();
 
-  const handleRecall = useCallback(() => {
+  const handleRecall = useCallback(async () => {
     const ok = window.confirm(
       'Pull this submission back to draft? Your edits stay; the review queue entry is cancelled.',
     );
     if (!ok) return;
-    recallSubmission(submission.id);
-    // Stay on the editor — recalling unlocks the page in-place.
+    await recallSubmission(submission.id);
+    // The builder event refetches the lock query; refresh keeps RSC in sync.
     router.refresh();
   }, [submission.id, router]);
 

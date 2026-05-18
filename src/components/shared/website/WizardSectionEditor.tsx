@@ -32,7 +32,7 @@ import type { Capability } from '@/lib/auth/capabilities';
 import { CapabilityOverrideProvider } from '@/lib/auth/user-stub';
 import type { Funnel, FunnelStep } from '@/lib/funnel/types';
 import { getBrandForClient } from '@/lib/website/data-stub';
-import { type DraftSlot, loadDraftSections } from '@/lib/website/draft-stub';
+import type { DraftSlot } from '@/lib/website/content-drafts';
 import type { BrandObject, Section } from '@/lib/website/types';
 import { useAutosave } from '@/lib/website/use-autosave';
 
@@ -65,11 +65,9 @@ function stepSlot(funnelId: string, stepId: string): DraftSlot {
   return { kind: 'funnelStep', funnelId, stepId };
 }
 
-function loadStepSections(step: FunnelStep, slot: DraftSlot): Section[] {
-  if (typeof window !== 'undefined') {
-    const saved = loadDraftSections(slot);
-    if (saved) return saved;
-  }
+// The onboarding wizard walks a freshly-generated funnel — there is no
+// persisted draft to rehydrate from (the funnel isn't a real DB row yet).
+function loadStepSections(step: FunnelStep): Section[] {
   return step.sections;
 }
 
@@ -180,10 +178,12 @@ function WizardStepPane({
 }: WizardStepPaneProps) {
   const slot = useMemo(() => stepSlot(funnel.id, step.id), [funnel.id, step.id]);
   const [sections, setSections] = useState<Section[]>(() =>
-    loadStepSections(step, slot),
+    loadStepSections(step),
   );
 
-  useAutosave({ slot, sections });
+  // Disabled — the wizard walks a not-yet-persisted generated funnel; there
+  // is no content_drafts row to write to.
+  useAutosave({ slot, sections, disabled: true });
 
   const selectedSection = sections[sectionIndex] ?? null;
 

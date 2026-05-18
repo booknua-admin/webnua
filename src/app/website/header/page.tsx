@@ -2,46 +2,47 @@
 
 // =============================================================================
 // /website/header — singleton editor for the website's Header section.
-// Same SectionEditor shell as page editing, but in singleton mode (no page
-// tabs, single-row rail, no enable/drag/add controls). See design doc §2.6.
+// Same SectionEditor shell as page editing, in singleton mode. See §2.6.
+// Phase 4 — website + draft snapshot read live (`lib/website/queries`).
 // =============================================================================
 
 import Link from 'next/link';
-import { useUser } from '@/lib/auth/user-stub';
-import { findVersion, findWebsiteByClient } from '@/lib/website/data-stub';
-import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 import { SectionEditor } from '@/components/shared/website/SectionEditor';
 import { Button } from '@/components/ui/button';
+import { useUser } from '@/lib/auth/user-stub';
+import { useEffectiveDraft, useWebsiteForClient } from '@/lib/website/queries';
+import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 export default function WebsiteHeaderEditorPage() {
   const user = useUser();
   const workspace = useWorkspace();
 
+  const activeClientId = user
+    ? user.role === 'client'
+      ? user.clientId
+      : workspace.activeClientId
+    : null;
+
+  const websiteQuery = useWebsiteForClient(activeClientId);
+  const website = websiteQuery.data ?? null;
+  const draftQuery = useEffectiveDraft(website?.id ?? null);
+
   if (!workspace.hydrated || !user) {
+    return <StatusState message="// Resolving workspace…" />;
+  }
+  if (!activeClientId) {
     return (
-      <div className="flex h-svh items-center justify-center bg-paper">
-        <p className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
-          {'// Resolving workspace…'}
-        </p>
-      </div>
+      <NotFoundState message="No active workspace. Pick a client from the picker." />
     );
   }
-
-  const activeClientId =
-    user.role === 'client' ? user.clientId : workspace.activeClientId;
-
-  if (!activeClientId) {
-    return <NotFoundState message="No active workspace. Pick a client from the picker." />;
+  if (websiteQuery.isLoading || (website && draftQuery.isLoading)) {
+    return <StatusState message="// Loading editor…" />;
   }
-
-  const website = findWebsiteByClient(activeClientId);
   if (!website) {
     return <NotFoundState message="No website on this workspace yet." />;
   }
-
-  const draft = findVersion(website.draftVersionId);
-  if (!draft) {
+  if (!draftQuery.data) {
     return <NotFoundState message={`No draft version on ${website.name}.`} />;
   }
 
@@ -50,10 +51,20 @@ export default function WebsiteHeaderEditorPage() {
       mode={{
         kind: 'singleton',
         website,
-        section: draft.snapshot.header,
+        section: draftQuery.data.snapshot.header,
         label: 'Header',
       }}
     />
+  );
+}
+
+function StatusState({ message }: { message: string }) {
+  return (
+    <div className="flex h-svh items-center justify-center bg-paper">
+      <p className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+        {message}
+      </p>
+    </div>
   );
 }
 

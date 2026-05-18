@@ -29,11 +29,10 @@ import { Button } from '@/components/ui/button';
 import { useUser } from '@/lib/auth/user-stub';
 import { adminClients } from '@/lib/nav/admin-clients';
 import {
-  STUB_VERSIONS,
-  findVersion,
-  findWebsiteByClient,
-} from '@/lib/website/data-stub';
-import { mergeGeneratedPages } from '@/lib/website/generated-pages-stub';
+  useEffectiveDraft,
+  useWebsiteForClient,
+  useWebsiteVersions,
+} from '@/lib/website/queries';
 import {
   MAX_NAV_LINKS,
   type NavLink as NavLinkType,
@@ -48,6 +47,14 @@ export default function WebsiteHubPage() {
   const user = useUser();
   const workspace = useWorkspace();
 
+  const activeClientId = user
+    ? user.role === 'client'
+      ? user.clientId
+      : workspace.activeClientId
+    : null;
+
+  const websiteQuery = useWebsiteForClient(activeClientId);
+
   if (!workspace.hydrated || !user) {
     return (
       <>
@@ -61,9 +68,6 @@ export default function WebsiteHubPage() {
     );
   }
 
-  const activeClientId =
-    user.role === 'client' ? user.clientId : workspace.activeClientId;
-
   if (user.role === 'admin' && !activeClientId) {
     return <AgencyEmptyState />;
   }
@@ -72,7 +76,20 @@ export default function WebsiteHubPage() {
     return <NoWebsiteState reason="missing-client-membership" />;
   }
 
-  const website = findWebsiteByClient(activeClientId);
+  if (websiteQuery.isLoading) {
+    return (
+      <>
+        <Topbar breadcrumb={<TopbarBreadcrumb current="Website" />} />
+        <div className="px-10 py-10">
+          <p className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+            {'// Loading website…'}
+          </p>
+        </div>
+      </>
+    );
+  }
+
+  const website = websiteQuery.data ?? null;
   if (!website) {
     return <NoWebsiteState reason="no-website-yet" clientId={activeClientId} />;
   }
@@ -83,12 +100,23 @@ export default function WebsiteHubPage() {
 // -- Connected website hub (the happy path) --------------------------------
 
 function WebsiteHub({ website }: { website: Website }) {
-  const draftVersion = findVersion(website.draftVersionId);
-  const publishedVersion = website.publishedVersionId
-    ? findVersion(website.publishedVersionId)
-    : null;
+  const draftQuery = useEffectiveDraft(website.id);
+  const versionsQuery = useWebsiteVersions(website.id);
 
-  if (!draftVersion) {
+  if (draftQuery.isLoading || versionsQuery.isLoading) {
+    return (
+      <>
+        <Topbar breadcrumb={<TopbarBreadcrumb current="Website" />} />
+        <div className="px-10 py-10">
+          <p className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+            {'// Loading website…'}
+          </p>
+        </div>
+      </>
+    );
+  }
+
+  if (!draftQuery.data) {
     return (
       <>
         <Topbar breadcrumb={<TopbarBreadcrumb current="Website" />} />
@@ -101,12 +129,18 @@ function WebsiteHub({ website }: { website: Website }) {
     );
   }
 
-  const snapshot = draftVersion.snapshot;
-  const pages = mergeGeneratedPages(website.id, snapshot.pages);
+  const snapshot = draftQuery.data.snapshot;
+  // useEffectiveDraft already merges the content_drafts + generated-page
+  // overlays into the snapshot pages.
+  const pages = snapshot.pages;
+  const publishedVersion =
+    (versionsQuery.data ?? []).find(
+      (v) => v.id === website.publishedVersionId,
+    ) ?? null;
 
-  const history: Version[] = STUB_VERSIONS.filter(
-    (v) => v.websiteId === website.id,
-  ).sort((a, b) => {
+  const history: Version[] = (versionsQuery.data ?? [])
+    .slice()
+    .sort((a, b) => {
     const order: Record<Version['status'], number> = {
       published: 0,
       pending_approval: 1,

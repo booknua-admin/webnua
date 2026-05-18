@@ -16,7 +16,7 @@
 // scales beyond what fits on one screen.
 // =============================================================================
 
-import { useMemo, useSyncExternalStore } from 'react';
+import { useMemo } from 'react';
 
 import { AccessClientRosterRow } from '@/components/shared/settings/AccessClientRosterRow';
 import { ClientSeatLimitCard } from '@/components/shared/settings/ClientSeatLimitCard';
@@ -31,11 +31,7 @@ import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
-import {
-  getEffectiveAuditLog,
-  subscribeAudit,
-  type ForcePublishEntry,
-} from '@/lib/auth/audit-stub';
+import type { ForcePublishEntry } from '@/lib/auth/audit-stub';
 import {
   ADMIN_DEFAULTS,
   ALL_CAPABILITIES,
@@ -49,17 +45,14 @@ import {
 } from '@/lib/auth/user-stub';
 import { adminClients } from '@/lib/nav/admin-clients';
 import { findWebsite, getWebsitesForClient } from '@/lib/website/data-stub';
+import { useForcePublishLog } from '@/lib/website/queries';
 import type { Website } from '@/lib/website/types';
 import { useAllPendingApprovals } from '@/lib/website/use-publish-state';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
-/** Reactive read of the merged seed + overlay audit log. */
+/** Live read of the force-publish audit log. */
 function useAuditLog(): ForcePublishEntry[] {
-  return useSyncExternalStore(
-    subscribeAudit,
-    () => getEffectiveAuditLog(),
-    () => [],
-  );
+  return useForcePublishLog().data ?? [];
 }
 
 /** Project a full Website into the minimal display shape the cap grid needs. */

@@ -5,11 +5,13 @@
 // website. Workspace context determines the active website; the [pageId]
 // URL segment picks the page.
 //
-// Two URL slugs are reserved for the website-level singletons rather than
-// being page ids — they live as sibling routes:
-//   /website/header  → singleton editor for Website.header
-//   /website/footer  → singleton editor for Website.footer
-// Both are static routes that take precedence over this dynamic [pageId].
+// Phase 4 — website + effective-draft snapshot read live from Supabase
+// (`lib/website/queries`). The draft snapshot already merges the content_drafts
+// autosave buffer + any generated pages, so SectionEditor seeds straight from
+// it.
+//
+// /website/header and /website/footer are reserved sibling routes that take
+// precedence over this dynamic [pageId].
 // =============================================================================
 
 import Link from 'next/link';
@@ -18,8 +20,7 @@ import { useParams } from 'next/navigation';
 import { SectionEditor } from '@/components/shared/website/SectionEditor';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/lib/auth/user-stub';
-import { findVersion, findWebsiteByClient } from '@/lib/website/data-stub';
-import { mergeGeneratedPages } from '@/lib/website/generated-pages-stub';
+import { useEffectiveDraft, useWebsiteForClient } from '@/lib/website/queries';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 export default function WebsitePageEditorPage() {
@@ -28,35 +29,36 @@ export default function WebsitePageEditorPage() {
   const user = useUser();
   const workspace = useWorkspace();
 
+  const activeClientId = user
+    ? user.role === 'client'
+      ? user.clientId
+      : workspace.activeClientId
+    : null;
+
+  const websiteQuery = useWebsiteForClient(activeClientId);
+  const website = websiteQuery.data ?? null;
+  const draftQuery = useEffectiveDraft(website?.id ?? null);
+
   if (!workspace.hydrated || !user) {
-    return (
-      <div className="flex h-svh items-center justify-center bg-paper">
-        <p className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
-          {'// Resolving workspace…'}
-        </p>
-      </div>
-    );
+    return <StatusState message="// Resolving workspace…" />;
   }
-
-  const activeClientId =
-    user.role === 'client' ? user.clientId : workspace.activeClientId;
-
   if (!activeClientId) {
     return (
       <NotFoundState message="No active workspace. Pick a client from the picker." />
     );
   }
-
-  const website = findWebsiteByClient(activeClientId);
+  if (websiteQuery.isLoading || (website && draftQuery.isLoading)) {
+    return <StatusState message="// Loading editor…" />;
+  }
   if (!website) {
     return <NotFoundState message="No website on this workspace yet." />;
   }
+  if (!draftQuery.data) {
+    return <NotFoundState message={`No draft version on ${website.name}.`} />;
+  }
 
-  const draft = findVersion(website.draftVersionId);
-  const seedPages = draft?.snapshot.pages ?? [];
-  const pages = mergeGeneratedPages(website.id, seedPages);
+  const pages = draftQuery.data.snapshot.pages;
   const page = pages.find((p) => p.id === pageId);
-
   if (!page) {
     return (
       <NotFoundState
@@ -66,6 +68,16 @@ export default function WebsitePageEditorPage() {
   }
 
   return <SectionEditor mode={{ kind: 'page', website, pages, page }} />;
+}
+
+function StatusState({ message }: { message: string }) {
+  return (
+    <div className="flex h-svh items-center justify-center bg-paper">
+      <p className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+        {message}
+      </p>
+    </div>
+  );
 }
 
 function NotFoundState({ message }: { message: string }) {

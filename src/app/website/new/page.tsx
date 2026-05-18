@@ -37,11 +37,13 @@ import { Button } from '@/components/ui/button';
 import { useUser, useCanAll } from '@/lib/auth/user-stub';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 import {
-  findWebsiteByClient,
-  findVersion,
   getBrandForClient,
   DEFAULT_PREVIEW_BRAND,
 } from '@/lib/website/data-stub';
+import {
+  useEffectiveDraft,
+  useWebsiteForClient,
+} from '@/lib/website/queries';
 import { addGeneratedPage } from '@/lib/website/generated-pages-stub';
 import {
   generatePageStub,
@@ -74,6 +76,15 @@ export default function WebsiteNewPage() {
   const [generating, setGenerating] = useState<null | {
     ctx: GenerationContext;
   }>(null);
+
+  const activeClientId = user
+    ? user.role === 'client'
+      ? user.clientId
+      : workspace.activeClientId
+    : null;
+  const websiteQuery = useWebsiteForClient(activeClientId);
+  const website = websiteQuery.data ?? null;
+  const draftQuery = useEffectiveDraft(website?.id ?? null);
 
   const step = Math.max(1, Math.min(6, Number(searchParams.get('step') ?? '1'))) as Step;
   const pageType = (searchParams.get('pageType') as PageType | null) ?? null;
@@ -112,9 +123,6 @@ export default function WebsiteNewPage() {
     );
   }
 
-  const activeClientId =
-    user.role === 'client' ? user.clientId : workspace.activeClientId;
-
   if (!activeClientId) {
     return (
       <Shell>
@@ -123,7 +131,16 @@ export default function WebsiteNewPage() {
     );
   }
 
-  const website = findWebsiteByClient(activeClientId);
+  if (websiteQuery.isLoading) {
+    return (
+      <Shell>
+        <p className="mx-auto max-w-[640px] py-12 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+          {'// Loading website…'}
+        </p>
+      </Shell>
+    );
+  }
+
   if (!website) {
     return (
       <Shell>
@@ -133,10 +150,9 @@ export default function WebsiteNewPage() {
   }
 
   const brand = getBrandForClient(activeClientId) ?? DEFAULT_PREVIEW_BRAND;
-  const draft = findVersion(website.draftVersionId);
-  const existingPages: ExistingPageSnapshot[] = (draft?.snapshot.pages ?? []).map(
-    snapshotFromPage,
-  );
+  const existingPages: ExistingPageSnapshot[] = (
+    draftQuery.data?.snapshot.pages ?? []
+  ).map(snapshotFromPage);
 
   if (generating) {
     return (

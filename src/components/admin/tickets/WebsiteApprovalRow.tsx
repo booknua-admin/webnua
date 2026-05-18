@@ -26,12 +26,10 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useUser } from '@/lib/auth/user-stub';
-import { adminClients } from '@/lib/nav/admin-clients';
-import { findWebsite } from '@/lib/website/data-stub';
 import {
   approveSubmission,
   rejectSubmission,
-} from '@/lib/website/publish-stub';
+} from '@/lib/website/mutations';
 import type { WebsiteApprovalSubmission } from '@/lib/tickets/website-approval-stub';
 import { cn } from '@/lib/utils';
 
@@ -78,26 +76,22 @@ export function WebsiteApprovalRow({ submission }: WebsiteApprovalRowProps) {
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState('');
 
-  const website = findWebsite(submission.websiteId);
-  const client = website
-    ? adminClients.find((c) => c.id === website.clientId)
-    : null;
-  const clientName = client?.name ?? website?.name ?? submission.websiteId;
+  const clientName = submission.clientName ?? 'Website';
   const clientInitial = clientName.charAt(0).toUpperCase();
 
-  const handleApprove = () => {
+  const handleApprove = async () => {
     if (!user) return;
-    approveSubmission(submission.id, {
+    await approveSubmission(submission.id, {
       id: user.id,
       displayName: user.displayName,
     });
   };
 
-  const handleRejectSubmit = () => {
+  const handleRejectSubmit = async () => {
     if (!user) return;
     const trimmed = reason.trim();
     if (trimmed.length === 0) return;
-    rejectSubmission(
+    await rejectSubmission(
       submission.id,
       { id: user.id, displayName: user.displayName },
       trimmed,
