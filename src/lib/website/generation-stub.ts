@@ -1,29 +1,31 @@
 // =============================================================================
 // generation-stub — the form-to-page generator (stub).
 //
-// Synthetic delay 4–8s. Output is deterministic on (pageType, primaryIntent,
-// audience, industry) — see design doc generation §6 — but now carries a
-// **design-variety layer**: a deterministic seed drives recipe choice, a
-// light/dark band rhythm, per-section layout variants, column counts and
-// alignment, so two different briefs produce visibly different sites built
-// from the same section library.
-//
-// The free-text `specifics` / `avoid` answers are received but NOT consumed
-// by the stub (§1 framing rule). The validation pipeline (§4.4) still runs.
+// Synthetic delay 4–8s. Output is deterministic on the brief, and carries a
+// design-variety layer (recipe choice, light/dark band rhythm, per-section
+// layout variants). When the create-client flow supplies a `business` block
+// the fillers weave real details — business name, offer, services, contact —
+// into the copy instead of generic templated text.
 //
 // Replace with a real backend call when the LLM lands; the GenerationContext
-// → GeneratedPage contract stays identical. The real generator decides
-// layout / theme itself — this design layer is the stub stand-in for it.
+// → GeneratedPage contract stays identical.
 // =============================================================================
 
-import type { GenerationContext, PrimaryIntent, Audience } from './generation-context';
+import type {
+  Audience,
+  BusinessDetails,
+  GenerationContext,
+  PrimaryIntent,
+} from './generation-context';
 import { getSectionDefinition } from './sections';
 import { aboutSection } from './sections/about';
 import { contactSection } from './sections/contact';
 import { ctaSection } from './sections/cta';
 import { faqSection } from './sections/faq';
 import { featuresSection } from './sections/features';
+import { footerSection } from './sections/footer';
 import { gallerySection } from './sections/gallery';
+import { headerSection } from './sections/header';
 import { heroSection } from './sections/hero';
 import { offerSection } from './sections/offer';
 import { reviewsSection } from './sections/reviews';
@@ -41,7 +43,6 @@ export type GeneratedSection = {
   type: SectionType;
   enabled: true;
   data: Record<string, unknown>;
-  /** Field names the recipe populated. Drives `section.ai.draftedFields`. */
   populatedFields: string[];
 };
 
@@ -90,7 +91,6 @@ export function randomDelayMs(): number {
 // Design-variety layer
 // =============================================================================
 
-/** djb2 string hash → unsigned 32-bit. */
 function hashString(s: string): number {
   let h = 5381;
   for (let i = 0; i < s.length; i += 1) {
@@ -99,20 +99,15 @@ function hashString(s: string): number {
   return h >>> 0;
 }
 
-/** Deterministic design seed for a brief. Same brief → same site. */
 function designSeed(ctx: GenerationContext): number {
   return hashString(
-    `${ctx.pageType}|${ctx.primaryIntent.kind}|${ctx.audience}|${ctx.brand.industryCategory}`,
+    `${ctx.pageType}|${ctx.primaryIntent.kind}|${ctx.audience}|${ctx.brand.industryCategory}|${ctx.business?.name ?? ''}`,
   );
 }
 
-/** A deterministic picker scoped to one generation. `salt` makes each
- *  decision independent, so layout choice and column choice don't move
- *  together. */
 type Designer = {
   seed: number;
   pick: <T>(salt: string, arr: readonly T[]) => T;
-  /** True with roughly `pct`% likelihood, deterministic per salt. */
   chance: (salt: string, pct: number) => boolean;
 };
 
@@ -125,8 +120,6 @@ function makeDesigner(seed: number): Designer {
   };
 }
 
-// -- band rhythm (light / dark surfaces) ------------------------------------
-
 type Surface = 'base' | 'alt' | 'contrast';
 
 function presetTheme(id: string): SectionTheme {
@@ -137,15 +130,11 @@ function presetTheme(id: string): SectionTheme {
 const ALT_TINTS = ['#f3f4f6', '#f3f1ea', '#eef1f5', '#f4f2ee'] as const;
 const DARK_PRESETS = ['midnight', 'ink'] as const;
 
-/** Plan the page's light/dark rhythm. The hero is always a contrast band;
- *  the CTA is a contrast band most of the time (and forced to contrast when
- *  the hero is not, so every page has at least one striking surface); the
- *  middle sections alternate a plain base with a lightly-tinted alt. */
 function planSurfaces(recipe: readonly SectionType[], dz: Designer): Surface[] {
   const last = recipe.length - 1;
   let altToggle = false;
   return recipe.map((type, i) => {
-    if (i === 0) return 'contrast'; // hero
+    if (i === 0) return 'contrast';
     if (i === last && type === 'cta') {
       return dz.chance('cta-surface', 60) ? 'contrast' : 'base';
     }
@@ -164,7 +153,6 @@ function surfaceTheme(
   return {};
 }
 
-/** Everything a section filler needs to vary its layout + colours. */
 type SectionDesign = {
   theme: SectionTheme;
   surface: Surface;
@@ -173,10 +161,7 @@ type SectionDesign = {
 };
 
 // =============================================================================
-// Recipes — multiple well-formed section sequences per page type. The seed
-// picks one, so the same page type produces different structures across
-// briefs. Every recipe opens with a hero; content sections are ordered by
-// good-page logic (lead → proof → detail → reassurance → close).
+// Recipes
 // =============================================================================
 
 const HOME_RECIPES: readonly (readonly SectionType[])[] = [
@@ -218,8 +203,6 @@ const RECIPE_SETS: Record<PageType, readonly (readonly SectionType[])[]> = {
   generic: GENERIC_RECIPES,
 };
 
-/** The default (first) recipe for a page type — a stable structure for any
- *  caller that just wants a representative shape. */
 export function recipeFor(pageType: PageType): readonly SectionType[] {
   return RECIPE_SETS[pageType][0];
 }
@@ -228,7 +211,7 @@ function pickRecipe(ctx: GenerationContext, dz: Designer): readonly SectionType[
   return dz.pick('recipe', RECIPE_SETS[ctx.pageType]);
 }
 
-// -- Voice variants for copy ------------------------------------------------
+// -- Voice variants ---------------------------------------------------------
 
 type VoiceVariant = 'cold-ad-urgent' | 'existing-calm' | 'search-plain';
 
@@ -248,8 +231,6 @@ function voiceFor(audience: Audience): VoiceVariant {
 
 // -- Public entry point -----------------------------------------------------
 
-/** The stub generator. Async (with synthetic delay) so the call site can
- *  mount a progress card; the real backend implements the same shape. */
 export async function generatePageStub(
   ctx: GenerationContext,
   options?: { signal?: AbortSignal; instantForDev?: boolean },
@@ -260,7 +241,6 @@ export async function generatePageStub(
   return generateSync(ctx);
 }
 
-/** Synchronous variant for the dev preview surface (no delay). */
 export function generateSync(ctx: GenerationContext): GenerationResult {
   const generationId = `gen-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
   const seed = designSeed(ctx);
@@ -305,7 +285,7 @@ export function generateSync(ctx: GenerationContext): GenerationResult {
   return { generationId, page, fallbackLog, droppedSections };
 }
 
-// -- Validation pipeline (§4.4) ---------------------------------------------
+// -- Validation pipeline ----------------------------------------------------
 
 function runValidationPipeline(
   sections: GeneratedSection[],
@@ -338,8 +318,6 @@ function runValidationPipeline(
       droppedSections.push({ generationId, type: s.type, reason: 'invalid-page-type' });
       continue;
     }
-    // Per-field validation: any required field missing/empty → fallback,
-    // strip from populatedFields (no AI tag) and log.
     const example = def.defaultData() as Record<string, unknown>;
     const data = { ...s.data };
     const populated = new Set(s.populatedFields);
@@ -371,7 +349,77 @@ function toSection(g: GeneratedSection): Section {
   };
 }
 
-// -- Section fillers --------------------------------------------------------
+// =============================================================================
+// Brief-aware copy helpers
+// =============================================================================
+
+/** Service entries derived from the captured services list (icon + title +
+ *  description), or [] when the brief carried none. */
+function serviceEntries(
+  ctx: GenerationContext,
+): { icon: string; title: string; description: string }[] {
+  const services = (ctx.business?.services ?? [])
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return services.map((name) => ({
+    icon: iconForService(name),
+    title: name,
+    description: `Professional ${name.toLowerCase()} — done right the first time, by licensed local pros.`,
+  }));
+}
+
+const SERVICE_ICON_RULES: readonly [RegExp, string][] = [
+  [/plumb|drain|pipe|leak|tap|hot ?water/, 'droplet'],
+  [/electr|wir|power|light|switchboard|ev charg/, 'zap'],
+  [/heat|hvac|air ?con|cool|furnace|ducted/, 'snowflake'],
+  [/fan|ventil/, 'fan'],
+  [/clean|wash|tidy/, 'spray-can'],
+  [/paint|render/, 'paint-roller'],
+  [/roof|gutter/, 'house'],
+  [/garden|landscap|lawn|tree|mow|hedge/, 'leaf'],
+  [/lock|security|key|alarm/, 'lock'],
+  [/build|construct|renov|carpentr|extension|deck/, 'hammer'],
+  [/inspect|safety|test|compliance|report/, 'shield-check'],
+  [/repair|fix|maintain|service|tune/, 'wrench'],
+  [/install|fit|upgrade/, 'drill'],
+  [/emergency|24|urgent|same.?day/, 'clock'],
+  [/move|removal|transport|deliver/, 'truck'],
+  [/quote|estimate|consult/, 'message'],
+];
+
+function iconForService(name: string): string {
+  const n = name.toLowerCase();
+  for (const [re, icon] of SERVICE_ICON_RULES) {
+    if (re.test(n)) return icon;
+  }
+  return 'check';
+}
+
+/** A short value-prop headline built from the brief. */
+function valueHeadline(ctx: GenerationContext, voice: VoiceVariant): string {
+  const industry = ctx.brand.industryCategory || 'Local service';
+  const area = ctx.business?.serviceArea;
+  switch (voice) {
+    case 'cold-ad-urgent':
+      return `${capitalize(industry)} — sorted, same day.`;
+    case 'existing-calm':
+      return ctx.business?.name
+        ? `Welcome back to ${ctx.business.name}.`
+        : 'Welcome back.';
+    case 'search-plain':
+      return area
+        ? `${capitalize(industry)} in ${area}, done properly.`
+        : `${capitalize(industry)} you can rely on.`;
+  }
+}
+
+function capitalize(s: string): string {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+// =============================================================================
+// Section fillers
+// =============================================================================
 
 function populateSection(
   type: SectionType,
@@ -410,21 +458,14 @@ function fillHero(
   voice: VoiceVariant,
   d: SectionDesign,
 ): GeneratedSection {
-  const businessNoun = nounFor(ctx);
   const layout = d.pick('layout', ['split', 'overlay'] as const);
-  const headline = pick(voice, {
-    'cold-ad-urgent': `${businessNoun} — sorted same day.`,
-    'existing-calm': `Welcome back. Here for whatever you need.`,
-    'search-plain': `${businessNoun} you can actually rely on.`,
-  });
-  const sub = pick(voice, {
-    'cold-ad-urgent':
-      'Local, licensed, on call. Fixed callout, written quote before we start, guaranteed work.',
-    'existing-calm':
-      'Same crew, same quality, same fair pricing. Book in below.',
-    'search-plain':
-      "Read what we do, see our pricing, and book when you're ready.",
-  });
+  const headline = valueHeadline(ctx, voice);
+  const offer = ctx.business?.offer?.trim();
+  const sub =
+    offer ||
+    ctx.brand.audienceLine ||
+    'Local, licensed and on call — fixed callout, written quote before we start.';
+  const phone = ctx.business?.phone?.trim();
   const wantsForm =
     (ctx.primaryIntent.kind === 'quote' || ctx.primaryIntent.kind === 'book') &&
     d.chance('form', 38);
@@ -439,14 +480,14 @@ function fillHero(
       imageSide: d.pick('side', ['left', 'right'] as const),
       headlineSize: d.pick('size', ['l', 'xl'] as const),
       formMode: wantsForm ? 'lead' : 'none',
-      eyebrow: ctx.brand.industryCategory.toUpperCase(),
+      eyebrow: (ctx.brand.industryCategory || 'Local service').toUpperCase(),
       headline,
       headlineAccent: '',
       sub,
       ctaPrimaryLabel: intentCtaLabel(ctx.primaryIntent),
       ctaPrimaryHref: intentHref(ctx.primaryIntent),
-      ctaSecondaryLabel: 'Call now',
-      ctaSecondaryHref: 'tel:0400000000',
+      ctaSecondaryLabel: phone ? `Call ${phone}` : 'Call now',
+      ctaSecondaryHref: phone ? `tel:${phone.replace(/[^0-9+]/g, '')}` : 'tel:0400000000',
     },
     populatedFields: [
       'eyebrow',
@@ -465,48 +506,37 @@ function fillOffer(
   voice: VoiceVariant,
   d: SectionDesign,
 ): GeneratedSection {
-  const asStack = d.chance('mode', 45);
+  // Generated offers run as a value stack — no invented price.
+  const services = serviceEntries(ctx);
+  const items =
+    services.length > 0
+      ? services.map((s) => ({ id: `val-${rid()}`, ...s }))
+      : offerSection.defaultData().items;
   const title = pick(voice, {
-    'cold-ad-urgent': asStack ? 'Everything we do — built to get you results.' : 'First callout — fixed price, no surprises.',
-    'existing-calm': asStack ? 'The complete service, end to end.' : 'The standard — what most jobs cost.',
-    'search-plain': asStack ? 'What is included, in plain terms.' : "What you'll pay for a typical job.",
+    'cold-ad-urgent': 'Everything you get — no surprises.',
+    'existing-calm': 'The complete service, end to end.',
+    'search-plain': 'What is included.',
   });
-  const inclusions = [
-    'Licensed tradesperson on-site',
-    'Diagnosis + written quote before work starts',
-    '12-month workmanship guarantee',
-    'No callout surcharge after hours',
-  ].map((text) => ({ id: `inc-${rid()}`, text }));
   return {
     type: 'offer',
     enabled: true,
     data: {
       ...offerSection.defaultData(),
       theme: d.theme,
-      layout: asStack ? 'stack' : 'card',
+      layout: 'stack',
       stackStyle: d.pick('stackStyle', ['grid', 'list'] as const),
       columns: d.pick('cols', [2, 3] as const),
       showNumbers: d.chance('numbers', 55),
       headerAlign: 'center',
-      tag: 'OFFER',
+      tag: 'WHAT YOU GET',
       title,
-      priceLabel: '$99',
-      priceCaption: 'Fixed callout',
-      inclusions,
-      scarcityCopy: 'Same-day slots fill by mid-morning.',
+      titleAccent: '',
+      sub: ctx.business?.offer?.trim() || offerSection.defaultData().sub,
+      items,
       ctaLabel: intentCtaLabel(ctx.primaryIntent),
       ctaHref: intentHref(ctx.primaryIntent),
     },
-    populatedFields: [
-      'tag',
-      'title',
-      'priceLabel',
-      'priceCaption',
-      'inclusions',
-      'scarcityCopy',
-      'ctaLabel',
-      'ctaHref',
-    ],
+    populatedFields: ['tag', 'title', 'sub', 'items', 'ctaLabel', 'ctaHref'],
   };
 }
 
@@ -516,6 +546,7 @@ function fillTrust(
   d: SectionDesign,
 ): GeneratedSection {
   const base = trustSection.defaultData();
+  const area = ctx.business?.serviceArea;
   return {
     type: 'trust',
     enabled: true,
@@ -525,10 +556,10 @@ function fillTrust(
       display: d.pick('display', ['stats', 'logos'] as const),
       headerAlign: 'center',
       showDividers: d.chance('dividers', 70),
-      headline:
-        ctx.audience === 'cold-ad'
-          ? 'Trusted by hundreds of local customers.'
-          : base.headline,
+      headline: area
+        ? `Trusted across ${area}.`
+        : 'Local service, proven results.',
+      sub: ctx.brand.audienceLine || base.sub,
     },
     populatedFields: ['eyebrow', 'headline', 'sub', 'items'],
   };
@@ -540,6 +571,19 @@ function fillFeatures(
   d: SectionDesign,
 ): GeneratedSection {
   const base = featuresSection.defaultData();
+  const services = serviceEntries(ctx);
+  const items =
+    services.length > 0
+      ? services.map((s) => ({
+          id: `feat-${rid()}`,
+          icon: s.icon,
+          imageUrl: '',
+          title: s.title,
+          description: s.description,
+          linkLabel: 'Learn more',
+          linkHref: '#',
+        }))
+      : base.items;
   const headline = pick(voice, {
     'cold-ad-urgent': 'Everything we do, done right.',
     'existing-calm': 'The services you already trust us with.',
@@ -560,6 +604,7 @@ function fillFeatures(
       eyebrow: 'WHAT WE DO',
       headline,
       sub: ctx.brand.audienceLine || base.sub,
+      items,
     },
     populatedFields: ['eyebrow', 'headline', 'sub', 'items'],
   };
@@ -581,6 +626,7 @@ function fillGallery(
       columns: d.pick('cols', [3, 4] as const),
       aspect: d.pick('aspect', ['landscape', 'square', 'portrait'] as const),
       headerAlign: d.pick('align', ['left', 'center'] as const),
+      headline: 'Our recent work',
     },
     populatedFields: ['eyebrow', 'headline', 'sub'],
   };
@@ -592,11 +638,18 @@ function fillAbout(
   d: SectionDesign,
 ): GeneratedSection {
   const base = aboutSection.defaultData();
+  const name = ctx.business?.name;
+  const area = ctx.business?.serviceArea;
   const headline = pick(voice, {
     'cold-ad-urgent': 'Local experts. Real results.',
-    'existing-calm': 'The team you already know.',
-    'search-plain': 'About us',
+    'existing-calm': name ? `The team behind ${name}.` : 'The team you know.',
+    'search-plain': name ? `About ${name}` : 'About us',
   });
+  const sub =
+    ctx.business?.offer?.trim() ||
+    (area
+      ? `A locally owned business serving ${area} — built on honest pricing and work that lasts.`
+      : base.sub);
   return {
     type: 'about',
     enabled: true,
@@ -609,18 +662,27 @@ function fillAbout(
       eyebrow: 'WHY CHOOSE US',
       headline,
       headlineAccent: '',
-      sub: ctx.brand.audienceLine || base.sub,
+      sub,
     },
     populatedFields: ['eyebrow', 'headline', 'sub'],
   };
 }
 
 function fillContact(
-  _ctx: GenerationContext,
+  ctx: GenerationContext,
   _voice: VoiceVariant,
   d: SectionDesign,
 ): GeneratedSection {
   const base = contactSection.defaultData();
+  const b = ctx.business;
+  const items = b
+    ? [
+        { id: `con-${rid()}`, icon: 'phone', label: 'Phone', value: b.phone || '—', sub: 'Call us anytime' },
+        { id: `con-${rid()}`, icon: 'mail', label: 'Email', value: b.email || '—', sub: 'We reply within 24 hours' },
+        { id: `con-${rid()}`, icon: 'map-pin', label: 'Service area', value: b.serviceArea || '—', sub: 'Where we work' },
+        { id: `con-${rid()}`, icon: 'clock', label: 'Hours', value: 'Mon–Sat', sub: 'After-hours by arrangement' },
+      ]
+    : base.items;
   return {
     type: 'contact',
     enabled: true,
@@ -629,25 +691,26 @@ function fillContact(
       theme: d.theme,
       layout: d.pick('layout', ['details', 'cards', 'map', 'stacked'] as const),
       headerAlign: d.pick('align', ['left', 'center'] as const),
+      headline: b?.name ? `Get in touch with ${b.name}.` : base.headline,
+      items,
     },
-    populatedFields: ['eyebrow', 'headline', 'sub'],
+    populatedFields: ['eyebrow', 'headline', 'sub', 'items'],
   };
 }
 
 function fillReviews(
-  _ctx: GenerationContext,
+  ctx: GenerationContext,
   _voice: VoiceVariant,
   d: SectionDesign,
 ): GeneratedSection {
   const base = reviewsSection.defaultData();
-  const layout = d.pick('layout', ['grid', 'spotlight'] as const);
   return {
     type: 'reviews',
     enabled: true,
     data: {
       ...base,
       theme: d.theme,
-      layout,
+      layout: d.pick('layout', ['grid', 'spotlight'] as const),
       columns: 3,
       headerAlign: 'center',
       nav: d.pick('nav', ['none', 'dots'] as const),
@@ -655,7 +718,7 @@ function fillReviews(
       items: [
         {
           id: `rev-${rid()}`,
-          quote: 'Out in 40 min, fixed and gone in another 30. Honest pricing.',
+          quote: 'Fast, professional and fairly priced. The quote was the final invoice.',
           authorName: 'Sarah K.',
           authorRole: 'Homeowner',
           avatarUrl: '',
@@ -663,7 +726,7 @@ function fillReviews(
         },
         {
           id: `rev-${rid()}`,
-          quote: 'Quote was the final invoice — no surprises. Rare these days.',
+          quote: 'Showed up on time, explained everything, cleaned up after. Highly recommend.',
           authorName: 'Mark R.',
           authorRole: 'Homeowner',
           avatarUrl: '',
@@ -671,7 +734,7 @@ function fillReviews(
         },
         {
           id: `rev-${rid()}`,
-          quote: 'Booked on a Saturday night, came Sunday morning. Lifesavers.',
+          quote: 'Booked on short notice and they sorted it the same day. Lifesavers.',
           authorName: 'Jules T.',
           authorRole: 'Business owner',
           avatarUrl: '',
@@ -688,6 +751,8 @@ function fillFaq(
   _voice: VoiceVariant,
   d: SectionDesign,
 ): GeneratedSection {
+  const area = ctx.business?.serviceArea || 'the local area';
+  const industry = ctx.brand.industryCategory || 'work';
   return {
     type: 'faq',
     enabled: true,
@@ -701,19 +766,25 @@ function fillFaq(
       items: [
         {
           id: `faq-${rid()}`,
-          question: 'How fast can you come out?',
-          answer: 'Usually within the hour during business hours. Same day for after-hours.',
+          question: 'What areas do you cover?',
+          answer: `We service ${area} and the surrounding suburbs. Not sure if you're covered? Give us a call.`,
         },
         {
           id: `faq-${rid()}`,
-          question: "What's the callout fee?",
+          question: 'How do I get a quote?',
           answer:
-            "$99 fixed — that's diagnosis + a written quote. No surprises before we start work.",
+            'Send a message or call us — we’ll give you a clear, written quote, usually the same day.',
         },
         {
           id: `faq-${rid()}`,
           question: 'Are you licensed and insured?',
-          answer: `Yes — fully licensed and insured. ${ctx.brand.industryCategory} only.`,
+          answer: `Yes — fully licensed and insured for all ${industry}. Your property is in safe hands.`,
+        },
+        {
+          id: `faq-${rid()}`,
+          question: 'Do you guarantee your work?',
+          answer:
+            'Every job is backed by our workmanship guarantee — if something isn’t right, we make it right.',
         },
       ],
     },
@@ -726,14 +797,14 @@ function fillCta(
   voice: VoiceVariant,
   d: SectionDesign,
 ): GeneratedSection {
+  const name = ctx.business?.name;
   const headline = pick(voice, {
-    'cold-ad-urgent': `${nounFor(ctx)} at your door this hour.`,
-    'existing-calm': 'Book the next one when it suits you.',
-    'search-plain': "When you're ready, book in below.",
+    'cold-ad-urgent': 'Book today — slots fill fast.',
+    'existing-calm': name ? `Ready when you are.` : 'Book the next one when it suits you.',
+    'search-plain': "When you're ready, get in touch.",
   });
-  // The split / background layouts need an image to look complete; a fresh
-  // generation has none, so stick to the self-contained layouts.
   const layout = d.pick('layout', ['centered', 'dual'] as const);
+  const phone = ctx.business?.phone?.trim();
   return {
     type: 'cta',
     enabled: true,
@@ -745,12 +816,72 @@ function fillCta(
       showSignals: layout !== 'dual' && d.chance('signals', 65),
       eyebrow: 'READY?',
       headline,
-      sub: 'One call, fixed callout, written quote on arrival.',
+      sub:
+        ctx.business?.offer?.trim() ||
+        'One call, a fixed quote, and work that’s guaranteed.',
       primaryLabel: intentCtaLabel(ctx.primaryIntent),
       primaryHref: intentHref(ctx.primaryIntent),
+      secondaryLabel: phone ? `Call ${phone}` : 'Contact us',
+      secondaryHref: phone ? `tel:${phone.replace(/[^0-9+]/g, '')}` : '/contact',
     },
-    populatedFields: ['eyebrow', 'headline', 'sub', 'primaryLabel', 'primaryHref'],
+    populatedFields: [
+      'eyebrow',
+      'headline',
+      'sub',
+      'primaryLabel',
+      'primaryHref',
+      'secondaryLabel',
+      'secondaryHref',
+    ],
   };
+}
+
+// =============================================================================
+// Header / footer fillers — website-level singletons, used by the site
+// generator (not part of a page recipe).
+// =============================================================================
+
+function genSection(type: SectionType, data: Record<string, unknown>): Section {
+  return {
+    id: `sec-${Math.random().toString(36).slice(2, 9)}`,
+    type,
+    enabled: true,
+    data,
+    ai: { draftedFields: Object.keys(data), lastRegenAt: nowIso() },
+  };
+}
+
+export function fillHeaderSection(ctx: GenerationContext): Section {
+  const b = ctx.business;
+  return genSection('header', {
+    ...headerSection.defaultData(),
+    layout: 'logo-left',
+    logoText: b?.name || 'Your Business',
+    logoTagline: capitalize(ctx.brand.industryCategory || ''),
+    logoImageUrl: ctx.brand.logoUrl ?? '',
+    showCta: true,
+    ctaLabel: intentCtaLabel(ctx.primaryIntent),
+    ctaHref: intentHref(ctx.primaryIntent),
+    ctaStyle: 'solid',
+  });
+}
+
+export function fillFooterSection(ctx: GenerationContext): Section {
+  const b = ctx.business;
+  const year = new Date().getFullYear();
+  return genSection('footer', {
+    ...footerSection.defaultData(),
+    logoText: b?.name || 'Your Business',
+    logoImageUrl: ctx.brand.logoUrl ?? '',
+    brandLine: ctx.brand.audienceLine || `Trusted ${ctx.brand.industryCategory}.`,
+    showContact: true,
+    contactHeading: 'Contact us',
+    contactAddress: b?.serviceArea || '',
+    contactPhone: b?.phone || '',
+    contactEmail: b?.email || '',
+    rightBlock: 'newsletter',
+    legalText: `© ${year} ${b?.name || 'Your Business'}. All rights reserved.`,
+  });
 }
 
 // -- Per-section copy helpers -----------------------------------------------
@@ -787,10 +918,6 @@ function intentHref(intent: PrimaryIntent): string {
     case 'other':
       return '/contact';
   }
-}
-
-function nounFor(ctx: GenerationContext): string {
-  return ctx.brand.industryCategory || 'Local trade';
 }
 
 function pick<T extends string>(voice: VoiceVariant, map: Record<VoiceVariant, T>): T {
@@ -839,8 +966,9 @@ function inferSlug(title: string): string {
 }
 
 function defaultSeo(title: string, ctx: GenerationContext): PageSEO {
+  const name = ctx.business?.name || ctx.brand.industryCategory;
   return {
-    title: `${title} — ${ctx.brand.industryCategory}`,
+    title: `${title} — ${name}`,
     description: ctx.brand.audienceLine,
   };
 }

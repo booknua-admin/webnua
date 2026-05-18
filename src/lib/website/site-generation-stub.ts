@@ -11,15 +11,24 @@
 // SiteGenerationResult contract stays identical.
 // =============================================================================
 
-import type { Audience, GenerationContext, PrimaryIntent } from './generation-context';
-import { generateSync, randomDelayMs } from './generation-stub';
-import type { BrandObject, Page, PageType } from './types';
+import type {
+  Audience,
+  BusinessDetails,
+  GenerationContext,
+  PrimaryIntent,
+} from './generation-context';
+import {
+  fillFooterSection,
+  fillHeaderSection,
+  generateSync,
+  randomDelayMs,
+} from './generation-stub';
+import type { BrandObject, Page, PageType, Section } from './types';
 
 /** The brief captured by the create-client modal. */
 export type ClientBrief = {
-  businessName: string;
+  business: BusinessDetails;
   industry: string;
-  serviceArea: string;
   brand: BrandObject;
   primaryIntent: PrimaryIntent;
   audience: Audience;
@@ -28,6 +37,8 @@ export type ClientBrief = {
 export type SiteGenerationResult = {
   generationId: string;
   pages: Page[];
+  header: Section;
+  footer: Section;
 };
 
 /** The page set a generated site ships with. */
@@ -39,10 +50,11 @@ function briefToContext(brief: ClientBrief, pageType: PageType): GenerationConte
     pageType,
     primaryIntent: brief.primaryIntent,
     audience: brief.audience,
-    specifics: null,
+    specifics: brief.business.offer || null,
     avoid: null,
     brand: brief.brand,
     existingPages: [],
+    business: brief.business,
   };
 }
 
@@ -54,7 +66,13 @@ export function generateSiteSync(brief: ClientBrief): SiteGenerationResult {
   const pages = SITE_PAGE_TYPES.map(
     (pageType) => generateSync(briefToContext(brief, pageType)).page,
   );
-  return { generationId, pages };
+  const chrome = briefToContext(brief, 'home');
+  return {
+    generationId,
+    pages,
+    header: fillHeaderSection(chrome),
+    footer: fillFooterSection(chrome),
+  };
 }
 
 /** The stub site generator. Async (synthetic delay) so the call site can

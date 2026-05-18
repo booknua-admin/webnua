@@ -82,16 +82,32 @@ function ResultBody() {
               </div>
             ) : null}
 
-            {activeView === 'website' && client.pages
-              ? client.pages.map((page) => (
+            {activeView === 'website' && client.pages ? (
+              <>
+                {client.header ? (
+                  <ArtifactBlock
+                    label="Header"
+                    sections={[client.header]}
+                    brand={client.brand}
+                  />
+                ) : null}
+                {client.pages.map((page) => (
                   <ArtifactBlock
                     key={page.id}
                     label={`Page · ${page.title}`}
                     sections={page.sections}
                     brand={client.brand}
                   />
-                ))
-              : null}
+                ))}
+                {client.footer ? (
+                  <ArtifactBlock
+                    label="Footer"
+                    sections={[client.footer]}
+                    brand={client.brand}
+                  />
+                ) : null}
+              </>
+            ) : null}
 
             {activeView === 'funnel' && client.funnelSteps
               ? client.funnelSteps.map((stepEntry) => (
