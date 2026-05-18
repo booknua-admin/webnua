@@ -1,67 +1,155 @@
 'use client';
 
-import { BuilderFormRow, BuilderFormSection } from '@/components/shared/builder/BuilderField';
+import {
+  BuilderFormRow,
+  BuilderFormSection,
+} from '@/components/shared/builder/BuilderField';
 
+import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import { getSectionIcon } from '../section-icons';
+import {
+  brandThemeDefaults,
+  resolveTheme,
+  type SectionTheme,
+} from '../section-theme';
 import { CopyField } from './_shared/CopyField';
+import { IconField } from './_shared/IconField';
+import { SectionShell } from './_shared/SectionShell';
+import { SelectableElement } from './_shared/SelectableElement';
+import { ColorField, ThemePresetField } from './_shared/ThemeField';
+import { ToggleField } from './_shared/ToggleField';
 
 // =============================================================================
-// Thanks confirmation section — funnel-only. Confirms a booking + optional
-// referral CTA. Renders only on funnel thanks-step pages.
+// Thanks / confirmation section — funnel-only. A success icon, confirmation
+// copy, and an optional referral block. Element-inspector model + brand-
+// default colour inheritance, the hero pattern.
 // =============================================================================
+
+type ThanksElement = 'icon' | 'headline' | 'body' | 'referral';
 
 export type ThanksConfirmationData = {
+  /** Per-section colour overrides — absent fields inherit the brand default. */
+  theme: SectionTheme;
+  icon: string;
   title: string;
   body: string;
   detailLine: string;
+  showReferral: boolean;
+  referralTag: string;
   referralTitle: string;
   referralBody: string;
   referralCtaLabel: string;
   referralCtaHref: string;
 };
 
+const THANKS_HARDCODED_THEME: SectionTheme = {
+  background: '#f6f7f9',
+  heading: '#0f1115',
+  body: '#5b6270',
+};
+
 const DEFAULTS: ThanksConfirmationData = {
+  theme: {},
+  icon: 'check',
   title: "You're booked.",
   body: "We'll SMS to confirm within 10 minutes.",
-  detailLine: 'Look for a text from a Perth number — that\'s us.',
-  referralTitle: 'Know someone who needs a sparkie?',
-  referralBody: 'Refer a friend — they get $25 off their first callout, you get $25 credit on your next.',
+  detailLine: "Look for a text from a local number — that's us.",
+  showReferral: true,
+  referralTag: 'REFER + EARN',
+  referralTitle: 'Know someone who needs us?',
+  referralBody:
+    'Refer a friend — they get $25 off their first job, you get $25 credit on your next.',
   referralCtaLabel: 'Send a referral',
   referralCtaHref: '/refer',
 };
 
 function defaultData(): ThanksConfirmationData {
-  return { ...DEFAULTS };
+  return { ...DEFAULTS, theme: {} };
+}
+
+function withDefaults(data: ThanksConfirmationData): ThanksConfirmationData {
+  return { ...DEFAULTS, ...data };
+}
+
+function omitThemeKey(theme: SectionTheme, key: keyof SectionTheme): SectionTheme {
+  const next = { ...theme };
+  delete next[key];
+  return next;
 }
 
 const TITLE_ALTS = [
-  "You're booked.",
+  DEFAULTS.title,
   'Booking confirmed.',
-  'Sorted. We\'ll see you soon.',
+  "Sorted — we'll see you soon.",
 ] as const;
+
+// -- Fields -----------------------------------------------------------------
 
 function ThanksConfirmationFields({
   data,
   onChange,
+  selectedElement,
+  clientId,
+  brand,
 }: SectionFieldsProps<ThanksConfirmationData>) {
+  const d = withDefaults(data);
   const set = <K extends keyof ThanksConfirmationData>(
     key: K,
     value: ThanksConfirmationData[K],
-  ) => onChange({ ...data, [key]: value });
+  ) => onChange({ ...d, [key]: value });
 
-  return (
-    <>
+  const resolved = resolveTheme(
+    d.theme,
+    brandThemeDefaults(brand),
+    THANKS_HARDCODED_THEME,
+  );
+
+  const setColor = (key: keyof SectionTheme, value: string) =>
+    set('theme', { ...d.theme, [key]: value });
+  const clearColor = (key: keyof SectionTheme) =>
+    set('theme', omitThemeKey(d.theme, key));
+  const applyHeading = (color: string) => {
+    if (clientId) setBrandStyleValue(clientId, 'headingColor', color);
+    set('theme', omitThemeKey(d.theme, 'heading'));
+  };
+
+  if (selectedElement === 'icon') {
+    return (
+      <BuilderFormSection>
+        <IconField label="Success icon" value={d.icon} onChange={(v) => set('icon', v)} />
+      </BuilderFormSection>
+    );
+  }
+
+  if (selectedElement === 'headline') {
+    return (
       <BuilderFormSection>
         <CopyField
           label="Title"
-          value={data.title}
+          value={d.title}
           originalValue={DEFAULTS.title}
           alternatives={TITLE_ALTS}
           onChange={(v) => set('title', v)}
         />
+        <ColorField
+          label="Heading colour"
+          value={resolved.heading}
+          inherited={d.theme.heading === undefined}
+          onChange={(v) => setColor('heading', v)}
+          onReset={() => clearColor('heading')}
+          applyToAll={{ scopeLabel: 'headings', onApply: applyHeading }}
+        />
+      </BuilderFormSection>
+    );
+  }
+
+  if (selectedElement === 'body') {
+    return (
+      <BuilderFormSection>
         <CopyField
           label="Body"
-          value={data.body}
+          value={d.body}
           originalValue={DEFAULTS.body}
           onChange={(v) => set('body', v)}
           multiline
@@ -69,23 +157,38 @@ function ThanksConfirmationFields({
         />
         <CopyField
           label="Detail line"
-          value={data.detailLine}
+          value={d.detailLine}
           originalValue={DEFAULTS.detailLine}
           onChange={(v) => set('detailLine', v)}
-          helper="Smaller paragraph shown under the body."
+          helper={<>Smaller line beneath the body.</>}
         />
       </BuilderFormSection>
+    );
+  }
+
+  if (selectedElement === 'referral') {
+    return (
       <BuilderFormSection>
-        <CopyField
-          label="Referral title"
-          value={data.referralTitle}
-          originalValue={DEFAULTS.referralTitle}
-          onChange={(v) => set('referralTitle', v)}
-          helper="Leave blank to hide the referral block."
+        <ToggleField
+          label="Show referral block"
+          value={d.showReferral}
+          onChange={(v) => set('showReferral', v)}
         />
         <CopyField
-          label="Referral body"
-          value={data.referralBody}
+          label="Tag"
+          value={d.referralTag}
+          originalValue={DEFAULTS.referralTag}
+          onChange={(v) => set('referralTag', v)}
+        />
+        <CopyField
+          label="Title"
+          value={d.referralTitle}
+          originalValue={DEFAULTS.referralTitle}
+          onChange={(v) => set('referralTitle', v)}
+        />
+        <CopyField
+          label="Body"
+          value={d.referralBody}
           originalValue={DEFAULTS.referralBody}
           onChange={(v) => set('referralBody', v)}
           multiline
@@ -93,88 +196,169 @@ function ThanksConfirmationFields({
         />
         <BuilderFormRow>
           <CopyField
-            label="Referral · label"
-            value={data.referralCtaLabel}
+            label="Button label"
+            value={d.referralCtaLabel}
             originalValue={DEFAULTS.referralCtaLabel}
             onChange={(v) => set('referralCtaLabel', v)}
           />
           <CopyField
-            label="Referral · href"
-            value={data.referralCtaHref}
+            label="Button link"
+            value={d.referralCtaHref}
             originalValue={DEFAULTS.referralCtaHref}
             onChange={(v) => set('referralCtaHref', v)}
           />
         </BuilderFormRow>
       </BuilderFormSection>
+    );
+  }
+
+  // -- section-level settings --
+  return (
+    <>
+      <BuilderFormSection>
+        <ThemePresetField value={d.theme} onChange={(v) => set('theme', v)} />
+        <ColorField
+          label="Background"
+          value={resolved.background}
+          inherited={d.theme.background === undefined}
+          onChange={(v) => setColor('background', v)}
+          onReset={() => clearColor('background')}
+        />
+      </BuilderFormSection>
+      <BuilderFormSection>
+        <ToggleField
+          label="Referral block"
+          value={d.showReferral}
+          onChange={(v) => set('showReferral', v)}
+        />
+      </BuilderFormSection>
     </>
   );
 }
 
+// -- Preview ----------------------------------------------------------------
+
 function ThanksConfirmationPreview({
   data,
   brand,
+  selectedElement,
+  onSelectElement,
 }: SectionPreviewProps<ThanksConfirmationData>) {
+  const d = withDefaults(data);
+  const resolved = resolveTheme(
+    d.theme,
+    brandThemeDefaults(brand),
+    THANKS_HARDCODED_THEME,
+  );
+
   return (
-    <section
-      data-section-type="thanksConfirmation"
-      className="rounded-xl border border-rule bg-paper px-7 py-9 md:px-9"
-    >
-      <div className="mb-7 text-center">
-        <div
-          aria-hidden
-          className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full text-[24px] font-extrabold text-paper"
-          style={{ backgroundColor: brand.accentColor }}
-        >
-          ✓
-        </div>
-        <h3 className="mb-2 text-[28px] font-extrabold leading-[1.1] tracking-[-0.02em] text-ink">
-          {data.title}
-        </h3>
-        {data.body ? (
-          <p className="mx-auto max-w-[480px] text-[14px] leading-[1.55] text-ink-mid">
-            {data.body}
-          </p>
-        ) : null}
-        {data.detailLine ? (
-          <p className="mx-auto mt-2 max-w-[480px] font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
-            {data.detailLine}
-          </p>
-        ) : null}
-      </div>
-      {data.referralTitle ? (
-        <div className="rounded-lg border border-rule bg-card px-5 py-5 text-center">
-          <p
-            className="mb-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em]"
-            style={{ color: brand.accentColor }}
-          >
-            // REFER + EARN
-          </p>
-          <p className="mb-1 text-[16px] font-bold text-ink">
-            {data.referralTitle}
-          </p>
-          {data.referralBody ? (
-            <p className="mx-auto mb-3 max-w-[420px] text-[13px] leading-[1.5] text-ink-mid">
-              {data.referralBody}
-            </p>
-          ) : null}
-          {data.referralCtaLabel ? (
-            <span
-              className="inline-flex items-center rounded-[7px] px-4 py-2 text-[12px] font-bold text-paper"
-              style={{ backgroundColor: brand.accentColor }}
-            >
-              {data.referralCtaLabel}
-            </span>
-          ) : null}
-        </div>
-      ) : null}
-    </section>
+    <SectionShell theme={resolved} brand={brand} pad="roomy">
+      {({ theme, headingFont, accent }) => {
+        const sel = (id: ThanksElement) => ({
+          id,
+          selected: selectedElement === id,
+          onSelect: onSelectElement,
+        });
+        const def = getSectionIcon(d.icon);
+        const Icon = def?.Icon;
+
+        return (
+          <div className="mx-auto flex w-full max-w-[620px] flex-col items-center text-center">
+            {Icon ? (
+              <SelectableElement {...sel('icon')} display="inline-block">
+                <span
+                  className="flex h-16 w-16 items-center justify-center rounded-full"
+                  style={{ backgroundColor: accent }}
+                >
+                  <Icon size={30} strokeWidth={2.4} color="#ffffff" aria-hidden />
+                </span>
+              </SelectableElement>
+            ) : null}
+            <SelectableElement {...sel('headline')} className="mt-6">
+              <h2
+                className="text-[32px] font-bold leading-[1.1] tracking-[-0.02em] @2xl:text-[40px]"
+                style={{ fontFamily: headingFont, color: theme.heading }}
+              >
+                {d.title}
+              </h2>
+            </SelectableElement>
+            {d.body || d.detailLine ? (
+              <SelectableElement {...sel('body')} className="mt-3">
+                {d.body ? (
+                  <p
+                    className="whitespace-pre-line text-[15px] leading-[1.6]"
+                    style={{ color: theme.body }}
+                  >
+                    {d.body}
+                  </p>
+                ) : null}
+                {d.detailLine ? (
+                  <p
+                    className="mt-2 text-[12px] font-semibold uppercase tracking-[0.14em]"
+                    style={{ color: theme.muted }}
+                  >
+                    {d.detailLine}
+                  </p>
+                ) : null}
+              </SelectableElement>
+            ) : null}
+
+            {d.showReferral ? (
+              <SelectableElement {...sel('referral')} className="mt-8 w-full">
+                <div
+                  className="rounded-2xl px-6 py-6 text-center"
+                  style={{
+                    backgroundColor: theme.card,
+                    border: `1px solid ${theme.cardBorder}`,
+                  }}
+                >
+                  {d.referralTag ? (
+                    <p
+                      className="text-[11px] font-bold uppercase tracking-[0.16em]"
+                      style={{ color: accent }}
+                    >
+                      {d.referralTag}
+                    </p>
+                  ) : null}
+                  {d.referralTitle ? (
+                    <p
+                      className="mt-1.5 text-[17px] font-bold"
+                      style={{ fontFamily: headingFont, color: theme.heading }}
+                    >
+                      {d.referralTitle}
+                    </p>
+                  ) : null}
+                  {d.referralBody ? (
+                    <p
+                      className="mx-auto mt-1.5 max-w-[420px] text-[13.5px] leading-[1.55]"
+                      style={{ color: theme.body }}
+                    >
+                      {d.referralBody}
+                    </p>
+                  ) : null}
+                  {d.referralCtaLabel ? (
+                    <span
+                      className="mt-4 inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-[13.5px] font-semibold"
+                      style={{ backgroundColor: accent, color: '#ffffff' }}
+                    >
+                      {d.referralCtaLabel}
+                      <span aria-hidden>→</span>
+                    </span>
+                  ) : null}
+                </div>
+              </SelectableElement>
+            ) : null}
+          </div>
+        );
+      }}
+    </SectionShell>
   );
 }
 
 export const thanksConfirmationSection = defineSection<ThanksConfirmationData>({
   type: 'thanksConfirmation',
   label: '// THANKS',
-  description: 'Funnel thanks-step confirmation + optional referral block.',
+  description: 'Funnel thanks-step confirmation — success icon, copy, optional referral block.',
   defaultData,
   Fields: ThanksConfirmationFields,
   Preview: ThanksConfirmationPreview,
@@ -183,11 +367,18 @@ export const thanksConfirmationSection = defineSection<ThanksConfirmationData>({
       'title',
       'body',
       'detailLine',
+      'referralTag',
       'referralTitle',
       'referralBody',
       'referralCtaLabel',
       'referralCtaHref',
     ],
+  },
+  elementLabels: {
+    icon: 'Success icon',
+    headline: 'Title',
+    body: 'Body copy',
+    referral: 'Referral block',
   },
   allowedContainers: ['funnelStep'],
   implemented: true,
