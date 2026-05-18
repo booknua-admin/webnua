@@ -2,11 +2,13 @@
 
 import { useState } from 'react';
 
-import { cn } from '@/lib/utils';
+import { useUpdateLeadStatus } from '@/lib/leads/queries';
 import { LEAD_STATUS_LABEL } from '@/lib/leads/types';
 import type { LeadStatus } from '@/lib/leads/types';
+import { cn } from '@/lib/utils';
 
 type LeadStatusSwitcherProps = {
+  leadId: string;
   defaultStatus: LeadStatus;
   className?: string;
   label?: string;
@@ -21,11 +23,23 @@ const STATUSES: LeadStatus[] = [
 ];
 
 function LeadStatusSwitcher({
+  leadId,
   defaultStatus,
   className,
   label = '// STATUS',
 }: LeadStatusSwitcherProps) {
   const [status, setStatus] = useState<LeadStatus>(defaultStatus);
+  const update = useUpdateLeadStatus();
+
+  function handlePick(next: LeadStatus) {
+    if (next === status || update.isPending) return;
+    const previous = status;
+    setStatus(next);
+    update.mutate(
+      { leadId, status: next },
+      { onError: () => setStatus(previous) },
+    );
+  }
 
   return (
     <div
@@ -45,9 +59,10 @@ function LeadStatusSwitcher({
             key={s}
             type="button"
             data-state={isActive ? 'active' : 'inactive'}
-            onClick={() => setStatus(s)}
+            disabled={update.isPending}
+            onClick={() => handlePick(s)}
             className={cn(
-              'inline-flex items-center rounded-full border px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.08em] transition-colors',
+              'inline-flex items-center rounded-full border px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.08em] transition-colors disabled:cursor-not-allowed disabled:opacity-60',
               isActive
                 ? 'border-ink bg-ink text-paper'
                 : 'border-rule bg-card text-ink-quiet hover:border-ink/30 hover:text-ink',

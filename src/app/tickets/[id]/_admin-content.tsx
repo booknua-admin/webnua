@@ -101,6 +101,7 @@ function AdminTicketDetailContent() {
                   ))}
                 </div>
                 <TicketReply
+                  ticketReference={t.id}
                   placeholder={t.reply.placeholder}
                   defaultValue={t.reply.defaultValue}
                   tools={REPLY_TOOLS}

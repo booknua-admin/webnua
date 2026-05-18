@@ -2,8 +2,9 @@
 
 // =============================================================================
 // /bookings/[id]/complete — the job completion flow (client Screen 11).
-// Reached from the booking detail "Mark job complete" action. Confirming is
-// a stub: it logs the completion and routes to the dashboard.
+// Reached from the booking detail "Mark job complete" action. Confirming
+// moves the booking to `completed` and routes to the dashboard. Payment
+// capture + review-request automation arming wire up with their backends.
 // =============================================================================
 
 import Link from 'next/link';
@@ -16,6 +17,8 @@ import { PageHeader } from '@/components/shared/PageHeader';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
 import { voltlineJobCompletion } from '@/lib/bookings/job-completion';
+import { useUpdateBookingStatus } from '@/lib/bookings/queries';
+import { normalizeError } from '@/lib/errors';
 
 export default function JobCompletionPage() {
   const params = useParams();
@@ -25,11 +28,14 @@ export default function JobCompletionPage() {
 
   const c = voltlineJobCompletion;
   const [payment, setPayment] = useState(c.payment.defaultId);
+  const updateStatus = useUpdateBookingStatus();
 
-  const complete = (withReviewRequest: boolean) => {
-    // Stub: real completion + automation arming wires up with the backend.
-    console.log('[stub] job completed', { id, payment, withReviewRequest });
-    router.push('/dashboard');
+  const complete = () => {
+    if (updateStatus.isPending) return;
+    updateStatus.mutate(
+      { bookingId: id, status: 'completed' },
+      { onSuccess: () => router.push('/dashboard') },
+    );
   };
 
   return (
@@ -104,15 +110,26 @@ export default function JobCompletionPage() {
             </p>
           </div>
 
+          {updateStatus.isError ? (
+            <p className="text-right text-[13px] text-warn">
+              {normalizeError(updateStatus.error).message}
+            </p>
+          ) : null}
           <div className="flex items-center justify-end gap-2.5">
             <Button variant="ghost" asChild>
               <Link href={backHref}>← Back to booking</Link>
             </Button>
-            <Button variant="secondary" onClick={() => complete(false)}>
+            <Button
+              variant="secondary"
+              onClick={complete}
+              disabled={updateStatus.isPending}
+            >
               Complete without review request
             </Button>
-            <Button onClick={() => complete(true)}>
-              Confirm complete + send review request →
+            <Button onClick={complete} disabled={updateStatus.isPending}>
+              {updateStatus.isPending
+                ? 'Completing…'
+                : 'Confirm complete + send review request →'}
             </Button>
           </div>
         </div>

@@ -14,7 +14,10 @@ import { RescheduleBookingButton } from '@/components/shared/bookings/Reschedule
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { RailCard } from '@/components/shared/RailCard';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
-import { useClientBookingDetail } from '@/lib/bookings/queries';
+import {
+  useClientBookingDetail,
+  useUpdateBookingStatus,
+} from '@/lib/bookings/queries';
 import { voltlineReschedule } from '@/lib/bookings/reschedule-modal';
 import { normalizeError } from '@/lib/errors';
 
@@ -26,6 +29,7 @@ function ClientBookingDetailContent() {
   const { data: b, isLoading, error } = useClientBookingDetail(id ?? '');
   const [cancelOpen, setCancelOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
+  const cancelBooking = useUpdateBookingStatus();
 
   return (
     <>
@@ -154,7 +158,12 @@ function ClientBookingDetailContent() {
               confirmLabel="Cancel booking"
               cancelLabel="Keep booking"
               tone="destructive"
-              onConfirm={() => router.push('/calendar')}
+              onConfirm={() =>
+                cancelBooking.mutate(
+                  { bookingId: id, status: 'cancelled' },
+                  { onSuccess: () => router.push('/calendar') },
+                )
+              }
             />
             {notesOpen ? (
               <EditJobNotesModal

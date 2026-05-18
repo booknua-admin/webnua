@@ -60,7 +60,7 @@ function ClientLeadDetailContent() {
                     name={lead.name}
                     metaParts={lead.metaParts}
                   />
-                  <LeadStatusSwitcher defaultStatus={lead.status} />
+                  <LeadStatusSwitcher leadId={id} defaultStatus={lead.status} />
                   <LeadTimeline
                     count={lead.timeline.eventCount}
                     events={lead.timeline.events}

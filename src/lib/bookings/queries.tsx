@@ -17,7 +17,7 @@
 
 import type { ReactNode } from 'react';
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { AppError, normalizeError } from '@/lib/errors';
 import { supabase } from '@/lib/supabase/client';
@@ -711,5 +711,34 @@ export function useAdminBookingDetail(id: string) {
     queryFn: () => fetchBookingDetail(id),
     enabled: id.length > 0,
     select: buildAdminBookingDetail,
+  });
+}
+
+// ---- Booking status (write) -------------------------------------------------
+
+type BookingLifecycleStatus = 'completed' | 'cancelled';
+
+/** Move a booking to a terminal lifecycle status (job complete / cancelled). */
+async function updateBookingStatus(input: {
+  bookingId: string;
+  status: BookingLifecycleStatus;
+}): Promise<void> {
+  const { error } = await supabase
+    .from('bookings')
+    .update({ status: input.status })
+    .eq('id', input.bookingId);
+  if (error) throw normalizeError(error);
+}
+
+/** Update a booking's status. On success every bookings query is invalidated
+ *  so the calendar grid + booking detail reflect the change (a cancelled
+ *  booking drops off the grid). */
+export function useUpdateBookingStatus() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateBookingStatus,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['bookings'] });
+    },
   });
 }

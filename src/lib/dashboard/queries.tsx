@@ -27,7 +27,7 @@ import type {
   DashboardStat,
   LiveClient,
   MidSetupClient,
-} from './admin-dashboard';
+} from './admin-dashboard-types';
 import type {
   ClientDashboard,
   DashboardCallout,
