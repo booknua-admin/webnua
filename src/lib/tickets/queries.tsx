@@ -345,7 +345,9 @@ function mapThreadMessage(
     role: roleLabel,
     time,
     avatar: (message.author?.avatar_initial ?? initial(authorName)) || '?',
-    body: <p>{message.body}</p>,
+    // `whitespace-pre-wrap` keeps newlines — request-change tickets carry a
+    // structured "what & where" preamble above the client's free text.
+    body: <p className="whitespace-pre-wrap">{message.body}</p>,
   };
   if (message.is_draft) mapped.draft = true;
   return mapped;

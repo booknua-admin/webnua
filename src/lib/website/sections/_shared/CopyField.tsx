@@ -30,6 +30,8 @@ import { CapabilityGate } from '@/components/shared/CapabilityGate';
 import { useCan } from '@/lib/auth/user-stub';
 import { cn } from '@/lib/utils';
 
+import { useSectionFieldContext } from './field-context';
+
 export type CopyFieldProps = {
   label: ReactNode;
   value: string;
@@ -59,6 +61,7 @@ export function CopyField({
   capability = 'editCopy',
 }: CopyFieldProps) {
   const canUseAI = useCan('useAI');
+  const { sectionLabel } = useSectionFieldContext();
   const [variantIndex, setVariantIndex] = useState(0);
 
   const hasAlternatives = !!alternatives && alternatives.length > 0;
@@ -95,7 +98,16 @@ export function CopyField({
 
   return (
     <BuilderField label={label} hint={hint} helper={helper}>
-      <CapabilityGate capability={capability} mode="request">
+      <CapabilityGate
+        capability={capability}
+        mode="request"
+        requestContext={{
+          sectionLabel: sectionLabel ?? undefined,
+          fieldLabel: typeof label === 'string' ? label : undefined,
+          currentValue: value || undefined,
+        }}
+      >
+
         {multiline ? (
           <BuilderTextarea
             value={value}

@@ -16,6 +16,8 @@ import {
 } from '@/components/shared/builder/BuilderField';
 import { CapabilityGate } from '@/components/shared/CapabilityGate';
 
+import { useSectionFieldContext } from './field-context';
+
 export type MediaFieldProps = {
   label: ReactNode;
   value: string;
@@ -31,9 +33,18 @@ export function MediaField({
   placeholder = 'https://…',
   helper,
 }: MediaFieldProps) {
+  const { sectionLabel } = useSectionFieldContext();
   return (
     <BuilderField label={label} helper={helper}>
-      <CapabilityGate capability="editMedia" mode="request">
+      <CapabilityGate
+        capability="editMedia"
+        mode="request"
+        requestContext={{
+          sectionLabel: sectionLabel ?? undefined,
+          fieldLabel: typeof label === 'string' ? label : undefined,
+          currentValue: value || undefined,
+        }}
+      >
         <BuilderInput
           value={value}
           onChange={(e) => onChange(e.target.value)}

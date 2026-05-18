@@ -14,6 +14,7 @@
 
 import type { Section } from '@/lib/website/types';
 import { getSectionDefinition } from '@/lib/website/sections';
+import { SectionFieldContextProvider } from '@/lib/website/sections/_shared/field-context';
 
 export type SectionFieldsPanelProps = {
   section: Section;
@@ -70,7 +71,9 @@ export function SectionFieldsPanel({
         {/* `as never` cast at the registry boundary — the Fields component
             is typed against its specific data shape; the registry stores
             them as unknown. defaultData() guarantees the shape on creation. */}
-        <Fields data={section.data as never} onChange={onChange as never} />
+        <SectionFieldContextProvider sectionLabel={def.label}>
+          <Fields data={section.data as never} onChange={onChange as never} />
+        </SectionFieldContextProvider>
       </div>
 
       {!def.implemented ? (

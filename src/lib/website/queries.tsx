@@ -377,6 +377,73 @@ export function useForcePublishLog() {
   });
 }
 
+// ---- Approval review detail -----------------------------------------------
+
+export type ChangedPage = { id: string; title: string };
+
+async function fetchApprovalChangedPages(
+  websiteId: string,
+  pendingVersionId: string,
+): Promise<ChangedPage[]> {
+  const { data: pendingRow } = await supabase
+    .from('website_versions')
+    .select('snapshot')
+    .eq('id', pendingVersionId)
+    .maybeSingle();
+  const pending = pendingRow?.snapshot as VersionSnapshot | undefined;
+  if (!pending) return [];
+
+  const { data: websiteRow } = await supabase
+    .from('websites')
+    .select('published_version_id')
+    .eq('id', websiteId)
+    .maybeSingle();
+  let published: VersionSnapshot | null = null;
+  if (websiteRow?.published_version_id) {
+    const { data: pubRow } = await supabase
+      .from('website_versions')
+      .select('snapshot')
+      .eq('id', websiteRow.published_version_id)
+      .maybeSingle();
+    published = (pubRow?.snapshot as VersionSnapshot) ?? null;
+  }
+
+  const changed: ChangedPage[] = [];
+  for (const page of pending.pages) {
+    const prev = published?.pages.find((p) => p.id === page.id);
+    const prevJson = prev ? JSON.stringify(prev.sections) : null;
+    if (JSON.stringify(page.sections) !== prevJson) {
+      changed.push({ id: page.id, title: page.title });
+    }
+  }
+  if (published) {
+    if (JSON.stringify(pending.header) !== JSON.stringify(published.header)) {
+      changed.push({ id: 'header', title: 'Header' });
+    }
+    if (JSON.stringify(pending.footer) !== JSON.stringify(published.footer)) {
+      changed.push({ id: 'footer', title: 'Footer' });
+    }
+  }
+  return changed;
+}
+
+/** Which pages a pending submission actually changed vs the live version —
+ *  drives the approval row's "what am I approving" detail + editor deep-link. */
+export function useApprovalChangedPages(
+  websiteId: string | null,
+  pendingVersionId: string | null,
+) {
+  return useBuilderQuery({
+    queryKey: ['website', 'approval-changed', websiteId, pendingVersionId],
+    queryFn: () =>
+      fetchApprovalChangedPages(
+        websiteId as string,
+        pendingVersionId as string,
+      ),
+    enabled: Boolean(websiteId && pendingVersionId),
+  });
+}
+
 // ---- Reactive publish-state hooks (return bare values) --------------------
 
 export type WebsitePublishState = {

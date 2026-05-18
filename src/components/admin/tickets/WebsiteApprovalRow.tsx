@@ -30,6 +30,7 @@ import {
   approveSubmission,
   rejectSubmission,
 } from '@/lib/website/mutations';
+import { useApprovalChangedPages } from '@/lib/website/queries';
 import type { WebsiteApprovalSubmission } from '@/lib/tickets/website-approval-stub';
 import { cn } from '@/lib/utils';
 
@@ -79,6 +80,25 @@ export function WebsiteApprovalRow({ submission }: WebsiteApprovalRowProps) {
   const clientName = submission.clientName ?? 'Website';
   const clientInitial = clientName.charAt(0).toUpperCase();
 
+  const changedPages =
+    useApprovalChangedPages(
+      submission.websiteId,
+      submission.pendingVersionId,
+    ).data ?? [];
+  const pagesLabel =
+    changedPages.length > 0
+      ? changedPages.map((p) => p.title).join(', ')
+      : `${submission.diff.pagesChanged} ${
+          submission.diff.pagesChanged === 1 ? 'page' : 'pages'
+        } touched`;
+  const editorHref = (() => {
+    const first = changedPages[0];
+    if (!first) return '/website';
+    if (first.id === 'header') return '/website/header';
+    if (first.id === 'footer') return '/website/footer';
+    return `/website/${first.id}`;
+  })();
+
   const handleApprove = async () => {
     if (!user) return;
     await approveSubmission(submission.id, {
@@ -119,9 +139,10 @@ export function WebsiteApprovalRow({ submission }: WebsiteApprovalRowProps) {
           </p>
           <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
             From <strong className="text-ink">{submission.submitterName}</strong>{' '}
-            · Submitted {formatTime(submission.submittedAt)} ·{' '}
-            {submission.diff.pagesChanged}{' '}
-            {submission.diff.pagesChanged === 1 ? 'page' : 'pages'} touched
+            · Submitted {formatTime(submission.submittedAt)}
+          </p>
+          <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-rust">
+            Changed: <span className="text-ink">{pagesLabel}</span>
           </p>
         </div>
         <p className="text-right font-mono text-[12px] text-ink-quiet">
@@ -134,7 +155,7 @@ export function WebsiteApprovalRow({ submission }: WebsiteApprovalRowProps) {
                 Approve & publish ✓
               </Button>
               <Button asChild size="sm" variant="secondary">
-                <Link href="/website">Open in editor →</Link>
+                <Link href={editorHref}>Open in editor →</Link>
               </Button>
               <Button
                 size="sm"
