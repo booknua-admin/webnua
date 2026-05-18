@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { Bell } from 'lucide-react';
 
 import { voltlineNotifications } from '@/lib/notifications/client-feed';
 import { cn } from '@/lib/utils';
@@ -45,11 +46,7 @@ function NotificationBell() {
           open ? 'bg-ink text-paper' : 'bg-paper-2 text-ink hover:bg-paper-3',
         )}
       >
-        {/* U+FE0E forces text presentation — a monochrome glyph that
-            inherits the button's text colour, matching the sidebar icons. */}
-        <span aria-hidden className="text-base leading-none">
-          {'\u{1F514}\u{FE0E}'}
-        </span>
+        <Bell aria-hidden className="size-4" strokeWidth={2} />
         {unreadCount > 0 ? (
           <span
             className={cn(
