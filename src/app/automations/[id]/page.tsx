@@ -1,12 +1,15 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 
 import { AutomationAddStep } from '@/components/admin/automations/AutomationAddStep';
 import { AutomationEditorLayout } from '@/components/admin/automations/AutomationEditorLayout';
-import { AutomationEditorStep } from '@/components/admin/automations/AutomationEditorStep';
+import {
+  AutomationEditorStep,
+  type AutomationStepPatch,
+} from '@/components/admin/automations/AutomationEditorStep';
 import { AutomationPerformanceCard } from '@/components/admin/automations/AutomationPerformanceCard';
 import { AutomationStepConnector } from '@/components/admin/automations/AutomationStepConnector';
 import { AutomationTestSendCard } from '@/components/admin/automations/AutomationTestSendCard';
@@ -19,7 +22,9 @@ import { Button } from '@/components/ui/button';
 import {
   useAutomationEditor,
   useToggleAutomation,
+  useUpdateAutomationSteps,
 } from '@/lib/automations/queries';
+import type { AutomationEditor } from '@/lib/automations/types';
 import { useRole } from '@/lib/auth/user-stub';
 import { normalizeError } from '@/lib/errors';
 
@@ -34,7 +39,6 @@ export default function AutomationEditorPage() {
   }, [hydrated, role, router]);
 
   const { data: editor, isLoading, error } = useAutomationEditor(id ?? '');
-  const toggle = useToggleAutomation();
 
   if (!hydrated || role !== 'admin') {
     return (
@@ -64,74 +68,115 @@ export default function AutomationEditorPage() {
             {`// ${error ? normalizeError(error).message : 'Automation not found'}`}
           </EditorNotice>
         ) : (
-          <>
-            <PageHeader
-              eyebrow={editor.eyebrow}
-              title={editor.title}
-              subtitle={editor.subtitle}
-            />
-            <AutomationEditorLayout
-              canvas={
-                <>
-                  <AutomationTriggerBox trigger={editor.trigger} />
-                  {editor.steps.map((step) => (
-                    <div key={step.id}>
-                      <AutomationStepConnector />
-                      <AutomationEditorStep step={step} />
-                    </div>
-                  ))}
-                  <div className="mt-5">
-                    <AutomationAddStep label={editor.addStepLabel} />
-                  </div>
-                </>
-              }
-              rail={
-                <>
-                  <AutomationVariableList
-                    heading={editor.rail.variables.heading}
-                    items={editor.rail.variables.items}
-                  />
-                  <AutomationTestSendCard
-                    heading={editor.rail.testSend.heading}
-                    body={editor.rail.testSend.body}
-                    buttonLabel={editor.rail.testSend.buttonLabel}
-                    data={editor.testSend}
-                  />
-                  <AutomationPerformanceCard
-                    heading={editor.rail.performance.heading}
-                    metrics={editor.rail.performance.metrics}
-                  />
-                </>
-              }
-            />
-            <EditorFooterActions
-              progress={editor.footer.progress}
-              actions={
-                <>
-                  <Button variant="ghost" asChild>
-                    <Link href={editor.footer.backHref}>
-                      {editor.footer.backLabel}
-                    </Link>
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    disabled={toggle.isPending}
-                    onClick={() =>
-                      toggle.mutate({
-                        id: editor.id,
-                        enabled: !editor.enabled,
-                      })
-                    }
-                  >
-                    {editor.footer.disableLabel}
-                  </Button>
-                  <Button>{editor.footer.saveLabel}</Button>
-                </>
-              }
-            />
-          </>
+          <EditorBody key={editor.id} editor={editor} />
         )}
       </div>
+    </>
+  );
+}
+
+/** The editor body owns the editable step state (keyed by automation id, so
+ *  switching automations remounts it with fresh state). */
+function EditorBody({ editor }: { editor: AutomationEditor }) {
+  const [steps, setSteps] = useState(editor.steps);
+  const update = useUpdateAutomationSteps();
+  const toggle = useToggleAutomation();
+
+  const patchStep = (stepId: string, patch: AutomationStepPatch) => {
+    setSteps((current) =>
+      current.map((s) => (s.id === stepId ? { ...s, ...patch } : s)),
+    );
+  };
+
+  const handleSave = () => {
+    update.mutate({
+      steps: steps.map((s) => ({
+        id: s.id,
+        name: s.name,
+        subject: s.subject ?? null,
+        body: s.bodyText ?? '',
+      })),
+    });
+  };
+
+  return (
+    <>
+      <PageHeader
+        eyebrow={editor.eyebrow}
+        title={editor.title}
+        subtitle={editor.subtitle}
+      />
+      <AutomationEditorLayout
+        canvas={
+          <>
+            <AutomationTriggerBox trigger={editor.trigger} />
+            {steps.map((step) => (
+              <div key={step.id}>
+                <AutomationStepConnector />
+                <AutomationEditorStep
+                  step={step}
+                  onChange={(patch) => patchStep(step.id, patch)}
+                />
+              </div>
+            ))}
+            <div className="mt-5">
+              <AutomationAddStep label={editor.addStepLabel} />
+            </div>
+          </>
+        }
+        rail={
+          <>
+            <AutomationVariableList
+              heading={editor.rail.variables.heading}
+              items={editor.rail.variables.items}
+            />
+            <AutomationTestSendCard
+              heading={editor.rail.testSend.heading}
+              body={editor.rail.testSend.body}
+              buttonLabel={editor.rail.testSend.buttonLabel}
+              data={editor.testSend}
+            />
+            <AutomationPerformanceCard
+              heading={editor.rail.performance.heading}
+              metrics={editor.rail.performance.metrics}
+            />
+          </>
+        }
+      />
+      <EditorFooterActions
+        progress={
+          update.isSuccess ? (
+            <>
+              {editor.footer.progress} · <strong>saved</strong>
+            </>
+          ) : update.error ? (
+            <>{`Save failed — ${normalizeError(update.error).message}`}</>
+          ) : (
+            editor.footer.progress
+          )
+        }
+        actions={
+          <>
+            <Button variant="ghost" asChild>
+              <Link href={editor.footer.backHref}>
+                {editor.footer.backLabel}
+              </Link>
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={toggle.isPending}
+              onClick={() =>
+                toggle.mutate({ id: editor.id, enabled: !editor.enabled })
+              }
+            >
+              {editor.footer.disableLabel}
+            </Button>
+            <Button onClick={handleSave} disabled={update.isPending}>
+              {update.isPending ? 'Saving…' : editor.footer.saveLabel}
+            </Button>
+          </>
+        }
+      />
     </>
   );
 }

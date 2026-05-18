@@ -433,6 +433,7 @@ function toEditorStep(row: StepRow): AutomationEditorStep {
     delay: delayLabel(row.delay_amount, row.delay_unit),
     name: row.name,
     body: highlightVars(row.body),
+    bodyText: row.body,
     footerMeta: '// Awaiting send data',
     variables: extractVars(row.body),
   };
@@ -585,6 +586,48 @@ export function useToggleAutomation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: toggleAutomation,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['automations'] });
+    },
+  });
+}
+
+// =============================================================================
+// Step save — persist edited step copy (name / subject / body). A real
+// mutation; the editor's Save button writes the changes back.
+// =============================================================================
+
+export type AutomationStepEdit = {
+  id: string;
+  name: string;
+  subject: string | null;
+  body: string;
+};
+
+async function updateAutomationSteps(input: {
+  steps: AutomationStepEdit[];
+}): Promise<void> {
+  // One UPDATE per step — small step counts (≤3), and PostgREST has no
+  // multi-row update-by-id. RLS resolves each step's tenant via its parent.
+  const results = await Promise.all(
+    input.steps.map((step) =>
+      supabase
+        .from('automation_steps')
+        .update({ name: step.name, subject: step.subject, body: step.body })
+        .eq('id', step.id),
+    ),
+  );
+  for (const result of results) {
+    if (result.error) throw normalizeError(result.error);
+  }
+}
+
+/** Save edited step copy. On success the automations queries are invalidated
+ *  so the editor rehydrates from the persisted values. */
+export function useUpdateAutomationSteps() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateAutomationSteps,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['automations'] });
     },

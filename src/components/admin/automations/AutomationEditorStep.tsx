@@ -1,18 +1,22 @@
 'use client';
 
-import { useState } from 'react';
-
 import type { AutomationEditorStep as AutomationEditorStepData } from '@/lib/automations/types';
 import { cn } from '@/lib/utils';
 
-type AutomationEditorStepProps = {
-  step: AutomationEditorStepData;
+/** Patch emitted as the operator edits a step's copy. */
+export type AutomationStepPatch = {
+  name?: string;
+  subject?: string;
+  bodyText?: string;
 };
 
-function AutomationEditorStep({ step }: AutomationEditorStepProps) {
-  const [name, setName] = useState(step.name);
-  const [subject, setSubject] = useState(step.subject ?? '');
+type AutomationEditorStepProps = {
+  step: AutomationEditorStepData;
+  /** Called on every keystroke in the step's name / subject / body fields. */
+  onChange: (patch: AutomationStepPatch) => void;
+};
 
+function AutomationEditorStep({ step, onChange }: AutomationEditorStepProps) {
   return (
     <div
       data-slot="automation-editor-step"
@@ -59,8 +63,8 @@ function AutomationEditorStep({ step }: AutomationEditorStepProps) {
         </button>
         <input
           type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          value={step.name}
+          onChange={(e) => onChange({ name: e.target.value })}
           className="min-w-0 border-none bg-transparent font-sans text-[14px] font-bold text-ink outline-none placeholder:text-ink-quiet"
           aria-label="Step name"
         />
@@ -71,28 +75,29 @@ function AutomationEditorStep({ step }: AutomationEditorStepProps) {
       </div>
 
       <div data-slot="automation-editor-step-body" className="px-5.5 py-4.5">
-        {step.channel === 'email' && step.subject !== undefined ? (
+        {step.channel === 'email' ? (
           <input
             type="text"
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
+            value={step.subject ?? ''}
+            onChange={(e) => onChange({ subject: e.target.value })}
             placeholder="Subject…"
             aria-label="Email subject"
             className="mb-2.5 w-full rounded-md border border-rule bg-paper px-3.5 py-2.5 font-sans text-[13px] font-semibold text-ink outline-none focus:border-rust"
           />
         ) : null}
-        <div
+        <textarea
           data-slot="automation-editor-step-body-text"
+          value={step.bodyText ?? ''}
+          onChange={(e) => onChange({ bodyText: e.target.value })}
+          aria-label="Message body"
+          rows={4}
           className={cn(
-            'block min-h-24 w-full whitespace-pre-wrap rounded-md border px-4 py-3.5 font-sans text-[14px] leading-[1.55] text-ink',
+            'block min-h-24 w-full resize-y whitespace-pre-wrap rounded-md border px-4 py-3.5 font-sans text-[14px] leading-[1.55] text-ink outline-none',
             step.isEditing
               ? 'border-rust bg-card shadow-[0_0_0_3px_rgba(212,67,23,0.12)]'
-              : 'border-rule bg-paper',
-            '[&_[data-slot=var]]:rounded-[4px] [&_[data-slot=var]]:bg-rust/12 [&_[data-slot=var]]:px-1.5 [&_[data-slot=var]]:py-0.5 [&_[data-slot=var]]:font-mono [&_[data-slot=var]]:text-[11px] [&_[data-slot=var]]:font-semibold [&_[data-slot=var]]:text-rust',
+              : 'border-rule bg-paper focus:border-rust',
           )}
-        >
-          {step.body}
-        </div>
+        />
       </div>
 
       <div
@@ -108,22 +113,20 @@ function AutomationEditorStep({ step }: AutomationEditorStepProps) {
           {step.footerMeta}
         </span>
         <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            type="button"
-            data-slot="automation-var-chip"
-            className="inline-flex cursor-pointer items-center rounded-[4px] bg-rust/12 px-2 py-0.5 font-mono text-[10px] font-bold text-rust hover:bg-rust hover:text-paper"
+          <span
+            data-slot="automation-var-hint"
+            className="font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-ink-quiet"
           >
-            + Insert variable
-          </button>
+            Variables:
+          </span>
           {step.variables.map((v) => (
-            <button
+            <span
               key={v}
-              type="button"
               data-slot="automation-var-chip"
-              className="inline-flex cursor-pointer items-center rounded-[4px] bg-rust/12 px-2 py-0.5 font-mono text-[10px] font-bold text-rust hover:bg-rust hover:text-paper"
+              className="inline-flex items-center rounded-[4px] bg-rust/12 px-2 py-0.5 font-mono text-[10px] font-bold text-rust"
             >
               {v}
-            </button>
+            </span>
           ))}
         </div>
       </div>
