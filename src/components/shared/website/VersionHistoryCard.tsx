@@ -19,7 +19,7 @@ import { useCallback, useState } from 'react';
 
 import { useUser } from '@/lib/auth/user-stub';
 import { cn } from '@/lib/utils';
-import { restoreVersionAsDraft } from '@/lib/website/publish-stub';
+import { restoreVersionAsDraft } from '@/lib/website/mutations';
 import type { Version, VersionStatus } from '@/lib/website/types';
 import { useWebsitePublishState } from '@/lib/website/use-publish-state';
 
@@ -81,7 +81,7 @@ export function VersionHistoryCard({
   const [error, setError] = useState<string | null>(null);
 
   const handleRestore = useCallback(
-    (versionId: string) => {
+    async (versionId: string) => {
       if (!websiteId || !user) return;
       if (
         !window.confirm(
@@ -92,7 +92,7 @@ export function VersionHistoryCard({
       }
       setPendingRestoreId(versionId);
       setError(null);
-      const result = restoreVersionAsDraft(websiteId, versionId, {
+      const result = await restoreVersionAsDraft(websiteId, versionId, {
         id: user.id,
         displayName: user.displayName,
       });

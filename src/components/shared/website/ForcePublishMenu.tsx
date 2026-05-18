@@ -30,7 +30,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useUser } from '@/lib/auth/user-stub';
-import { publishDraft } from '@/lib/website/publish-stub';
+import { publishDraft } from '@/lib/website/mutations';
 import { cn } from '@/lib/utils';
 
 export type ForcePublishMenuProps = {
@@ -94,9 +94,9 @@ export function ForcePublishMenu({ websiteId, hidden }: ForcePublishMenuProps) {
       <ForcePublishConfirmDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        onConfirm={(reason) => {
+        onConfirm={async (reason) => {
           if (!user) return;
-          const result = publishDraft(
+          const result = await publishDraft(
             websiteId,
             {
               id: user.id,

@@ -1,21 +1,17 @@
 'use client';
 
 // =============================================================================
-// /website/review — the pre-publish review surface (Session 8, design doc §7).
+// /website/review — the pre-publish review surface (design doc §7).
 //
-// Runs the preflight rule engine against the effective draft snapshot (seed
-// draft Version merged with localStorage edits) and renders:
-//   - the PreflightChecklist (pass / warn / fail summary + issue list)
-//   - a per-page review-card grid
-//   - the domain status indicator
-//   - the publish action, following the §3.3 capability lane:
-//       has `publish`            → Publish → (blocked by hard fails)
-//       any edit cap, no publish → Submit for review →
-//       view-only                → no action
+// Runs the preflight rule engine against the effective draft snapshot (draft
+// version + content_drafts overlay, read live) and renders the checklist,
+// per-page review cards, domain status, and the publish action following the
+// §3.3 capability lane:
+//     has `publish`            → Publish → (blocked by hard fails)
+//     any edit cap, no publish → Submit for review →
+//     view-only                → no action
 //
-// Hard-fail rules block publish entirely. Warnings allow publish behind a
-// confirm. This is a website-wide surface — publishing is a whole-website
-// operation in the current publish model (`publishDraft(websiteId)`).
+// Phase 4 — reads via `lib/website/queries`, writes via `lib/website/mutations`.
 // =============================================================================
 
 import Link from 'next/link';
@@ -28,12 +24,8 @@ import { PreflightChecklist } from '@/components/shared/website/PreflightCheckli
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
 import { useCan, useCanAny, useUser } from '@/lib/auth/user-stub';
-import { findWebsiteByClient } from '@/lib/website/data-stub';
-import {
-  getEffectiveDraftSnapshot,
-  publishDraft,
-  submitForApproval,
-} from '@/lib/website/publish-stub';
+import { publishDraft, submitForApproval } from '@/lib/website/mutations';
+import { useEffectiveDraft, useWebsiteForClient } from '@/lib/website/queries';
 import { groupResultsByPage, runPreflight } from '@/lib/website/preflight';
 import type { Website } from '@/lib/website/types';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
@@ -41,6 +33,15 @@ import { useWorkspace } from '@/lib/workspace/workspace-stub';
 export default function WebsiteReviewPage() {
   const user = useUser();
   const workspace = useWorkspace();
+
+  const activeClientId = user
+    ? user.role === 'client'
+      ? user.clientId
+      : workspace.activeClientId
+    : null;
+
+  const websiteQuery = useWebsiteForClient(activeClientId);
+  const website = websiteQuery.data ?? null;
 
   if (!workspace.hydrated || !user) {
     return (
@@ -51,9 +52,6 @@ export default function WebsiteReviewPage() {
       </ReviewShell>
     );
   }
-
-  const activeClientId =
-    user.role === 'client' ? user.clientId : workspace.activeClientId;
 
   if (!activeClientId) {
     return (
@@ -69,7 +67,16 @@ export default function WebsiteReviewPage() {
     );
   }
 
-  const website = findWebsiteByClient(activeClientId);
+  if (websiteQuery.isLoading) {
+    return (
+      <ReviewShell>
+        <p className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+          {'// Loading website…'}
+        </p>
+      </ReviewShell>
+    );
+  }
+
   if (!website) {
     return (
       <ReviewShell>
@@ -96,18 +103,23 @@ function ReviewSurface({ website }: { website: Website }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const snapshot = useMemo(
-    () => getEffectiveDraftSnapshot(website.id),
-    [website.id],
-  );
+  const draftQuery = useEffectiveDraft(website.id);
+  const snapshot = draftQuery.data?.snapshot ?? null;
 
   const report = useMemo(
-    () =>
-      snapshot
-        ? runPreflight(snapshot, { websiteId: website.id })
-        : null,
+    () => (snapshot ? runPreflight(snapshot, { websiteId: website.id }) : null),
     [snapshot, website.id],
   );
+
+  if (draftQuery.isLoading) {
+    return (
+      <ReviewShell>
+        <p className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+          {'// Running preflight…'}
+        </p>
+      </ReviewShell>
+    );
+  }
 
   if (!snapshot || !report) {
     return (
@@ -120,9 +132,8 @@ function ReviewSurface({ website }: { website: Website }) {
   const grouped = groupResultsByPage(report.results);
   const siteResults = grouped['__site'] ?? [];
 
-  const handlePublish = () => {
-    if (!user) return;
-    if (!report.canPublish) return;
+  const handlePublish = async () => {
+    if (!user || !report.canPublish) return;
     if (
       report.counts.warn > 0 &&
       !window.confirm(
@@ -135,7 +146,7 @@ function ReviewSurface({ website }: { website: Website }) {
     }
     setBusy(true);
     setError(null);
-    const result = publishDraft(website.id, {
+    const result = await publishDraft(website.id, {
       id: user.id,
       displayName: user.displayName,
     });
@@ -147,11 +158,11 @@ function ReviewSurface({ website }: { website: Website }) {
     }
   };
 
-  const handleSubmitForReview = () => {
+  const handleSubmitForReview = async () => {
     if (!user) return;
     setBusy(true);
     setError(null);
-    const submission = submitForApproval(website.id, {
+    const submission = await submitForApproval(website.id, {
       id: user.id,
       displayName: user.displayName,
     });
@@ -184,7 +195,6 @@ function ReviewSurface({ website }: { website: Website }) {
 
       <PreflightChecklist report={report} className="mb-6" />
 
-      {/* Site-wide results (header / footer / nav) */}
       {siteResults.length > 0 ? (
         <div className="mb-6 rounded-lg border border-rule bg-card px-5 py-4">
           <p className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
@@ -196,11 +206,7 @@ function ReviewSurface({ website }: { website: Website }) {
                 key={`${r.ruleId}-${i}`}
                 className="flex items-center gap-2 text-[12.5px] text-ink-mid"
               >
-                <span
-                  className={`size-1.5 shrink-0 rounded-full ${
-                    r.status === 'fail' ? 'bg-warn' : 'bg-warn'
-                  }`}
-                />
+                <span className="size-1.5 shrink-0 rounded-full bg-warn" />
                 <span className="font-semibold text-ink">{r.title}</span>
                 <span className="text-ink-quiet">— {r.message}</span>
                 {r.fixHref ? (
@@ -217,7 +223,6 @@ function ReviewSurface({ website }: { website: Website }) {
         </div>
       ) : null}
 
-      {/* Per-page review cards */}
       <p className="mb-3 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
         <strong className="text-ink">{snapshot.pages.length}</strong>{' '}
         {snapshot.pages.length === 1 ? 'page' : 'pages'} in this draft
@@ -232,7 +237,6 @@ function ReviewSurface({ website }: { website: Website }) {
         ))}
       </div>
 
-      {/* Publish action bar */}
       <div className="flex items-center justify-between gap-4 rounded-xl border border-rule bg-card px-6 py-5">
         <div>
           <p className="text-[14px] font-bold text-ink">
@@ -260,10 +264,7 @@ function ReviewSurface({ website }: { website: Website }) {
             <Link href="/website">← Back to hub</Link>
           </Button>
           {canPublish ? (
-            <Button
-              onClick={handlePublish}
-              disabled={busy || !report.canPublish}
-            >
+            <Button onClick={handlePublish} disabled={busy || !report.canPublish}>
               {busy ? 'Publishing…' : 'Publish →'}
             </Button>
           ) : canEditAnything ? (

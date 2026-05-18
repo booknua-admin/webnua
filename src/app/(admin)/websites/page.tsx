@@ -20,11 +20,10 @@ import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBann
 import { Button } from '@/components/ui/button';
 import { adminClients } from '@/lib/nav/admin-clients';
 import {
-  STUB_VERSIONS,
-  STUB_WEBSITES,
-  findWebsiteByClient,
-} from '@/lib/website/data-stub';
-import type { Website } from '@/lib/website/types';
+  useAllWebsiteVersions,
+  useAllWebsites,
+} from '@/lib/website/queries';
+import type { Version, Website } from '@/lib/website/types';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 const TIMESTAMP_FORMATTER = new Intl.DateTimeFormat('en-AU', {
@@ -36,18 +35,24 @@ export default function AdminWebsitesPage() {
   const workspace = useWorkspace();
   const router = useRouter();
 
+  const websitesQuery = useAllWebsites();
+  const versionsQuery = useAllWebsiteVersions();
+
+  const websites = websitesQuery.data ?? [];
+  const versions = versionsQuery.data ?? [];
+
   const rows = adminClients.map((client) => ({
     client,
-    website: findWebsiteByClient(client.id),
+    website: websites.find((w) => w.clientId === client.id) ?? null,
   }));
 
-  const totalWebsites = STUB_WEBSITES.length;
-  const totalPublished = STUB_WEBSITES.filter(
+  const totalWebsites = websites.length;
+  const totalPublished = websites.filter(
     (w) => w.publishedVersionId !== null,
   ).length;
-  const totalPagesAcrossAll = STUB_VERSIONS.filter(
-    (v) => v.status === 'published',
-  ).reduce((s, v) => s + v.snapshot.pages.length, 0);
+  const totalPagesAcrossAll = versions
+    .filter((v) => v.status === 'published')
+    .reduce((s, v) => s + v.snapshot.pages.length, 0);
 
   const handleDrillIn = (clientId: string) => {
     workspace.setActiveClientId(clientId);
@@ -109,7 +114,12 @@ export default function AdminWebsitesPage() {
               key={client.id}
               clientName={client.name}
               clientInitial={client.initial}
-              website={website ?? null}
+              website={website}
+              versions={
+                website
+                  ? versions.filter((v) => v.websiteId === website.id)
+                  : []
+              }
               onDrillIn={() => handleDrillIn(client.id)}
             />
           ))}
@@ -158,28 +168,29 @@ function MatrixRow({
   clientName,
   clientInitial,
   website,
+  versions,
   onDrillIn,
 }: {
   clientName: string;
   clientInitial: string;
   website: Website | null;
+  versions: Version[];
   onDrillIn: () => void;
 }) {
   const isEmpty = website === null;
 
   const pageCount = (() => {
     if (!website) return 0;
-    const draft = STUB_VERSIONS.find((v) => v.id === website.draftVersionId);
+    const draft = versions.find((v) => v.id === website.draftVersionId);
     return draft?.snapshot.pages.length ?? 0;
   })();
 
   const draftSummary = (() => {
     if (!website) return '—';
-    const draft = STUB_VERSIONS.find((v) => v.id === website.draftVersionId);
+    const draft = versions.find((v) => v.id === website.draftVersionId);
     if (!draft) return '—';
     if (website.publishedVersionId == null) return 'first draft';
-    // Compare snapshots — for the stub, just check timestamps as a proxy.
-    const published = STUB_VERSIONS.find(
+    const published = versions.find(
       (v) => v.id === website.publishedVersionId,
     );
     if (!published) return '—';
@@ -190,7 +201,7 @@ function MatrixRow({
 
   const lastPublished = (() => {
     if (!website || !website.publishedVersionId) return null;
-    const v = STUB_VERSIONS.find((x) => x.id === website.publishedVersionId);
+    const v = versions.find((x) => x.id === website.publishedVersionId);
     return v?.publishedAt ?? v?.createdAt ?? null;
   })();
 

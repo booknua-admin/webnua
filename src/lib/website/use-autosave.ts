@@ -1,35 +1,22 @@
 'use client';
 
 // =============================================================================
-// useAutosave — the autosave hook driving the editor's section persistence.
+// useAutosave — autosave hook driving the editor's section persistence.
+//
+// Phase 4: `saveDraftSections` now upserts a `content_drafts` row in Supabase
+// instead of writing localStorage. The hook's external API is unchanged
+// (`{ status, lastSavedAt, retry }`) — `flush` is async internally.
 //
 // Behaviour (design doc §3.2):
 //   - Debounced 500ms after the last edit per slot.
 //   - On flush, status moves pending → saving → synced (or → failed).
-//   - Optimistic UI: the editor never blocks on save. Errors surface as a
+//   - Optimistic UI: the editor never blocks on save; errors surface as a
 //     `failed` state with a `retry()` callback.
-//
-// The 5s server flush from §3.2 collapses to the same 500ms debounce in the
-// stub because localStorage is synchronous — there's no separate "server"
-// here. When backend lands, the 500ms cadence stays (it's the per-keystroke
-// settle window) and a separate 5s heartbeat layer wraps it for genuinely-
-// remote persistence.
-//
-// Submit-mid-edit edge case (§3.1):
-//   The "current server-side draft state" referenced by submitForApproval
-//   IS whatever has flushed to localStorage at submit time. Anything still
-//   inside this 500ms debounce window stays in the operator's local React
-//   state and is NOT in the submitted snapshot — it folds into the pending
-//   version on the next flush, since the operator retains edit access to
-//   the resulting pending_approval version (design doc §3.3 lane B).
 // =============================================================================
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import {
-  type DraftSlot,
-  saveDraftSections,
-} from './draft-stub';
+import { type DraftSlot, saveDraftSections } from './content-drafts';
 import type { Section } from './types';
 
 const DEBOUNCE_MS = 500;
@@ -48,7 +35,7 @@ export type UseAutosaveOptions = {
   slot: DraftSlot;
   sections: Section[];
   /** Disable autosave entirely — used when the editor is locked (Lane B
-   *  submitter waiting on review) or in funnel-step mode pre-publish-stub. */
+   *  submitter waiting on review). */
   disabled?: boolean;
 };
 
@@ -60,12 +47,9 @@ export function useAutosave({
   const [status, setStatus] = useState<AutosaveStatus>('idle');
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
 
-  // Refs so the debounce closure always reads the latest values without
-  // restarting the effect on every keystroke.
   const sectionsRef = useRef(sections);
   const slotRef = useRef(slot);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Skip the first effect tick — initial mount shouldn't mark dirty.
   const skipNextRef = useRef(true);
 
   useEffect(() => {
@@ -73,9 +57,9 @@ export function useAutosave({
     slotRef.current = slot;
   });
 
-  const flush = useCallback(() => {
+  const flush = useCallback(async () => {
     setStatus('saving');
-    const ok = saveDraftSections(slotRef.current, sectionsRef.current);
+    const ok = await saveDraftSections(slotRef.current, sectionsRef.current);
     if (ok) {
       setStatus('synced');
       setLastSavedAt(Date.now());
@@ -94,7 +78,7 @@ export function useAutosave({
     setStatus('pending');
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
-      flush();
+      void flush();
       timeoutRef.current = null;
     }, DEBOUNCE_MS);
 
@@ -117,7 +101,7 @@ export function useAutosave({
   }, [disabled]);
 
   const retry = useCallback(() => {
-    flush();
+    void flush();
   }, [flush]);
 
   return { status, lastSavedAt, retry };

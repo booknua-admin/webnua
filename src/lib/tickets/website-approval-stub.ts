@@ -1,16 +1,10 @@
 // =============================================================================
-// STUB — pending website-approval submissions, the data behind the
-// "Website approvals" tab on /tickets and the Lane B editor lock banner.
+// Website-approval submission shapes (Phase 4).
 //
-// A submission is created when a user with edit caps but NO `publish` cap
-// (Lane B in design doc §3.3) hits "Submit for review →". The pending
-// version is captured as a snapshot at submit-time, plus diff counts versus
-// the currently-live published version. Operators triage the queue, then
-// Approve / Edit-then-publish / Reject.
-//
-// State lives in `publish-stub.ts` — this module just owns the shapes,
-// helpers, and the localStorage subscription glue. Real backend will
-// replace both modules together.
+// The submission state is now the `website_approval_submissions` table —
+// written by `lib/website/mutations.ts`, read by the publish-state hooks in
+// `lib/website/queries.tsx`. This module keeps only the display shapes the
+// "Website approvals" tab and the Lane B editor-lock banner consume.
 // =============================================================================
 
 import type { VersionSnapshot } from '@/lib/website/types';
@@ -45,30 +39,14 @@ export type WebsiteApprovalSubmission = {
   /** Optional submitter note attached to the submission. */
   note?: string;
   diff: WebsiteApprovalDiff;
-  /** Full snapshot at submit-time. Mirrors the pending_approval Version's
-   *  snapshot — duplicated here so the approval row can render without
-   *  loading the Version. */
-  snapshot: VersionSnapshot;
+  /** Client display name — joined for the approval row's avatar/label. */
+  clientName?: string;
+  /** Full snapshot at submit-time. The pending version holds the canonical
+   *  copy (§5 #10 — no duplicated blob); left undefined by the live reads. */
+  snapshot?: VersionSnapshot;
   /** Operator's rejection reason (rejected status only). */
   rejectionReason?: string;
   /** When approved / rejected / recalled. */
   resolvedAt?: string;
   resolvedByName?: string;
 };
-
-// ---- Subscription ---------------------------------------------------------
-//
-// The event bus is shared with publish-stub via the same module-level
-// event name, so any consumer subscribed to publish state automatically
-// re-renders when an approval changes — they're two halves of one store.
-
-export const APPROVAL_EVENT = 'webnua:approval-change';
-
-export function subscribeApprovals(callback: () => void): () => void {
-  window.addEventListener('storage', callback);
-  window.addEventListener(APPROVAL_EVENT, callback);
-  return () => {
-    window.removeEventListener('storage', callback);
-    window.removeEventListener(APPROVAL_EVENT, callback);
-  };
-}

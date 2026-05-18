@@ -33,11 +33,8 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { useUser } from '@/lib/auth/user-stub';
 import type { Funnel, FunnelStep } from '@/lib/funnel/types';
-import { getBrandForClient } from '@/lib/website/data-stub';
-import {
-  type DraftSlot,
-  loadDraftSections,
-} from '@/lib/website/draft-stub';
+import type { DraftSlot } from '@/lib/website/content-drafts';
+import { useBrandForClient } from '@/lib/website/queries';
 import { getSectionDefinition } from '@/lib/website/sections';
 import type {
   ContainerKind,
@@ -129,7 +126,8 @@ function containerForMode(mode: SectionEditorMode): ContainerKind {
 }
 
 export function SectionEditor({ mode }: SectionEditorProps) {
-  const brand = getBrandForClient(clientIdForMode(mode));
+  const brandQuery = useBrandForClient(clientIdForMode(mode));
+  const brand = brandQuery.data ?? null;
   const slot = useMemo(() => slotForMode(mode), [mode]);
   const user = useUser();
 
@@ -142,15 +140,11 @@ export function SectionEditor({ mode }: SectionEditorProps) {
   );
   const locked = pendingForUser != null;
 
-  // Hydrate: prefer any persisted autosave draft over the seed snapshot.
-  // Falls back cleanly when localStorage is unavailable.
-  const [sections, setSections] = useState<Section[]>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = loadDraftSections(slot);
-      if (saved) return saved;
-    }
-    return seedSectionsForMode(mode);
-  });
+  // Seed from the mode's sections. The page-level query already merges the
+  // content_drafts autosave buffer into these before passing them down.
+  const [sections, setSections] = useState<Section[]>(() =>
+    seedSectionsForMode(mode),
+  );
 
   // In singleton mode the only section is auto-selected. In page / funnel
   // step modes the user picks (rail click or preview click).
@@ -161,18 +155,8 @@ export function SectionEditor({ mode }: SectionEditorProps) {
   const [addOpen, setAddOpen] = useState(false);
 
   // Reset local state when the source content changes (e.g. tab swap).
-  // Re-hydrate from the autosave draft for the new slot if present.
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const saved = loadDraftSections(slot);
-      if (saved) {
-        setSections(saved);
-      } else {
-        setSections(seedSectionsForMode(mode));
-      }
-    } else {
-      setSections(seedSectionsForMode(mode));
-    }
+    setSections(seedSectionsForMode(mode));
     setSelectedSectionId(mode.kind === 'singleton' ? mode.section.id : null);
   }, [mode, slot]);
 
@@ -214,6 +198,16 @@ export function SectionEditor({ mode }: SectionEditorProps) {
     setSections((current) => [...current, newSection]);
     setSelectedSectionId(newSection.id);
   };
+
+  if (brandQuery.isLoading) {
+    return (
+      <div className="flex h-svh items-center justify-center bg-paper px-6">
+        <p className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+          {'// Loading editor…'}
+        </p>
+      </div>
+    );
+  }
 
   if (!brand) {
     return (
