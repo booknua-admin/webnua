@@ -12,12 +12,13 @@ import {
 } from '@/components/shared/tickets/TicketsHero';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Input } from '@/components/ui/input';
+import { normalizeError } from '@/lib/errors';
 import {
-  adminTickets,
   adminTicketsHero,
   adminTicketTabs,
   type AdminTicketRow,
 } from '@/lib/tickets/admin-tickets';
+import { useAdminTicketsInbox } from '@/lib/tickets/queries';
 import type { TicketStatus, TicketTab } from '@/lib/tickets/types';
 import { useAllPendingApprovals } from '@/lib/website/use-publish-state';
 
@@ -48,34 +49,37 @@ function matchesSearch(ticket: AdminTicketRow, query: string): boolean {
 
 function AdminTicketsContent() {
   const pendingApprovals = useAllPendingApprovals();
+  const { data: tickets, isLoading, error } = useAdminTicketsInbox();
 
   const [activeTabId, setActiveTabId] = useState<string>('all');
   const [activeClient, setActiveClient] = useState('all');
   const [search, setSearch] = useState('');
   const onApprovalsTab = activeTabId === APPROVALS_TAB_ID;
 
+  const allTickets = useMemo(() => tickets ?? [], [tickets]);
+
   // Client filter chips, derived from the tickets' own clients.
   const clientChips = useMemo(() => {
     const names = new Map<string, string>();
-    for (const t of adminTickets) names.set(t.client.id, t.client.name);
+    for (const t of allTickets) names.set(t.client.id, t.client.name);
     return [
-      { id: 'all', label: 'All clients', count: adminTickets.length },
+      { id: 'all', label: 'All clients', count: allTickets.length },
       ...[...names].map(([id, label]) => ({
         id,
         label,
-        count: adminTickets.filter((t) => t.client.id === id).length,
+        count: allTickets.filter((t) => t.client.id === id).length,
       })),
     ];
-  }, []);
+  }, [allTickets]);
 
   // The client filter narrows the pool; tab counts + the visible list are
   // computed against it so the filters compose.
   const clientPool = useMemo(
     () =>
       activeClient === 'all'
-        ? adminTickets
-        : adminTickets.filter((t) => t.client.id === activeClient),
-    [activeClient],
+        ? allTickets
+        : allTickets.filter((t) => t.client.id === activeClient),
+    [allTickets, activeClient],
   );
 
   const tabs = useMemo<TicketTab[]>(() => {
@@ -154,14 +158,26 @@ function AdminTicketsContent() {
         {onApprovalsTab ? (
           <ApprovalsList submissions={pendingApprovals} />
         ) : (
-          <RegularTicketsList tickets={visibleTickets} />
+          <RegularTicketsList
+            tickets={visibleTickets}
+            isLoading={isLoading}
+            error={error}
+          />
         )}
       </div>
     </>
   );
 }
 
-function RegularTicketsList({ tickets }: { tickets: AdminTicketRow[] }) {
+function RegularTicketsList({
+  tickets,
+  isLoading,
+  error,
+}: {
+  tickets: AdminTicketRow[];
+  isLoading: boolean;
+  error: unknown;
+}) {
   return (
     <div className="overflow-hidden rounded-2xl border border-ink/8 bg-card">
       <div className="grid grid-cols-[20px_180px_1fr_110px_120px_110px_80px] items-center gap-3 border-b border-ink/8 bg-paper-2/40 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
@@ -173,10 +189,12 @@ function RegularTicketsList({ tickets }: { tickets: AdminTicketRow[] }) {
         <div>{'// Urgency'}</div>
         <div className="text-right">{'// Age'}</div>
       </div>
-      {tickets.length === 0 ? (
-        <p className="px-[18px] py-12 text-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
-          {'// No tickets in this view'}
-        </p>
+      {isLoading ? (
+        <ListNotice>{'// Loading tickets…'}</ListNotice>
+      ) : error ? (
+        <ListNotice>{`// ${normalizeError(error).message}`}</ListNotice>
+      ) : tickets.length === 0 ? (
+        <ListNotice>{'// No tickets in this view'}</ListNotice>
       ) : (
         tickets.map((ticket) => (
           <TicketRow
@@ -195,6 +213,14 @@ function RegularTicketsList({ tickets }: { tickets: AdminTicketRow[] }) {
         ))
       )}
     </div>
+  );
+}
+
+function ListNotice({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="px-[18px] py-12 text-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+      {children}
+    </p>
   );
 }
 

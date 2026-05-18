@@ -2,6 +2,7 @@ import type { AutomationEditor } from './types';
 
 const adminEditor: AutomationEditor = {
   id: 'follow-up-freshhome',
+  enabled: true,
   eyebrow: '// FreshHome · 24-hour follow-up sequence',
   title: (
     <>

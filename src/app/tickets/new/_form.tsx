@@ -11,8 +11,8 @@
 //      the query (design doc §1.3 / §3.3 Lane C). The form prefills the
 //      category and shows a context banner.
 //
-// Stub layer: submitting logs the draft and routes back to the inbox — real
-// ticket creation lands with the backend pass.
+// Submitting inserts a `tickets` row + its opening `ticket_messages` row via
+// `useCreateTicket`, then routes back to the inbox.
 // =============================================================================
 
 import Link from 'next/link';
@@ -29,6 +29,8 @@ import {
 } from '@/components/shared/builder/BuilderField';
 import { Button } from '@/components/ui/button';
 import { CAPABILITY_LABEL, type Capability } from '@/lib/auth/capabilities';
+import { normalizeError } from '@/lib/errors';
+import { useCreateTicket } from '@/lib/tickets/queries';
 import {
   CATEGORY_LABEL,
   URGENCY_LABEL,
@@ -72,28 +74,30 @@ export function NewTicketForm() {
   );
   const [description, setDescription] = useState('');
 
-  const canSubmit = title.trim().length > 0 && description.trim().length > 0;
+  const createTicket = useCreateTicket();
+  const canSubmit =
+    title.trim().length > 0 &&
+    description.trim().length > 0 &&
+    !createTicket.isPending;
 
   const handleSubmit = () => {
     if (!canSubmit) return;
-    const draft = {
-      category,
-      urgency,
-      title: title.trim(),
-      description: description.trim(),
-      context: fromRequestChange
-        ? {
-            source: 'page-editor',
-            field: requestField,
-            page: params.get('page'),
-            section: params.get('section'),
-            capability: requestCap,
-          }
-        : null,
-    };
-    // Stub: real ticket creation wires up with the backend pass.
-    console.log('[stub] ticket submitted', draft);
-    router.push('/tickets');
+    createTicket.mutate(
+      {
+        category,
+        urgency,
+        title: title.trim(),
+        description: description.trim(),
+        context: fromRequestChange
+          ? {
+              pageId: params.get('page'),
+              sectionId: params.get('section'),
+              fieldKey: requestField,
+            }
+          : null,
+      },
+      { onSuccess: () => router.push('/tickets') },
+    );
   };
 
   return (
@@ -220,12 +224,18 @@ export function NewTicketForm() {
               ))}
             </div>
 
+            {createTicket.error ? (
+              <p className="mt-4 rounded-lg border border-warn/40 bg-warn/8 px-4 py-3 text-[13px] text-warn">
+                {normalizeError(createTicket.error).message}
+              </p>
+            ) : null}
+
             <div className="mt-6 flex items-center justify-end gap-2.5">
               <Button variant="secondary" asChild>
                 <Link href="/tickets">Cancel</Link>
               </Button>
               <Button onClick={handleSubmit} disabled={!canSubmit}>
-                Submit ticket →
+                {createTicket.isPending ? 'Submitting…' : 'Submit ticket →'}
               </Button>
             </div>
           </div>

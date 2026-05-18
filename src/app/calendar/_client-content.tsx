@@ -1,14 +1,20 @@
+'use client';
+
 import { AddBookingButton } from '@/components/shared/bookings/AddBookingButton';
 import { CalendarGrid } from '@/components/shared/calendar/CalendarGrid';
 import { CalendarToolbar } from '@/components/shared/calendar/CalendarToolbar';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
+import { normalizeError } from '@/lib/errors';
+import { useClientCalendar } from '@/lib/bookings/queries';
 import { voltlineCalendar } from '@/lib/calendar/client-calendar';
 import { voltlineNewBooking } from '@/lib/bookings/new-booking-modal';
 
 function ClientCalendarContent() {
-  const { hero, week } = voltlineCalendar;
+  const { hero } = voltlineCalendar;
+  const { data: week, isLoading, error } = useClientCalendar();
+
   return (
     <>
       <Topbar
@@ -26,10 +32,28 @@ function ClientCalendarContent() {
           </Button>
           <AddBookingButton data={voltlineNewBooking} />
         </div>
-        <CalendarToolbar periodLabel={week.periodLabel} />
-        <CalendarGrid week={week} />
+        {isLoading ? (
+          <CalendarNotice>{'// Loading calendar…'}</CalendarNotice>
+        ) : error || !week ? (
+          <CalendarNotice>
+            {`// ${error ? normalizeError(error).message : 'Calendar unavailable'}`}
+          </CalendarNotice>
+        ) : (
+          <>
+            <CalendarToolbar periodLabel={week.periodLabel} />
+            <CalendarGrid week={week} />
+          </>
+        )}
       </div>
     </>
+  );
+}
+
+function CalendarNotice({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="rounded-2xl border border-ink/8 bg-card px-[18px] py-12 text-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+      {children}
+    </p>
   );
 }
 

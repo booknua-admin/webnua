@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-
 import { useState } from 'react';
 
 import { AdminBookingHero } from '@/components/shared/bookings/AdminBookingHero';
@@ -11,26 +10,30 @@ import { BookingJobGrid } from '@/components/shared/bookings/BookingJobGrid';
 import { BookingNotesBox } from '@/components/shared/bookings/BookingNotesBox';
 import { BookingSection } from '@/components/shared/bookings/BookingSection';
 import { RescheduleBookingButton } from '@/components/shared/bookings/RescheduleBookingButton';
-import { freshhomeReschedule } from '@/lib/bookings/reschedule-modal';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { RailCard } from '@/components/shared/RailCard';
 import { RailPropertyRow } from '@/components/shared/RailPropertyRow';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
-import { freshhomeBooking } from '@/lib/bookings/admin-booking';
+import { useAdminBookingDetail } from '@/lib/bookings/queries';
+import { freshhomeReschedule } from '@/lib/bookings/reschedule-modal';
+import { normalizeError } from '@/lib/errors';
 
 function AdminBookingDetailContent() {
-  const b = freshhomeBooking;
   const params = useParams();
   const router = useRouter();
   const id = Array.isArray(params.id) ? params.id[0] : (params.id ?? '');
   const completeHref = `/bookings/${id}/complete`;
-  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-    b.location.address.replace(/\s·\s/g, ', '),
-  )}`;
-
+  const { data: b, isLoading, error } = useAdminBookingDetail(id ?? '');
   const [cancelOpen, setCancelOpen] = useState(false);
+
+  const mapsUrl = b
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+        b.location.address.replace(/\s·\s/g, ', '),
+      )}`
+    : '#';
+
   return (
     <>
       <Topbar
@@ -39,113 +42,141 @@ function AdminBookingDetailContent() {
         }
       />
       <div className="flex flex-col gap-3.5 px-10 py-10">
-        <PageHeader
-          eyebrow={b.hero.eyebrow}
-          title={b.hero.title}
-          subtitle={b.hero.subtitle}
-        />
-
-        <div className="grid grid-cols-[1fr_320px] items-start gap-6">
-          <div className="flex flex-col gap-3.5">
-            <AdminBookingHero
-              tone={b.tone}
-              timeRow={b.timeRow}
-              jobTitle={b.jobTitle}
-              customer={b.customer}
-              actions={
-                <>
-                  <Button variant="default" className="h-9" asChild>
-                    <Link href={completeHref}>Mark complete</Link>
-                  </Button>
-                  <RescheduleBookingButton data={freshhomeReschedule} />
-                  <Button variant="secondary" className="h-9" asChild>
-                    <a href="/leads/larsen">Open lead →</a>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="h-9"
-                    onClick={() => setCancelOpen(true)}
-                  >
-                    Cancel booking
-                  </Button>
-                </>
-              }
+        {isLoading ? (
+          <DetailNotice>{'// Loading booking…'}</DetailNotice>
+        ) : error || !b ? (
+          <DetailNotice>
+            {`// ${error ? normalizeError(error).message : 'Booking not found'}`}
+          </DetailNotice>
+        ) : (
+          <>
+            <PageHeader
+              eyebrow={b.hero.eyebrow}
+              title={b.hero.title}
+              subtitle={b.hero.subtitle}
             />
 
-            <BookingSection heading="// JOB DETAILS">
-              <BookingJobGrid cells={b.details} surface="plain" />
-            </BookingSection>
-
-            <BookingSection heading="// CUSTOMER NOTES">
-              <BookingNotesBox>{b.notes}</BookingNotesBox>
-            </BookingSection>
-
-            <BookingSection heading={b.historyHeading}>
-              <div className="flex flex-col gap-1.5">
-                {b.history.map((h, i) => (
-                  <BookingHistoryRow key={i} variant="grid" item={h} />
-                ))}
-              </div>
-            </BookingSection>
-          </div>
-
-          <div className="sticky top-[100px] flex flex-col gap-3.5">
-            <RailCard heading="// CUSTOMER VALUE">
-              {b.customerValue.map((row, i) => (
-                <RailPropertyRow
-                  key={i}
-                  label={row.label}
-                  value={
-                    row.accent ? (
-                      <span className="text-rust">{row.value}</span>
-                    ) : (
-                      row.value
-                    )
+            <div className="grid grid-cols-[1fr_320px] items-start gap-6">
+              <div className="flex flex-col gap-3.5">
+                <AdminBookingHero
+                  tone={b.tone}
+                  timeRow={b.timeRow}
+                  jobTitle={b.jobTitle}
+                  customer={b.customer}
+                  actions={
+                    <>
+                      <Button variant="default" className="h-9" asChild>
+                        <Link href={completeHref}>Mark complete</Link>
+                      </Button>
+                      <RescheduleBookingButton data={freshhomeReschedule} />
+                      <Button variant="secondary" className="h-9" asChild>
+                        <Link href="/leads">Open leads →</Link>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        className="h-9"
+                        onClick={() => setCancelOpen(true)}
+                      >
+                        Cancel booking
+                      </Button>
+                    </>
                   }
                 />
-              ))}
-            </RailCard>
 
-            <RailCard heading="// LOCATION">
-              <div className="relative mb-3 flex h-[140px] items-center justify-center rounded-lg border border-rule-soft bg-paper text-ink-quiet">
-                <span aria-hidden className="text-[24px] text-rust">
-                  ⊕
-                </span>
-                <span className="absolute bottom-2 left-3 text-[11px] text-ink-soft">
-                  {b.location.address}
-                </span>
+                <BookingSection heading="// JOB DETAILS">
+                  <BookingJobGrid cells={b.details} surface="plain" />
+                </BookingSection>
+
+                <BookingSection heading="// CUSTOMER NOTES">
+                  <BookingNotesBox>{b.notes}</BookingNotesBox>
+                </BookingSection>
+
+                <BookingSection heading={b.historyHeading}>
+                  {b.history.length === 0 ? (
+                    <p className="text-[13px] text-ink-quiet">
+                      No previous bookings for this customer.
+                    </p>
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      {b.history.map((h, i) => (
+                        <BookingHistoryRow key={i} variant="grid" item={h} />
+                      ))}
+                    </div>
+                  )}
+                </BookingSection>
               </div>
-              <Button
-                variant="secondary"
-                className="h-9 w-full text-[12px]"
-                asChild
-              >
-                <a href={mapsUrl} target="_blank" rel="noopener noreferrer">
-                  Open in Maps ↗
-                </a>
-              </Button>
-            </RailCard>
 
-            <RailCard heading="// AUTOMATIONS">
-              {b.automations.map((row, i) => (
-                <RailPropertyRow key={i} label={row.label} value={row.value} />
-              ))}
-            </RailCard>
-          </div>
-        </div>
+              <div className="sticky top-[100px] flex flex-col gap-3.5">
+                <RailCard heading="// CUSTOMER VALUE">
+                  {b.customerValue.map((row, i) => (
+                    <RailPropertyRow
+                      key={i}
+                      label={row.label}
+                      value={
+                        row.accent ? (
+                          <span className="text-rust">{row.value}</span>
+                        ) : (
+                          row.value
+                        )
+                      }
+                    />
+                  ))}
+                </RailCard>
+
+                <RailCard heading="// LOCATION">
+                  <div className="relative mb-3 flex h-[140px] items-center justify-center rounded-lg border border-rule-soft bg-paper text-ink-quiet">
+                    <span aria-hidden className="text-[24px] text-rust">
+                      ⊕
+                    </span>
+                    <span className="absolute bottom-2 left-3 text-[11px] text-ink-soft">
+                      {b.location.address}
+                    </span>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    className="h-9 w-full text-[12px]"
+                    asChild
+                  >
+                    <a href={mapsUrl} target="_blank" rel="noopener noreferrer">
+                      Open in Maps ↗
+                    </a>
+                  </Button>
+                </RailCard>
+
+                <RailCard heading="// AUTOMATIONS">
+                  {b.automations.map((row, i) => (
+                    <RailPropertyRow
+                      key={i}
+                      label={row.label}
+                      value={row.value}
+                    />
+                  ))}
+                </RailCard>
+              </div>
+            </div>
+
+            <ConfirmDialog
+              open={cancelOpen}
+              onOpenChange={setCancelOpen}
+              title="Cancel this booking?"
+              description="The slot is freed on the calendar and the customer is notified."
+              confirmLabel="Cancel booking"
+              cancelLabel="Keep booking"
+              tone="destructive"
+              onConfirm={() => router.push('/calendar')}
+            />
+          </>
+        )}
       </div>
-
-      <ConfirmDialog
-        open={cancelOpen}
-        onOpenChange={setCancelOpen}
-        title="Cancel this booking?"
-        description="The slot is freed on the calendar and the customer is notified."
-        confirmLabel="Cancel booking"
-        cancelLabel="Keep booking"
-        tone="destructive"
-        onConfirm={() => router.push('/calendar')}
-      />
     </>
+  );
+}
+
+function DetailNotice({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="rounded-[14px] border border-ink/8 bg-card px-[18px] py-12 text-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+      {children}
+    </p>
   );
 }
 

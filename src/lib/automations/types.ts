@@ -141,6 +141,9 @@ export type AutomationEditorStep = {
   subject?: string;
   /** Message body. Wrap variable spans in `[data-slot=var]` for highlight. */
   body: ReactNode;
+  /** Raw plain-text body template (with `{placeholder}` tokens) — the value
+   *  the editor textarea edits. Optional so the legacy stub still type-checks. */
+  bodyText?: string;
   /** Footer reply meta, e.g. "// 28% reply · 142 sent · last 7d". */
   footerMeta: string;
   /** Variable chips shown in the footer (excluding the "+ Insert variable" leader, which is always rendered). */
@@ -199,6 +202,8 @@ export type AutomationTestSendData = {
  */
 export type AutomationEditor = {
   id: string;
+  /** Whether the flow is currently enabled — drives the footer toggle. */
+  enabled: boolean;
   /** Page-header eyebrow, e.g. "// FreshHome · 24-hour follow-up sequence". */
   eyebrow: string;
   /** Page-header title (ReactNode — `<em>` renders rust). */

@@ -8,9 +8,15 @@ import { AutomationFlowMini } from './AutomationFlowMini';
 type AutomationGroupProps = {
   group: AutomationGroupData;
   className?: string;
+  /** Called when a flow's enable toggle is flipped. */
+  onToggleFlow?: (id: string, enabled: boolean) => void;
 };
 
-function AutomationGroup({ group, className }: AutomationGroupProps) {
+function AutomationGroup({
+  group,
+  className,
+  onToggleFlow,
+}: AutomationGroupProps) {
   return (
     <div
       data-slot="automation-group"
@@ -26,7 +32,15 @@ function AutomationGroup({ group, className }: AutomationGroupProps) {
       />
       <div data-slot="automation-group-rows">
         {group.flows.map((flow) => (
-          <AutomationFlowMini key={flow.id} flow={flow} />
+          <AutomationFlowMini
+            key={flow.id}
+            flow={flow}
+            onToggle={
+              onToggleFlow
+                ? (enabled) => onToggleFlow(flow.id, enabled)
+                : undefined
+            }
+          />
         ))}
       </div>
     </div>

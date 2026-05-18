@@ -10,9 +10,14 @@ import { AutomationStatTile } from './AutomationStatTile';
 
 type AutomationStatsCardProps = {
   automation: AutomationStatsCardData;
+  /** Called when the card's enable toggle is flipped. */
+  onToggle?: (enabled: boolean) => void;
 };
 
-function AutomationStatsCard({ automation }: AutomationStatsCardProps) {
+function AutomationStatsCard({
+  automation,
+  onToggle,
+}: AutomationStatsCardProps) {
   const [enabled, setEnabled] = useState(automation.enabled);
   const stats = automation.stats;
 
@@ -47,7 +52,10 @@ function AutomationStatsCard({ automation }: AutomationStatsCardProps) {
         </div>
         <Switch
           checked={enabled}
-          onCheckedChange={setEnabled}
+          onCheckedChange={(value) => {
+            setEnabled(value);
+            onToggle?.(value);
+          }}
           label={enabled ? 'ON' : 'OFF'}
         />
       </div>
