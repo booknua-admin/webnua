@@ -45,7 +45,11 @@ function NotificationBell() {
           open ? 'bg-ink text-paper' : 'bg-paper-2 text-ink hover:bg-paper-3',
         )}
       >
-        <span aria-hidden>🔔</span>
+        {/* U+FE0E forces text presentation — a monochrome glyph that
+            inherits the button's text colour, matching the sidebar icons. */}
+        <span aria-hidden className="text-base leading-none">
+          {'\u{1F514}\u{FE0E}'}
+        </span>
         {unreadCount > 0 ? (
           <span
             className={cn(
