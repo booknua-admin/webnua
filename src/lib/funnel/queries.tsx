@@ -19,10 +19,13 @@
 // with no client row — resolves as `not_found`.
 // =============================================================================
 
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { normalizeError } from '@/lib/errors';
 import { supabase } from '@/lib/supabase/client';
+import { subscribeBuilder } from '@/lib/website/builder-events';
+import { loadDraftsForFunnel } from '@/lib/website/content-drafts';
 import type { DomainSSLStatus } from '@/lib/website/types';
 
 import type {
@@ -127,7 +130,7 @@ async function fetchAllFunnels(): Promise<Funnel[]> {
   );
 }
 
-async function fetchFunnelWithDraft(
+export async function fetchFunnelWithDraft(
   funnelId: string,
 ): Promise<{ funnel: Funnel; draft: FunnelVersion }> {
   const { data: funnelRow, error: funnelError } = await supabase
@@ -147,7 +150,19 @@ async function fetchFunnelWithDraft(
     .single();
   if (versionError) throw normalizeError(versionError);
 
-  return { funnel, draft: mapFunnelVersion(versionRow as FunnelVersionRow) };
+  const draft = mapFunnelVersion(versionRow as FunnelVersionRow);
+  // Overlay the content_drafts autosave buffer onto the draft steps.
+  const drafts = await loadDraftsForFunnel(funnelId);
+  if (drafts.length > 0) {
+    draft.snapshot = {
+      ...draft.snapshot,
+      steps: draft.snapshot.steps.map((step) => {
+        const buffered = drafts.find((d) => d.pageKey === step.id);
+        return buffered ? { ...step, sections: buffered.sections } : step;
+      }),
+    };
+  }
+  return { funnel, draft };
 }
 
 // ---- Hooks ------------------------------------------------------------------
@@ -173,9 +188,12 @@ export function useAllFunnels() {
 /** One funnel + its draft version (the editable model). Backs the funnel
  *  detail page's editor deep-link and the funnel-step editor. */
 export function useFunnelWithDraft(funnelId: string | null) {
-  return useQuery({
+  const query = useQuery({
     queryKey: ['funnels', 'with-draft', funnelId],
     queryFn: () => fetchFunnelWithDraft(funnelId as string),
     enabled: funnelId != null && funnelId.length > 0,
   });
+  const { refetch } = query;
+  useEffect(() => subscribeBuilder(() => void refetch()), [refetch]);
+  return query;
 }

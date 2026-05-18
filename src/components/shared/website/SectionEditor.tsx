@@ -30,8 +30,10 @@
 // =============================================================================
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
-import { useUser } from '@/lib/auth/user-stub';
+import { useCan, useUser } from '@/lib/auth/user-stub';
+import { publishFunnelDraft } from '@/lib/funnel/mutations';
 import type { Funnel, FunnelStep } from '@/lib/funnel/types';
 import type { DraftSlot } from '@/lib/website/content-drafts';
 import { useBrandForClient } from '@/lib/website/queries';
@@ -130,6 +132,8 @@ export function SectionEditor({ mode }: SectionEditorProps) {
   const brand = brandQuery.data ?? null;
   const slot = useMemo(() => slotForMode(mode), [mode]);
   const user = useUser();
+  const router = useRouter();
+  const canPublish = useCan('publish');
 
   // Lane B lock applies only to websites. Funnel-step editing has no
   // approval queue yet (Session 7 is the shell; mechanics later).
@@ -197,6 +201,17 @@ export function SectionEditor({ mode }: SectionEditorProps) {
     };
     setSections((current) => [...current, newSection]);
     setSelectedSectionId(newSection.id);
+  };
+
+  // Funnel publish (Lane A — funnels have no approval queue). The funnel
+  // editor publishes directly; websites route through /website/review.
+  const handleFunnelPublish = async () => {
+    if (mode.kind !== 'funnelStep' || !user) return;
+    const result = await publishFunnelDraft(mode.funnel.id, {
+      id: user.id,
+      displayName: user.displayName,
+    });
+    if (result) router.push(`/funnels/${mode.funnel.id}`);
   };
 
   if (brandQuery.isLoading) {
@@ -288,10 +303,11 @@ export function SectionEditor({ mode }: SectionEditorProps) {
           lastSavedAt: autosave.lastSavedAt,
           onRetry: autosave.retry,
         }}
-        publishDisabled={locked || isFunnelStep}
-        // Session 8 — website editing routes publish through the review
-        // surface (preflight is the gate). Funnel mode has no publish yet.
+        publishDisabled={isFunnelStep ? !canPublish : locked}
+        // Website editing routes publish through the review surface
+        // (preflight is the gate); the funnel editor publishes directly.
         reviewHref={isFunnelStep ? undefined : '/website/review'}
+        onPublish={isFunnelStep ? handleFunnelPublish : undefined}
         publishMenu={
           mode.kind === 'funnelStep' ? null : (
             <ForcePublishMenu websiteId={mode.website.id} hidden={locked} />
