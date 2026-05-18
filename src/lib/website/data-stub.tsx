@@ -36,6 +36,7 @@ import type {
 } from './types';
 
 import { ctaSection } from './sections/cta';
+import { faqSection } from './sections/faq';
 import { footerSection } from './sections/footer';
 import { headerSection } from './sections/header';
 import { heroSection } from './sections/hero';
@@ -385,8 +386,8 @@ const freshhomeHomeCTA: CTAData = {
 };
 
 const freshhomeServicesFAQ: FAQData = {
-  title: 'Common questions',
-  intro: '',
+  ...faqSection.defaultData(),
+  headline: 'Common questions',
   items: [
     {
       id: 'faq-fh-1',

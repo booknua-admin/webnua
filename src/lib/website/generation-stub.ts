@@ -21,6 +21,7 @@
 import type { GenerationContext, PrimaryIntent, Audience } from './generation-context';
 import { getSectionDefinition } from './sections';
 import { ctaSection } from './sections/cta';
+import { faqSection } from './sections/faq';
 import { reviewsSection } from './sections/reviews';
 import { trustSection } from './sections/trust';
 import type {
@@ -454,8 +455,8 @@ function fillFaq(ctx: GenerationContext): GeneratedSection {
     type: 'faq',
     enabled: true,
     data: {
-      title: 'Common questions',
-      intro: '',
+      ...faqSection.defaultData(),
+      headline: 'Common questions',
       items: [
         {
           id: `faq-${rid()}`,
@@ -475,7 +476,7 @@ function fillFaq(ctx: GenerationContext): GeneratedSection {
         },
       ],
     },
-    populatedFields: ['title', 'items'],
+    populatedFields: ['headline', 'items'],
   };
 }
 
