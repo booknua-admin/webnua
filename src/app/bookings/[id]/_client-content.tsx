@@ -1,3 +1,7 @@
+'use client';
+
+import { useParams } from 'next/navigation';
+
 import { BookingActionBtn } from '@/components/shared/bookings/BookingActionBtn';
 import { BookingHistoryRow } from '@/components/shared/bookings/BookingHistoryRow';
 import { BookingJobGrid } from '@/components/shared/bookings/BookingJobGrid';
@@ -12,6 +16,9 @@ import { voltlineReschedule } from '@/lib/bookings/reschedule-modal';
 
 function ClientBookingDetailContent() {
   const b = voltlineBooking;
+  const params = useParams();
+  const id = Array.isArray(params.id) ? params.id[0] : (params.id ?? '');
+  const completeHref = `/bookings/${id}/complete`;
   return (
     <>
       <Topbar
@@ -83,7 +90,11 @@ function ClientBookingDetailContent() {
                       icon={a.icon}
                       label={a.label}
                       tone={a.tone ?? 'secondary'}
-                      href={a.href}
+                      href={
+                        a.label === 'Mark job complete'
+                          ? completeHref
+                          : a.href
+                      }
                     />
                   ),
                 )}

@@ -1,3 +1,8 @@
+'use client';
+
+import Link from 'next/link';
+import { useParams } from 'next/navigation';
+
 import { AdminBookingHero } from '@/components/shared/bookings/AdminBookingHero';
 import { BookingHistoryRow } from '@/components/shared/bookings/BookingHistoryRow';
 import { BookingJobGrid } from '@/components/shared/bookings/BookingJobGrid';
@@ -14,6 +19,9 @@ import { freshhomeBooking } from '@/lib/bookings/admin-booking';
 
 function AdminBookingDetailContent() {
   const b = freshhomeBooking;
+  const params = useParams();
+  const id = Array.isArray(params.id) ? params.id[0] : (params.id ?? '');
+  const completeHref = `/bookings/${id}/complete`;
   return (
     <>
       <Topbar
@@ -37,8 +45,8 @@ function AdminBookingDetailContent() {
               customer={b.customer}
               actions={
                 <>
-                  <Button variant="default" className="h-9">
-                    Mark complete
+                  <Button variant="default" className="h-9" asChild>
+                    <Link href={completeHref}>Mark complete</Link>
                   </Button>
                   <RescheduleBookingButton data={freshhomeReschedule} />
                   <Button variant="secondary" className="h-9" asChild>
