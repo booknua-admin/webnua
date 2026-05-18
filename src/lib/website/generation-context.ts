@@ -38,6 +38,21 @@ export type ExistingPageSnapshot = {
   sectionTypes: SectionType[];
 };
 
+/** Concrete business details captured by the create-client flow. When
+ *  present the generator weaves them into copy (hero, offer, contact,
+ *  footer) instead of falling back to generic templated text. */
+export type BusinessDetails = {
+  name: string;
+  ownerName: string;
+  phone: string;
+  email: string;
+  serviceArea: string;
+  /** Free-text offer description (optionally AI-enhanced). */
+  offer: string;
+  /** Services / jobs the business does — drives feature + service items. */
+  services: string[];
+};
+
 export type GenerationContext = {
   flavour: 'new-page' | 'first-page';
   pageType: PageType;
@@ -47,6 +62,8 @@ export type GenerationContext = {
   avoid: string | null;
   brand: BrandObject;
   existingPages: ExistingPageSnapshot[];
+  /** Present when generation was driven by the create-client flow. */
+  business?: BusinessDetails;
 };
 
 // -- Labels for the chip rows / review surface ------------------------------

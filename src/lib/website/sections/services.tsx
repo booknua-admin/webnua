@@ -271,10 +271,14 @@ function ServicesPreview({ data, brand }: SectionPreviewProps<ServicesData>) {
   );
 }
 
+// DEPRECATED — the `features` section replaces this priced service menu.
+// Kept in the registry (with `implemented: false`) so existing seed pages
+// that still carry a `services` section continue to render; it no longer
+// appears in the "Add section" picker. Remove once seed data is migrated.
 export const servicesSection = defineSection<ServicesData>({
   type: 'services',
   label: '// SERVICES',
-  description: 'Services menu — rows of name, price-from, duration, description.',
+  description: 'Deprecated — superseded by the Features section.',
   defaultData,
   Fields: ServicesFields,
   Preview: ServicesPreview,
@@ -282,5 +286,5 @@ export const servicesSection = defineSection<ServicesData>({
     copyFields: ['title', 'intro', 'services'],
   },
   allowedContainers: ['page', 'funnelStep'],
-  implemented: true,
+  implemented: false,
 });

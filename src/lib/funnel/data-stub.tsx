@@ -101,31 +101,27 @@ const voltlineLandingHero: HeroData = {
 
 const voltlineLandingOffer: OfferData = {
   ...offerSection.defaultData(),
-  tag: '// THE 90-MINUTE PROMISE',
+  tag: 'THE 90-MINUTE PROMISE',
   title: '90 minutes — or $50 off the call-out',
   priceLabel: '$95',
   priceCaption: 'standard call-out · $165 after-hours',
-  includedText: [
+  inclusions: [
     'Licensed sparky on site within 90 min of confirmation',
     'Fixed call-out fee, no quibbling',
     '$20M public liability + EC 47829',
     'Written quote before any further work',
-  ].join('\n'),
+  ].map((text, i) => ({ id: `inc-vlo-${i}`, text })),
   scarcityCopy:
-    "Skin in the game: if we don't arrive in 90, you get $50 off — no questions, no quibbling.",
-  ctaLabel: "Book today's slot →",
+    "Skin in the game: if we don't arrive in 90, you get $50 off — no quibbling.",
+  ctaLabel: "Book today's slot",
   ctaHref: '#schedule',
 };
 
 const voltlineLandingTrust: TrustData = {
   ...trustSection.defaultData(),
-  intro: '// 1,840+ JOBS · PERTH HOMEOWNERS TRUST US',
-  ratingValue: '4.9',
-  ratingMax: '5',
-  ratingSource: 'Google · 184 reviews',
-  yearsLabel: '11 yrs in Perth',
-  licenceLabel: 'EC Lic 47829',
-  guaranteeLabel: '$20M public liability',
+  eyebrow: 'PERTH HOMEOWNERS TRUST US',
+  headline: '1,840+ jobs done right.',
+  sub: 'Eleven years of licensed electrical work across Perth metro.',
 };
 
 const voltlineLandingServices: ServicesData = {
@@ -181,11 +177,11 @@ const voltlineLandingServices: ServicesData = {
 
 const voltlineLandingCTA: CTAData = {
   ...ctaSection.defaultData(),
-  tag: '// READY?',
-  headline: "Sparkie at your door this hour.",
+  eyebrow: 'READY?',
+  headline: 'Sparkie at your door this hour.',
   sub: 'One call, fixed callout, written quote on arrival.',
-  ctaLabel: "Book today's slot →",
-  ctaHref: '#schedule',
+  primaryLabel: "Book today's slot",
+  primaryHref: '#schedule',
 };
 
 const voltlineSchedulePicker: SchedulePickerData = {

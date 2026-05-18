@@ -86,7 +86,7 @@ export function SectionShell({
     // responsive classes track the device-preview width, not the viewport.
     'relative w-full @container',
     backgroundLayer ? 'overflow-hidden' : '',
-    banded ? 'px-6 @2xl:px-10' : '',
+    banded ? 'px-8 @2xl:px-12' : '',
     PAD[pad],
     className ?? '',
   ]

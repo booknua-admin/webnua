@@ -8,9 +8,13 @@
 import type { ContainerKind, SectionType } from '../types';
 import type { SectionTypeDefinition } from '../registry';
 
+import { aboutSection } from './about';
+import { contactSection } from './contact';
 import { ctaSection } from './cta';
 import { faqSection } from './faq';
+import { featuresSection } from './features';
 import { footerSection } from './footer';
+import { gallerySection } from './gallery';
 import { headerSection } from './header';
 import { heroSection } from './hero';
 import { offerSection } from './offer';
@@ -25,10 +29,14 @@ export const SECTION_REGISTRY: readonly SectionTypeDefinition[] = [
   heroSection,
   offerSection,
   trustSection,
+  featuresSection,
   servicesSection,
+  aboutSection,
+  gallerySection,
   reviewsSection,
   faqSection,
   ctaSection,
+  contactSection,
   // Funnel-only stackable
   schedulePickerSection,
   thanksConfirmationSection,
@@ -61,8 +69,12 @@ export function getSectionsForContainer(
 }
 
 // Re-export per-section data types for typed consumers.
+export type { AboutData, AboutFeature, AboutStat } from './about';
+export type { ContactData, ContactInfoItem } from './contact';
 export type { CTAData } from './cta';
 export type { FAQData, FAQItem } from './faq';
+export type { FeatureItem, FeaturesData } from './features';
+export type { GalleryData, GalleryItem } from './gallery';
 export type { FooterData } from './footer';
 export type { HeaderData } from './header';
 export type { HeroData } from './hero';

@@ -468,7 +468,7 @@ function HeroPreview({
             {d.sub ? (
               <SelectableElement {...sel('subheadline')} className="mt-5">
                 <p
-                  className={`${SUB_SIZE_CLASS[d.subSize]} max-w-[460px] leading-[1.6]`}
+                  className={`${SUB_SIZE_CLASS[d.subSize]} max-w-[460px] whitespace-pre-line leading-[1.6]`}
                   style={{ color: theme.body }}
                 >
                   {d.sub}
@@ -514,7 +514,7 @@ function HeroPreview({
 
         if (overlay) {
           return (
-            <div className="flex min-h-[480px] items-center px-8 py-20 @2xl:px-16">
+            <div className="flex min-h-[480px] items-center px-8 py-20 @2xl:px-12">
               {hasForm ? (
                 // Content + form sit in a centred band so the form is a real
                 // column, not a small panel lost in empty space.
