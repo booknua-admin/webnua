@@ -12,9 +12,9 @@ export const GRID_COLUMNS_CLASS: Record<number, string> = {
   1: 'grid-cols-1',
   2: 'grid-cols-1 @lg:grid-cols-2',
   3: 'grid-cols-1 @sm:grid-cols-2 @2xl:grid-cols-3',
-  4: 'grid-cols-1 @sm:grid-cols-2 @3xl:grid-cols-4',
-  5: 'grid-cols-1 @sm:grid-cols-2 @3xl:grid-cols-3 @5xl:grid-cols-5',
-  6: 'grid-cols-1 @sm:grid-cols-2 @3xl:grid-cols-3 @5xl:grid-cols-6',
+  4: 'grid-cols-1 @sm:grid-cols-2 @2xl:grid-cols-4',
+  5: 'grid-cols-1 @sm:grid-cols-2 @lg:grid-cols-3 @2xl:grid-cols-5',
+  6: 'grid-cols-1 @sm:grid-cols-2 @lg:grid-cols-3 @2xl:grid-cols-6',
 };
 
 /** Resolve a column count (1–6) to its responsive grid class string. */
