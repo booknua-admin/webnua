@@ -36,6 +36,7 @@ import type {
 } from './types';
 
 import { ctaSection } from './sections/cta';
+import { footerSection } from './sections/footer';
 import { headerSection } from './sections/header';
 import { heroSection } from './sections/hero';
 import { offerSection } from './sections/offer';
@@ -213,13 +214,12 @@ const voltlineHeader: Section = mkSection<HeaderData>('sec-vl-header', 'header',
 });
 
 const voltlineFooter: Section = mkSection<FooterData>('sec-vl-footer', 'footer', {
-  brandLine: 'Voltline · Licensed electricians serving Perth metro',
+  ...footerSection.defaultData(),
+  logoText: 'Voltline',
+  brandLine: 'Licensed electricians serving Perth metro.',
+  contactAddress: 'Servicing Perth metro, WA',
   contactPhone: '0411 222 333',
   contactEmail: 'hello@voltline.com.au',
-  addressLine: 'Servicing Perth metro, WA',
-  socialTwitter: '',
-  socialInstagram: '@voltlineperth',
-  socialFacebook: 'voltline.perth',
   legalText: '© 2026 Voltline Pty Ltd · Lic #EC-12345 · ABN 12 345 678 901',
 });
 
@@ -359,13 +359,12 @@ const freshhomeHeader: Section = mkSection<HeaderData>('sec-fh-header', 'header'
 });
 
 const freshhomeFooter: Section = mkSection<FooterData>('sec-fh-footer', 'footer', {
-  brandLine: 'FreshHome · Fortnightly cleaning across Perth',
+  ...footerSection.defaultData(),
+  logoText: 'FreshHome',
+  brandLine: 'Fortnightly cleaning across Perth.',
+  contactAddress: 'Servicing Perth northern suburbs',
   contactPhone: '0411 444 555',
   contactEmail: 'hello@freshhome.com.au',
-  addressLine: 'Servicing Perth northern suburbs',
-  socialTwitter: '',
-  socialInstagram: '@freshhome.perth',
-  socialFacebook: 'freshhome.perth',
   legalText: '© 2026 FreshHome Cleaning Pty Ltd · ABN 98 765 432 109',
 });
 
@@ -601,13 +600,12 @@ const keyheroHeader: Section = mkSection<HeaderData>('sec-kh-header', 'header', 
 });
 
 const keyheroFooter: Section = mkSection<FooterData>('sec-kh-footer', 'footer', {
-  brandLine: 'KeyHero · Mobile locksmiths · Perth metro · 24/7',
+  ...footerSection.defaultData(),
+  logoText: 'KeyHero',
+  brandLine: 'Mobile locksmiths · Perth metro · 24/7.',
+  contactAddress: 'Servicing Perth metro, WA',
   contactPhone: '0411 666 777',
   contactEmail: 'help@keyhero.com.au',
-  addressLine: 'Servicing Perth metro, WA',
-  socialTwitter: '',
-  socialInstagram: '',
-  socialFacebook: 'keyhero.perth',
   legalText: '© 2026 KeyHero Locksmiths · ABN 55 123 456 789',
 });
 
