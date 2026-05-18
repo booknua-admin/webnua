@@ -1,21 +1,38 @@
 'use client';
 
-import {
-  BuilderFormSection,
-} from '@/components/shared/builder/BuilderField';
+import { BuilderFormRow, BuilderFormSection } from '@/components/shared/builder/BuilderField';
 
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import {
+  type SectionSurface,
+  type SurfaceTokens,
+} from '../section-surface';
 import { CopyField } from './_shared/CopyField';
 import { MediaField } from './_shared/MediaField';
+import { SectionShell } from './_shared/SectionShell';
+import { VariantField, type VariantOption } from './_shared/VariantField';
 
 // =============================================================================
-// Hero section — above-the-fold lead with eyebrow + headline + sub + CTAs +
-// optional hero image. Most prominent section in any landing page.
+// Hero section — above-the-fold lead. Phase 6 uplift: renders full-bleed
+// through SectionShell at production fidelity, with two editable axes —
+// `layout` (split image vs image overlay) and `surface` (the four tonal
+// surfaces). The headline is a two-line shape: `headline` + an accent-
+// coloured `headlineAccent` line, matching the reference set.
 // =============================================================================
+
+export type HeroLayout = 'split' | 'overlay';
 
 export type HeroData = {
+  /** Structural arrangement. */
+  layout: HeroLayout;
+  /** Tonal surface the section renders on. */
+  surface: SectionSurface;
+  /** Which side the image sits on in the `split` layout. */
+  imageSide: 'left' | 'right';
   eyebrow: string;
   headline: string;
+  /** Second headline line, rendered in the brand accent colour. */
+  headlineAccent: string;
   sub: string;
   ctaPrimaryLabel: string;
   ctaPrimaryHref: string;
@@ -25,9 +42,13 @@ export type HeroData = {
 };
 
 const DEFAULTS: HeroData = {
-  eyebrow: '// LOCAL · TRUSTED',
-  headline: 'Power back on — guaranteed within the hour.',
-  sub: 'Licensed sparkies covering Perth metro. Fixed callout, transparent quote, no surprises.',
+  layout: 'split',
+  surface: 'dark',
+  imageSide: 'right',
+  eyebrow: 'LOCAL · TRUSTED',
+  headline: 'Power back on,',
+  headlineAccent: 'guaranteed within the hour.',
+  sub: 'Licensed sparkies covering Perth metro. Fixed callout, transparent quote — no surprises, ever.',
   ctaPrimaryLabel: 'Book a callout',
   ctaPrimaryHref: '/schedule',
   ctaSecondaryLabel: 'Call now',
@@ -39,35 +60,89 @@ function defaultData(): HeroData {
   return { ...DEFAULTS };
 }
 
+/** Merge persisted data over defaults — covers sections saved before the
+ *  Phase 6 uplift added `layout` / `surface` / `headlineAccent` / `imageSide`. */
+function withDefaults(data: HeroData): HeroData {
+  return { ...DEFAULTS, ...data };
+}
+
 const HEADLINE_ALTS = [
-  'Power back on — guaranteed within the hour.',
-  'Local sparkies. Fast callouts. Honest pricing.',
-  'Same-day electrical work, fixed quote before we touch a wire.',
+  DEFAULTS.headline,
+  'Local sparkies, on call.',
+  'Same-day electrical work.',
+] as const;
+
+const HEADLINE_ACCENT_ALTS = [
+  DEFAULTS.headlineAccent,
+  'honest pricing, no surprises.',
+  'quoted before we touch a wire.',
 ] as const;
 
 const SUB_ALTS = [
-  'Licensed sparkies covering Perth metro. Fixed callout, transparent quote, no surprises.',
+  DEFAULTS.sub,
   'Vetted local sparkies. Same-day response. Twelve-month workmanship guarantee on every job.',
-  'On-call electricians across Perth. We answer the phone. We quote on arrival. We stand behind the work.',
+  'On-call electricians across Perth. We answer the phone, we quote on arrival, we stand behind the work.',
 ] as const;
 
+const LAYOUT_OPTIONS: readonly VariantOption<HeroLayout>[] = [
+  { id: 'split', label: 'Split image' },
+  { id: 'overlay', label: 'Image overlay' },
+];
+
+const SURFACE_OPTIONS: readonly VariantOption<SectionSurface>[] = [
+  { id: 'paper', label: 'Paper' },
+  { id: 'white', label: 'White' },
+  { id: 'light', label: 'Light' },
+  { id: 'dark', label: 'Dark' },
+];
+
+const IMAGE_SIDE_OPTIONS: readonly VariantOption<'left' | 'right'>[] = [
+  { id: 'left', label: 'Left' },
+  { id: 'right', label: 'Right' },
+];
+
+// -- Fields -----------------------------------------------------------------
+
 function HeroFields({ data, onChange }: SectionFieldsProps<HeroData>) {
+  const d = withDefaults(data);
   const set = <K extends keyof HeroData>(key: K, value: HeroData[K]) =>
-    onChange({ ...data, [key]: value });
+    onChange({ ...d, [key]: value });
 
   return (
     <>
       <BuilderFormSection>
+        <VariantField
+          label="Layout"
+          value={d.layout}
+          options={LAYOUT_OPTIONS}
+          onChange={(v) => set('layout', v)}
+        />
+        <VariantField
+          label="Surface"
+          value={d.surface}
+          options={SURFACE_OPTIONS}
+          onChange={(v) => set('surface', v)}
+        />
+        {d.layout === 'split' ? (
+          <VariantField
+            label="Image side"
+            value={d.imageSide}
+            options={IMAGE_SIDE_OPTIONS}
+            onChange={(v) => set('imageSide', v)}
+          />
+        ) : null}
+      </BuilderFormSection>
+      <BuilderFormSection>
         <CopyField
           label="Eyebrow"
-          value={data.eyebrow}
+          value={d.eyebrow}
           originalValue={DEFAULTS.eyebrow}
           onChange={(v) => set('eyebrow', v)}
-          placeholder="// LOCAL · TRUSTED"
+          placeholder="LOCAL · TRUSTED"
         />
         <CopyField
           label="Headline"
-          value={data.headline}
+          value={d.headline}
           originalValue={DEFAULTS.headline}
           alternatives={HEADLINE_ALTS}
           onChange={(v) => set('headline', v)}
@@ -75,8 +150,18 @@ function HeroFields({ data, onChange }: SectionFieldsProps<HeroData>) {
           rows={2}
         />
         <CopyField
+          label="Headline · accent line"
+          value={d.headlineAccent}
+          originalValue={DEFAULTS.headlineAccent}
+          alternatives={HEADLINE_ACCENT_ALTS}
+          onChange={(v) => set('headlineAccent', v)}
+          multiline
+          rows={2}
+          helper={<>Rendered in the brand accent colour, on its own line.</>}
+        />
+        <CopyField
           label="Sub"
-          value={data.sub}
+          value={d.sub}
           originalValue={DEFAULTS.sub}
           alternatives={SUB_ALTS}
           onChange={(v) => set('sub', v)}
@@ -85,35 +170,39 @@ function HeroFields({ data, onChange }: SectionFieldsProps<HeroData>) {
         />
       </BuilderFormSection>
       <BuilderFormSection>
-        <CopyField
-          label="Primary CTA · label"
-          value={data.ctaPrimaryLabel}
-          originalValue={DEFAULTS.ctaPrimaryLabel}
-          onChange={(v) => set('ctaPrimaryLabel', v)}
-        />
-        <CopyField
-          label="Primary CTA · href"
-          value={data.ctaPrimaryHref}
-          originalValue={DEFAULTS.ctaPrimaryHref}
-          onChange={(v) => set('ctaPrimaryHref', v)}
-        />
-        <CopyField
-          label="Secondary CTA · label"
-          value={data.ctaSecondaryLabel}
-          originalValue={DEFAULTS.ctaSecondaryLabel}
-          onChange={(v) => set('ctaSecondaryLabel', v)}
-        />
-        <CopyField
-          label="Secondary CTA · href"
-          value={data.ctaSecondaryHref}
-          originalValue={DEFAULTS.ctaSecondaryHref}
-          onChange={(v) => set('ctaSecondaryHref', v)}
-        />
+        <BuilderFormRow>
+          <CopyField
+            label="Primary CTA · label"
+            value={d.ctaPrimaryLabel}
+            originalValue={DEFAULTS.ctaPrimaryLabel}
+            onChange={(v) => set('ctaPrimaryLabel', v)}
+          />
+          <CopyField
+            label="Primary CTA · href"
+            value={d.ctaPrimaryHref}
+            originalValue={DEFAULTS.ctaPrimaryHref}
+            onChange={(v) => set('ctaPrimaryHref', v)}
+          />
+        </BuilderFormRow>
+        <BuilderFormRow>
+          <CopyField
+            label="Secondary CTA · label"
+            value={d.ctaSecondaryLabel}
+            originalValue={DEFAULTS.ctaSecondaryLabel}
+            onChange={(v) => set('ctaSecondaryLabel', v)}
+          />
+          <CopyField
+            label="Secondary CTA · href"
+            value={d.ctaSecondaryHref}
+            originalValue={DEFAULTS.ctaSecondaryHref}
+            onChange={(v) => set('ctaSecondaryHref', v)}
+          />
+        </BuilderFormRow>
       </BuilderFormSection>
       <BuilderFormSection>
         <MediaField
           label="Hero image URL"
-          value={data.heroImageUrl}
+          value={d.heroImageUrl}
           onChange={(v) => set('heroImageUrl', v)}
           helper="Paste a URL or leave blank for the placeholder."
         />
@@ -122,68 +211,155 @@ function HeroFields({ data, onChange }: SectionFieldsProps<HeroData>) {
   );
 }
 
+// -- Preview ----------------------------------------------------------------
+
 function HeroPreview({ data, brand }: SectionPreviewProps<HeroData>) {
+  const d = withDefaults(data);
+  const overlay = d.layout === 'overlay';
+
   return (
-    <section
-      data-section-type="hero"
-      className="grid gap-7 rounded-xl border border-rule bg-paper px-7 py-9 md:grid-cols-[1.2fr_1fr] md:px-9"
+    <SectionShell
+      surface={d.surface}
+      brand={brand}
+      inset="flush"
+      pad="none"
+      backgroundLayer={overlay ? <HeroBackground url={d.heroImageUrl} /> : undefined}
     >
-      <div className="flex flex-col justify-center">
-        <p
-          className="mb-3 font-mono text-[11px] font-bold uppercase tracking-[0.16em]"
-          style={{ color: brand.accentColor }}
-        >
-          {data.eyebrow}
-        </p>
-        <h2 className="mb-3 text-[34px] font-extrabold leading-[1.08] tracking-[-0.02em] text-ink">
-          {data.headline}
-        </h2>
-        <p className="mb-5 max-w-[440px] text-[15px] leading-[1.55] text-ink-mid">
-          {data.sub}
-        </p>
-        <div className="flex flex-wrap items-center gap-2.5">
-          {data.ctaPrimaryLabel ? (
-            <span
-              className="inline-flex items-center rounded-[7px] px-[18px] py-2.5 text-[13px] font-bold text-paper"
-              style={{ backgroundColor: brand.accentColor }}
+      {({ surface, headingFont, accent }) => {
+        // Overlay sits on a dark image scrim — force light text regardless
+        // of the chosen surface (the surface only sets the no-image fallback).
+        const heading = overlay ? '#ffffff' : surface.heading;
+        const body = overlay ? 'rgba(255, 255, 255, 0.86)' : surface.body;
+
+        const content = (
+          <>
+            {d.eyebrow ? (
+              <p
+                className="mb-4 text-[12px] font-bold uppercase tracking-[0.18em]"
+                style={{ color: accent }}
+              >
+                {d.eyebrow}
+              </p>
+            ) : null}
+            <h2
+              className="text-[40px] font-bold leading-[1.06] tracking-[-0.02em] md:text-[52px]"
+              style={{ fontFamily: headingFont, color: heading }}
             >
-              {data.ctaPrimaryLabel}
-            </span>
-          ) : null}
-          {data.ctaSecondaryLabel ? (
-            <span className="inline-flex items-center rounded-[7px] border border-rule px-[18px] py-2.5 text-[13px] font-bold text-ink">
-              {data.ctaSecondaryLabel}
-            </span>
-          ) : null}
-        </div>
-      </div>
-      <div
-        aria-hidden
-        className="flex min-h-[180px] items-center justify-center overflow-hidden rounded-lg border border-rule bg-paper-2"
-      >
-        {data.heroImageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={data.heroImageUrl}
-            alt=""
-            className="h-full w-full object-cover"
-          />
-        ) : (
-          <p className="px-3 text-center font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-ink-quiet">
+              <span className="block">{d.headline}</span>
+              {d.headlineAccent ? (
+                <span className="block" style={{ color: accent }}>
+                  {d.headlineAccent}
+                </span>
+              ) : null}
+            </h2>
+            {d.sub ? (
+              <p
+                className="mt-5 max-w-[460px] text-[16px] leading-[1.6]"
+                style={{ color: body }}
+              >
+                {d.sub}
+              </p>
+            ) : null}
+            {(d.ctaPrimaryLabel || d.ctaSecondaryLabel) ? (
+              <div className="mt-8 flex flex-wrap items-center gap-3">
+                {d.ctaPrimaryLabel ? (
+                  <span
+                    className="inline-flex items-center rounded-lg px-6 py-3 text-[14px] font-semibold"
+                    style={{ backgroundColor: accent, color: '#ffffff' }}
+                  >
+                    {d.ctaPrimaryLabel}
+                  </span>
+                ) : null}
+                {d.ctaSecondaryLabel ? (
+                  <span
+                    className="inline-flex items-center rounded-lg border px-6 py-3 text-[14px] font-semibold"
+                    style={{ borderColor: heading, color: heading }}
+                  >
+                    {d.ctaSecondaryLabel}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+          </>
+        );
+
+        if (overlay) {
+          return (
+            <div className="flex min-h-[480px] items-center px-8 py-20 md:px-16">
+              <div className="max-w-[600px]">{content}</div>
+            </div>
+          );
+        }
+
+        const imageCell = (
+          <HeroImage key="image" url={d.heroImageUrl} tokens={surface} />
+        );
+        const contentCell = (
+          <div
+            key="content"
+            className="flex flex-col justify-center px-8 py-14 md:px-12 md:py-16"
+          >
+            <div className="max-w-[520px]">{content}</div>
+          </div>
+        );
+
+        return (
+          <div className="grid min-h-[460px] md:grid-cols-2">
+            {d.imageSide === 'left'
+              ? [imageCell, contentCell]
+              : [contentCell, imageCell]}
+          </div>
+        );
+      }}
+    </SectionShell>
+  );
+}
+
+function HeroImage({ url, tokens }: { url: string; tokens: SurfaceTokens }) {
+  return (
+    <div
+      className="relative min-h-[280px] w-full overflow-hidden md:min-h-full"
+      style={{ backgroundColor: tokens.cardBg }}
+    >
+      {url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span
+            className="text-[12px] font-semibold uppercase tracking-[0.16em]"
+            style={{ color: tokens.muted }}
+          >
             Hero image
-            <br />
-            placeholder
-          </p>
-        )}
-      </div>
-    </section>
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HeroBackground({ url }: { url: string }) {
+  return (
+    <>
+      {url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+      ) : null}
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            'linear-gradient(100deg, rgba(8, 16, 32, 0.93) 0%, rgba(8, 16, 32, 0.7) 45%, rgba(8, 16, 32, 0.35) 100%)',
+        }}
+      />
+    </>
   );
 }
 
 export const heroSection = defineSection<HeroData>({
   type: 'hero',
   label: '// HERO',
-  description: 'Above-the-fold lead — eyebrow, headline, sub, two CTAs, hero image.',
+  description: 'Above-the-fold lead — eyebrow, two-line headline, sub, two CTAs, image.',
   defaultData,
   Fields: HeroFields,
   Preview: HeroPreview,
@@ -191,6 +367,7 @@ export const heroSection = defineSection<HeroData>({
     copyFields: [
       'eyebrow',
       'headline',
+      'headlineAccent',
       'sub',
       'ctaPrimaryLabel',
       'ctaPrimaryHref',
