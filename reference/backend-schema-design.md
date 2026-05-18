@@ -15,6 +15,19 @@
 > **Conventions used below:**
 > - All primary keys are `uuid` (`gen_random_uuid()`), all timestamps
 >   `timestamptz`. "ISO timestamp" stub fields map to `timestamptz`.
+> - **Timestamp columns.** Mutable entities carry `created_at` + `updated_at`
+>   (both `default now()`; `updated_at` bumped by a trigger). Append-only
+>   audit/event tables (`lead_events`, `force_publish_audit_log`,
+>   `campaign_activity_events`, `seat_limit_changes`, `generation_log`) carry
+>   only their event timestamp (`occurred_at` / `changed_at` / `created_at`) —
+>   an event is never "updated," so no `updated_at`.
+> - **Soft vs hard delete.** Three classes: (a) **state-only** — `clients`
+>   (lifecycle `paused`/`churned`, never row-deleted) and versions (`archived`
+>   status); (b) **soft delete** — content rows that may need recovery
+>   (`pages`, `sections`) carry `deleted_at timestamptz null`; (c) **hard
+>   delete** — everything else (an unsent invite, a notification, a draft
+>   ticket message) is genuinely removed. Audit/event tables are never deleted
+>   from at all.
 > - `[JC]` tags a judgement call I want confirmed rather than silently picked
 >   (collected in §10).
 > - 🔴 marks a **load-bearing** decision — wrong here propagates widely.
@@ -57,6 +70,12 @@ users
 drives sidebar/route shape, `team_role` is the operator org tier whose
 capability bundle is derived (`owner`/`operator` = all caps, `junior` = the
 5-cap subset). They are **not** the capability layer — that's `capability_grants`.
+
+The `CHECK` encodes a hard rule: **an operator has no home client.**
+`users.client_id` is exclusively a *client user's* home business — operators
+are unscoped at this column and reach any client (including Webnua's own
+marketing account, should it ever become a managed sub-account) through the
+workspace picker, never through `client_id`.
 
 #### `clients` 🔴 — **invented, see §2.1**
 The client business / sub-account. Central FK target for nearly every table.
@@ -326,8 +345,9 @@ sections
   updated_at      timestamptz not null default now()
   CHECK (num_nonnulls(page_id, funnel_step_id) <= 1)  -- 0 = website singleton
 ```
-`[JC-8]` covers the polymorphic-parent shape (two nullable FKs + a website
-back-reference vs a `(container_kind, container_id)` pair).
+The polymorphic-parent shape (two nullable FKs + a website back-reference for
+singletons vs a `(container_kind, container_id)` pair) is an **open item folded
+into the §7 builder pass** — see §10.
 
 #### `website_versions`
 ```
@@ -363,15 +383,18 @@ Funnel sections live in the shared `sections` table via `funnel_step_id`.
 
 ### 1.5 Operational entities
 
+#### `customers` 🔴 — **invented, see §2.3**
+The person a client deals with — the shared identity behind leads, bookings,
+recurring schedules, and review authors. Per-client scoped.
+
 #### `leads`
 ```
 leads
   id                  uuid PK
   client_id           uuid not null FK→clients(id)
-  name                text not null
-  phone               text null
-  email               text null
-  suburb              text null
+  customer_id         uuid null FK→customers(id)    -- linked at creation via phone match; null = unmatchable raw lead
+  customer_name_snapshot  text not null             -- enquiry name, frozen (§2.3 snapshot convention)
+  customer_phone_snapshot text null                 -- enquiry contact number, frozen
   status              lead_status not null default 'new'   -- new|contacted|booked|completed|lost
   urgency             lead_urgency not null default 'none' -- asap|today|soon|none
   source              text null
@@ -380,8 +403,10 @@ leads
   updated_at          timestamptz not null default now()
 ```
 Provenance: `lib/leads/types.ts` (`ClientLeadRow`/`AdminLeadRow`/`LeadDetail`
-are projections — see §5). `unread`/`age`/`preview`/`meta` are **not columns**
-(per-viewer or computed — §5).
+are projections — see §5). The stub's `email`/`suburb` are **not lead
+columns** — they live on `customers` (§2.3), resolved via `customer_id`.
+`unread`/`age`/`preview`/`meta` are **not columns** (per-viewer or
+computed — §5); lead "unread" is the `lead_reads` join (below).
 
 #### `lead_events` 🔴
 The lead activity timeline — the canonical typed-event log (vision §7). Every
@@ -394,35 +419,33 @@ lead_events
                                              --   status_changed|booking_created|automation_fired
   occurred_at     timestamptz not null
   scheduled_for   timestamptz null           -- set for future/scheduled events (stub `pending`)
-  actor_user_id   uuid null FK→users(id)     -- null = customer / system
-  is_automated    boolean not null default false
-  message_id      uuid null FK→messages(id)  -- set when the event IS a message
-  payload         jsonb not null default '{}' -- form fields {label,value}[], status {from,to}, etc.
+  actor_user_id   uuid null FK→users(id)       -- human actor; null = customer / system
+  automation_id   uuid null FK→automations(id) -- automation actor; null = not automation-driven
+  payload         jsonb not null default '{}'  -- typed per `kind` — see below
   created_at      timestamptz not null default now()
 ```
-Provenance: `lib/leads/types.ts → LeadTimelineEvent` — **needs restructure**
-(the stub packs channel/direction/phone/time as JSX `meta`; here it is typed
-columns + `payload`). `[JC-4]` covers the `lead_events` ↔ `messages` boundary.
+Provenance: `lib/leads/types.ts → LeadTimelineEvent` + `ConversationMessage` —
+**needs restructure**. `[JC-4]` **resolved: messages collapse into
+`lead_events`** — there is no separate `messages` table. An SMS / email is one
+event row, not two. `kind` already encodes channel + direction
+(`sms_in`/`sms_out`/`email_in`/`email_out`), so no separate channel/direction
+columns are needed. `actor_user_id` (human) and `automation_id` (automation)
+are the two non-exclusive actor FKs — the stub's `is_automated` boolean is
+dropped (derivable: `automation_id IS NOT NULL`).
 
-#### `messages`
-The conversation thread — the subset of activity that is actual messages.
-```
-messages
-  id            uuid PK
-  lead_id       uuid not null FK→leads(id)
-  channel       message_channel not null    -- 'sms' | 'email' | 'form'
-  direction     message_direction not null  -- 'inbound' | 'outbound'
-  kind          message_kind not null       -- 'incoming'|'outgoing'|'auto'|'system'
-  body          text not null               -- verbatim content
-  sender_name   text null
-  sent_at       timestamptz not null
-  delivered     boolean not null default false
-  is_automated  boolean not null default false
-  automation_id uuid null FK→automations(id)
-  created_at    timestamptz not null default now()
-```
-Provenance: `lib/leads/types.ts → ConversationMessage`. `body` is verbatim
-input (acceptable as `text`); `metaPrefix`/`time` ReactNode fields drop.
+`payload` is typed by `kind`:
+- message kinds (`sms_*`, `email_*`) → `{ body, senderName, delivered }`
+- `form_submitted` → `{ fields: {label,value}[] }`
+- `status_changed` → `{ from, to }`
+- `booking_created` → `{ bookingId }`
+- `automation_fired` → `{ stepId }`
+
+The conversation view (`/leads/[id]/conversation`) is `lead_events` filtered to
+the message kinds; the timeline view is unfiltered. Same table, no JOIN.
+
+> **No `messages` table.** `[JC-4]` collapsed the conversation thread into
+> `lead_events` (above). `ConversationMessage`'s verbatim `body` is the message
+> event's `payload.body`; its `metaPrefix`/`time` ReactNode fields drop.
 
 #### `bookings`, `recurring_booking_schedules`, `job_completions` 🔴 — **invented, see §2.2**
 
@@ -494,7 +517,8 @@ Same columns, `funnel_id` / `pending_funnel_version_id` FKs. **Invented
 reviews
   id            uuid PK
   client_id     uuid not null FK→clients(id)
-  author_name   text not null
+  customer_id   uuid null FK→customers(id)   -- best-effort link; GBP reviews often unmatchable
+  author_name   text not null               -- GBP-verbatim; kept (not renamed) — see §2.3
   job           text null
   body          text not null            -- verbatim review text
   stars         smallint not null CHECK (1..5)
@@ -591,6 +615,13 @@ multiple recipients in future; even today read-state is per-user).
 notification_reads (notification_id FK, user_id FK, read_at timestamptz, PK(both))
 ```
 
+#### `lead_reads`
+Per-viewer lead read state — same shape, same reasoning. `AdminLeadRow.unread`
+is per-user, not a lead column (§5 #12).
+```
+lead_reads (lead_id FK, user_id FK, read_at timestamptz, PK(both))
+```
+
 ### 1.6 Generation
 
 #### `generation_log`
@@ -616,7 +647,6 @@ keeps this in-memory). Used for prompt tuning, not user-facing.
 `billing_cycle`(2), `ssl_status`(3), `page_type`(5), `funnel_step_type`(5),
 `section_type`(11), `version_status`(4), `invite_status`(4),
 `lead_status`(5), `lead_urgency`(4), `lead_event_kind`(8),
-`message_channel`(3), `message_direction`(2), `message_kind`(4),
 `booking_status`(4), `recurrence_frequency`(4), `payment_method`(4),
 `ticket_category`(7), `ticket_status`(4), `ticket_urgency`(3),
 `ticket_awaiting`(2 + null), `approval_status`(4),
@@ -624,15 +654,18 @@ keeps this in-memory). Used for prompt tuning, not user-facing.
 `automation_channel`(2), `delay_unit`(3),
 `notification_kind`(5), `generation_fallback_reason`(2).
 
-All map directly to inventory unions. CLAUDE.md's rule holds: widening any of
-these is a deliberate amendment, not an ad-hoc add.
+All map directly to inventory unions. The `[JC-4]` collapse dropped
+`message_channel`/`message_direction`/`message_kind` — `lead_event_kind`
+already encodes channel + direction; `customers` adds no enum. CLAUDE.md's
+rule holds: widening any of these is a deliberate amendment, not an ad-hoc add.
 
 ---
 
-## §2 — The two entities that require invention
+## §2 — The entities that require invention
 
-Most tables above satisfy an A-tier stub. Two do not — `clients` and the
-booking family. These get the most design space and the most uncertainty.
+Most tables above satisfy an A-tier stub. Three do not — `clients`, the
+booking family, and `customers`. These get the most design space and the most
+uncertainty.
 
 ### 2.1 `clients` 🔴
 
@@ -688,12 +721,11 @@ clients
   drop in "as just another client row with no special-casing." A flag would be
   the special-casing. Webnua's own marketing account is simply a normal
   `clients` row. The agency *HQ* is not a `clients` row at all (§9).
-- **`customers` is deliberately not introduced.** A lead, a booking customer,
-  and a review author are all "a person who deals with this client," and a
-  normalised `customers` table is the tidy long-term shape — but no stub models
-  it, and three surfaces denormalise the person's name/phone inline. V1
-  denormalises (lead carries contact fields; booking carries a customer
-  snapshot). `[JC-2c]` flags the `customers`-table normalisation as a V2 call.
+- **`customers` is a real entity (§2.3).** A lead, a booking customer, and a
+  review author are all "a person who deals with this client." `[JC-2c]`
+  resolved to **extract** rather than denormalise — the V1 cost is small (one
+  table, a few FKs) and it removes the V2 identity-backfill problem entirely.
+  See §2.3.
 
 ### 2.2 The booking family 🔴
 
@@ -715,10 +747,10 @@ bookings
   service_type         text not null
   starts_at            timestamptz not null          -- replaces pixel `top` + display `time`
   ends_at              timestamptz not null          -- replaces pixel `height` + display `time`
-  customer_name        text not null                 -- denormalised snapshot (see §2.1 — no customers table V1)
-  customer_phone       text null
-  customer_suburb      text null
-  address              text null
+  customer_id              uuid not null FK→customers(id)  -- identity (see §2.3)
+  customer_name_snapshot   text not null                   -- display name, frozen at booking time
+  customer_phone_snapshot  text null                       -- contact number, frozen at booking time
+  address                  text null                      -- job-site address (booking-specific, not customer data)
   price                numeric(10,2) null            -- real number, not "$220"
   status               booking_status not null default 'scheduled'
                         -- enum: 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
@@ -738,6 +770,9 @@ bookings
 - `lead_id` is nullable: the calendar's "+ New booking" modal creates bookings
   directly. When a booking *does* come from a lead, that link is what lets a
   `lead_event` of kind `booking_created` reference it.
+- Customer identity is the `customers` FK + name/phone display snapshot (§2.3).
+  `address` stays on `bookings` — it is the job-site address, booking-specific,
+  not customer data.
 - The job-completion stub implies completion is a transition + a payment
   record — see `job_completions` below.
 
@@ -753,9 +788,9 @@ recurring_booking_schedules
   duration_minutes integer not null
   service_type    text not null
   price           numeric(10,2) null
-  customer_name   text not null
-  customer_phone  text null
-  customer_suburb text null
+  customer_id              uuid not null FK→customers(id)
+  customer_name_snapshot   text not null
+  customer_phone_snapshot  text null
   active          boolean not null default true
   created_by      uuid not null FK→users(id)
   created_at      timestamptz not null default now()
@@ -780,6 +815,84 @@ job_completions
 ```
 Real payment processing is **out of scope** (§9) — `payment_method`/
 `amount_charged` record what the operator marked, not a Stripe transaction.
+
+### 2.3 `customers` 🔴
+
+**The problem.** No stub models a customer as an entity — `leads` carry
+contact fields inline, `bookings` carry a customer snapshot, `reviews` carry an
+author name. They are three denormalised views of one concept: *a person who
+deals with this client*. `[JC-2c]` resolved to extract the entity in V1: the
+V1 cost is small (a table + a few FKs); the cost of *not* extracting is a V2
+identity-backfill problem — "is 'Sarah M' in booking #347 the same person as
+'Sarah Mitchell' in lead #112" — that simply does not exist if customers are
+entities from the first row.
+
+**Proposed shape.**
+```
+customers
+  id          uuid PK
+  client_id   uuid not null FK→clients(id)   -- per-client; see scoping note
+  name        text not null
+  phone       text null
+  email       text null
+  suburb      text null
+  address     text null
+  notes       text null
+  created_at  timestamptz not null default now()
+  updated_at  timestamptz not null default now()
+```
+
+**Per-client scoping.** A customer belongs to exactly one client — a customer
+of Voltline is not a customer of FreshHome, even if the same human.
+Cross-client customer identity is a much harder problem (RLS, consent,
+privacy) and is not needed for the V1 value: *repeat-business identification
+within one client*. It is explicitly out of scope — naming it here prevents
+future drift.
+
+**Consumers and the FK pattern.**
+- `bookings.customer_id` — **NOT NULL** (the repeat-business spine).
+- `recurring_booking_schedules.customer_id` — **NOT NULL**.
+- `leads.customer_id` — **nullable** (linked at lead creation via exact phone
+  match; null only for an unmatchable raw/spam lead).
+- `reviews.customer_id` — **nullable** (GBP reviews arrive as an author name;
+  matching is best-effort and often impossible).
+
+**The snapshot convention — denormalise *display*, not *everything*.** The FK
+answers *who this is* (live, current — resolved by join). A snapshot column
+answers *what they were called when this row was created*. A customer can be
+renamed (typo fix, married name); a booking from last year must still display
+the name as it was then. So `bookings` / `leads` /
+`recurring_booking_schedules` each carry **two** snapshot columns alongside the
+FK:
+
+```
+  customer_id              uuid FK→customers(id)   -- identity: who (live lookup)
+  customer_name_snapshot   text                    -- display: name at row-creation
+  customer_phone_snapshot  text                    -- contact number at time of event
+```
+
+**Only `name` and `phone` are snapshotted** — name because the row must
+display the as-of-then name; phone because "what number was *this job*
+arranged on" is historically meaningful (the customer may since have changed
+numbers). **Everything else** — `email`, `suburb`, `address`, `notes` — is
+**never snapshotted**: it is a live FK lookup through `customers`. This is the
+explicit policy, and the reason the snapshot is **two named columns, not a
+`customer_snapshot jsonb`**: a JSON blob invites "we'll snapshot one more field
+later" rot, where named columns force the next contributor to consciously
+decide whether a third frozen field crosses the *denormalise-display* line — it
+should be hard to cross by accident.
+
+`reviews` is the exception — it keeps its existing `author_name` rather than
+renaming to `customer_name_snapshot`. GBP reviews are a different source class
+(the name is GBP-verbatim, authored externally); artificially unifying the
+naming would imply a freeze convention that does not apply. `reviews` simply
+gains the nullable `customer_id`.
+
+**Dedup is app logic, not schema.** V1 find-or-create on **exact phone match**
+(cheap, good enough — a populated `customer_id` on every booking is what makes
+V2 dedup tractable). **Fuzzy dedup is V2.** Stated here so a future implementer
+neither over-engineers V1 nor skips dedup entirely and re-creates the
+prose-matching problem this extraction exists to kill.
 
 ---
 
@@ -829,41 +942,74 @@ with a `schema_version`. Version snapshots stay a single frozen JSONB blob.**
 
 This is "hybrid" in a specific sense: **normalised rows for the live tree,
 denormalised JSONB for the frozen history**, and JSONB-with-version for the
-`data` payload either way.
+`data` payload either way. `[JC-8]`
 
-### 3.4 Section-registry schema evolution (builder-design §10)
+### 3.4 Section-registry schema evolution `[JC-8a]`
 
-The flagged sharp edge: when `HeroData` changes shape in V2 (rename
-`headline`→`title`, split `cta`→`ctaPrimary`+`ctaSecondary`, …), what happens
-to (a) live `sections.data` rows on the old shape, (b) frozen `snapshot` blobs?
+When a section type's `*Data` shape changes in V2 (rename `headline`→`title`,
+split `cta`→`ctaPrimary`+`ctaSecondary`), two populations hold the old shape:
+live `sections.data` rows, and the `data` embedded in every frozen
+`website_versions` / `funnel_versions` snapshot.
 
-**Proposed story — `schema_version` + per-type migration functions, applied
-asymmetrically:**
+The mechanism, common to all options: each section type carries a current
+`schema_version` in the registry plus an ordered list of pure **migration
+functions** (`vN → vN+1`) over `data`. The registry already owns
+`defaultData()` and validation; it owns these too. The question is *when the
+functions run*.
 
-- Each section type carries a current `schema_version` in the registry plus an
-  ordered list of **migration functions** (`vN → vN+1`), pure transforms over
-  `data`. This is the front-end registry's job to own — it already owns
-  `defaultData()` and validation.
-- **Live `sections` rows — migrate-and-persist (lazy).** On read, if
-  `sections.schema_version < registry current`, run the chain, persist the
-  upgraded `data` + bumped `schema_version`. The live tree converges to current
-  over normal use; a one-off backfill migration can force it.
-- **Frozen `snapshot` blobs — migrate-on-read only, never rewrite.** An
-  archived version is a historical record; rewriting it would corrupt the audit
-  trail and the rollback guarantee. When a snapshot is *read* (rollback,
-  diff, display), each section's `data` is run through the migration chain
-  **in memory** to today's shape. The stored blob is never touched.
-- The "shadow registry" alternative (keep every old shape's reader forever) is
-  rejected as the default — it grows unbounded and every consumer must know
-  which shape it's looking at. Migration functions collapse to one current
-  shape at the read boundary; that is simpler everywhere downstream.
+| Strategy | Migration runs | Read path | Storage |
+|---|---|---|---|
+| **migrate-on-read** | every read, in memory | carries migration code forever | never rewritten |
+| **lazy migrate-and-persist** | first read after a bump, then persisted | carries migration code; converges slowly | rewritten piecemeal, unpredictably |
+| **eager bulk** | once, at the deploy shipping the change | zero migration code | rewritten once, all at once |
 
-**This §3.4 story is the part I am least certain of and most want reviewed**
-(`[JC-8]`). It interacts with: how migrations are versioned alongside DB
-migrations, whether a snapshot read can afford an in-memory migration pass on a
-large page tree, and whether `data`-level validation should also live in the DB
-as a `CHECK` against a JSON schema. The §7 follow-up pass should settle it
-before builder migrations are written.
+**Picked: eager bulk, applied uniformly to live rows and snapshots.** A V2
+deploy that changes a section shape includes a deploy-time data-migration step
+that walks every `sections.data` row and every snapshot blob, applies the
+migration chain, and persists the upgraded `data` with a bumped
+`schema_version`. After the deploy the whole corpus is on the current shape;
+the read path carries no migration logic.
+
+Reasoning:
+- **Simplest read path, everywhere.** Editor, preview, rollback, diff all see
+  one shape — no "which version is this" branching. migrate-on-read and lazy
+  both spread migration code across every reader *permanently*; that is the
+  cost they never stop paying.
+- **The prior draft's asymmetry was wrong.** "Never rewrite a snapshot — it
+  corrupts the audit trail" conflated the *meaning* of a version (immutable —
+  genuinely the audit guarantee) with its *byte representation* (not required
+  to be immutable). A faithful representation migration — `headline` becomes
+  `title`, same value — does not change what the version says the page was.
+  Audit integrity is preserved by the migration functions being **pure and
+  faithful**, not by freezing bytes.
+- **One reviewable place.** The bulk migration is versioned alongside the
+  schema migration that caused it, runs once, is testable against a copy.
+- **`schema_version` stays — as a safety net, not the mechanism.** After a bulk
+  run every row is at vN. If a vN-1 row ever surfaces (a restored backup, a
+  delayed write) `schema_version` lets a reader detect it and migrate
+  defensively or fail loudly. Detection, not primary strategy — a reader who
+  skims only this far should leave knowing `schema_version` is *not* consulted
+  on every normal read.
+
+**Honest failure mode.** Eager bulk fails when the corpus is too large to
+migrate in a deploy window, or when a shape change is not mechanically faithful
+(needs per-row human judgement or external data). Then you are forced back to
+lazy (amortise the cost) or migrate-on-read (never pay it in bulk). This does
+not bite at Webnua's scale: a managed-agency platform is tens-to-low-hundreds
+of clients, bounded version history (90-day rollback window — builder-design
+§2.4 — older archived versions prunable), and section-shape changes are rare V2
+events, not routine writes. If the platform ever grows to where a bulk run is a
+multi-hour operation, revisit — the registry's migration functions are equally
+the building block for lazy migration, so the escape hatch is already in hand.
+
+**One wrinkle for the §7 builder pass.** The migration functions are
+TypeScript, in the front-end registry. A bulk migration of snapshots therefore
+cannot be pure SQL — it is a deploy-time script (Node / edge function) that
+loads snapshots, runs the TS functions, writes back. A standard data-migration
+pattern, but it means "the migration" is a script paired with the `.sql`, not a
+`.sql` file alone. §7 must pin where that script lives and how it sequences
+against the DDL migration. This `[JC-8a]` recommendation is ratified there
+before any builder migration is written.
 
 ### 3.5 Image storage — flagged, not decided
 
@@ -898,14 +1044,21 @@ intent**, not final SQL — the migration session writes the SQL.
   ∪ grants union, restricted to the website in scope.
 
 These wrap as `SECURITY DEFINER` SQL functions so every policy stays a
-one-liner.
+one-liner. **Performance note:** RLS evaluates `has_capability()` /
+`accessible_client_ids()` **once per candidate row** — on a large `sections`
+or `lead_events` scan that is significant. Mitigations (mark the functions
+`STABLE` so the planner caches per-statement; index `capability_grants
+(user_id, website_id)` and `user_client_access (user_id)`) belong in the
+**migration session**, not this design pass — flagged here so they are not
+forgotten.
 
 ### 4.2 The simple cases (tenant isolation)
 
-Every client-scoped table (`leads`, `lead_events`, `messages`, `bookings`,
-`recurring_booking_schedules`, `job_completions`, `tickets`, `ticket_messages`,
-`reviews`, `campaigns`, `campaign_activity_events`, `automations`,
-`automation_steps`, `notifications`, `clients`, `brands`):
+Every client-scoped table (`clients`, `brands`, `customers`, `leads`,
+`lead_events`, `bookings`, `recurring_booking_schedules`, `job_completions`,
+`tickets`, `ticket_messages`, `reviews`, `campaigns`,
+`campaign_activity_events`, `automations`, `automation_steps`,
+`notifications`):
 
 - **SELECT:** `client_id` (directly, or via the parent's `client_id`) `∈
   accessible_client_ids()`. A client sees only their own client's rows; an
@@ -994,7 +1147,7 @@ end recomposes display from structured columns). Exceptions noted.
 | # | Disagreement | Resolution — who bends |
 |---|---|---|
 | 1 | `AdminLeadRow.meta` — heterogeneous free-text activity blurb (`"Auto-replied"` / `"Tue 9am"` / `"Waiting reply"`) | **Stub bends.** No `meta` column. The row's last-activity line is derived from the lead's most recent `lead_events` row. |
-| 2 | `LeadTimelineEvent.meta`/`body`/`snippet` — JSX packing channel/direction/phone/time + composed sentences | **Stub bends.** `lead_events` stores typed columns + `payload` jsonb; the timeline component composes the meta line and body sentence at render. Form Q&A pairs go in `payload` as `{label,value}[]`. |
+| 2 | `LeadTimelineEvent.meta`/`body`/`snippet` + `ConversationMessage` — JSX packing channel/direction/phone/time + composed sentences | **Stub bends.** `lead_events` stores typed columns + `payload` jsonb; the timeline composes meta + body at render. `[JC-4]` collapsed messages in — for a message-kind event the `payload` schema is `{ body, senderName, delivered }`; `form_submitted` is `{ fields: {label,value}[] }`; `status_changed` is `{ from, to }`. |
 | 3 | `ClientTicketDetail.statusLabel` **and** `statusHeadline` — the same data rendered twice (the code says so) | **Stub bends.** One source: `tickets.status` + `tickets.awaiting`. Both display strings are derived; no `status_label` column. |
 | 4 | Lead / Ticket / Booking / Review / Campaign **attribution gap** — actor *names* denormalised into prose (`who`, `actor`, `operatorName`) | **Stub bends.** Proper `*_by` / `actor_user_id` / `assigned_operator_id` FKs to `users` on every entity (done throughout §1). Display name is a join, never stored prose. (Vision §7 — every decision attributable.) |
 | 5 | `AutomationEditorStep.delay` — display string `"Delay: 24 hrs"` | **Stub bends.** `automation_steps.delay_amount:int` + `delay_unit:enum`. The string is formatted at render. |
@@ -1009,8 +1162,9 @@ end recomposes display from structured columns). Exceptions noted.
 | 14 | `Hub*` / `ClientDashboard*` types (`hub-types.ts`, `client-dashboard-types.ts`) | **Neither — these are not tables.** They are aggregate read-models; the backend composes them from `leads`/`bookings`/`reviews`/`campaigns`/`funnels` at query time. The stub authors already wrote them §7-clean for this reason. |
 
 One stub that **does not bend**: verbatim user input — `tickets.title`,
-message/ticket-message `body`, `bookings.notes`, `reviews.body`, invite
-`personal_note`, `automation_steps` `name`/`subject`/`body`-template,
+the message-event `payload.body` + `ticket_messages.body`, `bookings.notes`,
+`reviews.body`, invite `personal_note`,
+`automation_steps` `name`/`subject`/`body`-template,
 `brands.audience_line`/`top_jobs_to_be_booked`, onboarding wizard answers. These
 are legitimately free text and store as `text`. The `ReactNode` typing on them
 in the stubs is incidental (inline `<strong>`), not structure to model.
@@ -1068,10 +1222,11 @@ any builder-specific migration is written:
    frozen-JSONB snapshots, JSONB `data`+`schema_version`). The normalise-vs-blob
    call for the *live* tree, and whether `data` should additionally carry a DB
    `CHECK` against a JSON schema, want a focused look.
-2. **Schema evolution (§3.4)** — `schema_version` + migration functions, applied
-   asymmetrically (persist on live, migrate-on-read for snapshots). This is the
-   builder-design §10 sharp edge handed explicitly to the backend pass; it is
-   genuinely hard and under-specified above.
+2. **Schema evolution (§3.4 / `[JC-8a]`)** — `schema_version` + migration
+   functions, run as an **eager bulk migration** at the deploy that ships a
+   shape change. §3.4 settles the strategy and names its failure mode; the §7
+   pass ratifies it and pins the deploy-time migration-script mechanics (the
+   functions are TS in the registry — see §3.4's closing wrinkle).
 3. **Image storage backend** — a **separate decision** (Supabase Storage vs S3
    vs Cloudinary). It does not touch any table (everything stores a URL) but it
    gates the media-section and brand-asset work, and has cost/CDN implications
@@ -1080,9 +1235,12 @@ any builder-specific migration is written:
 **Recommendation:** after this document is approved and the *non-builder*
 tables are migrated (Phase 1), run a dedicated **"page builder data model"**
 session that ratifies §3, locks the evolution story, and decides image storage
-— *before* the `websites`/`pages`/`sections`/`*_versions` migrations are
-written. The rest of the schema (identity, policy, operational entities) does
-not depend on that ratification and can proceed.
+— *before* the builder-family migrations (`websites`, `pages`, `sections`,
+`website_versions`, `website_nav_links`, `funnels`, `funnel_steps`,
+`funnel_versions`, `website_approval_submissions`, `funnel_approval_submissions`,
+`force_publish_audit_log`) are written. **Phase 1 migrations exclude that
+entire family.** The rest of the schema (identity, policy, operational
+entities) does not depend on the §3 ratification and proceeds in Phase 1.
 
 ---
 
@@ -1103,6 +1261,11 @@ Proposed pattern — consistent, not elaborate:
   - `not_found` — row absent or invisible under RLS (the two are deliberately
     indistinguishable to the caller — RLS must not leak existence).
   - `validation` — input failed a schema/registry check → field-level messages.
+    **Policy values** (`agency_policy`, `policy_overrides`, `plan_catalog.policy`
+    — JSONB per `[JC-9]`) must pass a strict app-level validator against
+    `PolicyValueMap` on **every read and write** — JSONB without app-level
+    discipline rots. A policy value that fails the validator surfaces here as
+    `kind: 'validation'`, never as a silent malformed read.
   - `conflict` — optimistic-concurrency clash (see below).
   - `unexpected` — anything else → generic toast + logged.
 - **Optimistic-concurrency conflicts.** builder-design §3.1 is explicit:
@@ -1159,51 +1322,64 @@ FK to — a clean additive migration, not a V1 concern. Recorded as `[JC-1]`.
 
 ---
 
-## §10 — Open questions for review `[JC]`
+## §10 — Judgement calls — review status `[JC]`
 
-Judgement calls made above that I want confirmed rather than treated as locked.
+All `[JC]`s below were reviewed and **signed off** (review round 2). Three were
+*pushes* — re-argued before sign-off; the rest were confirmed as written. The
+reasoning is kept so the decisions stay legible later.
 
-- **`[JC-1]` Agency modelling.** §9: no `agencies` table V1; agency = operators
-  + a global `agency_policy` singleton; Webnua-as-sub-account = a plain
-  `clients` row. Confirm this over a single-row `agencies` table now.
-- **`[JC-2a]` `clients.industry` — free text vs enum.** Proposed free text V1
-  (the trades are open-ended). An enum is a V2 tightening. Confirm.
-- **`[JC-2b]` `client_lifecycle` values.** Proposed superset
-  `onboarding|live|paused|churned` over the stub's `active|setup`. Confirm the
-  two extra states are wanted now.
-- **`[JC-2c]` No `customers` table V1.** Customer identity is denormalised onto
-  `leads` and `bookings` (name/phone/suburb snapshots). A normalised
-  `customers` table is the obvious V2 shape once "same person, repeat
-  business" reporting is needed. Confirm V1 denormalisation.
-- **`[JC-3]` Invite client-scoping as join tables.** `team_invites` →
-  `team_invite_clients` join; accepted invites → `user_client_access`. Confirm
-  over a JSONB `assigned_client_ids` array on the invite.
-- **`[JC-4]` `lead_events` ↔ `messages` boundary.** Proposed: `messages` is its
-  own table (real content); `lead_events` is the typed activity log, and a
-  message-kind event carries a `message_id` FK. Alternative: fold messages into
-  `lead_events.payload`. The split keeps the timeline a clean typed-event log
-  (vision §7) — but it does mean an SMS is represented in two rows. Confirm the
-  split. **Load-bearing.**
-- **`[JC-5]` `capability_grants.capabilities` as an enum array.** Proposed
-  `capability[]` column over a `capability_grant_caps` join table. Array is 1:1
-  with the stub's `Capability[]`; join is more "normalised." Confirm array.
-- **`[JC-6]` `brands` as a separate table** (1:1 with `clients`) vs brand
-  columns inlined on `clients`. Proposed separate table (capability boundary,
-  cohesion). Confirm.
-- **`[JC-7]` Read-state as join tables** (`notification_reads`, `lead_reads`)
-  vs a boolean column. Proposed joins (per-viewer, future fan-out). Confirm.
-- **`[JC-8]` Section storage + evolution (§3) — LOAD-BEARING.** The hybrid
-  (normalised live `sections`, frozen-JSONB snapshots, `data` JSONB +
-  `schema_version`, asymmetric migration: persist-on-live / migrate-on-read for
-  snapshots). This is the §7 follow-up's core agenda — flagging that §3 is a
-  *recommendation pending that pass*, not a lock.
-- **`[JC-9]` Policy values as JSONB keyed by `policy_key`** (`agency_policy`,
-  `policy_overrides`, `plan_catalog.policy`) vs a typed column per key. JSONB
-  keeps the 6 heterogeneous value types uniform and mirrors the stub stores;
-  typed columns would give DB-level type safety on 6 keys. Confirm JSONB.
-- **`[JC-10]` Auth timing (§6).** Recommendation: real auth early (Phase 2),
-  before data wiring. Stated as the user's lean; confirming it is the user's
-  call — flagged so it is an explicit sign-off, not an assumption.
+- **`[JC-1]` Agency modelling — CONFIRMED.** No `agencies` table V1; agency =
+  operators (`role='admin'`) + a global `agency_policy` singleton;
+  Webnua-as-sub-account = a plain `clients` row, no flag. A multi-agency /
+  white-label tier is a clean additive migration if it ever lands.
+- **`[JC-2a]` `clients.industry` free text — CONFIRMED for V1.** The trades are
+  open-ended; an `industry` enum is a V2 tightening.
+- **`[JC-2b]` `client_lifecycle` superset — CONFIRMED.**
+  `onboarding|live|paused|churned` over the stub's `active|setup` —
+  `paused`/`churned` cost nothing now and have obvious near-term need.
+- **`[JC-2c]` `customers` — RESOLVED: EXTRACT (push).** The original position
+  (denormalise, defer the table to V2) was overturned in review. A real
+  `customers` table lands in V1 (§2.3): small V1 cost, and it removes the V2
+  identity-backfill problem entirely. Per-client scoped; display-snapshot
+  convention (name + phone frozen, everything else live FK lookup);
+  exact-phone-match dedup V1, fuzzy dedup V2.
+- **`[JC-3]` Invite client-scoping as join tables — CONFIRMED.**
+  `team_invite_clients` join + `user_client_access` on acceptance, over a JSONB
+  FK-array (an anti-pattern).
+- **`[JC-4]` `lead_events` ↔ `messages` — RESOLVED: COLLAPSE (push).** The
+  original split (separate `messages` table, `message_id` FK) was overturned.
+  Messages collapse into `lead_events`: an SMS is one event row; `kind` already
+  encodes channel + direction; `payload` carries `{body,senderName,delivered}`.
+  The collapse also drops three enums (`message_channel`, `message_direction`,
+  `message_kind`) — a structure-earns-its-keep signal. `automation_id` becomes
+  a real FK column; `is_automated` is derived and dropped.
+- **`[JC-5]` `capability_grants.capabilities` enum array — CONFIRMED.**
+  `capability[]` is 1:1 with the stub's `Capability[]`; a join table is heavier
+  with no V1 benefit.
+- **`[JC-6]` `brands` as a separate table — CONFIRMED.** Capability boundary
+  (`editTheme`), cohesion, future brand-versioning cleanliness.
+- **`[JC-7]` Read-state as join tables — CONFIRMED.** `notification_reads` +
+  `lead_reads` — per-viewer correctness, future fan-out.
+- **`[JC-8]` Section *storage* — CONFIRMED, pending §7 ratification.** Hybrid:
+  normalised live `sections` rows, frozen-JSONB version snapshots, `data` as
+  JSONB + `schema_version` either way (§3.3). The §7 page-builder pass ratifies
+  before any builder migration is written.
+- **`[JC-8a]` Section schema *evolution* — RESOLVED: EAGER BULK (push),
+  pending §7 ratification.** Split out from `[JC-8]`. The prior asymmetric
+  story (persist-on-live / migrate-on-read-only for snapshots) was overturned:
+  migration runs **once, at the deploy that ships the shape change**, across
+  live rows *and* snapshots; `schema_version` is a detection backstop, not a
+  per-read mechanism. §3.4 carries the three-option comparison and the honest
+  failure mode. §7 ratifies.
+- **`[JC-9]` Policy values as JSONB keyed by `policy_key` — CONFIRMED, with a
+  caveat.** JSONB keeps the 6 heterogeneous value types uniform. **Caveat
+  accepted:** a strict app-level validator against `PolicyValueMap` runs on
+  every policy read and write — surfaced as the `validation` error case in §8.
+  JSONB without that discipline rots.
+- **`[JC-10]` Auth timing — CONFIRMED.** Real Supabase Auth early (Phase 2,
+  before data wiring). The §6 reasoning (one isolated swap seam; RLS is
+  untestable against a stub; the tenant boundary is not retrofit polish) is
+  decisive.
 - **Open, not a `[JC]`:** the `sections` polymorphic-parent shape — two
   nullable FKs (`page_id`, `funnel_step_id`) + a website back-reference for
   singletons, with a `CHECK`, vs a `(container_kind, container_id)` pair.
@@ -1213,6 +1389,7 @@ Judgement calls made above that I want confirmed rather than treated as locked.
 ---
 
 *End of document. This is a design pass — no migrations, no Supabase project.
-Sections §1–§4 are the substance to push back on; §3 + the page-builder data
-model (§7) are flagged as the parts most warranting a dedicated follow-up
-before builder migrations are written. Awaiting review before commit.*
+Reviewed and signed off (round 2): §1, §2, §4, §5, §6, §8, §9, §10 are
+approved; §3 + the page-builder data model (§7) hold pending the dedicated
+page-builder follow-up pass, which ratifies §3 / `[JC-8]` / `[JC-8a]` and
+decides image storage before any builder-family migration is written.*
