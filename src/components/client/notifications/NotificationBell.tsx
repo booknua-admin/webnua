@@ -3,7 +3,10 @@
 import { useMemo, useState } from 'react';
 import { Bell } from 'lucide-react';
 
-import { voltlineNotifications } from '@/lib/notifications/client-feed';
+import {
+  useMarkNotificationsRead,
+  useNotifications,
+} from '@/lib/notifications/queries';
 import { cn } from '@/lib/utils';
 
 import { NotificationPanel } from './NotificationPanel';
@@ -11,15 +14,17 @@ import { NotificationPanel } from './NotificationPanel';
 /**
  * Client notification bell + feed popover (client Screen 10).
  *
- * Read-state is session-local React state — there is no backend yet, so marking
- * a notification read does not persist across reloads. Wire to a real store
- * when notifications move to Supabase.
+ * Wired to live data (Phase 3): the feed reads `notifications` and read-state
+ * is the `notification_reads` join. Marking read persists via
+ * `useMarkNotificationsRead`; `readIds` is kept as an optimistic overlay for
+ * instant feedback ahead of the query invalidation.
  */
 function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
 
-  const items = voltlineNotifications;
+  const { data: items = [] } = useNotifications();
+  const markReadMutation = useMarkNotificationsRead();
 
   const unreadCount = useMemo(
     () => items.filter((item) => !item.read && !readIds.has(item.id)).length,
@@ -28,10 +33,15 @@ function NotificationBell() {
 
   const markRead = (id: string) => {
     setReadIds((prev) => new Set(prev).add(id));
+    markReadMutation.mutate([id]);
   };
 
   const markAllRead = () => {
+    const unreadIds = items
+      .filter((item) => !item.read && !readIds.has(item.id))
+      .map((item) => item.id);
     setReadIds(new Set(items.map((item) => item.id)));
+    if (unreadIds.length > 0) markReadMutation.mutate(unreadIds);
   };
 
   return (
