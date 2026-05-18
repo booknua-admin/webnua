@@ -1,28 +1,19 @@
 import Link from 'next/link';
 
 import { Switch } from '@/components/ui/switch';
+import { CLIENT_TONE_BG } from '@/lib/clients/tones';
 import { cn } from '@/lib/utils';
-import type {
-  AutomationClientTone,
-  AutomationFlowMini as AutomationFlowMiniData,
-} from '@/lib/automations/types';
+import type { AutomationFlowMini as AutomationFlowMiniData } from '@/lib/automations/types';
 
 type AutomationFlowMiniProps = {
   flow: AutomationFlowMiniData;
   className?: string;
 };
 
-const TONE_BG: Record<AutomationClientTone, string> = {
-  voltline: 'bg-rust',
-  freshhome: 'bg-[#4a7ba6]',
-  keyhero: 'bg-[#8a5cb8]',
-  neatworks: 'bg-[#2d8a4e]',
-  flowline: 'bg-rust-light',
-  generic: 'bg-ink',
-};
-
 function AutomationFlowMini({ flow, className }: AutomationFlowMiniProps) {
-  const toneBg = flow.clientTone ? TONE_BG[flow.clientTone] : TONE_BG.generic;
+  const toneBg = flow.clientTone
+    ? CLIENT_TONE_BG[flow.clientTone]
+    : CLIENT_TONE_BG.generic;
 
   const rowClasses = cn(
     'grid grid-cols-[36px_minmax(180px,1fr)_repeat(3,90px)_56px] items-center gap-3.5 border-b border-paper-2 px-4 py-3 last:border-b-0 transition-colors',
