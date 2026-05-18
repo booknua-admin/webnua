@@ -11,7 +11,6 @@ import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { normalizeError } from '@/lib/errors';
 import { useAdminCalendar } from '@/lib/bookings/queries';
 import { adminCalendar } from '@/lib/calendar/admin-calendar';
-import { freshhomeNewBooking } from '@/lib/bookings/new-booking-modal';
 
 function AdminCalendarContent() {
   const { hero } = adminCalendar;
@@ -44,7 +43,7 @@ function AdminCalendarContent() {
                 chips={data.filters}
                 defaultActiveId="all"
               />
-              <AddBookingButton data={freshhomeNewBooking} />
+              <AddBookingButton />
             </div>
             <CalendarToolbar periodLabel={data.week.periodLabel} />
             <CalendarLegend items={data.legend} meta={data.legendMeta} />
