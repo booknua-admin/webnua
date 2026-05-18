@@ -158,11 +158,28 @@ export function SectionEditor({ mode }: SectionEditorProps) {
 
   const [addOpen, setAddOpen] = useState(false);
 
+  // Element-inspector model: the element selected within the current
+  // section, and whether the section rail is collapsed to a strip.
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(
+    null,
+  );
+  const [railCollapsed, setRailCollapsed] = useState(false);
+
   // Reset local state when the source content changes (e.g. tab swap).
   useEffect(() => {
     setSections(seedSectionsForMode(mode));
     setSelectedSectionId(mode.kind === 'singleton' ? mode.section.id : null);
+    setSelectedElementId(null);
   }, [mode, slot]);
+
+  // Selecting a section resets the element selection and collapses the rail
+  // (the inspector becomes the focus). Re-selecting the same section just
+  // returns to its section-level settings.
+  const handleSelectSection = (id: string | null) => {
+    setSelectedSectionId(id);
+    setSelectedElementId(null);
+    setRailCollapsed(id != null);
+  };
 
   const autosave = useAutosave({
     slot,
@@ -205,7 +222,11 @@ export function SectionEditor({ mode }: SectionEditorProps) {
 
   const handleRemoveSection = (id: string) => {
     setSections((current) => current.filter((s) => s.id !== id));
-    setSelectedSectionId((current) => (current === id ? null : current));
+    if (id === selectedSectionId) {
+      setSelectedSectionId(null);
+      setSelectedElementId(null);
+      setRailCollapsed(false);
+    }
   };
 
   // Funnel publish (Lane A — funnels have no approval queue). The funnel
@@ -290,8 +311,12 @@ export function SectionEditor({ mode }: SectionEditorProps) {
   const isSingleton = mode.kind === 'singleton';
   const isFunnelStep = mode.kind === 'funnelStep';
   const showFields = !locked && selectedSection != null;
+  // Singletons never collapse — their rail is the section.
+  const railCollapsedEffective = railCollapsed && !isSingleton;
   const gridCols = showFields
-    ? 'grid-cols-[300px_1fr_400px]'
+    ? railCollapsedEffective
+      ? 'grid-cols-[48px_1fr_400px]'
+      : 'grid-cols-[300px_1fr_400px]'
     : 'grid-cols-[340px_1fr]';
 
   return (
@@ -328,16 +353,20 @@ export function SectionEditor({ mode }: SectionEditorProps) {
           mode={railMode}
           sections={sections}
           selectedSectionId={selectedSectionId}
-          onSelectSection={setSelectedSectionId}
+          onSelectSection={handleSelectSection}
           onToggleSectionEnabled={handleToggleSectionEnabled}
           onRemoveSection={handleRemoveSection}
           onRequestAddSection={() => setAddOpen(true)}
+          collapsed={railCollapsedEffective}
+          onToggleCollapsed={() => setRailCollapsed((c) => !c)}
         />
         <PagePreviewPane
           sections={sections}
           brand={brand}
           selectedSectionId={selectedSectionId}
-          onSelectSection={setSelectedSectionId}
+          onSelectSection={handleSelectSection}
+          selectedElementId={selectedElementId}
+          onSelectElement={setSelectedElementId}
         />
         {showFields && selectedSection ? (
           <SectionFieldsPanel
@@ -349,8 +378,10 @@ export function SectionEditor({ mode }: SectionEditorProps) {
             onChange={(nextData) =>
               handleSectionDataChange(selectedSection.id, nextData)
             }
-            onClose={() => setSelectedSectionId(null)}
+            onClose={() => handleSelectSection(null)}
             hideClose={isSingleton}
+            selectedElement={selectedElementId}
+            onSelectElement={setSelectedElementId}
           />
         ) : null}
       </div>

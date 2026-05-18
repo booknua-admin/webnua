@@ -34,6 +34,9 @@ export type SectionListRailProps = {
   onToggleSectionEnabled: (id: string, enabled: boolean) => void;
   onRemoveSection?: (id: string) => void;
   onRequestAddSection?: () => void;
+  /** Collapsed to a thin strip (when a section is being inspected). */
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
 };
 
 export function SectionListRail({
@@ -44,9 +47,33 @@ export function SectionListRail({
   onToggleSectionEnabled,
   onRemoveSection,
   onRequestAddSection,
+  collapsed = false,
+  onToggleCollapsed,
 }: SectionListRailProps) {
   const isSingleton = mode.kind === 'singleton';
   const enabledCount = sections.filter((s) => s.enabled).length;
+
+  if (collapsed) {
+    return (
+      <aside
+        data-slot="section-list-rail"
+        data-rail-mode="collapsed"
+        className="flex h-full flex-col items-center gap-4 border-r border-rule bg-paper py-4"
+      >
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          aria-label="Expand sections"
+          className="flex h-7 w-7 items-center justify-center rounded-md border border-rule bg-card text-[15px] font-bold text-ink-quiet transition-colors hover:border-rust hover:text-rust"
+        >
+          ›
+        </button>
+        <p className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-ink-quiet [writing-mode:vertical-rl]">
+          Sections · {sections.length}
+        </p>
+      </aside>
+    );
+  }
 
   return (
     <aside
@@ -69,9 +96,21 @@ export function SectionListRail({
           </>
         ) : (
           <>
-            <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
-              {'// SECTIONS'}
-            </p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+                {'// SECTIONS'}
+              </p>
+              {onToggleCollapsed ? (
+                <button
+                  type="button"
+                  onClick={onToggleCollapsed}
+                  aria-label="Collapse sections"
+                  className="text-[15px] font-bold leading-none text-ink-quiet transition-colors hover:text-rust"
+                >
+                  ‹
+                </button>
+              ) : null}
+            </div>
             <p className="mt-1 truncate text-[15px] font-bold text-ink">
               {mode.title}
             </p>

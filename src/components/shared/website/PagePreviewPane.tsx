@@ -2,11 +2,13 @@
 
 // =============================================================================
 // PagePreviewPane — renders every enabled section's Preview vertically
-// stacked, the way the page will appear to a visitor. Driven by the
-// section registry (each section type provides its own Preview).
+// stacked, the way the page will appear to a visitor. Driven by the section
+// registry (each section type provides its own Preview).
 //
-// Disabled sections aren't rendered. Empty page renders an empty-state
-// dashed-border placeholder.
+// Element-inspector model: clicking a section selects it; clicking an element
+// inside the *selected* section selects that element (the Preview handles
+// element clicks via the onSelectElement it is given). Non-selected sections
+// render non-interactively at the element level.
 // =============================================================================
 
 import type { BrandObject, Section } from '@/lib/website/types';
@@ -15,9 +17,12 @@ import { getSectionDefinition } from '@/lib/website/sections';
 export type PagePreviewPaneProps = {
   sections: Section[];
   brand: BrandObject;
-  /** Optional click handler for section selection (Session 4 wires editing). */
   onSelectSection?: (sectionId: string) => void;
   selectedSectionId?: string | null;
+  /** The element selected within the selected section. */
+  selectedElementId?: string | null;
+  /** Select / deselect an element within the selected section. */
+  onSelectElement?: (id: string | null) => void;
 };
 
 export function PagePreviewPane({
@@ -25,6 +30,8 @@ export function PagePreviewPane({
   brand,
   onSelectSection,
   selectedSectionId,
+  selectedElementId,
+  onSelectElement,
 }: PagePreviewPaneProps) {
   const enabled = sections.filter((s) => s.enabled);
 
@@ -35,9 +42,7 @@ export function PagePreviewPane({
           <p className="mb-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-rust">
             {'// EMPTY PAGE'}
           </p>
-          <p className="text-[15px] font-bold text-ink">
-            No enabled sections.
-          </p>
+          <p className="text-[15px] font-bold text-ink">No enabled sections.</p>
           <p className="mt-1 text-[13px] leading-[1.5] text-ink-mid">
             Toggle a section on in the rail, or add a new section from the
             picker.
@@ -56,19 +61,31 @@ export function PagePreviewPane({
           const Preview = def.Preview;
           const isSelected = selectedSectionId === section.id;
           return (
-            <button
+            <div
               key={section.id}
-              type="button"
+              role="button"
+              tabIndex={0}
               onClick={() => onSelectSection?.(section.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onSelectSection?.(section.id);
+                }
+              }}
               className={
-                'group block w-full rounded-xl text-left transition-shadow ' +
+                'group block w-full overflow-hidden rounded-xl text-left transition-shadow ' +
                 (isSelected
                   ? 'ring-2 ring-rust ring-offset-2 ring-offset-paper-2'
-                  : 'hover:ring-2 hover:ring-rust/30 hover:ring-offset-2 hover:ring-offset-paper-2')
+                  : 'cursor-pointer hover:ring-2 hover:ring-rust/30 hover:ring-offset-2 hover:ring-offset-paper-2')
               }
             >
-              <Preview data={section.data as never} brand={brand} />
-            </button>
+              <Preview
+                data={section.data as never}
+                brand={brand}
+                selectedElement={isSelected ? selectedElementId : undefined}
+                onSelectElement={isSelected ? onSelectElement : undefined}
+              />
+            </div>
           );
         })}
       </div>

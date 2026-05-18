@@ -1,31 +1,32 @@
 'use client';
 
-import { BuilderFormRow, BuilderFormSection } from '@/components/shared/builder/BuilderField';
+import { BuilderFormSection } from '@/components/shared/builder/BuilderField';
 
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
-import type { ResolvedTheme, SectionTheme } from '../section-theme';
+import type { SectionTheme } from '../section-theme';
 import { CopyField } from './_shared/CopyField';
 import { MediaField } from './_shared/MediaField';
 import { SectionShell } from './_shared/SectionShell';
-import { ThemeField } from './_shared/ThemeField';
+import { SelectableElement } from './_shared/SelectableElement';
+import { ColorField, ThemePresetField } from './_shared/ThemeField';
 import { VariantField, type VariantOption } from './_shared/VariantField';
 
 // =============================================================================
-// Hero section — above-the-fold lead. Phase 6 uplift: renders full-bleed
-// through SectionShell at production fidelity, with three editable axes —
-// `layout` (split image vs image overlay, cycled), `theme` (the editable
-// colour theme), and `imageSide`. The headline is a two-line shape:
-// `headline` + an accent-coloured `headlineAccent` line.
+// Hero section — above-the-fold lead. Phase 6 element-inspector model: the
+// preview's regions (eyebrow / headline / sub / CTAs) are individually
+// selectable; the Fields panel shows only the selected element's settings.
+// With no element selected it shows section-level settings (theme preset,
+// background colour, layout, image).
 // =============================================================================
 
 export type HeroLayout = 'split' | 'overlay';
 
+/** Selectable element ids within the hero preview. */
+type HeroElement = 'eyebrow' | 'headline' | 'subheadline' | 'ctaPrimary' | 'ctaSecondary';
+
 export type HeroData = {
-  /** Structural arrangement. */
   layout: HeroLayout;
-  /** Editable colour theme. */
   theme: SectionTheme;
-  /** Which side the image sits on in the `split` layout. */
   imageSide: 'left' | 'right';
   eyebrow: string;
   headline: string;
@@ -59,7 +60,7 @@ function defaultData(): HeroData {
 }
 
 /** Merge persisted data over defaults — covers sections saved before the
- *  Phase 6 uplift reshaped the hero (e.g. the old `surface` field). */
+ *  Phase 6 uplift reshaped the hero. */
 function withDefaults(data: HeroData): HeroData {
   return { ...DEFAULTS, ...data };
 }
@@ -94,15 +95,114 @@ const IMAGE_SIDE_OPTIONS: readonly VariantOption<'left' | 'right'>[] = [
 
 // -- Fields -----------------------------------------------------------------
 
-function HeroFields({ data, onChange }: SectionFieldsProps<HeroData>) {
+function HeroFields({ data, onChange, selectedElement }: SectionFieldsProps<HeroData>) {
   const d = withDefaults(data);
   const set = <K extends keyof HeroData>(key: K, value: HeroData[K]) =>
     onChange({ ...d, [key]: value });
+  const setColor = (key: keyof SectionTheme, value: string) =>
+    set('theme', { ...d.theme, [key]: value });
 
+  // -- element panels --
+  if (selectedElement === 'eyebrow') {
+    return (
+      <BuilderFormSection>
+        <CopyField
+          label="Eyebrow"
+          value={d.eyebrow}
+          originalValue={DEFAULTS.eyebrow}
+          onChange={(v) => set('eyebrow', v)}
+          placeholder="LOCAL · TRUSTED"
+        />
+      </BuilderFormSection>
+    );
+  }
+
+  if (selectedElement === 'headline') {
+    return (
+      <BuilderFormSection>
+        <CopyField
+          label="Headline"
+          value={d.headline}
+          originalValue={DEFAULTS.headline}
+          alternatives={HEADLINE_ALTS}
+          onChange={(v) => set('headline', v)}
+          multiline
+          rows={2}
+        />
+        <CopyField
+          label="Accent line"
+          value={d.headlineAccent}
+          originalValue={DEFAULTS.headlineAccent}
+          alternatives={HEADLINE_ACCENT_ALTS}
+          onChange={(v) => set('headlineAccent', v)}
+          multiline
+          rows={2}
+          helper={<>Second line — rendered in the brand accent colour.</>}
+        />
+        <ColorField
+          label="Heading colour"
+          value={d.theme.heading}
+          onChange={(v) => setColor('heading', v)}
+        />
+      </BuilderFormSection>
+    );
+  }
+
+  if (selectedElement === 'subheadline') {
+    return (
+      <BuilderFormSection>
+        <CopyField
+          label="Sub-headline"
+          value={d.sub}
+          originalValue={DEFAULTS.sub}
+          alternatives={SUB_ALTS}
+          onChange={(v) => set('sub', v)}
+          multiline
+          rows={3}
+        />
+        <ColorField
+          label="Text colour"
+          value={d.theme.body}
+          onChange={(v) => setColor('body', v)}
+        />
+      </BuilderFormSection>
+    );
+  }
+
+  if (selectedElement === 'ctaPrimary' || selectedElement === 'ctaSecondary') {
+    const isPrimary = selectedElement === 'ctaPrimary';
+    const labelKey = isPrimary ? 'ctaPrimaryLabel' : 'ctaSecondaryLabel';
+    const hrefKey = isPrimary ? 'ctaPrimaryHref' : 'ctaSecondaryHref';
+    return (
+      <BuilderFormSection>
+        <CopyField
+          label={isPrimary ? 'Primary button · label' : 'Secondary button · label'}
+          value={d[labelKey]}
+          originalValue={DEFAULTS[labelKey]}
+          onChange={(v) => set(labelKey, v)}
+        />
+        <CopyField
+          label="Link"
+          value={d[hrefKey]}
+          originalValue={DEFAULTS[hrefKey]}
+          onChange={(v) => set(hrefKey, v)}
+        />
+      </BuilderFormSection>
+    );
+  }
+
+  // -- section-level settings (no element selected) --
   return (
     <>
       <BuilderFormSection>
-        <ThemeField value={d.theme} onChange={(v) => set('theme', v)} />
+        <ThemePresetField value={d.theme} onChange={(v) => set('theme', v)} />
+        <ColorField
+          label="Background"
+          value={d.theme.background}
+          onChange={(v) => setColor('background', v)}
+        />
+      </BuilderFormSection>
+      <BuilderFormSection>
         <VariantField
           label="Layout"
           value={d.layout}
@@ -119,73 +219,6 @@ function HeroFields({ data, onChange }: SectionFieldsProps<HeroData>) {
         ) : null}
       </BuilderFormSection>
       <BuilderFormSection>
-        <CopyField
-          label="Eyebrow"
-          value={d.eyebrow}
-          originalValue={DEFAULTS.eyebrow}
-          onChange={(v) => set('eyebrow', v)}
-          placeholder="LOCAL · TRUSTED"
-        />
-        <CopyField
-          label="Headline"
-          value={d.headline}
-          originalValue={DEFAULTS.headline}
-          alternatives={HEADLINE_ALTS}
-          onChange={(v) => set('headline', v)}
-          multiline
-          rows={2}
-        />
-        <CopyField
-          label="Headline · accent line"
-          value={d.headlineAccent}
-          originalValue={DEFAULTS.headlineAccent}
-          alternatives={HEADLINE_ACCENT_ALTS}
-          onChange={(v) => set('headlineAccent', v)}
-          multiline
-          rows={2}
-          helper={<>Rendered in the brand accent colour, on its own line.</>}
-        />
-        <CopyField
-          label="Sub"
-          value={d.sub}
-          originalValue={DEFAULTS.sub}
-          alternatives={SUB_ALTS}
-          onChange={(v) => set('sub', v)}
-          multiline
-          rows={3}
-        />
-      </BuilderFormSection>
-      <BuilderFormSection>
-        <BuilderFormRow>
-          <CopyField
-            label="Primary CTA · label"
-            value={d.ctaPrimaryLabel}
-            originalValue={DEFAULTS.ctaPrimaryLabel}
-            onChange={(v) => set('ctaPrimaryLabel', v)}
-          />
-          <CopyField
-            label="Primary CTA · href"
-            value={d.ctaPrimaryHref}
-            originalValue={DEFAULTS.ctaPrimaryHref}
-            onChange={(v) => set('ctaPrimaryHref', v)}
-          />
-        </BuilderFormRow>
-        <BuilderFormRow>
-          <CopyField
-            label="Secondary CTA · label"
-            value={d.ctaSecondaryLabel}
-            originalValue={DEFAULTS.ctaSecondaryLabel}
-            onChange={(v) => set('ctaSecondaryLabel', v)}
-          />
-          <CopyField
-            label="Secondary CTA · href"
-            value={d.ctaSecondaryHref}
-            originalValue={DEFAULTS.ctaSecondaryHref}
-            onChange={(v) => set('ctaSecondaryHref', v)}
-          />
-        </BuilderFormRow>
-      </BuilderFormSection>
-      <BuilderFormSection>
         <MediaField
           label="Hero image"
           value={d.heroImageUrl}
@@ -198,7 +231,12 @@ function HeroFields({ data, onChange }: SectionFieldsProps<HeroData>) {
 
 // -- Preview ----------------------------------------------------------------
 
-function HeroPreview({ data, brand }: SectionPreviewProps<HeroData>) {
+function HeroPreview({
+  data,
+  brand,
+  selectedElement,
+  onSelectElement,
+}: SectionPreviewProps<HeroData>) {
   const d = withDefaults(data);
   const overlay = d.layout === 'overlay';
 
@@ -208,60 +246,75 @@ function HeroPreview({ data, brand }: SectionPreviewProps<HeroData>) {
       brand={brand}
       inset="flush"
       pad="none"
-      backgroundLayer={overlay ? <HeroBackground url={d.heroImageUrl} /> : undefined}
+      backgroundLayer={
+        overlay ? (
+          <HeroBackground url={d.heroImageUrl} scrim={d.theme.background} />
+        ) : undefined
+      }
     >
       {({ theme, headingFont, accent }) => {
-        // Overlay sits on a dark image scrim — force light text regardless
-        // of the chosen theme (the theme only sets the no-image fallback).
-        const heading = overlay ? '#ffffff' : theme.heading;
-        const body = overlay ? 'rgba(255, 255, 255, 0.86)' : theme.body;
+        const sel = (id: HeroElement) => ({
+          id,
+          selected: selectedElement === id,
+          onSelect: onSelectElement,
+        });
 
         const content = (
           <>
             {d.eyebrow ? (
-              <p
-                className="mb-4 text-[12px] font-bold uppercase tracking-[0.18em]"
-                style={{ color: accent }}
-              >
-                {d.eyebrow}
-              </p>
+              <SelectableElement {...sel('eyebrow')}>
+                <p
+                  className="text-[12px] font-bold uppercase tracking-[0.18em]"
+                  style={{ color: accent }}
+                >
+                  {d.eyebrow}
+                </p>
+              </SelectableElement>
             ) : null}
-            <h2
-              className="text-[40px] font-bold leading-[1.06] tracking-[-0.02em] md:text-[52px]"
-              style={{ fontFamily: headingFont, color: heading }}
-            >
-              <span className="block">{d.headline}</span>
-              {d.headlineAccent ? (
-                <span className="block" style={{ color: accent }}>
-                  {d.headlineAccent}
-                </span>
-              ) : null}
-            </h2>
-            {d.sub ? (
-              <p
-                className="mt-5 max-w-[460px] text-[16px] leading-[1.6]"
-                style={{ color: body }}
+            <SelectableElement {...sel('headline')} className="mt-4">
+              <h2
+                className="text-[40px] font-bold leading-[1.06] tracking-[-0.02em] md:text-[52px]"
+                style={{ fontFamily: headingFont, color: theme.heading }}
               >
-                {d.sub}
-              </p>
+                <span className="block">{d.headline}</span>
+                {d.headlineAccent ? (
+                  <span className="block" style={{ color: accent }}>
+                    {d.headlineAccent}
+                  </span>
+                ) : null}
+              </h2>
+            </SelectableElement>
+            {d.sub ? (
+              <SelectableElement {...sel('subheadline')} className="mt-5">
+                <p
+                  className="max-w-[460px] text-[16px] leading-[1.6]"
+                  style={{ color: theme.body }}
+                >
+                  {d.sub}
+                </p>
+              </SelectableElement>
             ) : null}
             {d.ctaPrimaryLabel || d.ctaSecondaryLabel ? (
               <div className="mt-8 flex flex-wrap items-center gap-3">
                 {d.ctaPrimaryLabel ? (
-                  <span
-                    className="inline-flex items-center rounded-lg px-6 py-3 text-[14px] font-semibold"
-                    style={{ backgroundColor: accent, color: '#ffffff' }}
-                  >
-                    {d.ctaPrimaryLabel}
-                  </span>
+                  <SelectableElement {...sel('ctaPrimary')} display="inline-block">
+                    <span
+                      className="inline-flex items-center rounded-lg px-6 py-3 text-[14px] font-semibold"
+                      style={{ backgroundColor: accent, color: '#ffffff' }}
+                    >
+                      {d.ctaPrimaryLabel}
+                    </span>
+                  </SelectableElement>
                 ) : null}
                 {d.ctaSecondaryLabel ? (
-                  <span
-                    className="inline-flex items-center rounded-lg border px-6 py-3 text-[14px] font-semibold"
-                    style={{ borderColor: heading, color: heading }}
-                  >
-                    {d.ctaSecondaryLabel}
-                  </span>
+                  <SelectableElement {...sel('ctaSecondary')} display="inline-block">
+                    <span
+                      className="inline-flex items-center rounded-lg border px-6 py-3 text-[14px] font-semibold"
+                      style={{ borderColor: theme.heading, color: theme.heading }}
+                    >
+                      {d.ctaSecondaryLabel}
+                    </span>
+                  </SelectableElement>
                 ) : null}
               </div>
             ) : null}
@@ -300,7 +353,13 @@ function HeroPreview({ data, brand }: SectionPreviewProps<HeroData>) {
   );
 }
 
-function HeroImage({ url, theme }: { url: string; theme: ResolvedTheme }) {
+function HeroImage({
+  url,
+  theme,
+}: {
+  url: string;
+  theme: { card: string; muted: string };
+}) {
   return (
     <div
       className="relative min-h-[280px] w-full overflow-hidden md:min-h-full"
@@ -323,7 +382,7 @@ function HeroImage({ url, theme }: { url: string; theme: ResolvedTheme }) {
   );
 }
 
-function HeroBackground({ url }: { url: string }) {
+function HeroBackground({ url, scrim }: { url: string; scrim: string }) {
   return (
     <>
       {url ? (
@@ -333,8 +392,7 @@ function HeroBackground({ url }: { url: string }) {
       <div
         className="absolute inset-0"
         style={{
-          background:
-            'linear-gradient(100deg, rgba(8, 16, 32, 0.93) 0%, rgba(8, 16, 32, 0.7) 45%, rgba(8, 16, 32, 0.35) 100%)',
+          background: `linear-gradient(100deg, ${scrim} 0%, ${scrim}f0 38%, ${scrim}73 100%)`,
         }}
       />
     </>
@@ -360,6 +418,13 @@ export const heroSection = defineSection<HeroData>({
       'ctaSecondaryHref',
     ],
     mediaFields: ['heroImageUrl'],
+  },
+  elementLabels: {
+    eyebrow: 'Eyebrow',
+    headline: 'Headline',
+    subheadline: 'Sub-headline',
+    ctaPrimary: 'Primary button',
+    ctaSecondary: 'Secondary button',
   },
   allowedContainers: ['page', 'funnelStep'],
   implemented: true,
