@@ -36,6 +36,7 @@ import type {
 } from './types';
 
 import { ctaSection } from './sections/cta';
+import { headerSection } from './sections/header';
 import { heroSection } from './sections/hero';
 import { offerSection } from './sections/offer';
 import { reviewsSection } from './sections/reviews';
@@ -204,9 +205,9 @@ const voltlineHomeServices: ServicesData = {
 };
 
 const voltlineHeader: Section = mkSection<HeaderData>('sec-vl-header', 'header', {
+  ...headerSection.defaultData(),
   logoText: 'Voltline',
-  logoImageUrl: '',
-  showCta: true,
+  logoTagline: 'Electrical',
   ctaLabel: 'Call us',
   ctaHref: 'tel:0411222333',
 });
@@ -350,9 +351,9 @@ const freshhomeHomeHeroDraft: HeroData = {
 };
 
 const freshhomeHeader: Section = mkSection<HeaderData>('sec-fh-header', 'header', {
+  ...headerSection.defaultData(),
   logoText: 'FreshHome',
-  logoImageUrl: '',
-  showCta: true,
+  logoTagline: 'Cleaning',
   ctaLabel: 'Get a quote',
   ctaHref: '/contact',
 });
@@ -592,9 +593,9 @@ const keyheroHomeHero: HeroData = {
 };
 
 const keyheroHeader: Section = mkSection<HeaderData>('sec-kh-header', 'header', {
+  ...headerSection.defaultData(),
   logoText: 'KeyHero',
-  logoImageUrl: '',
-  showCta: true,
+  logoTagline: 'Locksmiths',
   ctaLabel: 'Call now · 24/7',
   ctaHref: 'tel:0411666777',
 });
