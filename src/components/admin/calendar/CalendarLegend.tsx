@@ -1,4 +1,4 @@
-import { CALENDAR_TONE_BG } from '@/lib/calendar/tones';
+import { CLIENT_TONE_BG } from '@/lib/clients/tones';
 import type { CalendarLegendItem } from '@/lib/calendar/types';
 import { cn } from '@/lib/utils';
 
@@ -21,7 +21,7 @@ function CalendarLegend({ items, meta, className }: CalendarLegendProps) {
         <span key={item.label} className="inline-flex items-center gap-1.5">
           <span
             aria-hidden
-            className={cn('h-3 w-3 rounded-[3px]', CALENDAR_TONE_BG[item.tone])}
+            className={cn('h-3 w-3 rounded-[3px]', CLIENT_TONE_BG[item.tone])}
           />
           {item.label}
         </span>

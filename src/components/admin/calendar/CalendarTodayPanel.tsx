@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
-import { CALENDAR_TONE_BORDER_L } from '@/lib/calendar/tones';
+import { CLIENT_TONE_BORDER_L } from '@/lib/clients/tones';
 import {
   CALENDAR_BOOKING_STATUS_LABEL,
   type CalendarTodayJob,
@@ -61,7 +61,7 @@ function CalendarTodayRow({
   const rowClasses = cn(
     'grid items-center gap-3.5 rounded-lg border-l-[3px] bg-paper px-3.5 py-2.5',
     hideClientLogo ? 'grid-cols-[100px_1fr_auto_auto]' : 'grid-cols-[100px_36px_1fr_auto_auto]',
-    CALENDAR_TONE_BORDER_L[job.tone],
+    CLIENT_TONE_BORDER_L[job.tone],
     job.href && 'cursor-pointer transition-colors hover:bg-paper-2',
   );
 

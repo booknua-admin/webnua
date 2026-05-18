@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { CALENDAR_TONE_BG } from '@/lib/calendar/tones';
+import { CLIENT_TONE_BG } from '@/lib/clients/tones';
 import type { CalendarClientTone } from '@/lib/calendar/types';
 import { cn } from '@/lib/utils';
 
@@ -28,7 +28,7 @@ function BookingPill({
   href,
   className,
 }: BookingPillProps) {
-  const toneBg = tone ? CALENDAR_TONE_BG[tone] : 'bg-rust';
+  const toneBg = tone ? CLIENT_TONE_BG[tone] : 'bg-rust';
   const baseClasses = cn(
     'absolute left-1 right-1 z-[3] overflow-hidden rounded-md px-2 py-1.5 text-paper shadow-card transition-transform hover:scale-[1.02] hover:z-[6]',
     toneBg,

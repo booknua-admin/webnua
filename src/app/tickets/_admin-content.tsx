@@ -102,6 +102,7 @@ function AdminTicketsContent() {
   return (
     <>
       <Topbar
+        hideSearch
         breadcrumb={
           <TopbarBreadcrumb trail={['Workspace']} current="Tickets" />
         }

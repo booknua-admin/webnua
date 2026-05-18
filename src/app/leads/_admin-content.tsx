@@ -61,6 +61,7 @@ function AdminLeadsContent() {
   return (
     <>
       <Topbar
+        hideSearch
         breadcrumb={
           <TopbarBreadcrumb trail={['Workspace']} current="Leads" />
         }

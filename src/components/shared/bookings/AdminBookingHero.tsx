@@ -1,4 +1,4 @@
-import { CALENDAR_TONE_BORDER_L } from '@/lib/calendar/tones';
+import { CLIENT_TONE_BORDER_L } from '@/lib/clients/tones';
 import type { CalendarClientTone } from '@/lib/calendar/types';
 import { cn } from '@/lib/utils';
 
@@ -33,7 +33,7 @@ function AdminBookingHero({
       data-slot="admin-booking-hero"
       className={cn(
         'rounded-[12px] border border-rule border-l-[6px] bg-card px-7.5 py-6.5',
-        CALENDAR_TONE_BORDER_L[tone],
+        CLIENT_TONE_BORDER_L[tone],
         className,
       )}
     >

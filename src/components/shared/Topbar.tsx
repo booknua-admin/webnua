@@ -1,25 +1,44 @@
 'use client';
 
 import { NotificationBell } from '@/components/client/notifications/NotificationBell';
+import { GlobalSearchInput } from '@/components/shared/search/GlobalSearchInput';
 import { useRole } from '@/lib/auth/user-stub';
 import { cn } from '@/lib/utils';
 
 type TopbarProps = {
   breadcrumb: React.ReactNode;
   middle?: React.ReactNode;
-  /** Optional global-search field, rendered centred. Mutually exclusive with
-   *  `middle` (a page using the step-tracker would not also carry search). */
+  /** Explicit global-search field, rendered centred. Mutually exclusive with
+   *  `middle` (a page using the step-tracker would not also carry search).
+   *  Operators get one auto-rendered here anyway — pass this only to seed a
+   *  non-default value (e.g. `/search` seeding the current query). */
   search?: React.ReactNode;
+  /** Opt a page out of the operator global-search auto-render — set it on
+   *  pages that already carry their own in-body search (e.g. the admin leads
+   *  and tickets inboxes) so the chrome doesn't show two search affordances. */
+  hideSearch?: boolean;
   actions?: React.ReactNode;
   className?: string;
 };
 
-function Topbar({ breadcrumb, middle, search, actions, className }: TopbarProps) {
-  const centre = middle ?? search;
+function Topbar({
+  breadcrumb,
+  middle,
+  search,
+  hideSearch,
+  actions,
+  className,
+}: TopbarProps) {
   const { role, hydrated } = useRole();
   // The notification bell is a client-role fixture — every client page that
   // mounts a Topbar gets it for free; operators never see it.
   const showBell = hydrated && role === 'client';
+  // Global search is the operator-role mirror of the bell: every operator
+  // page that mounts a Topbar gets the search field for free. Explicit
+  // `middle`/`search` win; `hideSearch` opts a page out.
+  const autoSearch =
+    hydrated && role === 'admin' && !hideSearch ? <GlobalSearchInput /> : null;
+  const centre = middle ?? search ?? autoSearch;
   return (
     <div
       data-slot="topbar"
