@@ -80,6 +80,7 @@ function ClientTicketDetailContent() {
                   ))}
                 </div>
                 <TicketReply
+                  ticketReference={t.id}
                   label={t.reply.label}
                   placeholder={t.reply.placeholder}
                   chips={t.reply.chips}

@@ -673,3 +673,67 @@ export function useCreateTicket() {
     },
   });
 }
+
+// ---- Reply (write) ----------------------------------------------------------
+
+/** Post a reply onto a ticket thread and hand the ticket to the other party. */
+async function replyToTicket(input: {
+  reference: string;
+  body: string;
+}): Promise<void> {
+  const body = input.body.trim();
+  if (!body) {
+    throw AppError.validation({ body: 'A reply needs a message.' });
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw AppError.auth();
+
+  // Resolve the ticket UUID from its display reference (RLS scopes this).
+  const { data: ticket, error: ticketError } = await supabase
+    .from('tickets')
+    .select('id')
+    .eq('reference', input.reference)
+    .single();
+  if (ticketError) throw normalizeError(ticketError);
+
+  // A replier with a home client is the client; an operator has none.
+  const { data: me, error: meError } = await supabase
+    .from('users')
+    .select('client_id')
+    .eq('id', user.id)
+    .single();
+  if (meError) throw normalizeError(meError);
+
+  const { error: messageError } = await supabase
+    .from('ticket_messages')
+    .insert({
+      ticket_id: ticket.id,
+      author_user_id: user.id,
+      body,
+      is_draft: false,
+    });
+  if (messageError) throw normalizeError(messageError);
+
+  // The thread now waits on whoever did not just reply.
+  const awaiting: TicketAwaiting = me.client_id ? 'operator' : 'client';
+  const { error: ticketUpdateError } = await supabase
+    .from('tickets')
+    .update({ awaiting })
+    .eq('id', ticket.id);
+  if (ticketUpdateError) throw normalizeError(ticketUpdateError);
+}
+
+/** Reply to a ticket. On success every tickets query is invalidated so the
+ *  thread + inbox reflect the new message and `awaiting` flip. */
+export function useReplyToTicket() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: replyToTicket,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['tickets'] });
+    },
+  });
+}

@@ -4,6 +4,8 @@ import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { normalizeError } from '@/lib/errors';
+import { useReplyToTicket } from '@/lib/tickets/queries';
 import { cn } from '@/lib/utils';
 
 type TicketReplyTool = {
@@ -12,6 +14,8 @@ type TicketReplyTool = {
 };
 
 type TicketReplyProps = {
+  /** The ticket's display reference — wires the composer to a real write. */
+  ticketReference: string;
   label?: string;
   placeholder: string;
   defaultValue?: string;
@@ -26,6 +30,7 @@ const DEFAULT_TOOLS: TicketReplyTool[] = [
 ];
 
 function TicketReply({
+  ticketReference,
   label,
   placeholder,
   defaultValue,
@@ -35,6 +40,17 @@ function TicketReply({
   className,
 }: TicketReplyProps) {
   const [value, setValue] = useState(defaultValue ?? '');
+  const reply = useReplyToTicket();
+
+  const trimmed = value.trim();
+
+  function handleSend() {
+    if (!trimmed || reply.isPending) return;
+    reply.mutate(
+      { reference: ticketReference, body: trimmed },
+      { onSuccess: () => setValue('') },
+    );
+  }
 
   return (
     <div
@@ -66,6 +82,11 @@ function TicketReply({
         placeholder={placeholder}
         className="min-h-[92px] resize-y rounded-[10px] border-ink/15 bg-card font-sans text-[14px] leading-[1.5]"
       />
+      {reply.isError ? (
+        <p className="mt-2 text-[12px] text-warn">
+          {normalizeError(reply.error).message}
+        </p>
+      ) : null}
       <div className="mt-2.5 flex items-center justify-between">
         <div className="flex gap-1.5">
           {tools.map((tool) => (
@@ -80,8 +101,12 @@ function TicketReply({
             </button>
           ))}
         </div>
-        <Button className="bg-rust text-paper hover:bg-rust-light">
-          {sendLabel}
+        <Button
+          onClick={handleSend}
+          disabled={!trimmed || reply.isPending}
+          className="bg-rust text-paper hover:bg-rust-light"
+        >
+          {reply.isPending ? 'Sending…' : sendLabel}
         </Button>
       </div>
     </div>
