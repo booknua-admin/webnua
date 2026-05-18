@@ -19,8 +19,10 @@ import {
   type ResolvedTheme,
   type SectionTheme,
 } from '../section-theme';
+import { DEFAULT_SECTION_ICON, getSectionIcon } from '../section-icons';
 import { ColumnsField } from './_shared/ColumnsField';
 import { CopyField } from './_shared/CopyField';
+import { IconField } from './_shared/IconField';
 import { MediaField } from './_shared/MediaField';
 import { SectionShell } from './_shared/SectionShell';
 import { SelectableElement } from './_shared/SelectableElement';
@@ -50,7 +52,7 @@ type FeaturesElement = 'eyebrow' | 'headline' | 'subheadline' | 'items' | 'cta';
 
 export type FeatureItem = {
   id: string;
-  /** A short glyph / emoji shown in the icon badge. */
+  /** An icon id from the curated `section-icons` library. */
   icon: string;
   imageUrl: string;
   title: string;
@@ -95,7 +97,7 @@ function makeId(): string {
 
 const SEED_ITEMS: Omit<FeatureItem, 'id'>[] = [
   {
-    icon: '🔧',
+    icon: 'droplet',
     imageUrl: '',
     title: 'Plumbing',
     description: 'From repairs to installations, we handle all your plumbing needs with care.',
@@ -103,7 +105,7 @@ const SEED_ITEMS: Omit<FeatureItem, 'id'>[] = [
     linkHref: '#',
   },
   {
-    icon: '❄️',
+    icon: 'snowflake',
     imageUrl: '',
     title: 'HVAC services',
     description: 'Keep your home comfortable year-round with our heating and cooling solutions.',
@@ -111,7 +113,7 @@ const SEED_ITEMS: Omit<FeatureItem, 'id'>[] = [
     linkHref: '#',
   },
   {
-    icon: '⚡',
+    icon: 'zap',
     imageUrl: '',
     title: 'Electrical',
     description: 'Safe, reliable electrical services for your home or business.',
@@ -119,7 +121,7 @@ const SEED_ITEMS: Omit<FeatureItem, 'id'>[] = [
     linkHref: '#',
   },
   {
-    icon: '🧹',
+    icon: 'spray-can',
     imageUrl: '',
     title: 'Cleaning',
     description: 'Professional cleaning for homes and businesses. Spotless results, every time.',
@@ -286,7 +288,7 @@ function FeaturesFields({
         ...d.items,
         {
           id: makeId(),
-          icon: '✦',
+          icon: DEFAULT_SECTION_ICON,
           imageUrl: '',
           title: '',
           description: '',
@@ -460,12 +462,9 @@ function FeaturesFields({
                 </CapabilityGate>
               </div>
               {showIcon ? (
-                <CopyField
-                  label="Icon glyph"
+                <IconField
                   value={item.icon}
                   onChange={(v) => setItem(i, { ...item, icon: v })}
-                  placeholder="✦"
-                  helper={<>An emoji or short glyph.</>}
                 />
               ) : null}
               {showImage ? (
@@ -734,34 +733,36 @@ function CtaButton({
 }
 
 function FeatureIcon({
-  glyph,
+  iconId,
   style,
   accent,
   background,
 }: {
-  glyph: string;
+  iconId: string;
   style: FeaturesIconStyle;
   accent: string;
   background: string;
 }) {
-  if (!glyph) return null;
+  const def = getSectionIcon(iconId);
+  if (!def) return null;
+  const Icon = def.Icon;
   if (style === 'bare') {
-    return (
-      <span className="text-[34px] leading-none" style={{ color: accent }}>
-        {glyph}
-      </span>
-    );
+    return <Icon size={36} strokeWidth={1.6} color={accent} aria-hidden />;
   }
   const isSolid = style === 'solid';
   return (
     <span
-      className="flex h-14 w-14 items-center justify-center rounded-full text-[24px] leading-none"
+      className="flex h-14 w-14 items-center justify-center rounded-full"
       style={{
         backgroundColor: isSolid ? accent : mixHex(accent, background, 0.86),
-        color: isSolid ? '#ffffff' : accent,
       }}
     >
-      {glyph}
+      <Icon
+        size={24}
+        strokeWidth={1.9}
+        color={isSolid ? '#ffffff' : accent}
+        aria-hidden
+      />
     </span>
   );
 }
@@ -866,7 +867,7 @@ function FeatureCard({
             {overlapIcon && showIcon ? (
               <div className="-mt-12 mb-3">
                 <FeatureIcon
-                  glyph={item.icon}
+                  iconId={item.icon}
                   style={data.iconStyle === 'bare' ? 'soft' : data.iconStyle}
                   accent={accent}
                   background={theme.card}
@@ -889,7 +890,7 @@ function FeatureCard({
         {showIcon ? (
           <div className="mb-4">
             <FeatureIcon
-              glyph={item.icon}
+              iconId={item.icon}
               style={data.iconStyle}
               accent={accent}
               background={theme.card}
@@ -915,7 +916,7 @@ function FeatureCard({
       {showIcon && !overlapIcon ? (
         <div className="mb-4">
           <FeatureIcon
-            glyph={item.icon}
+            iconId={item.icon}
             style={data.iconStyle}
             accent={accent}
             background={theme.background}
@@ -925,7 +926,7 @@ function FeatureCard({
       {overlapIcon && showIcon ? (
         <div className="-mt-11 mb-3">
           <FeatureIcon
-            glyph={item.icon}
+            iconId={item.icon}
             style={data.iconStyle === 'bare' ? 'soft' : data.iconStyle}
             accent={accent}
             background={theme.background}
