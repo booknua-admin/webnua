@@ -229,6 +229,17 @@ export function SectionEditor({ mode }: SectionEditorProps) {
     }
   };
 
+  const handleMoveSection = (id: string, direction: -1 | 1) => {
+    setSections((current) => {
+      const i = current.findIndex((s) => s.id === id);
+      const j = i + direction;
+      if (i < 0 || j < 0 || j >= current.length) return current;
+      const next = [...current];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  };
+
   // Funnel publish (Lane A — funnels have no approval queue). The funnel
   // editor publishes directly; websites route through /website/review.
   const handleFunnelPublish = async () => {
@@ -313,11 +324,15 @@ export function SectionEditor({ mode }: SectionEditorProps) {
   const showFields = !locked && selectedSection != null;
   // Singletons never collapse — their rail is the section.
   const railCollapsedEffective = railCollapsed && !isSingleton;
-  const gridCols = showFields
-    ? railCollapsedEffective
+  // Static class strings — Tailwind cannot generate arbitrary-value classes
+  // from a runtime-interpolated template literal.
+  const gridCols = railCollapsedEffective
+    ? showFields
       ? 'grid-cols-[48px_1fr_400px]'
-      : 'grid-cols-[300px_1fr_400px]'
-    : 'grid-cols-[340px_1fr]';
+      : 'grid-cols-[48px_1fr]'
+    : showFields
+      ? 'grid-cols-[300px_1fr_400px]'
+      : 'grid-cols-[340px_1fr]';
 
   return (
     <div className="flex h-svh flex-col bg-paper">
@@ -356,6 +371,7 @@ export function SectionEditor({ mode }: SectionEditorProps) {
           onSelectSection={handleSelectSection}
           onToggleSectionEnabled={handleToggleSectionEnabled}
           onRemoveSection={handleRemoveSection}
+          onMoveSection={handleMoveSection}
           onRequestAddSection={() => setAddOpen(true)}
           collapsed={railCollapsedEffective}
           onToggleCollapsed={() => setRailCollapsed((c) => !c)}

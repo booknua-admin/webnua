@@ -33,6 +33,7 @@ export type SectionListRailProps = {
   onSelectSection: (id: string) => void;
   onToggleSectionEnabled: (id: string, enabled: boolean) => void;
   onRemoveSection?: (id: string) => void;
+  onMoveSection?: (id: string, direction: -1 | 1) => void;
   onRequestAddSection?: () => void;
   /** Collapsed to a thin strip (when a section is being inspected). */
   collapsed?: boolean;
@@ -46,6 +47,7 @@ export function SectionListRail({
   onSelectSection,
   onToggleSectionEnabled,
   onRemoveSection,
+  onMoveSection,
   onRequestAddSection,
   collapsed = false,
   onToggleCollapsed,
@@ -139,6 +141,10 @@ export function SectionListRail({
                   ? () => onRemoveSection(section.id)
                   : undefined
               }
+              onMoveUp={() => onMoveSection?.(section.id, -1)}
+              onMoveDown={() => onMoveSection?.(section.id, 1)}
+              canMoveUp={!isSingleton && i > 0}
+              canMoveDown={!isSingleton && i < sections.length - 1}
               singleton={isSingleton}
             />
           ))}

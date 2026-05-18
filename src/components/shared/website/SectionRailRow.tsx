@@ -29,8 +29,13 @@ export type SectionRailRowProps = {
   onToggleEnabled: (enabled: boolean) => void;
   /** Remove this section. Omitted for singleton rows (header / footer). */
   onRemove?: () => void;
+  /** Reorder this section up / down the list. */
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
   /** True when this row is the only section in a website-level singleton
-   *  rail (header / footer). Suppresses drag handle, enable switch, and
+   *  rail (header / footer). Suppresses reorder, enable switch, and
    *  the numbered index — singletons are always-on and unreorderable. */
   singleton?: boolean;
 };
@@ -42,6 +47,10 @@ export function SectionRailRow({
   onSelect,
   onToggleEnabled,
   onRemove,
+  onMoveUp,
+  onMoveDown,
+  canMoveUp = false,
+  canMoveDown = false,
   singleton = false,
 }: SectionRailRowProps) {
   const def = getSectionDefinition(section.type);
@@ -60,15 +69,27 @@ export function SectionRailRow({
     >
       <div className="flex items-start gap-2.5">
         {singleton ? null : (
-          <CapabilityGate capability="editLayout" mode="disable">
-            <button
-              type="button"
-              aria-label="Drag to reorder"
-              className="mt-0.5 cursor-grab font-mono text-[14px] text-ink-quiet hover:text-ink"
-              tabIndex={-1}
-            >
-              ⋮⋮
-            </button>
+          <CapabilityGate capability="editLayout" mode="hide">
+            <div className="mt-0.5 flex flex-col leading-none">
+              <button
+                type="button"
+                onClick={onMoveUp}
+                disabled={!canMoveUp}
+                aria-label="Move section up"
+                className="text-[10px] text-ink-quiet transition-colors hover:text-rust disabled:opacity-30 disabled:hover:text-ink-quiet"
+              >
+                ▲
+              </button>
+              <button
+                type="button"
+                onClick={onMoveDown}
+                disabled={!canMoveDown}
+                aria-label="Move section down"
+                className="text-[10px] text-ink-quiet transition-colors hover:text-rust disabled:opacity-30 disabled:hover:text-ink-quiet"
+              >
+                ▼
+              </button>
+            </div>
           </CapabilityGate>
         )}
         <button
