@@ -1,18 +1,18 @@
 'use client';
 
 // =============================================================================
-// SectionFieldsPanel — the third column of the editor, only visible when a
-// section is selected. Mounts the section type's `Fields` component (from
-// the registry) with live-updating local state, so edits propagate to the
-// preview pane immediately.
+// SectionFieldsPanel — the editor's inspector column. Mounts the section
+// type's `Fields` component (from the registry) with live-updating state.
 //
-// Per-field capability gating happens INSIDE the Fields component (every
-// section's Fields uses CopyField/MediaField, both of which wrap inputs
-// in CapabilityGate). The panel itself just provides the chrome — header
-// with the section type label + close, scrollable body for the fields.
+// Element-inspector model: when an element is selected in the preview the
+// panel titles itself with that element and the Fields component renders
+// only that element's settings; with no element selected it shows the
+// section-level settings. A back affordance returns to section level.
+//
+// Per-field capability gating happens INSIDE the Fields component.
 // =============================================================================
 
-import type { Section } from '@/lib/website/types';
+import type { BrandObject, Section } from '@/lib/website/types';
 import { getSectionDefinition } from '@/lib/website/sections';
 import { SectionFieldContextProvider } from '@/lib/website/sections/_shared/field-context';
 
@@ -20,11 +20,18 @@ export type SectionFieldsPanelProps = {
   section: Section;
   /** Called with the new section data on every Fields edit. */
   onChange: (nextData: Record<string, unknown>) => void;
-  /** Closes the panel (clears selection). */
+  /** Closes the panel (clears section selection). */
   onClose: () => void;
-  /** Suppresses the close button — used in singleton mode where the section
-   *  is the only one and there's nothing to deselect to. */
+  /** Suppresses the close button — used in singleton mode. */
   hideClose?: boolean;
+  /** The element selected within the section, or null for section level. */
+  selectedElement: string | null;
+  /** Select / deselect an element (null returns to section level). */
+  onSelectElement: (id: string | null) => void;
+  /** The client + resolved brand — threaded to the Fields component for the
+   *  brand-style-defaults ("apply to all") path. */
+  clientId?: string;
+  brand?: BrandObject;
 };
 
 export function SectionFieldsPanel({
@@ -32,6 +39,10 @@ export function SectionFieldsPanel({
   onChange,
   onClose,
   hideClose = false,
+  selectedElement,
+  onSelectElement,
+  clientId,
+  brand,
 }: SectionFieldsPanelProps) {
   const def = getSectionDefinition(section.type);
   if (!def) {
@@ -45,6 +56,10 @@ export function SectionFieldsPanel({
   }
 
   const Fields = def.Fields;
+  const sectionName = def.label.replace(/^\/\/\s*/, '');
+  const elementLabel = selectedElement
+    ? (def.elementLabels?.[selectedElement] ?? selectedElement)
+    : null;
 
   return (
     <aside
@@ -52,18 +67,35 @@ export function SectionFieldsPanel({
       className="flex h-full min-h-0 flex-col border-l border-rule bg-paper"
     >
       <div className="flex items-center justify-between gap-3 border-b border-rule px-4 py-3">
-        <p className="min-w-0 truncate font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-rust">
-          {def.label}
-        </p>
-        {hideClose ? null : (
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close fields panel"
-            className="shrink-0 rounded font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet transition-colors hover:text-ink"
-          >
-            Close ×
-          </button>
+        {elementLabel ? (
+          <>
+            <button
+              type="button"
+              onClick={() => onSelectElement(null)}
+              className="shrink-0 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet transition-colors hover:text-rust"
+            >
+              {`‹ ${sectionName}`}
+            </button>
+            <p className="min-w-0 truncate font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-rust">
+              {elementLabel}
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="min-w-0 truncate font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-rust">
+              {def.label}
+            </p>
+            {hideClose ? null : (
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close fields panel"
+                className="shrink-0 rounded font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet transition-colors hover:text-ink"
+              >
+                Close ×
+              </button>
+            )}
+          </>
         )}
       </div>
 
@@ -72,7 +104,13 @@ export function SectionFieldsPanel({
             is typed against its specific data shape; the registry stores
             them as unknown. defaultData() guarantees the shape on creation. */}
         <SectionFieldContextProvider sectionLabel={def.label}>
-          <Fields data={section.data as never} onChange={onChange as never} />
+          <Fields
+            data={section.data as never}
+            onChange={onChange as never}
+            selectedElement={selectedElement}
+            clientId={clientId}
+            brand={brand}
+          />
         </SectionFieldContextProvider>
       </div>
 

@@ -27,11 +27,27 @@ import type {
 export type SectionFieldsProps<TData> = {
   data: TData;
   onChange: (next: TData) => void;
+  /** The element selected in the preview (element-inspector model). `null`
+   *  = no element → the Fields component renders section-level settings.
+   *  Optional — non-editor consumers omit it. */
+  selectedElement?: string | null;
+  /** The client the section belongs to — lets a Fields component write
+   *  brand-level style defaults (the "apply to all" path). */
+  clientId?: string;
+  /** The resolved brand — carries the brand-level style defaults a Fields
+   *  component shows as the effective value of an un-overridden colour. */
+  brand?: BrandObject;
 };
 
 export type SectionPreviewProps<TData> = {
   data: TData;
   brand: BrandObject;
+  /** The element currently selected — drives the in-preview selection ring.
+   *  Optional; a Preview rendered outside the editor omits it. */
+  selectedElement?: string | null;
+  /** Select an element by id (or `null` to deselect to section level).
+   *  Absent → the Preview renders non-interactively (no element clicks). */
+  onSelectElement?: (id: string | null) => void;
 };
 
 export type SectionCapabilityHints = {
@@ -52,6 +68,10 @@ export type SectionTypeDefinition<TData = unknown> = {
   Fields: ComponentType<SectionFieldsProps<TData>>;
   Preview: ComponentType<SectionPreviewProps<TData>>;
   capabilityHints?: SectionCapabilityHints;
+  /** Human labels for the section's selectable preview elements, keyed by
+   *  element id (element-inspector model). The fields panel reads this to
+   *  title the inspector when an element is selected. */
+  elementLabels?: Record<string, string>;
   /** Where this section type can be used (design doc §2.2). Drives the
    *  "Add section" picker and enforces singleton vs stackable semantics:
    *

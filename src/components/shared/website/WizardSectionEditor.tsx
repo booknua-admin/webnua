@@ -212,6 +212,10 @@ function WizardStepPane({
             onChange={handleSectionDataChange}
             onClose={() => {}}
             hideClose
+            // The wizard walk shows section-level fields only — no
+            // element-inspector selection in the guided flow.
+            selectedElement={null}
+            onSelectElement={() => {}}
           />
         ) : null}
       </div>

@@ -46,6 +46,8 @@ import type {
   Website,
 } from '@/lib/website/types';
 import { useAutosave } from '@/lib/website/use-autosave';
+import { useBrandStyle } from '@/lib/website/use-brand-style';
+import { useUndoableState } from '@/lib/website/use-undoable-state';
 import { useUserPendingSubmission } from '@/lib/website/use-publish-state';
 
 import { AddSectionDialog } from './AddSectionDialog';
@@ -56,9 +58,9 @@ import {
   type EditorToolbarTab,
 } from './EditorToolbar';
 import { ForcePublishMenu } from './ForcePublishMenu';
-import { PagePreviewPane } from './PagePreviewPane';
+import { PagePreviewPane, type DevicePreview } from './PagePreviewPane';
 import { SectionFieldsPanel } from './SectionFieldsPanel';
-import { SectionListRail } from './SectionListRail';
+import { SiteFontsMenu } from './SiteFontsMenu';
 
 export type SectionEditorMode =
   | {
@@ -128,8 +130,19 @@ function containerForMode(mode: SectionEditorMode): ContainerKind {
 }
 
 export function SectionEditor({ mode }: SectionEditorProps) {
-  const brandQuery = useBrandForClient(clientIdForMode(mode));
-  const brand = brandQuery.data ?? null;
+  const clientId = clientIdForMode(mode);
+  const brandQuery = useBrandForClient(clientId);
+  // Brand-level style (fonts + colour defaults) is edited site-wide via the
+  // font menu and the "apply to all" path; the overlay is merged over the
+  // resolved brand so every section preview re-renders live.
+  const brandStyleOverride = useBrandStyle(clientId);
+  const brand = useMemo(
+    () =>
+      brandQuery.data
+        ? { ...brandQuery.data, ...brandStyleOverride }
+        : null,
+    [brandQuery.data, brandStyleOverride],
+  );
   const slot = useMemo(() => slotForMode(mode), [mode]);
   const user = useUser();
   const router = useRouter();
@@ -146,9 +159,16 @@ export function SectionEditor({ mode }: SectionEditorProps) {
 
   // Seed from the mode's sections. The page-level query already merges the
   // content_drafts autosave buffer into these before passing them down.
-  const [sections, setSections] = useState<Section[]>(() =>
-    seedSectionsForMode(mode),
-  );
+  // Undoable section state — in-memory bounded history (see useUndoableState).
+  const {
+    value: sections,
+    set: setSections,
+    reset: resetSections,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useUndoableState<Section[]>(() => seedSectionsForMode(mode));
 
   // In singleton mode the only section is auto-selected. In page / funnel
   // step modes the user picks (rail click or preview click).
@@ -158,11 +178,24 @@ export function SectionEditor({ mode }: SectionEditorProps) {
 
   const [addOpen, setAddOpen] = useState(false);
 
+  // Element-inspector model: the element selected within the current section.
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(
+    null,
+  );
+  const [device, setDevice] = useState<DevicePreview>('desktop');
+
   // Reset local state when the source content changes (e.g. tab swap).
   useEffect(() => {
-    setSections(seedSectionsForMode(mode));
+    resetSections(seedSectionsForMode(mode));
     setSelectedSectionId(mode.kind === 'singleton' ? mode.section.id : null);
-  }, [mode, slot]);
+    setSelectedElementId(null);
+  }, [mode, slot, resetSections]);
+
+  // Selecting a section resets the element selection.
+  const handleSelectSection = (id: string | null) => {
+    setSelectedSectionId(id);
+    setSelectedElementId(null);
+  };
 
   const autosave = useAutosave({
     slot,
@@ -201,6 +234,38 @@ export function SectionEditor({ mode }: SectionEditorProps) {
     };
     setSections((current) => [...current, newSection]);
     setSelectedSectionId(newSection.id);
+  };
+
+  const handleRemoveSection = (id: string) => {
+    setSections((current) => current.filter((s) => s.id !== id));
+    if (id === selectedSectionId) {
+      setSelectedSectionId(null);
+      setSelectedElementId(null);
+    }
+  };
+
+  const handleMoveSection = (id: string, direction: -1 | 1) => {
+    setSections((current) => {
+      const i = current.findIndex((s) => s.id === id);
+      const j = i + direction;
+      if (i < 0 || j < 0 || j >= current.length) return current;
+      const next = [...current];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  };
+
+  const handleDuplicateSection = (id: string) => {
+    setSections((current) => {
+      const i = current.findIndex((s) => s.id === id);
+      if (i < 0) return current;
+      const copy: Section = {
+        ...current[i],
+        id: `sec-${Math.random().toString(36).slice(2, 9)}`,
+        data: structuredClone(current[i].data),
+      };
+      return [...current.slice(0, i + 1), copy, ...current.slice(i + 1)];
+    });
   };
 
   // Funnel publish (Lane A — funnels have no approval queue). The funnel
@@ -271,23 +336,13 @@ export function SectionEditor({ mode }: SectionEditorProps) {
     };
   })();
 
-  const railMode =
-    mode.kind === 'page'
-      ? { kind: 'page' as const, title: mode.page.title }
-      : mode.kind === 'singleton'
-        ? { kind: 'singleton' as const, label: mode.label }
-        : { kind: 'page' as const, title: mode.step.title };
-
-  // Three-column grid when a section is selected; two-column otherwise.
-  // Locked editors (Lane B submitter waiting on review) hide the fields
-  // panel entirely — the dimmed rail + preview show *what* was submitted
-  // but you can't edit until the operator acts.
+  // The fields panel shows when a section is selected. Locked editors
+  // (Lane B submitter waiting on review) hide it entirely.
   const isSingleton = mode.kind === 'singleton';
   const isFunnelStep = mode.kind === 'funnelStep';
   const showFields = !locked && selectedSection != null;
-  const gridCols = showFields
-    ? 'grid-cols-[300px_1fr_400px]'
-    : 'grid-cols-[340px_1fr]';
+  // No left rail — section management is the per-section hover toolbar.
+  const gridCols = showFields ? 'grid-cols-[1fr_400px]' : 'grid-cols-[1fr]';
 
   return (
     <div className="flex h-svh flex-col bg-paper">
@@ -313,25 +368,34 @@ export function SectionEditor({ mode }: SectionEditorProps) {
             <ForcePublishMenu websiteId={mode.website.id} hidden={locked} />
           )
         }
+        siteStyles={
+          <SiteFontsMenu
+            clientId={clientId}
+            headingFont={brand.headingFont}
+            bodyFont={brand.bodyFont}
+          />
+        }
+        history={{ onUndo: undo, onRedo: redo, canUndo, canRedo }}
+        device={{ value: device, onChange: setDevice }}
       />
       <div
         className={`grid min-h-0 flex-1 overflow-hidden grid-rows-[minmax(0,1fr)] ${gridCols} ${
           locked ? 'opacity-65 [&_*]:pointer-events-none' : ''
         }`}
       >
-        <SectionListRail
-          mode={railMode}
-          sections={sections}
-          selectedSectionId={selectedSectionId}
-          onSelectSection={setSelectedSectionId}
-          onToggleSectionEnabled={handleToggleSectionEnabled}
-          onRequestAddSection={() => setAddOpen(true)}
-        />
         <PagePreviewPane
           sections={sections}
           brand={brand}
+          device={device}
           selectedSectionId={selectedSectionId}
-          onSelectSection={setSelectedSectionId}
+          onSelectSection={handleSelectSection}
+          selectedElementId={selectedElementId}
+          onSelectElement={setSelectedElementId}
+          onToggleSectionEnabled={isSingleton ? undefined : handleToggleSectionEnabled}
+          onRemoveSection={isSingleton ? undefined : handleRemoveSection}
+          onMoveSection={isSingleton ? undefined : handleMoveSection}
+          onDuplicateSection={isSingleton ? undefined : handleDuplicateSection}
+          onRequestAddSection={isSingleton ? undefined : () => setAddOpen(true)}
         />
         {showFields && selectedSection ? (
           <SectionFieldsPanel
@@ -343,8 +407,12 @@ export function SectionEditor({ mode }: SectionEditorProps) {
             onChange={(nextData) =>
               handleSectionDataChange(selectedSection.id, nextData)
             }
-            onClose={() => setSelectedSectionId(null)}
+            onClose={() => handleSelectSection(null)}
             hideClose={isSingleton}
+            selectedElement={selectedElementId}
+            onSelectElement={setSelectedElementId}
+            clientId={clientId}
+            brand={brand}
           />
         ) : null}
       </div>

@@ -17,9 +17,13 @@ export type SectionType =
   | 'hero'
   | 'offer'
   | 'trust'
+  | 'features'
   | 'services'
+  | 'gallery'
   | 'reviews'
   | 'faq'
+  | 'about'
+  | 'contact'
   | 'cta'
   | 'schedulePicker'      // funnel-only
   | 'thanksConfirmation'  // funnel-only
@@ -114,6 +118,20 @@ export type BrandObject = {
   audienceLine: string;
   industryCategory: string;
   topJobsToBeBooked: string[];
+  /** Curated Google Font id (see lib/website/google-fonts.ts) for display
+   *  headings. Absent → the platform default (Inter Tight). Optional so the
+   *  field can land ahead of the brand-editing surface + a brands-table
+   *  column; absence resolves to the default everywhere it is read. */
+  headingFont?: string;
+  /** Curated Google Font id for body copy. Absent → the platform default. */
+  bodyFont?: string;
+  /** Brand-level colour defaults — a section inherits these when it has not
+   *  overridden the colour itself (see lib/website/section-theme.ts). Set by
+   *  the operator's "apply to all", or by the AI builder when it picks a
+   *  palette. Absent → the section's own hardcoded default applies. */
+  headingColor?: string;
+  bodyColor?: string;
+  backgroundColor?: string;
 };
 
 // ---- Versions -------------------------------------------------------------

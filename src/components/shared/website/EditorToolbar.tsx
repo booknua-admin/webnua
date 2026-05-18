@@ -32,6 +32,14 @@ import { cn } from '@/lib/utils';
 import type { AutosaveStatus } from '@/lib/website/use-autosave';
 
 import { AutosaveIndicator } from './AutosaveIndicator';
+import type { DevicePreview } from './PagePreviewPane';
+
+const DEVICE_GLYPH: Record<DevicePreview, string> = {
+  desktop: '▭',
+  tablet: '▢',
+  mobile: '▯',
+};
+const DEVICE_ORDER: readonly DevicePreview[] = ['desktop', 'tablet', 'mobile'];
 
 export type EditorToolbarTab = {
   id: string;
@@ -88,6 +96,21 @@ export type EditorToolbarProps = {
   /** Render a chevron menu next to Publish with the force-publish item.
    *  Wired in by chunk F; omit to hide the menu. */
   publishMenu?: React.ReactNode;
+  /** Site-level style control (the brand font menu). Rendered in the right
+   *  cluster; omit to hide. */
+  siteStyles?: React.ReactNode;
+  /** Undo / redo controls. Omit to hide. */
+  history?: {
+    onUndo: () => void;
+    onRedo: () => void;
+    canUndo: boolean;
+    canRedo: boolean;
+  };
+  /** Device-preview toggle. Omit to hide. */
+  device?: {
+    value: DevicePreview;
+    onChange: (device: DevicePreview) => void;
+  };
 };
 
 export function EditorToolbar({
@@ -100,6 +123,9 @@ export function EditorToolbar({
   onPublish,
   onSubmitForReview,
   publishMenu,
+  siteStyles,
+  history,
+  device,
 }: EditorToolbarProps) {
   const canPublish = useCan('publish');
   const canEditAnything = useCanAny(
@@ -153,6 +179,30 @@ export function EditorToolbar({
       </div>
 
       <div className="flex shrink-0 items-center gap-3">
+        {history ? (
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={history.onUndo}
+              disabled={!history.canUndo}
+              aria-label="Undo"
+              title="Undo"
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-rule bg-card text-[16px] leading-none text-ink-mid transition-colors hover:border-rust hover:text-rust disabled:opacity-35 disabled:hover:border-rule disabled:hover:text-ink-mid"
+            >
+              ↶
+            </button>
+            <button
+              type="button"
+              onClick={history.onRedo}
+              disabled={!history.canRedo}
+              aria-label="Redo"
+              title="Redo"
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-rule bg-card text-[16px] leading-none text-ink-mid transition-colors hover:border-rust hover:text-rust disabled:opacity-35 disabled:hover:border-rule disabled:hover:text-ink-mid"
+            >
+              ↷
+            </button>
+          </div>
+        ) : null}
         {autosave ? (
           <AutosaveIndicator
             status={autosave.status}
@@ -160,6 +210,28 @@ export function EditorToolbar({
             onRetry={autosave.onRetry}
           />
         ) : null}
+        {device ? (
+          <div className="flex items-center gap-0.5 rounded-md border border-rule bg-card p-0.5">
+            {DEVICE_ORDER.map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => device.onChange(d)}
+                aria-label={`${d} preview`}
+                title={`${d} preview`}
+                className={cn(
+                  'flex h-6 w-7 items-center justify-center rounded text-[14px] leading-none transition-colors',
+                  device.value === d
+                    ? 'bg-ink text-paper'
+                    : 'text-ink-quiet hover:text-ink',
+                )}
+              >
+                {DEVICE_GLYPH[d]}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {siteStyles}
         <a
           href={`https://${domain}`}
           target="_blank"
