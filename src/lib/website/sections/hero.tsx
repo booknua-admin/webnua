@@ -479,25 +479,34 @@ function HeroPreview({
                 ) : null}
               </div>
             ) : null}
-            {d.formMode === 'lead' ? (
-              <HeroFormBlock theme={theme} accent={accent} />
-            ) : null}
           </div>
         );
+
+        const hasForm = d.formMode === 'lead';
 
         if (overlay) {
           return (
             <div className="flex min-h-[480px] items-center px-8 py-20 @2xl:px-16">
-              <div className={`w-full max-w-[600px] ${ALIGN_SELF[d.contentAlign]}`}>
-                {content}
-              </div>
+              {hasForm ? (
+                <div className="grid w-full gap-10 @2xl:grid-cols-[1fr_auto] @2xl:items-center">
+                  <div
+                    className={`w-full max-w-[560px] ${ALIGN_SELF[d.contentAlign]}`}
+                  >
+                    {content}
+                  </div>
+                  <HeroFormBlock theme={theme} accent={accent} />
+                </div>
+              ) : (
+                <div
+                  className={`w-full max-w-[600px] ${ALIGN_SELF[d.contentAlign]}`}
+                >
+                  {content}
+                </div>
+              )}
             </div>
           );
         }
 
-        const imageCell = (
-          <HeroImage key="image" url={d.heroImageUrl} theme={theme} />
-        );
         const contentCell = (
           <div
             key="content"
@@ -508,12 +517,23 @@ function HeroPreview({
             </div>
           </div>
         );
+        // The second column is the form (when toggled on) or the image.
+        const sideCell = hasForm ? (
+          <div
+            key="side"
+            className="flex items-center justify-center px-8 py-14 @2xl:px-12"
+          >
+            <HeroFormBlock theme={theme} accent={accent} />
+          </div>
+        ) : (
+          <HeroImage key="side" url={d.heroImageUrl} theme={theme} />
+        );
 
         return (
           <div className="grid min-h-[460px] @2xl:grid-cols-2">
             {d.imageSide === 'left'
-              ? [imageCell, contentCell]
-              : [contentCell, imageCell]}
+              ? [sideCell, contentCell]
+              : [contentCell, sideCell]}
           </div>
         );
       }}
@@ -597,7 +617,7 @@ function HeroFormBlock({
 }) {
   return (
     <div
-      className="mt-8 w-full max-w-[360px] rounded-xl border p-5"
+      className="w-full max-w-[360px] rounded-xl border p-5"
       style={{ backgroundColor: theme.card, borderColor: theme.cardBorder }}
     >
       <p
