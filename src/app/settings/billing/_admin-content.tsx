@@ -5,6 +5,8 @@
 // sub-account mode → the drilled-in client's plan assignment + resolved policy
 // bundle + invoices.
 
+import Link from 'next/link';
+
 import { BillingPlanCard } from '@/components/shared/settings/BillingPlanCard';
 import { InvoiceList } from '@/components/shared/settings/InvoiceList';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
@@ -60,7 +62,11 @@ function AgencyBillingView() {
               tag={adminBillingPlan.tag}
               name={adminBillingPlan.name}
               meta={adminBillingPlan.meta}
-              action={<Button>Change plan</Button>}
+              action={
+                <Button asChild>
+                  <Link href="/settings/plans">Change plan</Link>
+                </Button>
+              }
             />
           </SettingsSection>
 

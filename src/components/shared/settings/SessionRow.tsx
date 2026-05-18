@@ -1,3 +1,8 @@
+'use client';
+
+import { useState } from 'react';
+
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { cn } from '@/lib/utils';
 
 type SessionRowProps = {
@@ -10,6 +15,12 @@ type SessionRowProps = {
 };
 
 function SessionRow({ icon, device, isCurrent, meta, when, className }: SessionRowProps) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  // Session-local: revoking collapses the row. Not persisted (no backend).
+  const [revoked, setRevoked] = useState(false);
+
+  if (revoked) return null;
+
   return (
     <div
       data-slot="session-row"
@@ -38,9 +49,30 @@ function SessionRow({ icon, device, isCurrent, meta, when, className }: SessionR
       {isCurrent ? (
         <span />
       ) : (
-        <span className="cursor-pointer text-right font-mono text-[10px] font-bold uppercase tracking-[0.06em] text-warn">
+        <button
+          type="button"
+          onClick={() => setConfirmOpen(true)}
+          className="cursor-pointer bg-transparent text-right font-mono text-[10px] font-bold uppercase tracking-[0.06em] text-warn transition-colors hover:text-warn/70"
+        >
           Revoke
-        </span>
+        </button>
+      )}
+      {isCurrent ? null : (
+        <ConfirmDialog
+          open={confirmOpen}
+          onOpenChange={setConfirmOpen}
+          title="Revoke this session?"
+          description={
+            <>
+              <strong>{device}</strong> will be signed out immediately. If this wasn&apos;t you,
+              change your password too.
+            </>
+          }
+          confirmLabel="Revoke session"
+          cancelLabel="Keep it"
+          tone="destructive"
+          onConfirm={() => setRevoked(true)}
+        />
       )}
     </div>
   );

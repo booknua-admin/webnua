@@ -3,8 +3,8 @@ import { SessionRow } from '@/components/shared/settings/SessionRow';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
+import { SignOutOtherSessionsButton } from '@/components/shared/settings/SignOutOtherSessionsButton';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
-import { Button } from '@/components/ui/button';
 import {
   clientSecurityCredentials,
   clientSecuritySessions,
@@ -94,13 +94,7 @@ export default function ClientSettingsSecurityPage() {
               />
             ))}
             <div className="mt-3.5">
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-warn text-warn hover:bg-warn hover:text-paper"
-              >
-                Sign out of all other sessions
-              </Button>
+              <SignOutOtherSessionsButton />
             </div>
           </SettingsSection>
         </SettingsPanel>

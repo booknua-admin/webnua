@@ -1,3 +1,8 @@
+'use client';
+
+import { useState } from 'react';
+
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -15,6 +20,8 @@ type DangerRowProps = {
 
 function DangerRow({ heading, description, action, className }: DangerRowProps) {
   const tone = action.tone ?? 'destructive';
+  // STUB: no backend — confirming just dismisses the dialog.
+  const [confirmOpen, setConfirmOpen] = useState(false);
   return (
     <div
       data-slot="danger-row"
@@ -31,7 +38,7 @@ function DangerRow({ heading, description, action, className }: DangerRowProps) 
         </div>
       </div>
       {action.solid ? (
-        <Button variant="destructive" size="sm">
+        <Button variant="destructive" size="sm" onClick={() => setConfirmOpen(true)}>
           {action.label}
         </Button>
       ) : (
@@ -43,10 +50,21 @@ function DangerRow({ heading, description, action, className }: DangerRowProps) 
               ? 'border-warn text-warn hover:bg-warn hover:text-paper'
               : 'border-ink text-ink hover:bg-ink hover:text-paper',
           )}
+          onClick={() => setConfirmOpen(true)}
         >
           {action.label}
         </Button>
       )}
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={`${heading}?`}
+        description={description}
+        confirmLabel={action.label}
+        cancelLabel="Cancel"
+        tone={tone === 'destructive' ? 'destructive' : 'default'}
+        onConfirm={() => {}}
+      />
     </div>
   );
 }
