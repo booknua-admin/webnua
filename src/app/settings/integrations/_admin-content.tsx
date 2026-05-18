@@ -1,21 +1,26 @@
 'use client';
 
-// The operator's /settings/integrations branch. Dispatches on workspace mode
-// (Cluster 8 · Session 4b): agency mode → the cross-client integration matrix
-// (the primary place an operator manages client integrations) plus the
-// workspace-level connected + available services; sub-account mode → the
-// per-client integration policy (which providers this client inherits from the
-// agency vs overrides).
+// The operator's /settings/integrations branch. Dispatches on workspace mode:
+// agency mode → the cross-client overview (matrix + nudge cards) plus the
+// agency connection policy; sub-account mode → the per-client integration
+// policy (which providers this client inherits from the agency vs overrides).
+//
+// Platform plumbing (Stripe / Resend / Twilio / Anthropic / Vercel) is NOT
+// here — it lives on /settings/api ("API & services"). This surface is for
+// the business integrations each client connects.
 
 import { SubAccountIntegrationsContent } from './_sub-account-content';
 import { IntegrationMatrix } from '@/components/admin/integrations/IntegrationMatrix';
 import { IntegrationMatrixActionCard } from '@/components/admin/integrations/IntegrationMatrixActionCard';
 import { IntegrationMatrixHero } from '@/components/admin/integrations/IntegrationMatrixHero';
-import { IntegrationCard } from '@/components/shared/settings/IntegrationCard';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
+import { Switch } from '@/components/ui/switch';
+import { setAgencyPolicy } from '@/lib/agency/agency-policy-stub';
+import { INTEGRATION_PROVIDERS } from '@/lib/agency/integration-providers';
+import { useAgencyPolicy } from '@/lib/agency/use-policy';
 import {
   adminMatrixAttention,
   adminMatrixColumns,
@@ -24,10 +29,6 @@ import {
   adminMatrixHero,
   adminMatrixRows,
 } from '@/lib/integrations/admin-matrix';
-import {
-  adminAvailableIntegrations,
-  adminConnectedIntegrations,
-} from '@/lib/settings/admin-integrations';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 export function AdminIntegrationsContent() {
@@ -53,10 +54,10 @@ function AgencyIntegrationsView() {
         eyebrow="Agency · Webnua Perth"
         title={
           <>
-            Settings + <em>integrations</em>.
+            Client <em>integrations</em>.
           </>
         }
-        subtitle="Every client's connection status in one view, plus the services connected at the workspace level. Health status visible at a glance."
+        subtitle="Every client's connection status in one view — see what's connected, what's broken, and nudge clients to finish setup."
       >
         <div className="flex flex-col gap-7">
           <IntegrationMatrixHero
@@ -106,63 +107,78 @@ function AgencyIntegrationsView() {
             />
           </div>
 
-          <SettingsPanel>
-            <SettingsSection
-              heading={
-                <>
-                  Connected <em>services</em>
-                </>
-              }
-              description={
-                <>
-                  6 services connected.{' '}
-                  <strong>Each integration is a maintenance commitment</strong> — Webnua adds them
-                  sparingly. Click any card to manage credentials or reauthorize.
-                </>
-              }
-            >
-              <div className="flex flex-col gap-2.5">
-                {adminConnectedIntegrations.map((item) => (
-                  <IntegrationCard
-                    key={item.id}
-                    name={item.name}
-                    description={item.description}
-                    status={item.status}
-                    statusLabel={item.statusLabel}
-                    logo={item.logo}
-                    meta={item.meta}
-                    action={item.action}
-                  />
-                ))}
-              </div>
-            </SettingsSection>
-
-            <SettingsSection
-              heading={
-                <>
-                  Available <em>integrations</em>
-                </>
-              }
-              description="Other services Webnua supports but you haven't connected yet. Click to start the connect flow."
-            >
-              <div className="flex flex-col gap-2.5">
-                {adminAvailableIntegrations.map((item) => (
-                  <IntegrationCard
-                    key={item.id}
-                    name={item.name}
-                    description={item.description}
-                    status={item.status}
-                    statusLabel={item.statusLabel}
-                    logo={item.logo}
-                    meta={item.meta}
-                    action={item.action}
-                  />
-                ))}
-              </div>
-            </SettingsSection>
-          </SettingsPanel>
+          <ConnectionPolicySection />
         </div>
       </SettingsShell>
     </>
+  );
+}
+
+// The agency-level integration policy (Layer 2 of the policy stack). Per
+// provider, a single agency-wide rule: agency-supplied (one shared connection,
+// every sub-account inherits) vs per sub-account (each client connects their
+// own keys). Operators override this per client in sub-account mode. This is
+// the former /settings/integration-defaults tab, folded in here so integration
+// management lives in one place.
+function ConnectionPolicySection() {
+  const defaults = useAgencyPolicy('integrationDefaults');
+
+  function setShared(id: string, shared: boolean) {
+    setAgencyPolicy('integrationDefaults', {
+      sharedProviders: { ...defaults.sharedProviders, [id]: shared },
+    });
+  }
+
+  return (
+    <SettingsPanel>
+      <SettingsSection
+        heading={
+          <>
+            Connection <em>policy</em>
+          </>
+        }
+        description={
+          <>
+            <strong>Agency-wide default per provider.</strong> <strong>Agency-supplied</strong>{' '}
+            means sub-accounts inherit the agency&rsquo;s connection — nothing for the client to set
+            up. <strong>Per sub-account</strong> means each client connects their own keys. Override
+            per client by drilling into a sub-account.
+          </>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          {INTEGRATION_PROVIDERS.map((provider) => {
+            const shared = defaults.sharedProviders[provider.id] ?? false;
+            return (
+              <div
+                key={provider.id}
+                className="flex items-start justify-between gap-6 border-b border-dotted border-rule-soft pb-4 last:border-b-0 last:pb-0"
+              >
+                <div className="min-w-0">
+                  <div className="mb-1 text-[15px] font-bold text-ink">{provider.name}</div>
+                  <div className="text-[13px] leading-[1.45] text-ink-quiet">
+                    {provider.description}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  <span
+                    className={
+                      'font-mono text-[10px] font-bold uppercase tracking-[0.12em] ' +
+                      (shared ? 'text-good' : 'text-ink-quiet')
+                    }
+                  >
+                    {shared ? 'Agency-supplied' : 'Per sub-account'}
+                  </span>
+                  <Switch
+                    checked={shared}
+                    onCheckedChange={(next) => setShared(provider.id, next)}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </SettingsSection>
+    </SettingsPanel>
   );
 }

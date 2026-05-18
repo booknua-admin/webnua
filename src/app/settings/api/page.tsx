@@ -1,4 +1,5 @@
 import { ApiKeyRow } from '@/components/shared/settings/ApiKeyRow';
+import { IntegrationCard } from '@/components/shared/settings/IntegrationCard';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
@@ -6,27 +7,57 @@ import { WebhookEventRow } from '@/components/shared/settings/WebhookEventRow';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
 import { adminApiKeys, adminWebhookEndpoint, adminWebhookEvents } from '@/lib/settings/admin-api';
+import { adminPlatformServices } from '@/lib/settings/platform-services';
 
 export default function AdminSettingsApiPage() {
   return (
     <>
-      <Topbar breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="API + webhooks" />} />
+      <Topbar breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="API & services" />} />
       <SettingsShell
-        eyebrow="Workspace · Webnua Perth"
+        eyebrow="Agency · Webnua Perth"
         title={
           <>
-            Settings + <em>integrations</em>.
+            API &amp; <em>services</em>.
           </>
         }
         subtitle={
           <>
-            API keys and webhook endpoints for advanced integrations.{' '}
-            <strong>Most operators won&apos;t need this</strong> — only used if you&apos;re piping
-            data into third-party CRMs or building custom workflows.
+            The platform plumbing Webnua runs on — payments, email, SMS, AI, hosting — plus API keys
+            and webhook endpoints. <strong>These are agency-wide</strong>, separate from the
+            integrations each client connects.
           </>
         }
       >
         <SettingsPanel>
+          <SettingsSection
+            heading={
+              <>
+                Platform <em>services</em>
+              </>
+            }
+            description={
+              <>
+                The third-party services that power the product across every client.{' '}
+                <strong>Each is a maintenance commitment</strong> — Webnua adds them sparingly.
+              </>
+            }
+          >
+            <div className="flex flex-col gap-2.5">
+              {adminPlatformServices.map((service) => (
+                <IntegrationCard
+                  key={service.id}
+                  name={service.name}
+                  description={service.description}
+                  status={service.status}
+                  statusLabel={service.statusLabel}
+                  logo={service.logo}
+                  meta={service.meta}
+                  action={service.action}
+                />
+              ))}
+            </div>
+          </SettingsSection>
+
           <SettingsSection
             heading={
               <>
