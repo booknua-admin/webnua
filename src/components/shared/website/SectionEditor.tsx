@@ -36,7 +36,7 @@ import { useCan, useUser } from '@/lib/auth/user-stub';
 import { publishFunnelDraft } from '@/lib/funnel/mutations';
 import type { Funnel, FunnelStep } from '@/lib/funnel/types';
 import type { DraftSlot } from '@/lib/website/content-drafts';
-import { defaultFormConfig } from '@/lib/website/form-config';
+import { defaultFormConfig, type FormConfig } from '@/lib/website/form-config';
 import { useBrandForClient } from '@/lib/website/queries';
 import { getSectionDefinition } from '@/lib/website/sections';
 import type {
@@ -212,6 +212,18 @@ export function SectionEditor({ mode }: SectionEditorProps) {
   const handleToggleSectionEnabled = (id: string, enabled: boolean) => {
     setSections((current) =>
       current.map((s) => (s.id === id ? { ...s, enabled } : s)),
+    );
+  };
+
+  const handleSetSectionForm = (id: string, form: FormConfig | undefined) => {
+    setSections((current) =>
+      current.map((s) => {
+        if (s.id !== id) return s;
+        const next = { ...s };
+        if (form) next.form = form;
+        else delete next.form;
+        return next;
+      }),
     );
   };
 
@@ -412,10 +424,12 @@ export function SectionEditor({ mode }: SectionEditorProps) {
             onChange={(nextData) =>
               handleSectionDataChange(selectedSection.id, nextData)
             }
+            onSetForm={(form) => handleSetSectionForm(selectedSection.id, form)}
             onClose={() => handleSelectSection(null)}
             hideClose={isSingleton}
             selectedElement={selectedElementId}
             onSelectElement={setSelectedElementId}
+            isFunnel={isFunnelStep}
             clientId={clientId}
             brand={brand}
           />

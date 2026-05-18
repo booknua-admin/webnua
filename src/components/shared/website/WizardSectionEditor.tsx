@@ -210,6 +210,9 @@ function WizardStepPane({
             key={selectedSection.id}
             section={selectedSection}
             onChange={handleSectionDataChange}
+            // Form editing is outside the wizard walk — caps are locked to
+            // copy/media/AI, so the form controls render inert.
+            onSetForm={() => {}}
             onClose={() => {}}
             hideClose
             // The wizard walk shows section-level fields only — no

@@ -12,14 +12,23 @@
 // Per-field capability gating happens INSIDE the Fields component.
 // =============================================================================
 
+import type { FormConfig } from '@/lib/website/form-config';
 import type { BrandObject, Section } from '@/lib/website/types';
 import { getSectionDefinition } from '@/lib/website/sections';
 import { SectionFieldContextProvider } from '@/lib/website/sections/_shared/field-context';
+
+import {
+  SectionFormControls,
+  formElementLabel,
+  isFormElement,
+} from './SectionFormControls';
 
 export type SectionFieldsPanelProps = {
   section: Section;
   /** Called with the new section data on every Fields edit. */
   onChange: (nextData: Record<string, unknown>) => void;
+  /** Sets / clears the section's attached form. */
+  onSetForm: (form: FormConfig | undefined) => void;
   /** Closes the panel (clears section selection). */
   onClose: () => void;
   /** Suppresses the close button — used in singleton mode. */
@@ -28,6 +37,8 @@ export type SectionFieldsPanelProps = {
   selectedElement: string | null;
   /** Select / deselect an element (null returns to section level). */
   onSelectElement: (id: string | null) => void;
+  /** True in funnel-step mode — enables form "next step" actions. */
+  isFunnel?: boolean;
   /** The client + resolved brand — threaded to the Fields component for the
    *  brand-style-defaults ("apply to all") path. */
   clientId?: string;
@@ -37,10 +48,12 @@ export type SectionFieldsPanelProps = {
 export function SectionFieldsPanel({
   section,
   onChange,
+  onSetForm,
   onClose,
   hideClose = false,
   selectedElement,
   onSelectElement,
+  isFunnel = false,
   clientId,
   brand,
 }: SectionFieldsPanelProps) {
@@ -57,8 +70,13 @@ export function SectionFieldsPanel({
 
   const Fields = def.Fields;
   const sectionName = def.label.replace(/^\/\/\s*/, '');
+  // A form element (a field / title / submit / settings) is selected when its
+  // id belongs to the section's form rather than the section's own elements.
+  const formSelected = isFormElement(section.form, selectedElement);
   const elementLabel = selectedElement
-    ? (def.elementLabels?.[selectedElement] ?? selectedElement)
+    ? formSelected
+      ? formElementLabel(section.form, selectedElement)
+      : (def.elementLabels?.[selectedElement] ?? selectedElement)
     : null;
 
   return (
@@ -104,13 +122,36 @@ export function SectionFieldsPanel({
             is typed against its specific data shape; the registry stores
             them as unknown. defaultData() guarantees the shape on creation. */}
         <SectionFieldContextProvider sectionLabel={def.label}>
-          <Fields
-            data={section.data as never}
-            onChange={onChange as never}
-            selectedElement={selectedElement}
-            clientId={clientId}
-            brand={brand}
-          />
+          {formSelected ? (
+            <SectionFormControls
+              form={section.form}
+              onSetForm={onSetForm}
+              selectedElement={selectedElement}
+              onSelectElement={onSelectElement}
+              isFunnel={isFunnel}
+            />
+          ) : (
+            <>
+              <Fields
+                data={section.data as never}
+                onChange={onChange as never}
+                selectedElement={selectedElement}
+                clientId={clientId}
+                brand={brand}
+              />
+              {/* At section level the form manager sits below the section's
+                  own settings — attach a form / edit its field list. */}
+              {selectedElement === null ? (
+                <SectionFormControls
+                  form={section.form}
+                  onSetForm={onSetForm}
+                  selectedElement={null}
+                  onSelectElement={onSelectElement}
+                  isFunnel={isFunnel}
+                />
+              ) : null}
+            </>
+          )}
         </SectionFieldContextProvider>
       </div>
 
