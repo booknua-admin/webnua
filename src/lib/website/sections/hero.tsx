@@ -26,6 +26,8 @@ import { VariantField, type VariantOption } from './_shared/VariantField';
 export type HeroLayout = 'split' | 'overlay';
 export type HeadlineSize = 'm' | 'l' | 'xl';
 export type SubSize = 's' | 'm' | 'l';
+export type HeroAlign = 'left' | 'center' | 'right';
+export type HeroFormMode = 'none' | 'lead';
 
 type HeroElement = 'eyebrow' | 'headline' | 'subheadline' | 'ctaPrimary' | 'ctaSecondary';
 
@@ -35,6 +37,11 @@ export type HeroData = {
   theme: SectionTheme;
   imageSide: 'left' | 'right';
   overlayOpacity: number;
+  /** Content alignment within the hero. */
+  contentAlign: HeroAlign;
+  /** `lead` renders a lead-capture form block (the real form lands in the
+   *  forms session — this is a placeholder block). */
+  formMode: HeroFormMode;
   eyebrow: string;
   headline: string;
   headlineAccent: string;
@@ -61,6 +68,8 @@ const DEFAULTS: HeroData = {
   theme: {}, // overrides nothing — inherits brand defaults / the hardcoded look
   imageSide: 'right',
   overlayOpacity: 88,
+  contentAlign: 'left',
+  formMode: 'none',
   eyebrow: 'LOCAL · TRUSTED',
   headline: 'Power back on,',
   headlineAccent: 'guaranteed within the hour.',
@@ -141,6 +150,29 @@ const SUB_SIZE_OPTIONS: readonly VariantOption<SubSize>[] = [
   { id: 'm', label: 'Medium' },
   { id: 'l', label: 'Large' },
 ];
+
+const ALIGN_OPTIONS: readonly VariantOption<HeroAlign>[] = [
+  { id: 'left', label: 'Left' },
+  { id: 'center', label: 'Centred' },
+  { id: 'right', label: 'Right' },
+];
+
+const FORM_OPTIONS: readonly VariantOption<HeroFormMode>[] = [
+  { id: 'none', label: 'No form' },
+  { id: 'lead', label: 'Lead form' },
+];
+
+// Static class strings — alignment of the hero content block.
+const ALIGN_CLASS: Record<HeroAlign, string> = {
+  left: 'items-start text-left',
+  center: 'items-center text-center',
+  right: 'items-end text-right',
+};
+const ALIGN_SELF: Record<HeroAlign, string> = {
+  left: '',
+  center: 'mx-auto',
+  right: 'ml-auto',
+};
 
 // -- Fields -----------------------------------------------------------------
 
@@ -324,6 +356,19 @@ function HeroFields({
             helper={<>How strongly the scrim darkens the image.</>}
           />
         )}
+        <VariantField
+          label="Alignment"
+          value={d.contentAlign}
+          options={ALIGN_OPTIONS}
+          onChange={(v) => set('contentAlign', v)}
+        />
+        <VariantField
+          label="Lead form"
+          value={d.formMode}
+          options={FORM_OPTIONS}
+          onChange={(v) => set('formMode', v)}
+          helper={<>Adds a quote-request form block to the hero.</>}
+        />
       </BuilderFormSection>
       <BuilderFormSection>
         <MediaField
@@ -376,7 +421,7 @@ function HeroPreview({
         });
 
         const content = (
-          <>
+          <div className={`flex flex-col ${ALIGN_CLASS[d.contentAlign]}`}>
             {d.eyebrow ? (
               <SelectableElement {...sel('eyebrow')}>
                 <p
@@ -434,13 +479,18 @@ function HeroPreview({
                 ) : null}
               </div>
             ) : null}
-          </>
+            {d.formMode === 'lead' ? (
+              <HeroFormBlock theme={theme} accent={accent} />
+            ) : null}
+          </div>
         );
 
         if (overlay) {
           return (
             <div className="flex min-h-[480px] items-center px-8 py-20 @2xl:px-16">
-              <div className="max-w-[600px]">{content}</div>
+              <div className={`w-full max-w-[600px] ${ALIGN_SELF[d.contentAlign]}`}>
+                {content}
+              </div>
             </div>
           );
         }
@@ -453,7 +503,9 @@ function HeroPreview({
             key="content"
             className="flex flex-col justify-center px-8 py-14 @2xl:px-12 @2xl:py-16"
           >
-            <div className="max-w-[520px]">{content}</div>
+            <div className={`w-full max-w-[520px] ${ALIGN_SELF[d.contentAlign]}`}>
+              {content}
+            </div>
           </div>
         );
 
@@ -524,6 +576,58 @@ function HeroBackground({
         }}
       />
     </>
+  );
+}
+
+/** Placeholder lead-capture form block. The real form (fields, validation,
+ *  submission) lands in the dedicated forms session — this renders the
+ *  visual block so a form-bearing hero previews correctly. */
+function HeroFormBlock({
+  theme,
+  accent,
+}: {
+  theme: {
+    card: string;
+    cardBorder: string;
+    border: string;
+    muted: string;
+    background: string;
+  };
+  accent: string;
+}) {
+  return (
+    <div
+      className="mt-8 w-full max-w-[360px] rounded-xl border p-5"
+      style={{ backgroundColor: theme.card, borderColor: theme.cardBorder }}
+    >
+      <p
+        className="mb-3 text-[11px] font-bold uppercase tracking-[0.16em]"
+        style={{ color: accent }}
+      >
+        Get a fast quote
+      </p>
+      <div className="space-y-2">
+        {['Your name', 'Phone or email'].map((label) => (
+          <div
+            key={label}
+            className="rounded-md border px-3 py-2 text-left text-[13px]"
+            style={{
+              borderColor: theme.border,
+              backgroundColor: theme.background,
+              color: theme.muted,
+            }}
+          >
+            {label}
+          </div>
+        ))}
+      </div>
+      <div
+        className="mt-3 rounded-lg py-2.5 text-center text-[13px] font-semibold"
+        style={{ backgroundColor: accent, color: '#ffffff' }}
+      >
+        Request a callback
+      </div>
+    </div>
   );
 }
 
