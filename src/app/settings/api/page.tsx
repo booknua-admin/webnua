@@ -1,11 +1,11 @@
 import { ApiKeyRow } from '@/components/shared/settings/ApiKeyRow';
+import { GenerateApiKeyButton } from '@/components/shared/settings/GenerateApiKeyButton';
 import { IntegrationCard } from '@/components/shared/settings/IntegrationCard';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { WebhookEventRow } from '@/components/shared/settings/WebhookEventRow';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
-import { Button } from '@/components/ui/button';
 import { adminApiKeys, adminWebhookEndpoint, adminWebhookEvents } from '@/lib/settings/admin-api';
 import { adminPlatformServices } from '@/lib/settings/platform-services';
 
@@ -75,7 +75,7 @@ export default function AdminSettingsApiPage() {
               <span className="font-mono text-[11px] font-bold uppercase tracking-[0.08em] text-ink-quiet">
                 <strong className="text-ink">2</strong> active keys
               </span>
-              <Button size="sm">+ Generate new key</Button>
+              <GenerateApiKeyButton />
             </div>
             {adminApiKeys.map((key) => (
               <ApiKeyRow

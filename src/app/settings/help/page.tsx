@@ -6,6 +6,13 @@ import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
 import { clientHelpFaqs, clientHelpRecentSupport } from '@/lib/settings/client-help';
 
+// Webnua's direct-support contact. Stub values — the displayed number stays
+// human-readable; the tel:/sms: hrefs use the E.164 form.
+const SUPPORT_PHONE = '0411 234 567';
+const SUPPORT_TEL = 'tel:+61411234567';
+const SUPPORT_SMS = 'sms:+61411234567';
+const SUPPORT_EMAIL = 'mailto:craig@webnua.com.au';
+
 export default function ClientSettingsHelpPage() {
   return (
     <>
@@ -32,7 +39,10 @@ export default function ClientSettingsHelpPage() {
                   {'// DIRECT LINE'}
                 </div>
                 <div className="mb-1.5 text-[22px] font-extrabold leading-[1.15] tracking-[-0.025em] [&_em]:not-italic [&_em]:text-rust-light">
-                  Text <em>Craig</em> · 0411 234 567
+                  Text <em>Craig</em> ·{' '}
+                  <a href={SUPPORT_TEL} className="underline-offset-2 hover:underline">
+                    {SUPPORT_PHONE}
+                  </a>
                 </div>
                 <p className="max-w-[480px] text-[13px] leading-[1.5] text-paper/70 [&_strong]:font-semibold [&_strong]:text-paper">
                   For anything urgent — a lead going cold, a customer complaint, an automation
@@ -43,12 +53,15 @@ export default function ClientSettingsHelpPage() {
                 </p>
               </div>
               <div className="flex flex-col gap-2">
-                <Button className="gap-2">☏ Text now</Button>
+                <Button asChild className="gap-2">
+                  <a href={SUPPORT_SMS}>☏ Text now</a>
+                </Button>
                 <Button
+                  asChild
                   variant="secondary"
                   className="gap-2 border-paper/20 bg-paper/[0.08] text-paper hover:bg-paper/[0.12]"
                 >
-                  ✉ Email Craig
+                  <a href={SUPPORT_EMAIL}>✉ Email Craig</a>
                 </Button>
               </div>
             </div>
