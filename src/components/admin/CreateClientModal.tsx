@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { AppError } from '@/lib/errors';
 import { cn } from '@/lib/utils';
 import {
   AUDIENCE_CHIPS,
@@ -183,8 +184,12 @@ export function CreateClientModal({
       onOpenChange(false);
       setTimeout(reset, 200);
       router.push(`/clients/new/result?c=${result.clientSlug}`);
-    } catch {
-      setError('Generation failed — check you are signed in as an operator, then try again.');
+    } catch (e) {
+      const message =
+        e instanceof AppError
+          ? e.message
+          : 'Generation failed — check you are signed in as an operator, then try again.';
+      setError(message);
       setPhase('build');
     }
   };
@@ -220,11 +225,23 @@ export function CreateClientModal({
         <div className="max-h-[58vh] overflow-y-auto px-8 py-6">
           {phase === 'business' ? (
             <div className="flex flex-col gap-4">
-              <Field label="Business name">
-                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Acme Plumbing" />
+              <Field label="Business name" required>
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Acme Plumbing"
+                  required
+                  aria-invalid={!name.trim()}
+                />
               </Field>
-              <Field label="Trade / industry">
-                <Input value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="Plumbing services" />
+              <Field label="Trade / industry" required>
+                <Input
+                  value={industry}
+                  onChange={(e) => setIndustry(e.target.value)}
+                  placeholder="Plumbing services"
+                  required
+                  aria-invalid={!industry.trim()}
+                />
               </Field>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Owner name">
@@ -238,8 +255,14 @@ export function CreateClientModal({
                 <Field label="Email">
                   <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="hello@acme.com" />
                 </Field>
-                <Field label="Service area">
-                  <Input value={area} onChange={(e) => setArea(e.target.value)} placeholder="Perth metro" />
+                <Field label="Service area" required>
+                  <Input
+                    value={area}
+                    onChange={(e) => setArea(e.target.value)}
+                    placeholder="Perth metro"
+                    required
+                    aria-invalid={!area.trim()}
+                  />
                 </Field>
               </div>
             </div>
@@ -475,10 +498,12 @@ function goBack(phase: Phase, setPhase: (p: Phase) => void, cancel: () => void):
 function Field({
   label,
   hint,
+  required,
   children,
 }: {
   label: string;
   hint?: React.ReactNode;
+  required?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -486,6 +511,7 @@ function Field({
       <span className="flex items-center justify-between gap-3">
         <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
           {label}
+          {required ? <span className="ml-1 text-rust">*</span> : null}
         </span>
         {hint}
       </span>
