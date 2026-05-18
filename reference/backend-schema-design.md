@@ -355,7 +355,7 @@ website_versions
   id                uuid PK
   website_id        uuid not null FK→websites(id)
   status            version_status not null    -- 'draft'|'pending_approval'|'published'|'archived'
-  snapshot          jsonb not null             -- frozen { pages, sections, header, footer, nav, pageOrder, brand }
+  snapshot          jsonb not null             -- frozen { pages, header, footer, nav, pageOrder }
   created_by        uuid not null FK→users(id)
   created_at        timestamptz not null default now()
   published_at      timestamptz null
@@ -1231,6 +1231,13 @@ any builder-specific migration is written:
    vs Cloudinary). It does not touch any table (everything stores a URL) but it
    gates the media-section and brand-asset work, and has cost/CDN implications
    the schema pass shouldn't bury.
+4. **Website-level singleton storage** — §1.4 proposes `websites.header_section_id`
+   / `footer_section_id` FK columns, but the current `Website` model
+   (`lib/website/types.ts`) has neither: header / footer are `Section` objects
+   living *inside* `VersionSnapshot`. The §7 pass must decide where
+   website-level singletons live — FK columns on `websites`, or inside the
+   version snapshot — and reconcile §1.4 to it. Surfaced by the session-zero
+   reconciliation pass.
 
 **Recommendation:** after this document is approved and the *non-builder*
 tables are migrated (Phase 1), run a dedicated **"page builder data model"**
