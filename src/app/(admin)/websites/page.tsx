@@ -118,8 +118,8 @@ export default function AdminWebsitesPage() {
         <p className="mt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
           Showing every client in the workspace. Clients with no website yet
           get a build CTA. Per-website integrations live at{' '}
-          <Link href="/integrations" className="text-rust hover:text-rust-deep">
-            /integrations
+          <Link href="/settings/integrations" className="text-rust hover:text-rust-deep">
+            Settings → Integrations
           </Link>
           .
         </p>
