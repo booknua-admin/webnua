@@ -1,28 +1,36 @@
 'use client';
 
 // =============================================================================
-// PagePreviewPane — renders every enabled section's Preview vertically
-// stacked, the way the page will appear to a visitor. Driven by the section
-// registry (each section type provides its own Preview).
+// PagePreviewPane — renders every section's Preview vertically stacked, the
+// way the page will appear to a visitor.
 //
-// Element-inspector model: clicking a section selects it; clicking an element
-// inside the *selected* section selects that element (the Preview handles
-// element clicks via the onSelectElement it is given). Non-selected sections
-// render non-interactively at the element level.
+// Rail-removal model (Phase 6): there is no left section list. Every section
+// renders here — disabled ones dimmed with a "Hidden" badge so they stay
+// re-enableable — and per-section management (move / duplicate / hide /
+// delete) is a hover toolbar on each section. An "+ Add section" button sits
+// at the foot. When the management callbacks are omitted (the wizard walk,
+// the dev surface) the chrome is suppressed.
 // =============================================================================
 
+import { CapabilityGate } from '@/components/shared/CapabilityGate';
 import type { BrandObject, Section } from '@/lib/website/types';
 import { getSectionDefinition } from '@/lib/website/sections';
+
+import { SectionHoverToolbar } from './SectionHoverToolbar';
 
 export type PagePreviewPaneProps = {
   sections: Section[];
   brand: BrandObject;
   onSelectSection?: (sectionId: string) => void;
   selectedSectionId?: string | null;
-  /** The element selected within the selected section. */
   selectedElementId?: string | null;
-  /** Select / deselect an element within the selected section. */
   onSelectElement?: (id: string | null) => void;
+  // Section management — when provided, the hover toolbar + add button show.
+  onToggleSectionEnabled?: (id: string, enabled: boolean) => void;
+  onRemoveSection?: (id: string) => void;
+  onMoveSection?: (id: string, direction: -1 | 1) => void;
+  onDuplicateSection?: (id: string) => void;
+  onRequestAddSection?: () => void;
 };
 
 export function PagePreviewPane({
@@ -32,62 +40,100 @@ export function PagePreviewPane({
   selectedSectionId,
   selectedElementId,
   onSelectElement,
+  onToggleSectionEnabled,
+  onRemoveSection,
+  onMoveSection,
+  onDuplicateSection,
+  onRequestAddSection,
 }: PagePreviewPaneProps) {
-  const enabled = sections.filter((s) => s.enabled);
-
-  if (enabled.length === 0) {
-    return (
-      <div className="flex h-full min-h-[280px] items-center justify-center bg-paper-2 px-10 py-10">
-        <div className="max-w-[440px] rounded-xl border border-dashed border-rule bg-paper px-7 py-9 text-center">
-          <p className="mb-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-rust">
-            {'// EMPTY PAGE'}
-          </p>
-          <p className="text-[15px] font-bold text-ink">No enabled sections.</p>
-          <p className="mt-1 text-[13px] leading-[1.5] text-ink-mid">
-            Toggle a section on in the rail, or add a new section from the
-            picker.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  const manageable =
+    !!onToggleSectionEnabled &&
+    !!onRemoveSection &&
+    !!onMoveSection &&
+    !!onDuplicateSection;
 
   return (
-    <div className="h-full min-h-0 overflow-y-auto bg-paper-2 px-6 py-6 md:px-10">
-      <div className="mx-auto flex max-w-[760px] flex-col gap-4">
-        {enabled.map((section) => {
-          const def = getSectionDefinition(section.type);
-          if (!def) return null;
-          const Preview = def.Preview;
-          const isSelected = selectedSectionId === section.id;
-          return (
-            <div
-              key={section.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => onSelectSection?.(section.id)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  onSelectSection?.(section.id);
+    <div className="h-full min-h-0 overflow-y-auto bg-paper-2 py-6">
+      <div className="mx-auto flex max-w-[1100px] flex-col gap-4 px-4">
+        {sections.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-rule bg-paper px-7 py-9 text-center">
+            <p className="mb-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-rust">
+              {'// EMPTY PAGE'}
+            </p>
+            <p className="text-[15px] font-bold text-ink">No sections yet.</p>
+            <p className="mt-1 text-[13px] leading-[1.5] text-ink-mid">
+              Add a section to start building the page.
+            </p>
+          </div>
+        ) : (
+          sections.map((section, i) => {
+            const def = getSectionDefinition(section.type);
+            if (!def) return null;
+            const Preview = def.Preview;
+            const isSelected = selectedSectionId === section.id;
+            return (
+              <div
+                key={section.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => onSelectSection?.(section.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelectSection?.(section.id);
+                  }
+                }}
+                className={
+                  'group relative block w-full overflow-hidden rounded-xl text-left transition-shadow ' +
+                  (isSelected
+                    ? 'ring-2 ring-rust ring-offset-2 ring-offset-paper-2'
+                    : 'cursor-pointer hover:ring-2 hover:ring-rust/30 hover:ring-offset-2 hover:ring-offset-paper-2')
                 }
-              }}
-              className={
-                'group block w-full overflow-hidden rounded-xl text-left transition-shadow ' +
-                (isSelected
-                  ? 'ring-2 ring-rust ring-offset-2 ring-offset-paper-2'
-                  : 'cursor-pointer hover:ring-2 hover:ring-rust/30 hover:ring-offset-2 hover:ring-offset-paper-2')
-              }
+              >
+                <div className={section.enabled ? '' : 'opacity-45'}>
+                  <Preview
+                    data={section.data as never}
+                    brand={brand}
+                    selectedElement={isSelected ? selectedElementId : undefined}
+                    onSelectElement={isSelected ? onSelectElement : undefined}
+                  />
+                </div>
+                {!section.enabled ? (
+                  <span className="absolute left-3 top-3 z-20 rounded bg-ink/90 px-2 py-1 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-paper">
+                    Hidden
+                  </span>
+                ) : null}
+                {manageable ? (
+                  <SectionHoverToolbar
+                    enabled={section.enabled}
+                    canMoveUp={i > 0}
+                    canMoveDown={i < sections.length - 1}
+                    visible={isSelected}
+                    onMoveUp={() => onMoveSection!(section.id, -1)}
+                    onMoveDown={() => onMoveSection!(section.id, 1)}
+                    onToggleEnabled={() =>
+                      onToggleSectionEnabled!(section.id, !section.enabled)
+                    }
+                    onDuplicate={() => onDuplicateSection!(section.id)}
+                    onRemove={() => onRemoveSection!(section.id)}
+                  />
+                ) : null}
+              </div>
+            );
+          })
+        )}
+
+        {onRequestAddSection ? (
+          <CapabilityGate capability="editSections" mode="disable">
+            <button
+              type="button"
+              onClick={onRequestAddSection}
+              className="rounded-xl border border-dashed border-rule bg-paper py-4 text-[13px] font-bold text-ink-mid transition-colors hover:border-rust hover:text-rust"
             >
-              <Preview
-                data={section.data as never}
-                brand={brand}
-                selectedElement={isSelected ? selectedElementId : undefined}
-                onSelectElement={isSelected ? onSelectElement : undefined}
-              />
-            </div>
-          );
-        })}
+              + Add section
+            </button>
+          </CapabilityGate>
+        ) : null}
       </div>
     </div>
   );

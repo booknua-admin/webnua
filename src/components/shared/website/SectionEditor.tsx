@@ -60,7 +60,6 @@ import {
 import { ForcePublishMenu } from './ForcePublishMenu';
 import { PagePreviewPane } from './PagePreviewPane';
 import { SectionFieldsPanel } from './SectionFieldsPanel';
-import { SectionListRail } from './SectionListRail';
 import { SiteFontsMenu } from './SiteFontsMenu';
 
 export type SectionEditorMode =
@@ -179,12 +178,10 @@ export function SectionEditor({ mode }: SectionEditorProps) {
 
   const [addOpen, setAddOpen] = useState(false);
 
-  // Element-inspector model: the element selected within the current
-  // section, and whether the section rail is collapsed to a strip.
+  // Element-inspector model: the element selected within the current section.
   const [selectedElementId, setSelectedElementId] = useState<string | null>(
     null,
   );
-  const [railCollapsed, setRailCollapsed] = useState(false);
 
   // Reset local state when the source content changes (e.g. tab swap).
   useEffect(() => {
@@ -193,13 +190,10 @@ export function SectionEditor({ mode }: SectionEditorProps) {
     setSelectedElementId(null);
   }, [mode, slot, resetSections]);
 
-  // Selecting a section resets the element selection and collapses the rail
-  // (the inspector becomes the focus). Re-selecting the same section just
-  // returns to its section-level settings.
+  // Selecting a section resets the element selection.
   const handleSelectSection = (id: string | null) => {
     setSelectedSectionId(id);
     setSelectedElementId(null);
-    setRailCollapsed(id != null);
   };
 
   const autosave = useAutosave({
@@ -246,7 +240,6 @@ export function SectionEditor({ mode }: SectionEditorProps) {
     if (id === selectedSectionId) {
       setSelectedSectionId(null);
       setSelectedElementId(null);
-      setRailCollapsed(false);
     }
   };
 
@@ -258,6 +251,19 @@ export function SectionEditor({ mode }: SectionEditorProps) {
       const next = [...current];
       [next[i], next[j]] = [next[j], next[i]];
       return next;
+    });
+  };
+
+  const handleDuplicateSection = (id: string) => {
+    setSections((current) => {
+      const i = current.findIndex((s) => s.id === id);
+      if (i < 0) return current;
+      const copy: Section = {
+        ...current[i],
+        id: `sec-${Math.random().toString(36).slice(2, 9)}`,
+        data: structuredClone(current[i].data),
+      };
+      return [...current.slice(0, i + 1), copy, ...current.slice(i + 1)];
     });
   };
 
@@ -329,31 +335,13 @@ export function SectionEditor({ mode }: SectionEditorProps) {
     };
   })();
 
-  const railMode =
-    mode.kind === 'page'
-      ? { kind: 'page' as const, title: mode.page.title }
-      : mode.kind === 'singleton'
-        ? { kind: 'singleton' as const, label: mode.label }
-        : { kind: 'page' as const, title: mode.step.title };
-
-  // Three-column grid when a section is selected; two-column otherwise.
-  // Locked editors (Lane B submitter waiting on review) hide the fields
-  // panel entirely — the dimmed rail + preview show *what* was submitted
-  // but you can't edit until the operator acts.
+  // The fields panel shows when a section is selected. Locked editors
+  // (Lane B submitter waiting on review) hide it entirely.
   const isSingleton = mode.kind === 'singleton';
   const isFunnelStep = mode.kind === 'funnelStep';
   const showFields = !locked && selectedSection != null;
-  // Singletons never collapse — their rail is the section.
-  const railCollapsedEffective = railCollapsed && !isSingleton;
-  // Static class strings — Tailwind cannot generate arbitrary-value classes
-  // from a runtime-interpolated template literal.
-  const gridCols = railCollapsedEffective
-    ? showFields
-      ? 'grid-cols-[48px_1fr_400px]'
-      : 'grid-cols-[48px_1fr]'
-    : showFields
-      ? 'grid-cols-[300px_1fr_400px]'
-      : 'grid-cols-[340px_1fr]';
+  // No left rail — section management is the per-section hover toolbar.
+  const gridCols = showFields ? 'grid-cols-[1fr_400px]' : 'grid-cols-[1fr]';
 
   return (
     <div className="flex h-svh flex-col bg-paper">
@@ -393,18 +381,6 @@ export function SectionEditor({ mode }: SectionEditorProps) {
           locked ? 'opacity-65 [&_*]:pointer-events-none' : ''
         }`}
       >
-        <SectionListRail
-          mode={railMode}
-          sections={sections}
-          selectedSectionId={selectedSectionId}
-          onSelectSection={handleSelectSection}
-          onToggleSectionEnabled={handleToggleSectionEnabled}
-          onRemoveSection={handleRemoveSection}
-          onMoveSection={handleMoveSection}
-          onRequestAddSection={() => setAddOpen(true)}
-          collapsed={railCollapsedEffective}
-          onToggleCollapsed={() => setRailCollapsed((c) => !c)}
-        />
         <PagePreviewPane
           sections={sections}
           brand={brand}
@@ -412,6 +388,11 @@ export function SectionEditor({ mode }: SectionEditorProps) {
           onSelectSection={handleSelectSection}
           selectedElementId={selectedElementId}
           onSelectElement={setSelectedElementId}
+          onToggleSectionEnabled={isSingleton ? undefined : handleToggleSectionEnabled}
+          onRemoveSection={isSingleton ? undefined : handleRemoveSection}
+          onMoveSection={isSingleton ? undefined : handleMoveSection}
+          onDuplicateSection={isSingleton ? undefined : handleDuplicateSection}
+          onRequestAddSection={isSingleton ? undefined : () => setAddOpen(true)}
         />
         {showFields && selectedSection ? (
           <SectionFieldsPanel
