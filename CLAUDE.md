@@ -65,7 +65,7 @@ Deferred keys are named in the union *now* so Session 2's resolver is shaped rig
 - **Framework:** Next.js (App Router) + React + TypeScript
 - **Styling:** Tailwind CSS, themed to the prototype's design tokens (see Design System below)
 - **Primitives:** shadcn/ui — the canonical primitive layer. Button, Input, Dialog, Card, Badge, etc. come from here.
-- **Backend (in progress — see `reference/backend-schema-design.md`):** Supabase. Frontend is built now; build the data layer with Supabase's shape in mind (role-based row access, the audit→proof-page record relationship). Do not invent a placeholder data pattern that will be ripped out.
+- **Backend (in progress — see `reference/backend-schema-design.md`):** Supabase. Frontend is built now; build the data layer with Supabase's shape in mind (role-based row access, the audit→proof-page record relationship). Do not invent a placeholder data pattern that will be ripped out. **`@supabase/supabase-js`** is a dependency as of Phase 2 (real auth) — the first runtime dependency added since the stack was frozen; the typed browser client lives at `src/lib/supabase/client.ts`.
 - **Data layer:** TanStack Query (React Query) is the data-fetching spine — caching, revalidation, loading/error state, optimistic updates. Supabase Realtime is added *selectively*, only on genuinely-live surfaces (tickets, approvals, notifications). The dependency is installed when Phase 3 wiring reaches its first surface; recorded here (Phase 0.5) as the decided choice. Failures surface as `AppError` — see Error handling below.
 - **TypeScript:** strict mode, from line one. No `any` without a written reason.
 

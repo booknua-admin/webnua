@@ -1,33 +1,40 @@
 'use client';
 
 // =============================================================================
-// STUB — user-resolution stand-in. Replaces the prior role-stub.
+// User resolution — Phase 2: real Supabase Auth.
 //
-// Four hardcoded stub users (Craig admin / Mark@Voltline editor /
-// Liam@Voltline view-only / Anna@FreshHome view-only).
-// Active user id + view-as override id + per-user grant overrides live in
-// localStorage. Switching is via <DevRoleSwitcher>. When real auth ships,
-// replace this provider with the Supabase-backed equivalent — every consumer
-// hook stays the same shape.
+// The *session user* is now resolved from a real Supabase session:
+// `UserProvider` reads `supabase.auth` + the `public.users` profile +
+// `capability_grants`, and `useUser` / `useRole` / `useCapabilities` resolve
+// from that. The localStorage user-switch stub is gone — sign-in is real.
 //
-// Deletion points (when Supabase auth ships):
-//   1. This file — src/lib/auth/user-stub.tsx
-//   2. The <UserProvider> mount in src/app/layout.tsx
-//   3. <DevRoleSwitcher> + its mounts in (client) + (admin) + shared layouts
-//   4. The /dev/* verification routes — src/app/dev/* (capabilities,
-//      sections, generation-preview, agency-policy)
+// The capability layer itself (`capabilities.ts`, `explainers.ts`,
+// `resolver.ts`) is product code and did NOT move — only how the current
+// user is *resolved* changed. `CapabilityOverrideProvider` also survives
+// (wizard-frame lock — product behaviour).
 //
-// Existing `useRole()` API surface preserved exactly — every consumer of
-// the old role-stub continues to work unchanged.
+// Still stub, pending Phase 3 cluster wiring (flagged, not load-bearing for
+// auth): the `STUB_USER_DEFS` roster + the localStorage capability-grant
+// overlay (`webnua.dev.grants`) that backs `/settings/access`'s editing grid,
+// and `viewAs` impersonation, which still cycles that roster. These surfaces
+// wire to live data per-cluster in Phase 3; the session user above does not
+// depend on them.
+//
+// Filename kept (`user-stub.tsx`) so the ~50 import sites are untouched —
+// every consumer hook keeps its exact shape.
 // =============================================================================
 
 import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useState,
   useSyncExternalStore,
 } from 'react';
+
+import { supabase } from '@/lib/supabase/client';
 
 import {
   ADMIN_DEFAULTS,
@@ -38,34 +45,24 @@ import {
   type User,
 } from './capabilities';
 
-// ---- Stub data ----
+// ---- localStorage keys (remaining stub surfaces) ----
 
-export const STUB_ACTIVE_USER_KEY = 'webnua.dev.active-user-id';
 export const STUB_GRANTS_KEY = 'webnua.dev.grants';
 export const STUB_VIEW_AS_KEY = 'webnua.dev.view-as-user-id';
 
-const DEFAULT_USER_ID = 'user-admin-craig';
-
-// Website data moved into the real model in Session 2 (see
-// `src/lib/website/data-stub.tsx`). Helpers are re-exported here only for
-// the brief moment between sessions where downstream code still imports
-// from `@/lib/auth/user-stub`. Prefer importing directly from
-// `@/lib/website/data-stub` going forward.
+// Website data lives in the real model (see `src/lib/website/data-stub.tsx`).
+// Re-exported here only for callers transitioning import paths.
 export { findWebsite, getWebsitesForClient } from '@/lib/website/data-stub';
+
+// ---- Stub roster (backs /settings/access + viewAs — Phase 3 wires these) ----
 
 type StubUserDef = {
   id: string;
   displayName: string;
   email: string;
   role: Role;
-  // The default grants applied when the local store has no overrides.
-  // Editing in /settings/access persists overrides under STUB_GRANTS_KEY.
   defaultGrants: CapabilityGrant[];
-  // The website(s) this client user has access to. Operators (`role: admin`)
-  // have implicit workspace-wide access — `accessibleWebsiteIds` is empty.
   accessibleWebsiteIds: string[];
-  // Which client business this user belongs to. Operators have null.
-  // Resolves to AdminClient.id (lib/nav/admin-clients.ts).
   clientId: string | null;
 };
 
@@ -114,7 +111,7 @@ export const STUB_USER_DEFS: StubUserDef[] = [
   },
 ];
 
-/** Stub user defs for a given client business, or all if `clientId` is null. */
+/** Stub user defs for a given client business. */
 export function getUserDefsForClient(clientId: string): StubUserDef[] {
   return STUB_USER_DEFS.filter((u) => u.clientId === clientId);
 }
@@ -127,13 +124,6 @@ export function getClientUserDefs(): StubUserDef[] {
 export const ROLE_LANDING: Record<Role, string> = {
   client: '/dashboard',
   admin: '/dashboard',
-};
-
-// First stub user for each role — used by `setRole` for backwards compat
-// with the existing login screen, which sets a role rather than a user.
-const ROLE_DEFAULT_USER: Record<Role, string> = {
-  admin: 'user-admin-craig',
-  client: 'user-client-mark',
 };
 
 // ---- Grant resolution ----
@@ -166,9 +156,62 @@ function buildUser(def: StubUserDef, grants: CapabilityGrant[]): User {
   };
 }
 
-// ---- External-store glue ----
+// ---- Supabase session → User ----
+//
+// `clientId` resolves to the client's `slug` (`voltline`, `freshhome`, …) —
+// the value the (still-stubbed) website/admin-client data layers join on.
+// Phase 3 swaps those joins to the real client UUID per cluster.
 
-const USER_EVENT = 'webnua:active-user-change';
+type ClientSlugRel = { slug: string } | { slug: string }[] | null;
+
+function readClientSlug(rel: ClientSlugRel): string | null {
+  if (!rel) return null;
+  const row = Array.isArray(rel) ? rel[0] : rel;
+  return row?.slug ?? null;
+}
+
+async function loadSessionUser(authUserId: string): Promise<User | null> {
+  const { data: profile, error } = await supabase
+    .from('users')
+    .select('id, display_name, email, role, client:clients(slug)')
+    .eq('id', authUserId)
+    .single();
+
+  if (error || !profile) {
+    if (error) {
+      console.error('Failed to load user profile:', error.message);
+    }
+    return null;
+  }
+
+  const { data: grantRows, error: grantsError } = await supabase
+    .from('capability_grants')
+    .select('website_id, capabilities')
+    .eq('user_id', authUserId);
+
+  if (grantsError) {
+    console.error('Failed to load capability grants:', grantsError.message);
+  }
+
+  const role = profile.role as Role;
+  const grants: CapabilityGrant[] = (grantRows ?? []).map((g) => ({
+    userId: authUserId,
+    websiteId: g.website_id ?? '*',
+    capabilities: (g.capabilities ?? []) as Capability[],
+  }));
+
+  return {
+    id: profile.id,
+    displayName: profile.display_name,
+    email: profile.email,
+    role,
+    clientId: readClientSlug(profile.client as ClientSlugRel),
+    capabilities: resolveCapabilities(role, grants),
+  };
+}
+
+// ---- External-store glue (grant overlay + viewAs — remaining stub) ----
+
 const GRANTS_EVENT = 'webnua:grants-change';
 const VIEW_AS_EVENT = 'webnua:view-as-change';
 
@@ -178,10 +221,6 @@ function safeRead(key: string): string | null {
   } catch {
     return null;
   }
-}
-
-function readStoredUserId(): string | null {
-  return safeRead(STUB_ACTIVE_USER_KEY);
 }
 
 function readStoredViewAsId(): string | null {
@@ -196,15 +235,6 @@ function readStoredGrants(): Record<string, CapabilityGrant[]> | null {
   } catch {
     return null;
   }
-}
-
-function subscribeUser(callback: () => void) {
-  window.addEventListener('storage', callback);
-  window.addEventListener(USER_EVENT, callback);
-  return () => {
-    window.removeEventListener('storage', callback);
-    window.removeEventListener(USER_EVENT, callback);
-  };
 }
 
 function subscribeGrants(callback: () => void) {
@@ -234,13 +264,15 @@ type UserContextValue = {
   viewAsUser: User | null;
   /** Effective capability set — viewAsUser when active, else user. */
   effectiveCapabilities: Set<Capability>;
-  /** All stub users with their currently-resolved grant overrides. */
+  /** Stub roster with currently-resolved grant overrides (Phase 3 wires). */
   allUsers: User[];
   hydrated: boolean;
+  /** No-op — user switching is gone (real sign-in replaces it). */
   setUserId: (id: string) => void;
+  /** Signs the current session out. */
   clearUser: () => void;
   setViewAsUserId: (id: string | null) => void;
-  /** Replace the grant for (userId, websiteId) with these capabilities. */
+  /** Replace the grant for (userId, websiteId) — stub roster overlay. */
   setUserGrant: (
     userId: string,
     websiteId: string,
@@ -253,12 +285,9 @@ const UserContext = createContext<UserContextValue | null>(null);
 
 // ---- Capability override (wizard-frame mode) ----
 //
-// A subtree can lock the effective capability set to a fixed list,
-// regardless of the signed-in user — used by the onboarding wizard's
-// draft-walk step (design doc §5.2: the wizard's flow is its own UX
-// contract). `useCapabilities()` consults this first; when present it wins.
-// When real auth ships this stays — it's a product behaviour, not stub
-// scaffolding — and re-attaches to the Supabase-backed `useCapabilities`.
+// A subtree can lock the effective capability set to a fixed list, regardless
+// of the signed-in user — used by the onboarding wizard's draft-walk step.
+// `useCapabilities()` consults this first; when present it wins.
 
 const CapabilityOverrideContext = createContext<Set<Capability> | null>(null);
 
@@ -281,16 +310,35 @@ export function CapabilityOverrideProvider({
 }
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
-  const storedId = useSyncExternalStore(
-    subscribeUser,
-    readStoredUserId,
-    () => null,
-  );
-  const hydrated = useSyncExternalStore(
-    subscribeUser,
-    () => true,
-    () => false,
-  );
+  const [user, setUser] = useState<User | null>(null);
+  const [hydrated, setHydrated] = useState(false);
+
+  // Resolve the session user from Supabase: initial session + auth changes.
+  useEffect(() => {
+    let active = true;
+
+    const resolve = async (authUserId: string | undefined) => {
+      const next = authUserId ? await loadSessionUser(authUserId) : null;
+      if (!active) return;
+      setUser(next);
+      setHydrated(true);
+    };
+
+    supabase.auth.getSession().then(({ data }) => {
+      void resolve(data.session?.user.id);
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      void resolve(session?.user.id);
+    });
+
+    return () => {
+      active = false;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
+
+  // viewAs impersonation + the grant overlay still read localStorage.
   const grantsStore = useSyncExternalStore(
     subscribeGrants,
     readStoredGrants,
@@ -302,10 +350,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     () => null,
   );
 
-  // Default to the admin user when no key is stored.
-  const resolvedId = storedId ?? (hydrated ? DEFAULT_USER_ID : null);
-
-  // Build all users with their resolved grants.
+  // Stub roster — backs /settings/access + the viewAs cycle (Phase 3 wires).
   const allUsers = useMemo<User[]>(() => {
     return STUB_USER_DEFS.map((def) => {
       const override = grantsStore?.[def.id];
@@ -313,11 +358,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       return buildUser(def, grants);
     });
   }, [grantsStore]);
-
-  const user = useMemo(
-    () => allUsers.find((u) => u.id === resolvedId) ?? null,
-    [allUsers, resolvedId],
-  );
 
   // Only honour viewAs when the actual user is an admin.
   const viewAsUser = useMemo(() => {
@@ -330,24 +370,16 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     return user?.capabilities ?? new Set<Capability>();
   }, [user, viewAsUser]);
 
-  const setUserId = useCallback((id: string) => {
-    try {
-      window.localStorage.setItem(STUB_ACTIVE_USER_KEY, id);
-      // Switching users always clears any view-as override — viewing as
-      // someone-else-as-me makes no sense.
-      window.localStorage.removeItem(STUB_VIEW_AS_KEY);
-      window.dispatchEvent(new Event(USER_EVENT));
-      window.dispatchEvent(new Event(VIEW_AS_EVENT));
-    } catch {
-      // localStorage unavailable
-    }
+  const setUserId = useCallback(() => {
+    // User switching is gone — real sign-in replaces it. Kept for the
+    // unchanged context shape; no consumer should still call it.
+    console.warn('setUserId is a no-op since Phase 2 — sign in instead.');
   }, []);
 
   const clearUser = useCallback(() => {
+    void supabase.auth.signOut();
     try {
-      window.localStorage.removeItem(STUB_ACTIVE_USER_KEY);
       window.localStorage.removeItem(STUB_VIEW_AS_KEY);
-      window.dispatchEvent(new Event(USER_EVENT));
       window.dispatchEvent(new Event(VIEW_AS_EVENT));
     } catch {
       // localStorage unavailable
@@ -374,8 +406,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         const def = STUB_USER_DEFS.find((u) => u.id === userId);
         if (!def) return;
 
-        // Start from this user's existing grants (override or default),
-        // replace the grant for the given website.
         const baseline = current[userId] ?? def.defaultGrants;
         const filtered = baseline.filter((g) => g.websiteId !== websiteId);
         const next =
@@ -432,7 +462,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
 }
 
-// ---- Hooks: new capability layer ----
+// ---- Hooks: capability layer ----
 
 export function useUser(): User | null {
   const ctx = useContext(UserContext);
@@ -454,7 +484,8 @@ export function useUserContext() {
 export function useCapabilities(): Set<Capability> {
   const override = useContext(CapabilityOverrideContext);
   const ctx = useContext(UserContext);
-  if (!ctx) throw new Error('useCapabilities must be used within <UserProvider>');
+  if (!ctx)
+    throw new Error('useCapabilities must be used within <UserProvider>');
   return override ?? ctx.effectiveCapabilities;
 }
 
@@ -481,10 +512,9 @@ export function useIsViewingAs(): boolean {
 
 // ---- Hooks: legacy role surface ----
 //
-// Existing consumers expect useRole() => { role, hydrated, setRole, clearRole }.
+// Consumers expect useRole() => { role, hydrated, setRole, clearRole }.
 // Kept verbatim; derived from the underlying user state. View-as does NOT
-// flip the role — operators viewing as a client still get the operator nav
-// shape (see design doc §1.5).
+// flip the role — operators viewing as a client keep the operator nav shape.
 
 type RoleContextShape = {
   role: Role | null;
@@ -496,12 +526,10 @@ type RoleContextShape = {
 export function useRole(): RoleContextShape {
   const ctx = useUserContext();
   const role = ctx.user?.role ?? null;
-  const setRole = useCallback(
-    (next: Role) => {
-      ctx.setUserId(ROLE_DEFAULT_USER[next]);
-    },
-    [ctx],
-  );
+  const setRole = useCallback(() => {
+    // Role is no longer chosen — it comes from the signed-in profile.
+    console.warn('setRole is a no-op since Phase 2 — sign in instead.');
+  }, []);
   return {
     role,
     hydrated: ctx.hydrated,
@@ -513,10 +541,12 @@ export function useRole(): RoleContextShape {
 // ---- Backwards-compat aliases ----
 
 /**
- * @deprecated kept for any caller that imported the resolved-set list from
- * 1a. Use `useUserContext().allUsers` for the live list.
+ * The stub roster pre-resolved with default grants. Backs the viewAs cycle
+ * + /dev surfaces; Phase 3 wires these to live data.
  */
-export const STUB_USERS = STUB_USER_DEFS.map((def) => buildUser(def, def.defaultGrants));
+export const STUB_USERS = STUB_USER_DEFS.map((def) =>
+  buildUser(def, def.defaultGrants),
+);
 
 // Re-export Role for callers that imported it from the prior role-stub.
 export type { Role } from './capabilities';

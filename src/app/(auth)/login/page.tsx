@@ -1,9 +1,10 @@
 'use client';
 
-// Sign-in screen. Visual layer over the role-stub mechanism — the email +
-// password fields are inert until Supabase wires in. The two role buttons
-// below the divider are the dev stub, identical in behaviour to before.
+// Sign-in screen — real Supabase Auth (Phase 2). The email + password form
+// authenticates against Supabase; on success the UserProvider's auth listener
+// resolves the session and we route to the role landing.
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { BrandMark } from '@/components/ui/BrandMark';
@@ -12,26 +13,40 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
 import { Eyebrow } from '@/components/ui/eyebrow';
 import { Input } from '@/components/ui/input';
-import { ROLE_LANDING, useRole, type Role } from '@/lib/auth/user-stub';
+import { supabase } from '@/lib/supabase/client';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { setRole } = useRole();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSignInSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSignInSubmit = async (
+    event: React.FormEvent<HTMLFormElement>,
+  ) => {
     event.preventDefault();
-    // Inert until Supabase auth ships. Use the role-stub buttons below.
-  };
+    setError(null);
+    setSubmitting(true);
 
-  const handlePick = (role: Role) => {
-    setRole(role);
-    router.push(ROLE_LANDING[role]);
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+
+    if (signInError) {
+      setError(signInError.message);
+      setSubmitting(false);
+      return;
+    }
+
+    // The UserProvider auth listener picks up the session; route to the app.
+    router.push('/dashboard');
   };
 
   return (
@@ -61,6 +76,8 @@ export default function LoginPage() {
                 type="email"
                 autoComplete="email"
                 placeholder="you@yourbusiness.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 required
               />
             </Field>
@@ -81,46 +98,31 @@ export default function LoginPage() {
                 type="password"
                 autoComplete="current-password"
                 placeholder="••••••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 required
               />
             </div>
 
-            <Button type="submit" size="lg" className="w-full">
-              Sign in →
+            {error ? (
+              <p
+                role="alert"
+                className="rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn"
+              >
+                {error}
+              </p>
+            ) : null}
+
+            <Button
+              type="submit"
+              size="lg"
+              className="w-full"
+              disabled={submitting}
+            >
+              {submitting ? 'Signing in…' : 'Sign in →'}
             </Button>
           </form>
         </CardContent>
-
-        <CardFooter className="flex-col items-stretch gap-4 border-t border-rule pt-6">
-          <div className="flex items-center justify-between">
-            <Eyebrow tone="quiet">{'// Dev role stub'}</Eyebrow>
-            <span className="font-mono text-[10px] font-bold tracking-[0.14em] uppercase text-ink-quiet/70">
-              Removed at launch
-            </span>
-          </div>
-          <p className="text-xs leading-relaxed text-ink-quiet">
-            Real auth ships with the backend. For now, pick which shell to land
-            in.
-          </p>
-          <div className="flex flex-col gap-2.5">
-            <Button
-              type="button"
-              onClick={() => handlePick('client')}
-              variant="secondary"
-              size="lg"
-            >
-              Continue as client →
-            </Button>
-            <Button
-              type="button"
-              onClick={() => handlePick('admin')}
-              variant="secondary"
-              size="lg"
-            >
-              Continue as admin →
-            </Button>
-          </div>
-        </CardFooter>
       </Card>
 
       <p className="text-center font-mono text-[10px] font-bold tracking-[0.14em] uppercase text-ink-quiet/70">
