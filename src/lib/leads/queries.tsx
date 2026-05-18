@@ -20,6 +20,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppError, normalizeError } from '@/lib/errors';
 import { supabase } from '@/lib/supabase/client';
 import { relativeTime } from '@/lib/time';
+import type { SubmittedFormField } from '@/lib/website/form-config';
 
 import {
   LEAD_STATUS_LABEL,
@@ -781,6 +782,125 @@ export function useUpdateLeadStatus() {
     mutationFn: updateLeadStatus,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['leads'] });
+    },
+  });
+}
+
+// ---- Create a lead from a form submission (write) ---------------------------
+//
+// A website / funnel form submission becomes a real lead: a `customers` row,
+// a `leads` row, and the opening `form_submitted` `lead_events` entry that
+// carries the answers. The dashboard conversion funnel counts `leads` rows,
+// so a created lead feeds the platform analytics with no extra wiring.
+
+export type CreateLeadInput = {
+  /** The client (UUID) the website / funnel belongs to. */
+  clientId: string;
+  /** Human label of the form's origin, e.g. "Form · Hero". */
+  source: string;
+  fields: SubmittedFormField[];
+  /**
+   * Design-only (cross-step linking): when set, the submission appends a
+   * `form_submitted` event to an existing lead instead of creating a new
+   * one. Unused until the public funnel renderer threads a visitor-session
+   * leadId across steps — every editor test-submit omits it.
+   */
+  existingLeadId?: string;
+};
+
+/** Builds the `form_submitted` lead_events payload from the submitted fields.
+ *  `fields` matches the shape existing readers expect (`{label,value}`);
+ *  `attachments` is additive — image fields whose upload produced a path. */
+function formSubmittedPayload(source: string, fields: SubmittedFormField[]) {
+  return {
+    source,
+    fields: fields.map((f) => ({ label: f.label, value: f.value, type: f.type })),
+    attachments: fields
+      .filter((f) => !!f.imagePath)
+      .map((f) => ({ fieldId: f.fieldId, label: f.label, path: f.imagePath })),
+  };
+}
+
+/**
+ * The single submit seam. Today it writes directly (the editor test-submit
+ * runs as an authenticated operator/client, which RLS permits). The future
+ * public visitor renderer replaces this body with a service-role edge
+ * function call — `useCreateLead` and every caller stay unchanged.
+ */
+async function submitLead(input: CreateLeadInput): Promise<{ leadId: string }> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw AppError.auth();
+
+  const occurredAt = new Date().toISOString();
+  const payload = formSubmittedPayload(input.source, input.fields);
+
+  // Cross-step linking branch — append to an existing lead.
+  if (input.existingLeadId) {
+    const { error } = await supabase.from('lead_events').insert({
+      lead_id: input.existingLeadId,
+      kind: 'form_submitted',
+      occurred_at: occurredAt,
+      actor_user_id: user.id,
+      payload,
+    });
+    if (error) throw normalizeError(error);
+    return { leadId: input.existingLeadId };
+  }
+
+  // Resolve the lead's identity from the leadRole-tagged fields.
+  const roleValue = (role: 'name' | 'email' | 'phone') =>
+    input.fields.find((f) => f.leadRole === role)?.value.trim() || '';
+  const name = roleValue('name') || 'Website enquiry';
+  const email = roleValue('email') || null;
+  const phone = roleValue('phone') || null;
+
+  // The customer — V1 always inserts a fresh row; dedup by phone/email is a
+  // later concern (kept a separate step so it can slot in).
+  const { data: customer, error: customerError } = await supabase
+    .from('customers')
+    .insert({ client_id: input.clientId, name, email, phone })
+    .select('id')
+    .single();
+  if (customerError) throw normalizeError(customerError);
+
+  const { data: lead, error: leadError } = await supabase
+    .from('leads')
+    .insert({
+      client_id: input.clientId,
+      customer_id: customer.id,
+      customer_name_snapshot: name,
+      customer_phone_snapshot: phone,
+      status: 'new',
+      urgency: 'none',
+      source: input.source,
+    })
+    .select('id')
+    .single();
+  if (leadError) throw normalizeError(leadError);
+
+  const { error: eventError } = await supabase.from('lead_events').insert({
+    lead_id: lead.id,
+    kind: 'form_submitted',
+    occurred_at: occurredAt,
+    actor_user_id: user.id,
+    payload,
+  });
+  if (eventError) throw normalizeError(eventError);
+
+  return { leadId: lead.id };
+}
+
+/** Create a lead from a form submission. On success the leads inbox + the
+ *  dashboard funnel queries are invalidated so the new lead surfaces. */
+export function useCreateLead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: submitLead,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['leads'] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
   });
 }

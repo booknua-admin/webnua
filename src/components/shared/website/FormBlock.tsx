@@ -20,7 +20,11 @@
 
 import { useState } from 'react';
 
-import type { FormConfig, FormField } from '@/lib/website/form-config';
+import type {
+  FormConfig,
+  FormField,
+  SubmittedFormField,
+} from '@/lib/website/form-config';
 import type { BrandObject } from '@/lib/website/types';
 
 import { SelectableElement } from '@/lib/website/sections/_shared/SelectableElement';
@@ -30,14 +34,7 @@ export const FORM_TITLE_ELEMENT = '__formTitle';
 export const FORM_SUBMIT_ELEMENT = '__formSubmit';
 export const FORM_SETTINGS_ELEMENT = '__formSettings';
 
-/** A submitted field value, assembled on submit and handed to `onSubmit`. */
-export type SubmittedFormField = {
-  fieldId: string;
-  label: string;
-  type: FormField['type'];
-  value: string;
-  imageUrl?: string;
-};
+export type { SubmittedFormField };
 
 export type FormBlockProps = {
   form: FormConfig;

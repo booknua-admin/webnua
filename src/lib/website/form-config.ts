@@ -74,6 +74,20 @@ export type FormConfig = {
   colors: FormColors;
 };
 
+/** A single field's submitted value — assembled by FormBlock on submit and
+ *  handed to the lead-creation layer. For an `image` field `value` is the
+ *  file name and `imagePath` is the uploaded `lead-attachments` storage
+ *  path (the bucket is private — a path, never a URL, is persisted). */
+export type SubmittedFormField = {
+  fieldId: string;
+  label: string;
+  type: FormFieldType;
+  value: string;
+  /** Carried through from the field config — drives lead identity mapping. */
+  leadRole?: FormFieldLeadRole;
+  imagePath?: string;
+};
+
 // ---- Helpers ----------------------------------------------------------------
 
 /** Stable field id. Mirrors the `makeId()` pattern in the section modules. */
