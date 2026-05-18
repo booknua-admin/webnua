@@ -23,10 +23,21 @@ export type TicketDetailProperty = {
   editable?: boolean;
 };
 
-export type TicketDetailAction = {
-  icon: string;
-  label: string;
-};
+export type TicketDetailAction =
+  | { kind: 'link'; icon: string; label: string; href: string }
+  | {
+      kind: 'confirm';
+      icon: string;
+      label: string;
+      confirm: {
+        title: string;
+        description?: ReactNode;
+        confirmLabel: string;
+        tone?: 'default' | 'destructive';
+        thenHref?: string;
+      };
+    }
+  | { kind: 'inert'; icon: string; label: string };
 
 export type ClientTicketDetail = {
   id: string;
@@ -141,9 +152,24 @@ export const clientTicketDetail: ClientTicketDetail = {
     { label: 'Submitted', value: '12 min ago' },
   ],
   actions: [
-    { icon: '☏', label: 'Call Craig directly' },
-    { icon: '✎', label: 'Edit original request' },
-    { icon: '⤴', label: 'Add a reference file' },
-    { icon: '⊘', label: 'Cancel this ticket' },
+    { kind: 'inert', icon: '✎', label: 'Edit original request' },
+    { kind: 'inert', icon: '⤴', label: 'Add a reference file' },
+    {
+      kind: 'confirm',
+      icon: '⊘',
+      label: 'Cancel this ticket',
+      confirm: {
+        title: 'Cancel this ticket?',
+        description: (
+          <>
+            Craig will be notified and any work in progress stops.{' '}
+            <strong>This can&rsquo;t be undone.</strong>
+          </>
+        ),
+        confirmLabel: 'Cancel ticket',
+        tone: 'destructive',
+        thenHref: '/tickets',
+      },
+    },
   ],
 };

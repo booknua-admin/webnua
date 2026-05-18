@@ -5,7 +5,7 @@ import {
   StatusPill,
   UrgencyPill,
 } from '@/components/shared/tickets/pills';
-import { TicketActionRow } from '@/components/shared/tickets/TicketActionRow';
+import { TicketActionList } from '@/components/shared/tickets/TicketActionList';
 import { TicketDetailHeader, TicketIdLabel } from '@/components/shared/tickets/TicketDetailHeader';
 import { TicketDetailLayout } from '@/components/shared/tickets/TicketDetailLayout';
 import { TicketReply } from '@/components/shared/tickets/TicketReply';
@@ -110,13 +110,7 @@ function AdminTicketDetailContent() {
                 ))}
               </RailCard>
               <RailCard heading="// Quick actions">
-                {t.actions.map((a) => (
-                  <TicketActionRow
-                    key={a.label}
-                    icon={a.icon}
-                    label={a.label}
-                  />
-                ))}
+                <TicketActionList actions={t.actions} />
               </RailCard>
             </>
           }
