@@ -192,6 +192,13 @@ const ROW_JUSTIFY: Record<CtaAlign, string> = {
   right: 'justify-end',
 };
 
+// Horizontal placement of a max-width content block within its container.
+const ALIGN_SELF: Record<CtaAlign, string> = {
+  left: '',
+  center: 'mx-auto',
+  right: 'ml-auto',
+};
+
 const HEADLINE_ALTS = [
   DEFAULTS.headline,
   'We help you achieve more',
@@ -711,7 +718,9 @@ function CTAPreview({
         if (background) {
           return (
             <div className="flex min-h-[360px] flex-col justify-center px-8 py-20 @2xl:px-16">
-              <div className="w-full max-w-[640px]">{copy}</div>
+              <div className={`w-full max-w-[640px] ${ALIGN_SELF[d.align]}`}>
+                {copy}
+              </div>
             </div>
           );
         }
