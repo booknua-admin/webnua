@@ -26,7 +26,10 @@ import {
   LEAD_URGENCY_LABEL,
   type AdminLeadRow,
   type ClientLeadRow,
+  type ConversationDay,
+  type ConversationMessage,
   type LeadClientTone,
+  type LeadConversation,
   type LeadDetail,
   type LeadQuickAction,
   type LeadRailCard,
@@ -509,6 +512,221 @@ export function useLeadDetail(id: string) {
   return useQuery({
     queryKey: ['leads', 'detail', id],
     queryFn: () => fetchLeadDetail(id),
+    enabled: id.length > 0,
+  });
+}
+
+// =============================================================================
+// Lead conversation — the two-way message thread. The thread is the
+// message-kind `lead_events` (sms/email in/out) grouped into days; status +
+// form events fold in as `system` bubbles for context.
+// =============================================================================
+
+function clockTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-AU', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function conversationDayLabel(iso: string): string {
+  const d = new Date(iso);
+  const dateStr = d.toLocaleDateString('en-AU', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+  const now = new Date();
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  if (d.toDateString() === now.toDateString()) return `Today · ${dateStr}`;
+  if (d.toDateString() === yesterday.toDateString()) {
+    return `Yesterday · ${dateStr}`;
+  }
+  return dateStr;
+}
+
+/** Map one lead_event to a conversation bubble — or null for kinds that are
+ *  not part of the thread (e.g. automation_fired). */
+function mapConversationMessage(
+  e: LeadDetailEventRow,
+): ConversationMessage | null {
+  const payload = payloadObject(e.payload);
+  const time = clockTime(e.occurred_at);
+  const channel: 'SMS' | 'Email' = e.kind.startsWith('email')
+    ? 'Email'
+    : 'SMS';
+
+  if (MESSAGE_KINDS.has(e.kind)) {
+    const body = typeof payload.body === 'string' ? payload.body : '';
+    const sender =
+      typeof payload.senderName === 'string' ? payload.senderName : '';
+    const incoming = e.kind === 'sms_in' || e.kind === 'email_in';
+
+    if (incoming) {
+      return { id: e.id, kind: 'incoming', body, channel, time };
+    }
+
+    const message: ConversationMessage = {
+      id: e.id,
+      kind: e.automation_id != null ? 'auto' : 'outgoing',
+      body,
+      time,
+      delivered: payload.delivered === true,
+    };
+    if (e.automation_id != null) {
+      message.autoLabel = `AUTO · ${channel}`;
+    } else {
+      message.metaPrefix = sender
+        ? `${channel} · ${sender.toUpperCase()}`
+        : channel;
+    }
+    return message;
+  }
+
+  if (e.kind === 'form_submitted') {
+    return {
+      id: e.id,
+      kind: 'system',
+      body: 'Submitted the enquiry form.',
+      time,
+    };
+  }
+
+  if (e.kind === 'status_changed') {
+    const to = typeof payload.to === 'string' ? payload.to : '';
+    return {
+      id: e.id,
+      kind: 'system',
+      body: `Status changed${to ? ` to "${to}"` : ''}.`,
+      time,
+    };
+  }
+
+  if (e.kind === 'booking_created') {
+    return { id: e.id, kind: 'system', body: 'Booking created.', time };
+  }
+
+  return null;
+}
+
+function buildLeadConversation(row: LeadDetailJoinRow): LeadConversation {
+  const first = row.customer_name_snapshot.trim().split(/\s+/)[0] ?? '';
+  const suburb = row.customer?.suburb ?? null;
+
+  // Chronological — the thread reads top-to-bottom.
+  const ordered = [...row.lead_events].sort((a, b) =>
+    a.occurred_at.localeCompare(b.occurred_at),
+  );
+
+  const days: ConversationDay[] = [];
+  for (const event of ordered) {
+    const message = mapConversationMessage(event);
+    if (!message) continue;
+    const dayId = event.occurred_at.slice(0, 10);
+    let day = days.find((d) => d.id === dayId);
+    if (!day) {
+      day = {
+        id: dayId,
+        label: conversationDayLabel(event.occurred_at),
+        messages: [],
+      };
+      days.push(day);
+    }
+    day.messages.push(message);
+  }
+
+  const messageCount = days.reduce((n, d) => n + d.messages.length, 0);
+  const firstEvent = ordered[0];
+
+  const detailRows = [
+    row.customer_phone_snapshot
+      ? { label: 'Phone', value: row.customer_phone_snapshot }
+      : null,
+    suburb ? { label: 'Suburb', value: suburb } : null,
+    { label: 'Source', value: row.source ?? 'Direct' },
+    { label: 'Status', value: LEAD_STATUS_LABEL[row.status] },
+  ].filter((r): r is { label: string; value: string } => r != null);
+
+  const rail: LeadRailCard[] = [
+    { heading: '// LEAD DETAILS', rows: detailRows },
+    {
+      heading: '// CONVERSATION META',
+      rows: [
+        {
+          label: 'Started',
+          value: firstEvent ? conversationDayLabel(firstEvent.occurred_at) : '—',
+        },
+        { label: 'Messages', value: `${messageCount} total` },
+      ],
+    },
+  ];
+
+  return {
+    id: row.id,
+    backHref: `/leads/${row.id}`,
+    backLabel: `Back to ${row.customer_name_snapshot}`,
+    tag: `// CONVERSATION · ${row.customer_name_snapshot} · lead`,
+    title: (
+      <>
+        Reply to <em>{first}</em>.
+      </>
+    ),
+    subtitle: (
+      <>
+        Two-way message thread with this lead.{' '}
+        <strong>Automated messages carry the “AUTO” tag</strong> so you always
+        know what was you versus the system.
+      </>
+    ),
+    avatar: initials(row.customer_name_snapshot),
+    name: row.customer_name_snapshot,
+    headerMeta: (
+      <>
+        {row.customer_phone_snapshot ? (
+          <strong>{row.customer_phone_snapshot}</strong>
+        ) : null}
+        {suburb ? ` · ${suburb}` : ''} · lead
+      </>
+    ),
+    channelTabs: [
+      { id: 'sms', label: 'SMS' },
+      { id: 'email', label: 'Email' },
+    ],
+    headerActions: ['☏', '⌄', '⋯'],
+    days,
+    composer: {
+      channels: ['SMS', 'Email'],
+      channelToggle: 'SMS ↕',
+      placeholder: `Reply to ${first}…`,
+      helpers: ['+ Insert variable', '+ Booking link', '+ Quote template'],
+    },
+    quickReplies: [
+      { icon: '☏', label: 'Confirm a call-back time' },
+      { icon: '▤', label: 'Send a booking link' },
+      { icon: '✦', label: 'Share the quote range' },
+    ],
+    rail,
+  };
+}
+
+async function fetchLeadConversation(id: string): Promise<LeadConversation> {
+  const { data, error } = await supabase
+    .from('leads')
+    .select(LEAD_DETAIL_SELECT)
+    .eq('id', id)
+    .single();
+
+  if (error) throw normalizeError(error);
+
+  return buildLeadConversation(data as unknown as LeadDetailJoinRow);
+}
+
+/** One lead's message thread. RLS scopes the by-id fetch to the caller's
+ *  tenant; a lead outside it resolves as not_found. */
+export function useLeadConversation(id: string) {
+  return useQuery({
+    queryKey: ['leads', 'conversation', id],
+    queryFn: () => fetchLeadConversation(id),
     enabled: id.length > 0,
   });
 }
