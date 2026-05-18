@@ -1,78 +1,114 @@
 // =============================================================================
-// STUB — client teammate-invite store.
+// client-invite store — in-memory cache hydrated from Supabase.
 //
-// localStorage-backed list of ClientUserInvite records, keyed under one blob.
-// Pending invites count against the client's seat limit (see ./seats.ts), so
-// this store is read by the seat-check helper as well as the Team tab.
-//
-// When real auth ships, replaced by a Supabase INSERT + reads against a
-// `client_user_invites` table; the accessor surface (addClientInvite /
-// getInvitesForClient / subscribeClientInvites) keeps its shape.
-//
-// Snapshot discipline (CLAUDE.md): getSnapshot must be reference-stable, so
-// the parsed list is cached keyed on the raw localStorage string.
+// Reads pending `client_user_invites` rows; writes INSERT new rows.
+// Snapshot discipline (CLAUDE.md): getAllClientInvites() is reference-stable.
 // =============================================================================
 
+import { supabase } from '@/lib/supabase/client';
+import { normalizeError } from '@/lib/errors';
+import { getClientSlugByUuid, getClientUuidBySlug } from '@/lib/clients/clients-store';
 import type { ClientUserInvite } from './client-invite';
 
-const STORE_KEY = 'webnua.dev.client-invites';
 const CHANGE_EVENT = 'webnua:client-invites-change';
 
-function safeRead(): string | null {
-  try {
-    return window.localStorage.getItem(STORE_KEY);
-  } catch {
-    return null;
+// --- In-memory cache ---------------------------------------------------------
+
+let cache: ClientUserInvite[] = [];
+let version = 0;
+let snapshotVersion = -1;
+let snapshotValue: ClientUserInvite[] = [];
+
+function dispatch() {
+  version++;
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(CHANGE_EVENT));
   }
 }
 
-// Cache keyed on the raw string so repeated getSnapshot calls return the same
-// array reference until the underlying store actually changes.
-let cacheRaw: string | null = null;
-let cacheValue: ClientUserInvite[] = [];
+// --- Hydration ---------------------------------------------------------------
 
-function parse(raw: string | null): ClientUserInvite[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw) as ClientUserInvite[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
+export async function hydrateClientInvites(): Promise<void> {
+  const { data, error } = await supabase
+    .from('client_user_invites')
+    .select('id, email, full_name, client_id, invited_by, invited_at, expires_at, magic_link, status, personal_note')
+    .eq('status', 'pending');
+
+  if (error) {
+    console.error('[client-invites] hydrate failed:', normalizeError(error).message);
+    return;
   }
+
+  cache = (data ?? []).map((row: Record<string, unknown>) => ({
+    id: row.id as string,
+    email: row.email as string,
+    fullName: row.full_name as string,
+    // Translate UUID → slug for the public clientId surface.
+    clientId: getClientSlugByUuid(row.client_id as string) ?? (row.client_id as string),
+    invitedBy: row.invited_by as string,
+    invitedAt: row.invited_at as string,
+    expiresAt: row.expires_at as string,
+    magicLink: row.magic_link as string,
+    status: row.status as ClientUserInvite['status'],
+    personalNote: row.personal_note as string | null,
+  }));
+
+  dispatch();
 }
 
-/** All client invites in the store, newest-first. Reference-stable per raw string. */
+// --- Reads -------------------------------------------------------------------
+
+/** All client invites in the store, newest-first. Reference-stable. */
 export function getAllClientInvites(): ClientUserInvite[] {
-  const raw = safeRead();
-  if (raw === cacheRaw) return cacheValue;
-  cacheRaw = raw;
-  cacheValue = parse(raw);
-  return cacheValue;
+  if (version === snapshotVersion) return snapshotValue;
+  snapshotVersion = version;
+  snapshotValue = [...cache];
+  return snapshotValue;
 }
 
-/** Pending invites for one client business. */
+/** Pending invites for one client business (clientId = slug). */
 export function getInvitesForClient(clientId: string): ClientUserInvite[] {
   return getAllClientInvites().filter(
     (inv) => inv.clientId === clientId && inv.status === 'pending',
   );
 }
 
-/** Append one invite record and notify subscribers. */
+// --- Writes ------------------------------------------------------------------
+
+/** Append one invite record and notify subscribers. Optimistic + Supabase INSERT. */
 export function addClientInvite(invite: ClientUserInvite): void {
-  try {
-    const next = [invite, ...getAllClientInvites()];
-    window.localStorage.setItem(STORE_KEY, JSON.stringify(next));
-    window.dispatchEvent(new Event(CHANGE_EVENT));
-  } catch {
-    // localStorage unavailable — stub layer, nothing to recover.
+  cache = [invite, ...cache];
+  dispatch();
+
+  const clientUuid = getClientUuidBySlug(invite.clientId);
+  if (!clientUuid) {
+    console.error('[client-invites] addClientInvite: unknown slug', invite.clientId);
+    return;
   }
+
+  void supabase
+    .from('client_user_invites')
+    .insert({
+      id: invite.id,
+      email: invite.email,
+      full_name: invite.fullName,
+      client_id: clientUuid,
+      invited_by: invite.invitedBy,
+      invited_at: invite.invitedAt,
+      expires_at: invite.expiresAt,
+      magic_link: invite.magicLink,
+      status: invite.status,
+      personal_note: invite.personalNote,
+    })
+    .then((result: { error: unknown }) => {
+      if (result.error) {
+        console.error('[client-invites] addClientInvite INSERT failed:', normalizeError(result.error).message);
+      }
+    });
 }
 
 export function subscribeClientInvites(callback: () => void): () => void {
-  window.addEventListener('storage', callback);
+  if (typeof window === 'undefined') return () => {};
   window.addEventListener(CHANGE_EVENT, callback);
-  return () => {
-    window.removeEventListener('storage', callback);
-    window.removeEventListener(CHANGE_EVENT, callback);
-  };
+  return () => window.removeEventListener(CHANGE_EVENT, callback);
 }

@@ -1,5 +1,4 @@
 import { AppShell } from '@/components/shared/AppShell';
-import { DevRoleSwitcher } from '@/components/shared/DevRoleSwitcher';
 import { AdminSidebar } from '@/components/admin/AdminSidebar';
 
 export default function AdminLayout({
@@ -10,7 +9,6 @@ export default function AdminLayout({
   return (
     <>
       <AppShell sidebar={<AdminSidebar />}>{children}</AppShell>
-      <DevRoleSwitcher />
     </>
   );
 }

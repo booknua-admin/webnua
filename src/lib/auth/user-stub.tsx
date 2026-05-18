@@ -1,27 +1,24 @@
 'use client';
 
 // =============================================================================
-// User resolution — Phase 2: real Supabase Auth.
+// User resolution — Phase 5: real Supabase Auth, end to end.
 //
-// The *session user* is now resolved from a real Supabase session:
-// `UserProvider` reads `supabase.auth` + the `public.users` profile +
-// `capability_grants`, and `useUser` / `useRole` / `useCapabilities` resolve
-// from that. The localStorage user-switch stub is gone — sign-in is real.
+// `UserProvider` resolves the signed-in user from a real Supabase session:
+// `supabase.auth` → the `public.users` profile → `capability_grants`. Every
+// consumer hook (`useUser` / `useRole` / `useCapabilities` / `useCan…`)
+// resolves from that.
+//
+// The localStorage stub layer is gone — there is no more user-switching,
+// no view-as impersonation, and no localStorage capability-grant overlay.
+// Capability grants are live `capability_grants` rows; the `/settings/access`
+// editing grid writes them through `lib/auth/roster-queries.ts`.
 //
 // The capability layer itself (`capabilities.ts`, `explainers.ts`,
-// `resolver.ts`) is product code and did NOT move — only how the current
+// `resolver.ts`) is product code — it did NOT move; only how the current
 // user is *resolved* changed. `CapabilityOverrideProvider` also survives
-// (wizard-frame lock — product behaviour).
+// (the wizard-frame lock — product behaviour, not stub).
 //
-// Still stub, pending Phase 3 cluster wiring (flagged, not load-bearing for
-// auth): the `STUB_USER_DEFS` roster + the localStorage capability-grant
-// overlay (`webnua.dev.grants`) that backs `/settings/access`'s editing grid,
-// and `viewAs` impersonation, which still cycles that roster. These surfaces
-// wire to live data per-cluster in Phase 3; the session user above does not
-// depend on them.
-//
-// Filename kept (`user-stub.tsx`) so the ~50 import sites are untouched —
-// every consumer hook keeps its exact shape.
+// Filename kept (`user-stub.tsx`) so the ~50 import sites are untouched.
 // =============================================================================
 
 import {
@@ -31,7 +28,6 @@ import {
   useEffect,
   useMemo,
   useState,
-  useSyncExternalStore,
 } from 'react';
 
 import { supabase } from '@/lib/supabase/client';
@@ -45,94 +41,23 @@ import {
   type User,
 } from './capabilities';
 
-// ---- localStorage keys (remaining stub surfaces) ----
-
-export const STUB_GRANTS_KEY = 'webnua.dev.grants';
-export const STUB_VIEW_AS_KEY = 'webnua.dev.view-as-user-id';
-
 // Website data lives in the real model (see `src/lib/website/data-stub.tsx`).
 // Re-exported here only for callers transitioning import paths.
 export { findWebsite, getWebsitesForClient } from '@/lib/website/data-stub';
-
-// ---- Stub roster (backs /settings/access + viewAs — Phase 3 wires these) ----
-
-type StubUserDef = {
-  id: string;
-  displayName: string;
-  email: string;
-  role: Role;
-  defaultGrants: CapabilityGrant[];
-  accessibleWebsiteIds: string[];
-  clientId: string | null;
-};
-
-export const STUB_USER_DEFS: StubUserDef[] = [
-  {
-    id: 'user-admin-craig',
-    displayName: 'Craig',
-    email: 'craig@webnua.com',
-    role: 'admin',
-    defaultGrants: [],
-    accessibleWebsiteIds: [],
-    clientId: null,
-  },
-  {
-    id: 'user-client-mark',
-    displayName: 'Mark',
-    email: 'mark@voltline.com.au',
-    role: 'client',
-    defaultGrants: [
-      {
-        userId: 'user-client-mark',
-        websiteId: 'website-voltline',
-        capabilities: ['editCopy', 'editMedia', 'editSEO', 'useAI'],
-      },
-    ],
-    accessibleWebsiteIds: ['website-voltline'],
-    clientId: 'voltline',
-  },
-  {
-    id: 'user-client-liam',
-    displayName: 'Liam',
-    email: 'liam@voltline.com.au',
-    role: 'client',
-    defaultGrants: [],
-    accessibleWebsiteIds: ['website-voltline'],
-    clientId: 'voltline',
-  },
-  {
-    id: 'user-client-anna',
-    displayName: 'Anna',
-    email: 'anna@freshhome.com.au',
-    role: 'client',
-    defaultGrants: [],
-    accessibleWebsiteIds: ['website-freshhome'],
-    clientId: 'freshhome',
-  },
-];
-
-/** Stub user defs for a given client business. */
-export function getUserDefsForClient(clientId: string): StubUserDef[] {
-  return STUB_USER_DEFS.filter((u) => u.clientId === clientId);
-}
-
-/** Every client (non-admin) user def. */
-export function getClientUserDefs(): StubUserDef[] {
-  return STUB_USER_DEFS.filter((u) => u.role === 'client');
-}
 
 export const ROLE_LANDING: Record<Role, string> = {
   client: '/dashboard',
   admin: '/dashboard',
 };
 
-// ---- Grant resolution ----
+// ---- Grant resolution -------------------------------------------------------
 
 function roleDefaultCaps(role: Role): readonly Capability[] {
   return role === 'admin' ? ADMIN_DEFAULTS : CLIENT_DEFAULTS;
 }
 
-function resolveCapabilities(
+/** Effective capability set = role defaults ∪ every granted capability. */
+export function resolveCapabilities(
   role: Role,
   grants: CapabilityGrant[],
 ): Set<Capability> {
@@ -145,22 +70,10 @@ function resolveCapabilities(
   return out;
 }
 
-function buildUser(def: StubUserDef, grants: CapabilityGrant[]): User {
-  return {
-    id: def.id,
-    displayName: def.displayName,
-    email: def.email,
-    role: def.role,
-    clientId: def.clientId,
-    capabilities: resolveCapabilities(def.role, grants),
-  };
-}
-
-// ---- Supabase session → User ----
+// ---- Supabase session → User ------------------------------------------------
 //
 // `clientId` resolves to the client's `slug` (`voltline`, `freshhome`, …) —
-// the value the (still-stubbed) website/admin-client data layers join on.
-// Phase 3 swaps those joins to the real client UUID per cluster.
+// the value the website/admin-client data layers join on.
 
 type ClientSlugRel = { slug: string } | { slug: string }[] | null;
 
@@ -197,11 +110,13 @@ async function loadSessionUser(authUserId: string): Promise<User | null> {
   }
 
   const role = profile.role as Role;
-  const grants: CapabilityGrant[] = (grantRows ?? []).map((g) => ({
-    userId: authUserId,
-    websiteId: g.website_id ?? '*',
-    capabilities: (g.capabilities ?? []) as Capability[],
-  }));
+  const grants: CapabilityGrant[] = (grantRows ?? []).map(
+    (g: { website_id: string | null; capabilities: string[] | null }) => ({
+      userId: authUserId,
+      websiteId: g.website_id ?? '*',
+      capabilities: (g.capabilities ?? []) as Capability[],
+    }),
+  );
 
   return {
     id: profile.id,
@@ -213,80 +128,24 @@ async function loadSessionUser(authUserId: string): Promise<User | null> {
   };
 }
 
-// ---- External-store glue (grant overlay + viewAs — remaining stub) ----
-
-const GRANTS_EVENT = 'webnua:grants-change';
-const VIEW_AS_EVENT = 'webnua:view-as-change';
-
-function safeRead(key: string): string | null {
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function readStoredViewAsId(): string | null {
-  return safeRead(STUB_VIEW_AS_KEY);
-}
-
-function readStoredGrants(): Record<string, CapabilityGrant[]> | null {
-  const raw = safeRead(STUB_GRANTS_KEY);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as Record<string, CapabilityGrant[]>;
-  } catch {
-    return null;
-  }
-}
-
-function subscribeGrants(callback: () => void) {
-  window.addEventListener('storage', callback);
-  window.addEventListener(GRANTS_EVENT, callback);
-  return () => {
-    window.removeEventListener('storage', callback);
-    window.removeEventListener(GRANTS_EVENT, callback);
-  };
-}
-
-function subscribeViewAs(callback: () => void) {
-  window.addEventListener('storage', callback);
-  window.addEventListener(VIEW_AS_EVENT, callback);
-  return () => {
-    window.removeEventListener('storage', callback);
-    window.removeEventListener(VIEW_AS_EVENT, callback);
-  };
-}
-
-// ---- Context ----
+// ---- Context ----------------------------------------------------------------
 
 type UserContextValue = {
-  /** The actually-signed-in user (not the view-as override). */
+  /** The signed-in user, or null when there is no session. */
   user: User | null;
-  /** The user being impersonated via view-as, if active. */
-  viewAsUser: User | null;
-  /** Effective capability set — viewAsUser when active, else user. */
+  /** The signed-in user's effective capability set. */
   effectiveCapabilities: Set<Capability>;
-  /** Stub roster with currently-resolved grant overrides (Phase 3 wires). */
-  allUsers: User[];
+  /** True once the initial session resolution has completed. */
   hydrated: boolean;
-  /** No-op — user switching is gone (real sign-in replaces it). */
-  setUserId: (id: string) => void;
-  /** Signs the current session out. */
+  /** Sign the current session out. */
   clearUser: () => void;
-  setViewAsUserId: (id: string | null) => void;
-  /** Replace the grant for (userId, websiteId) — stub roster overlay. */
-  setUserGrant: (
-    userId: string,
-    websiteId: string,
-    capabilities: Capability[],
-  ) => void;
-  resetGrants: () => void;
+  /** Re-resolve the session user from Supabase (after a grant change, etc.). */
+  refreshUser: () => void;
 };
 
 const UserContext = createContext<UserContextValue | null>(null);
 
-// ---- Capability override (wizard-frame mode) ----
+// ---- Capability override (wizard-frame mode) --------------------------------
 //
 // A subtree can lock the effective capability set to a fixed list, regardless
 // of the signed-in user — used by the onboarding wizard's draft-walk step.
@@ -315,6 +174,7 @@ export function CapabilityOverrideProvider({
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   // Resolve the session user from Supabase: initial session + auth changes.
   useEffect(() => {
@@ -327,11 +187,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       setHydrated(true);
     };
 
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(({ data }: { data: { session: { user: { id: string } } | null } }) => {
       void resolve(data.session?.user.id);
     });
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((_event: unknown, session: { user: { id: string } } | null) => {
       void resolve(session?.user.id);
     });
 
@@ -339,133 +199,30 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       active = false;
       sub.subscription.unsubscribe();
     };
-  }, []);
-
-  // viewAs impersonation + the grant overlay still read localStorage.
-  const grantsStore = useSyncExternalStore(
-    subscribeGrants,
-    readStoredGrants,
-    () => null,
-  );
-  const viewAsId = useSyncExternalStore(
-    subscribeViewAs,
-    readStoredViewAsId,
-    () => null,
-  );
-
-  // Stub roster — backs /settings/access + the viewAs cycle (Phase 3 wires).
-  const allUsers = useMemo<User[]>(() => {
-    return STUB_USER_DEFS.map((def) => {
-      const override = grantsStore?.[def.id];
-      const grants = override ?? def.defaultGrants;
-      return buildUser(def, grants);
-    });
-  }, [grantsStore]);
-
-  // Only honour viewAs when the actual user is an admin.
-  const viewAsUser = useMemo(() => {
-    if (!viewAsId || !user || user.role !== 'admin') return null;
-    return allUsers.find((u) => u.id === viewAsId) ?? null;
-  }, [allUsers, viewAsId, user]);
-
-  const effectiveCapabilities = useMemo<Set<Capability>>(() => {
-    if (viewAsUser) return viewAsUser.capabilities;
-    return user?.capabilities ?? new Set<Capability>();
-  }, [user, viewAsUser]);
-
-  const setUserId = useCallback(() => {
-    // User switching is gone — real sign-in replaces it. Kept for the
-    // unchanged context shape; no consumer should still call it.
-    console.warn('setUserId is a no-op since Phase 2 — sign in instead.');
-  }, []);
+  }, [refreshTick]);
 
   const clearUser = useCallback(() => {
     void supabase.auth.signOut();
-    try {
-      window.localStorage.removeItem(STUB_VIEW_AS_KEY);
-      window.dispatchEvent(new Event(VIEW_AS_EVENT));
-    } catch {
-      // localStorage unavailable
-    }
   }, []);
 
-  const setViewAsUserId = useCallback((id: string | null) => {
-    try {
-      if (id == null) {
-        window.localStorage.removeItem(STUB_VIEW_AS_KEY);
-      } else {
-        window.localStorage.setItem(STUB_VIEW_AS_KEY, id);
-      }
-      window.dispatchEvent(new Event(VIEW_AS_EVENT));
-    } catch {
-      // localStorage unavailable
-    }
+  const refreshUser = useCallback(() => {
+    setRefreshTick((t: number) => t + 1);
   }, []);
 
-  const setUserGrant = useCallback(
-    (userId: string, websiteId: string, capabilities: Capability[]) => {
-      try {
-        const current = readStoredGrants() ?? {};
-        const def = STUB_USER_DEFS.find((u) => u.id === userId);
-        if (!def) return;
-
-        const baseline = current[userId] ?? def.defaultGrants;
-        const filtered = baseline.filter((g) => g.websiteId !== websiteId);
-        const next =
-          capabilities.length > 0
-            ? [...filtered, { userId, websiteId, capabilities }]
-            : filtered;
-
-        const nextStore = { ...current, [userId]: next };
-        window.localStorage.setItem(STUB_GRANTS_KEY, JSON.stringify(nextStore));
-        window.dispatchEvent(new Event(GRANTS_EVENT));
-      } catch {
-        // localStorage unavailable
-      }
-    },
-    [],
+  const effectiveCapabilities = useMemo<Set<Capability>>(
+    () => user?.capabilities ?? new Set<Capability>(),
+    [user],
   );
 
-  const resetGrants = useCallback(() => {
-    try {
-      window.localStorage.removeItem(STUB_GRANTS_KEY);
-      window.dispatchEvent(new Event(GRANTS_EVENT));
-    } catch {
-      // localStorage unavailable
-    }
-  }, []);
-
   const value = useMemo<UserContextValue>(
-    () => ({
-      user,
-      viewAsUser,
-      effectiveCapabilities,
-      allUsers,
-      hydrated,
-      setUserId,
-      clearUser,
-      setViewAsUserId,
-      setUserGrant,
-      resetGrants,
-    }),
-    [
-      user,
-      viewAsUser,
-      effectiveCapabilities,
-      allUsers,
-      hydrated,
-      setUserId,
-      clearUser,
-      setViewAsUserId,
-      setUserGrant,
-      resetGrants,
-    ],
+    () => ({ user, effectiveCapabilities, hydrated, clearUser, refreshUser }),
+    [user, effectiveCapabilities, hydrated, clearUser, refreshUser],
   );
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
 }
 
-// ---- Hooks: capability layer ----
+// ---- Hooks: capability layer ------------------------------------------------
 
 export function useUser(): User | null {
   const ctx = useContext(UserContext);
@@ -481,8 +238,8 @@ export function useUserContext() {
 
 /**
  * Returns the effective capability set. A `<CapabilityOverrideProvider>`
- * subtree wins outright (wizard-frame mode); otherwise it's the viewAs
- * override when active, else the signed-in user's set.
+ * subtree wins outright (wizard-frame mode); otherwise it is the signed-in
+ * user's resolved set.
  */
 export function useCapabilities(): Set<Capability> {
   const override = useContext(CapabilityOverrideContext);
@@ -506,18 +263,11 @@ export function useCanAll(...caps: Capability[]): boolean {
   return caps.every((c) => userCaps.has(c));
 }
 
-/** True when the active session has a view-as override applied. */
-export function useIsViewingAs(): boolean {
-  const ctx = useContext(UserContext);
-  if (!ctx) throw new Error('useIsViewingAs must be used within <UserProvider>');
-  return ctx.viewAsUser != null;
-}
-
-// ---- Hooks: legacy role surface ----
+// ---- Hooks: legacy role surface ---------------------------------------------
 //
 // Consumers expect useRole() => { role, hydrated, setRole, clearRole }.
-// Kept verbatim; derived from the underlying user state. View-as does NOT
-// flip the role — operators viewing as a client keep the operator nav shape.
+// Role comes from the signed-in profile; `setRole` is a no-op kept only so the
+// long-standing context shape is unchanged for the ~20 layout consumers.
 
 type RoleContextShape = {
   role: Role | null;
@@ -531,7 +281,7 @@ export function useRole(): RoleContextShape {
   const role = ctx.user?.role ?? null;
   const setRole = useCallback(() => {
     // Role is no longer chosen — it comes from the signed-in profile.
-    console.warn('setRole is a no-op since Phase 2 — sign in instead.');
+    console.warn('setRole is a no-op — sign in instead.');
   }, []);
   return {
     role,
@@ -540,16 +290,6 @@ export function useRole(): RoleContextShape {
     clearRole: ctx.clearUser,
   };
 }
-
-// ---- Backwards-compat aliases ----
-
-/**
- * The stub roster pre-resolved with default grants. Backs the viewAs cycle
- * + /dev surfaces; Phase 3 wires these to live data.
- */
-export const STUB_USERS = STUB_USER_DEFS.map((def) =>
-  buildUser(def, def.defaultGrants),
-);
 
 // Re-export Role for callers that imported it from the prior role-stub.
 export type { Role } from './capabilities';

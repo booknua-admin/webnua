@@ -1,26 +1,23 @@
 // =============================================================================
-// STUB — plan catalog store (Cluster 9 · Session 1).
+// plan-catalog store — in-memory cache hydrated from Supabase `plan_catalog`.
 //
-// The agency's catalog of billing plans. The seed ships Basic / Pro /
-// Enterprise; the localStorage overlay holds operator edits made on the
-// /settings/plans tab (Cluster 9 · Session 2).
+// The agency's catalog of billing plans. Seed ships Basic / Pro / Enterprise.
+// Hydration overlays DB rows; writes optimistically update cache then UPSERT.
 //
-// When real auth ships, replaced by reads/writes against a `plans` table; the
-// accessor surface keeps its shape.
-//
-// Snapshot discipline (CLAUDE.md): readers used through useSyncExternalStore
-// must be reference-stable, so the parsed catalog is cached keyed on the raw
-// localStorage string.
+// Snapshot discipline (CLAUDE.md): getPlanCatalog() is reference-stable —
+// version counter bumps on every write; snapshot cached against that.
 // =============================================================================
 
+import { supabase } from '@/lib/supabase/client';
+import { normalizeError } from '@/lib/errors';
+import type { PolicyValueMap } from '@/lib/agency/types';
 import type { Plan } from './types';
 
-const STORE_KEY = 'webnua.dev.plan-catalog';
 const CHANGE_EVENT = 'webnua:plan-catalog-change';
 
 // --- Seed --------------------------------------------------------------------
 
-/** The starting catalog — three tiers, each with a packaged policy bundle.
+/** Starting catalog — three tiers, each with a packaged policy bundle.
  *  Frozen so callers can't mutate the shared default. */
 export const PLAN_CATALOG_SEED: readonly Plan[] = Object.freeze([
   {
@@ -100,90 +97,124 @@ export const PLAN_CATALOG_SEED: readonly Plan[] = Object.freeze([
   },
 ]) as readonly Plan[];
 
-// --- localStorage overlay ----------------------------------------------------
+// --- In-memory cache ---------------------------------------------------------
 
-function safeRead(): string | null {
-  try {
-    return window.localStorage.getItem(STORE_KEY);
-  } catch {
-    return null;
-  }
-}
+let cache: Plan[] = [...PLAN_CATALOG_SEED];
+let version = 0;
+let snapshotVersion = -1;
+let snapshotValue: readonly Plan[] = PLAN_CATALOG_SEED;
 
-let cacheRaw: string | null | undefined;
-let cacheValue: readonly Plan[] = PLAN_CATALOG_SEED;
-
-function readCatalog(): readonly Plan[] {
-  const raw = safeRead();
-  if (raw === cacheRaw) return cacheValue;
-  cacheRaw = raw;
-  if (!raw) {
-    cacheValue = PLAN_CATALOG_SEED;
-    return cacheValue;
-  }
-  try {
-    const parsed = JSON.parse(raw) as Plan[];
-    cacheValue = Array.isArray(parsed) ? parsed : PLAN_CATALOG_SEED;
-  } catch {
-    cacheValue = PLAN_CATALOG_SEED;
-  }
-  return cacheValue;
-}
-
-function writeCatalog(plans: readonly Plan[]): void {
-  try {
-    window.localStorage.setItem(STORE_KEY, JSON.stringify(plans));
+function dispatch() {
+  version++;
+  if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event(CHANGE_EVENT));
-  } catch {
-    // localStorage unavailable — stub layer, nothing to recover.
   }
+}
+
+// --- Hydration ---------------------------------------------------------------
+
+export async function hydratePlanCatalog(): Promise<void> {
+  const { data, error } = await supabase
+    .from('plan_catalog')
+    .select('id, name, description, price, currency, billing_cycle, policy');
+
+  if (error) {
+    console.error('[plan-catalog] hydrate failed:', normalizeError(error).message);
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    // No rows yet — keep the seed.
+    return;
+  }
+
+  cache = data.map((row: Record<string, unknown>) => ({
+    id: row.id as string,
+    name: row.name as string,
+    description: row.description as string,
+    price: row.price as number,
+    currency: row.currency as string,
+    billingCycle: row.billing_cycle as Plan['billingCycle'],
+    policy: (row.policy ?? {}) as Partial<PolicyValueMap>,
+  }));
+  dispatch();
 }
 
 // --- Reads -------------------------------------------------------------------
 
-/** The full plan catalog. Reference-stable per overlay state. */
+/** The full plan catalog. Reference-stable per version. */
 export function getPlanCatalog(): readonly Plan[] {
-  return readCatalog();
+  if (version === snapshotVersion) return snapshotValue;
+  snapshotVersion = version;
+  snapshotValue = [...cache];
+  return snapshotValue;
 }
 
-/** One plan by id, or undefined when it isn't in the catalog. */
+/** One plan by id, or undefined when not in catalog. */
 export function getPlan(planId: string): Plan | undefined {
-  return readCatalog().find((plan) => plan.id === planId);
+  return cache.find((plan) => plan.id === planId);
 }
 
 // --- Writes ------------------------------------------------------------------
 
 /** Add a new plan or replace an existing one (matched by id). */
 export function upsertPlan(plan: Plan): void {
-  const catalog = readCatalog();
-  const next = catalog.some((p) => p.id === plan.id)
-    ? catalog.map((p) => (p.id === plan.id ? plan : p))
-    : [...catalog, plan];
-  writeCatalog(next);
+  const idx = cache.findIndex((p) => p.id === plan.id);
+  if (idx >= 0) {
+    cache = cache.map((p) => (p.id === plan.id ? plan : p));
+  } else {
+    cache = [...cache, plan];
+  }
+  dispatch();
+
+  void supabase
+    .from('plan_catalog')
+    .upsert(
+      {
+        id: plan.id,
+        name: plan.name,
+        description: plan.description,
+        price: plan.price,
+        currency: plan.currency,
+        billing_cycle: plan.billingCycle,
+        policy: plan.policy,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'id' },
+    )
+    .then((result: { error: unknown }) => {
+      if (result.error) {
+        console.error('[plan-catalog] upsertPlan failed:', normalizeError(result.error).message);
+      }
+    });
 }
 
 /** Remove a plan from the catalog. */
 export function removePlan(planId: string): void {
-  const catalog = readCatalog();
-  if (!catalog.some((p) => p.id === planId)) return;
-  writeCatalog(catalog.filter((p) => p.id !== planId));
+  if (!cache.some((p) => p.id === planId)) return;
+  cache = cache.filter((p) => p.id !== planId);
+  dispatch();
+
+  void supabase
+    .from('plan_catalog')
+    .delete()
+    .eq('id', planId)
+    .then((result: { error: unknown }) => {
+      if (result.error) {
+        console.error('[plan-catalog] removePlan failed:', normalizeError(result.error).message);
+      }
+    });
 }
 
 /** Drop every overlay edit, reverting the catalog to the seed. */
 export function resetPlanCatalog(): void {
-  try {
-    window.localStorage.removeItem(STORE_KEY);
-    window.dispatchEvent(new Event(CHANGE_EVENT));
-  } catch {
-    // localStorage unavailable — stub layer, nothing to recover.
-  }
+  cache = [...PLAN_CATALOG_SEED];
+  dispatch();
+  // Note: does not delete DB rows — a true reset would require a DB migration.
 }
 
 export function subscribePlanCatalog(callback: () => void): () => void {
-  window.addEventListener('storage', callback);
+  if (typeof window === 'undefined') return () => {};
   window.addEventListener(CHANGE_EVENT, callback);
-  return () => {
-    window.removeEventListener('storage', callback);
-    window.removeEventListener(CHANGE_EVENT, callback);
-  };
+  return () => window.removeEventListener(CHANGE_EVENT, callback);
 }

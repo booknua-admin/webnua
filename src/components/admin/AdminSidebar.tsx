@@ -1,9 +1,11 @@
+'use client';
+
 import { Sidebar } from '@/components/shared/Sidebar';
 import { SidebarBrand } from '@/components/shared/SidebarBrand';
 import { SidebarItem } from '@/components/shared/SidebarItem';
 import { SidebarSectionLabel } from '@/components/shared/SidebarSectionLabel';
 import { SidebarUser } from '@/components/shared/SidebarUser';
-import { adminClients } from '@/lib/nav/admin-clients';
+import { useAdminClients } from '@/lib/clients/clients-store';
 import {
   adminOverviewNav,
   adminUser,
@@ -15,6 +17,8 @@ import { AdminClientPicker } from './AdminClientPicker';
 import { AdminWorkspaceBlock } from './AdminWorkspaceBlock';
 
 function AdminSidebar() {
+  const clients = useAdminClients();
+
   return (
     <Sidebar>
       <SidebarBrand meta="Operator console" />
@@ -25,7 +29,7 @@ function AdminSidebar() {
       ))}
 
       <SidebarSectionLabel>Clients</SidebarSectionLabel>
-      <AdminClientPicker clients={adminClients} />
+      <AdminClientPicker clients={clients} />
 
       <SidebarSectionLabel>{adminWorkspaceNav.label}</SidebarSectionLabel>
       {adminWorkspaceNav.items.map((item) => (

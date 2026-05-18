@@ -10,7 +10,7 @@
 // reason) and the send handler (final guard before committing the record).
 // =============================================================================
 
-import { getUserDefsForClient } from '@/lib/auth/user-stub';
+import { getUserDefsForClient } from '@/lib/auth/roster-store';
 import { getSeatLimit } from '@/lib/clients/seat-limit-stub';
 import { getInvitesForClient } from './client-invite-stub';
 

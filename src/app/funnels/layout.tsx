@@ -14,7 +14,6 @@ import { useRouter } from 'next/navigation';
 import { AdminSidebar } from '@/components/admin/AdminSidebar';
 import { ClientSidebar } from '@/components/client/ClientSidebar';
 import { AppShell } from '@/components/shared/AppShell';
-import { DevRoleSwitcher } from '@/components/shared/DevRoleSwitcher';
 import { useRole } from '@/lib/auth/user-stub';
 
 export default function FunnelsLayout({
@@ -44,7 +43,6 @@ export default function FunnelsLayout({
       <AppShell sidebar={role === 'admin' ? <AdminSidebar /> : <ClientSidebar />}>
         {children}
       </AppShell>
-      <DevRoleSwitcher />
     </>
   );
 }

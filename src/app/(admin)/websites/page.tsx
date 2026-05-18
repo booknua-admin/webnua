@@ -18,7 +18,7 @@ import { PageHeader } from '@/components/shared/PageHeader';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
 import { Button } from '@/components/ui/button';
-import { adminClients } from '@/lib/nav/admin-clients';
+import { useAdminClients } from '@/lib/clients/clients-store';
 import {
   useAllWebsiteVersions,
   useAllWebsites,
@@ -35,6 +35,7 @@ export default function AdminWebsitesPage() {
   const workspace = useWorkspace();
   const router = useRouter();
 
+  const adminClients = useAdminClients();
   const websitesQuery = useAllWebsites();
   const versionsQuery = useAllWebsiteVersions();
 
