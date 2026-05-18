@@ -51,6 +51,10 @@ export const CAP_EXPLAINER: Record<Capability, CapExplainer> = {
     short: 'Pages are managed by your operator.',
     requestLabel: 'Request a new page',
   },
+  editForms: {
+    short: 'Lead-capture forms are managed by your operator.',
+    requestLabel: 'Request a form change',
+  },
   useAI: {
     short: "AI tools aren't enabled for your account.",
     requestLabel: 'Request AI access',

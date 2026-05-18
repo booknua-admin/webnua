@@ -2005,6 +2005,7 @@ export type Database = {
         | "approve"
         | "rollback"
         | "manageDomain"
+        | "editForms"
       client_lifecycle: "onboarding" | "live" | "paused" | "churned"
       delay_unit: "minutes" | "hours" | "days"
       draft_scope_kind: "page" | "header" | "footer" | "funnel_step"
@@ -2207,6 +2208,7 @@ export const Constants = {
         "approve",
         "rollback",
         "manageDomain",
+        "editForms",
       ],
       client_lifecycle: ["onboarding", "live", "paused", "churned"],
       delay_unit: ["minutes", "hours", "days"],

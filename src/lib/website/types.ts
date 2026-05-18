@@ -10,6 +10,8 @@
 // via clientId — there is no `brand` field on Website itself in V1.
 // =============================================================================
 
+import type { FormConfig } from './form-config';
+
 // ---- Section types --------------------------------------------------------
 
 export type SectionType =
@@ -51,6 +53,10 @@ export type Section = {
   /** Section-type-specific data. Typed per-type via the section registry. */
   data: Record<string, unknown>;
   ai?: SectionAIMeta;
+  /** Optional lead-capture form. Type-agnostic — any section may host one
+   *  (see lib/website/form-config.ts). Lives on the envelope, not in `data`,
+   *  because `data` is per-type-typed and a form attaches to every type. */
+  form?: FormConfig;
 };
 
 // ---- Pages ----------------------------------------------------------------
