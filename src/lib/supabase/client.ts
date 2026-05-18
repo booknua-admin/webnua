@@ -18,12 +18,21 @@ import type { Database } from '@/lib/types/database';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
+// NEXT_PUBLIC_* vars are inlined at build time. If they are missing the app
+// cannot authenticate — but a module-scope `throw` would also abort the static
+// prerender of pages that never touch auth (the build crashes on the first
+// prerendered route). Warn loudly and fall back to an inert placeholder so the
+// build completes; real auth still requires these to be set — locally in
+// `.env.local`, on the host (e.g. Vercel) in the project's env settings.
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(
-    'Missing Supabase env vars — set NEXT_PUBLIC_SUPABASE_URL and ' +
-      'NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local (see .env.example).',
+  console.warn(
+    'Missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY — ' +
+      'Supabase auth will not work until these env vars are set.',
   );
 }
 
 // Module-singleton — one client instance per browser tab.
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient<Database>(
+  supabaseUrl ?? 'https://placeholder.supabase.co',
+  supabaseAnonKey ?? 'placeholder-anon-key',
+);
