@@ -92,12 +92,14 @@ export type CampaignChangeCardData = {
   actions: { label: string; primary?: boolean }[];
 };
 
-/** Top-level client `/campaigns` stub. */
+/** Top-level client `/campaigns` page. `trend` is optional — the leads-vs-
+ *  spend chart only renders once campaign performance metrics exist (they
+ *  arrive with the Meta Ads integration; see lib/campaigns/queries.tsx). */
 export type ClientCampaignsPage = {
   hero: { eyebrow: string; title: ReactNode; subtitle: ReactNode };
   managedBand: CampaignManagedBandData;
   active: CampaignHeroData;
-  trend: CampaignTrendChartData;
+  trend?: CampaignTrendChartData;
   activity: CampaignActivityData;
   changeCard: CampaignChangeCardData;
 };
