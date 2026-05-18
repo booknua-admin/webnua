@@ -38,6 +38,12 @@ export type RequestChangeContext = {
   pageId?: string;
   sectionId?: string;
   fieldKey?: string;
+  /** Human label of the section the field sits in, e.g. "Hero". */
+  sectionLabel?: string;
+  /** Human label of the field, e.g. "Headline". */
+  fieldLabel?: string;
+  /** The field's current value — carried into the request-change ticket. */
+  currentValue?: string;
 };
 
 export type CapabilityGateProps = {

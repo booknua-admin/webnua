@@ -16,7 +16,16 @@ export type RequestChangeParams = {
   pageId?: string;
   sectionId?: string;
   fieldKey?: string;
+  /** Human label of the section the field sits in, e.g. "Hero". */
+  sectionLabel?: string;
+  /** Human label of the field, e.g. "Headline". */
+  fieldLabel?: string;
+  /** The field's current value — so the operator sees what's being changed. */
+  currentValue?: string;
 };
+
+/** Cap on the current-value carried in the URL — keeps the link sane. */
+const CURRENT_VALUE_MAX = 280;
 
 export function buildRequestChangeHref(params: RequestChangeParams = {}): string {
   const q = new URLSearchParams();
@@ -26,5 +35,10 @@ export function buildRequestChangeHref(params: RequestChangeParams = {}): string
   if (params.pageId) q.set('page', params.pageId);
   if (params.sectionId) q.set('section', params.sectionId);
   if (params.fieldKey) q.set('field', params.fieldKey);
+  if (params.sectionLabel) q.set('sectionLabel', params.sectionLabel);
+  if (params.fieldLabel) q.set('fieldLabel', params.fieldLabel);
+  if (params.currentValue) {
+    q.set('current', params.currentValue.slice(0, CURRENT_VALUE_MAX));
+  }
   return `/tickets/new?${q.toString()}`;
 }

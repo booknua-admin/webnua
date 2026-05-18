@@ -61,6 +61,23 @@ export function NewTicketForm() {
   const fromRequestChange = params.get('from') === 'request-change';
   const requestField = params.get('field');
   const requestCap = params.get('cap') as Capability | null;
+  const requestSectionLabel = params.get('sectionLabel');
+  const requestFieldLabel = params.get('fieldLabel');
+  const requestCurrent = params.get('current');
+
+  // The structured "what & where" block prepended to the submitted message,
+  // so the operator sees exactly which section / field is being changed and
+  // its current copy — not just the client's free text.
+  const requestPreamble = useMemo(() => {
+    if (!fromRequestChange) return '';
+    const lines: string[] = [];
+    const where: string[] = [];
+    if (requestSectionLabel) where.push(`${requestSectionLabel} section`);
+    if (requestFieldLabel) where.push(`“${requestFieldLabel}” field`);
+    if (where.length > 0) lines.push(`Change requested · ${where.join(' › ')}`);
+    if (requestCurrent) lines.push(`Current copy: “${requestCurrent}”`);
+    return lines.length > 0 ? `${lines.join('\n')}\n———\n` : '';
+  }, [fromRequestChange, requestSectionLabel, requestFieldLabel, requestCurrent]);
 
   const initialCategory = useMemo<TicketCategory>(() => {
     const param = params.get('category');
@@ -87,7 +104,7 @@ export function NewTicketForm() {
         category,
         urgency,
         title: title.trim(),
-        description: description.trim(),
+        description: `${requestPreamble}${description.trim()}`,
         context: fromRequestChange
           ? {
               pageId: params.get('page'),
@@ -144,9 +161,27 @@ export function NewTicketForm() {
                 ) : null}
                 . Describe what you&apos;d like below.
               </p>
-              {requestField ? (
+              {requestSectionLabel || requestFieldLabel ? (
                 <div className="mt-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
-                  Field · <span className="text-ink-soft">{requestField}</span>
+                  {requestSectionLabel ? (
+                    <>
+                      Section ·{' '}
+                      <span className="text-ink-soft">{requestSectionLabel}</span>
+                    </>
+                  ) : null}
+                  {requestSectionLabel && requestFieldLabel ? '  ·  ' : null}
+                  {requestFieldLabel ? (
+                    <>
+                      Field ·{' '}
+                      <span className="text-ink-soft">{requestFieldLabel}</span>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+              {requestCurrent ? (
+                <div className="mt-1.5 text-[12px] leading-[1.5] text-ink-soft">
+                  Current copy:{' '}
+                  <span className="italic">“{requestCurrent}”</span>
                 </div>
               ) : null}
             </div>
