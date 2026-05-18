@@ -18,15 +18,18 @@ type ConflictModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   data: ConflictModalData;
-  /** Where the primary action sends the user when saved. */
-  onSaveHref?: string;
+  /** Called with the chosen option id when the primary action is confirmed. */
+  onConfirm: (optionId: string) => void;
+  /** Disables the primary action while the resulting write is in flight. */
+  confirmPending?: boolean;
 };
 
 function ConflictModal({
   open,
   onOpenChange,
   data,
-  onSaveHref,
+  onConfirm,
+  confirmPending,
 }: ConflictModalProps) {
   const [selectedId, setSelectedId] = useState(data.defaultOptionId);
 
@@ -88,36 +91,20 @@ function ConflictModal({
 
         <div className="flex shrink-0 items-center justify-end gap-2 border-t border-paper-2 bg-paper px-7 py-4">
           <Button
-            variant="ghost"
-            className="h-9"
-            onClick={() => onOpenChange(false)}
-          >
-            ← Back
-          </Button>
-          <Button
             variant="secondary"
             className="h-9"
             onClick={() => onOpenChange(false)}
           >
             Cancel
           </Button>
-          {onSaveHref ? (
-            <Button
-              variant="default"
-              className="h-9"
-              asChild
-            >
-              <a href={onSaveHref}>{data.saveLabel}</a>
-            </Button>
-          ) : (
-            <Button
-              variant="default"
-              className="h-9"
-              onClick={() => onOpenChange(false)}
-            >
-              {data.saveLabel}
-            </Button>
-          )}
+          <Button
+            variant="default"
+            className="h-9"
+            disabled={confirmPending}
+            onClick={() => onConfirm(selectedId)}
+          >
+            {confirmPending ? 'Saving…' : data.saveLabel}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

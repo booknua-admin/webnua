@@ -22,6 +22,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppError, normalizeError } from '@/lib/errors';
 import { supabase } from '@/lib/supabase/client';
 import type { SelectedCustomer } from '@/lib/customers/queries';
+import { addDays, addMinutes, composeTimestamp } from './time';
 
 import type {
   AdminBookingDetail,
@@ -867,6 +868,216 @@ export function useCreateBooking() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: createBooking,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['bookings'] });
+    },
+  });
+}
+
+// =============================================================================
+// Recurring schedules — compute the occurrence window, conflict-check it
+// against existing bookings, then INSERT the schedule + its concrete bookings.
+// =============================================================================
+
+const FREQUENCY_INTERVAL_DAYS: Record<string, number> = {
+  weekly: 7,
+  fortnightly: 14,
+  monthly: 28,
+  custom: 28,
+};
+
+export type RecurringOccurrence = {
+  /** `YYYY-MM-DD` of the visit. */
+  date: string;
+  startsAt: string;
+  endsAt: string;
+};
+
+/** The first date on or after tomorrow whose weekday matches `dayOfWeek`
+ *  (0 = Sunday, matching the JS UTC accessors the calendar reads with). */
+function firstOccurrenceDate(dayOfWeek: number): string {
+  const now = new Date();
+  const d = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+  do {
+    d.setUTCDate(d.getUTCDate() + 1);
+  } while (d.getUTCDay() !== dayOfWeek);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Project the next `count` visits of a recurring schedule. Pure — no I/O. */
+export function computeOccurrences(input: {
+  dayOfWeek: number;
+  frequency: string;
+  startTime: string;
+  durationMinutes: number;
+  count: number;
+}): RecurringOccurrence[] {
+  const interval = FREQUENCY_INTERVAL_DAYS[input.frequency] ?? 14;
+  const first = firstOccurrenceDate(input.dayOfWeek);
+  const out: RecurringOccurrence[] = [];
+  for (let i = 0; i < input.count; i += 1) {
+    const date = addDays(first, i * interval);
+    const startsAt = composeTimestamp(date, input.startTime);
+    out.push({
+      date,
+      startsAt,
+      endsAt: addMinutes(startsAt, input.durationMinutes),
+    });
+  }
+  return out;
+}
+
+export type RecurringConflict = {
+  occurrence: RecurringOccurrence;
+  /** Index into the occurrences array — drives the skip-this-visit choice. */
+  index: number;
+  against: {
+    title: string;
+    startsAt: string;
+    endsAt: string;
+    customer: string;
+  };
+};
+
+/** Overlap-check a set of projected occurrences against the client's existing
+ *  bookings. Returns one entry per conflicting occurrence. */
+export async function checkRecurringConflicts(input: {
+  clientId: string;
+  occurrences: RecurringOccurrence[];
+}): Promise<RecurringConflict[]> {
+  if (input.occurrences.length === 0) return [];
+  const windowStart = input.occurrences[0]!.startsAt;
+  const windowEnd = input.occurrences[input.occurrences.length - 1]!.endsAt;
+
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('title, starts_at, ends_at, customer_name_snapshot')
+    .eq('client_id', input.clientId)
+    .neq('status', 'cancelled')
+    .lt('starts_at', windowEnd)
+    .gt('ends_at', windowStart);
+  if (error) throw normalizeError(error);
+
+  const existing = data as {
+    title: string;
+    starts_at: string;
+    ends_at: string;
+    customer_name_snapshot: string;
+  }[];
+
+  const conflicts: RecurringConflict[] = [];
+  input.occurrences.forEach((occ, index) => {
+    const os = new Date(occ.startsAt).getTime();
+    const oe = new Date(occ.endsAt).getTime();
+    const hit = existing.find(
+      (b) =>
+        new Date(b.starts_at).getTime() < oe &&
+        new Date(b.ends_at).getTime() > os,
+    );
+    if (hit) {
+      conflicts.push({
+        occurrence: occ,
+        index,
+        against: {
+          title: hit.title,
+          startsAt: hit.starts_at,
+          endsAt: hit.ends_at,
+          customer: hit.customer_name_snapshot,
+        },
+      });
+    }
+  });
+  return conflicts;
+}
+
+export type RecurrenceFrequency =
+  | 'weekly'
+  | 'fortnightly'
+  | 'monthly'
+  | 'custom';
+
+export type CreateRecurringInput = {
+  clientId: string;
+  customer: SelectedCustomer;
+  frequency: RecurrenceFrequency;
+  dayOfWeek: number;
+  /** `HH:MM` wall-clock start. */
+  startTime: string;
+  durationMinutes: number;
+  serviceType: string;
+  title: string;
+  price: number | null;
+  /** The occurrences to book — conflicting ones already removed by the page. */
+  occurrences: RecurringOccurrence[];
+};
+
+async function createRecurringSchedule(
+  input: CreateRecurringInput,
+): Promise<{ scheduleId: string; bookingCount: number }> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw AppError.auth();
+  if (input.occurrences.length === 0) {
+    throw AppError.validation(
+      { schedule: 'No visits left to book.' },
+      'No visits left to book.',
+    );
+  }
+
+  const customer = await resolveCustomer(input.clientId, input.customer);
+
+  const { data: schedule, error } = await supabase
+    .from('recurring_booking_schedules')
+    .insert({
+      client_id: input.clientId,
+      frequency: input.frequency,
+      day_of_week: input.dayOfWeek,
+      start_time: `${input.startTime}:00`,
+      duration_minutes: input.durationMinutes,
+      service_type: input.serviceType,
+      price: input.price,
+      customer_id: customer.id,
+      customer_name_snapshot: customer.name,
+      customer_phone_snapshot: customer.phone,
+      active: true,
+      created_by: user.id,
+    })
+    .select('id')
+    .single();
+  if (error) throw normalizeError(error);
+
+  const rows = input.occurrences.map((o) => ({
+    client_id: input.clientId,
+    recurring_schedule_id: schedule.id,
+    title: input.title,
+    service_type: input.serviceType,
+    starts_at: o.startsAt,
+    ends_at: o.endsAt,
+    customer_id: customer.id,
+    customer_name_snapshot: customer.name,
+    customer_phone_snapshot: customer.phone,
+    price: input.price,
+    status: 'scheduled' as const,
+    created_by: user.id,
+  }));
+  const { error: bookingsError } = await supabase
+    .from('bookings')
+    .insert(rows);
+  if (bookingsError) throw normalizeError(bookingsError);
+
+  return { scheduleId: schedule.id, bookingCount: rows.length };
+}
+
+/** Create a recurring schedule plus a rolling window of concrete bookings.
+ *  On success the bookings queries are invalidated so the visits land on the
+ *  calendar grid. */
+export function useCreateRecurringSchedule() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createRecurringSchedule,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['bookings'] });
     },
