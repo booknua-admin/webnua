@@ -1,3 +1,7 @@
+'use client';
+
+import { useParams } from 'next/navigation';
+
 import { RailCard } from '@/components/shared/RailCard';
 import { RailPropertyRow } from '@/components/shared/RailPropertyRow';
 import {
@@ -12,8 +16,9 @@ import { TicketReply } from '@/components/shared/tickets/TicketReply';
 import { TicketStatusCard } from '@/components/shared/tickets/TicketStatusCard';
 import { TicketThreadMessage } from '@/components/shared/tickets/TicketThreadMessage';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
+import { normalizeError } from '@/lib/errors';
+import { useAdminTicketDetail } from '@/lib/tickets/queries';
 import { cn } from '@/lib/utils';
-import { adminTicketDetail } from '@/lib/tickets/admin-detail';
 
 const REPLY_TOOLS = [
   { icon: '⤴', title: 'Attach file' },
@@ -30,93 +35,113 @@ const CLIENT_TONE_BG: Record<string, string> = {
 };
 
 function AdminTicketDetailContent() {
-  const t = adminTicketDetail;
-  const toneBg = CLIENT_TONE_BG[t.client.tone ?? 'generic'];
+  const params = useParams<{ id: string }>();
+  const reference = params.id ?? '';
+  const { data: t, isLoading, error } = useAdminTicketDetail(reference);
 
   return (
     <>
       <Topbar
         breadcrumb={
-          <TopbarBreadcrumb trail={['Workspace', 'Tickets']} current={t.id} />
+          <TopbarBreadcrumb
+            trail={['Workspace', 'Tickets']}
+            current={t?.id ?? reference}
+          />
         }
       />
       <div className="px-10 py-10">
-        <TicketDetailLayout
-          main={
-            <>
-              <TicketDetailHeader
-                backHref="/tickets"
-                backLabel="back to inbox"
-                pills={
-                  <>
-                    <TicketIdLabel id={t.id} />
-                    <CategoryPill category={t.category} />
-                    <StatusPill status={t.status} />
-                    <UrgencyPill urgency={t.urgency} />
-                  </>
-                }
-                title={t.title}
-                meta={
-                  <div className="mt-1 flex items-center gap-2">
-                    <span
-                      className={cn(
-                        'flex size-6 items-center justify-center rounded-[6px] text-[11px] font-extrabold text-paper',
-                        toneBg,
-                      )}
+        {isLoading ? (
+          <DetailNotice>{'// Loading ticket…'}</DetailNotice>
+        ) : error || !t ? (
+          <DetailNotice>
+            {`// ${error ? normalizeError(error).message : 'Ticket not found'}`}
+          </DetailNotice>
+        ) : (
+          <TicketDetailLayout
+            main={
+              <>
+                <TicketDetailHeader
+                  backHref="/tickets"
+                  backLabel="back to inbox"
+                  pills={
+                    <>
+                      <TicketIdLabel id={t.id} />
+                      <CategoryPill category={t.category} />
+                      <StatusPill status={t.status} />
+                      <UrgencyPill urgency={t.urgency} />
+                    </>
+                  }
+                  title={t.title}
+                  meta={
+                    <div className="mt-1 flex items-center gap-2">
+                      <span
+                        className={cn(
+                          'flex size-6 items-center justify-center rounded-[6px] text-[11px] font-extrabold text-paper',
+                          CLIENT_TONE_BG[t.client.tone ?? 'generic'],
+                        )}
+                      >
+                        {t.client.initial}
+                      </span>
+                      <span>{t.metaLine}</span>
+                    </div>
+                  }
+                />
+                <div className="flex flex-col gap-[18px] px-7 py-6">
+                  {t.thread.map((msg) => (
+                    <TicketThreadMessage
+                      key={msg.id}
+                      author={msg.author}
+                      avatar={msg.avatar}
+                      name={msg.name}
+                      role={msg.role}
+                      time={msg.time}
                     >
-                      {t.client.initial}
-                    </span>
-                    <span>{t.metaLine}</span>
-                  </div>
-                }
-              />
-              <div className="flex flex-col gap-[18px] px-7 py-6">
-                {t.thread.map((msg) => (
-                  <TicketThreadMessage
-                    key={msg.id}
-                    author={msg.author}
-                    avatar={msg.avatar}
-                    name={msg.name}
-                    role={msg.role}
-                    time={msg.time}
-                  >
-                    {msg.body}
-                  </TicketThreadMessage>
-                ))}
-              </div>
-              <TicketReply
-                placeholder={t.reply.placeholder}
-                defaultValue={t.reply.defaultValue}
-                tools={REPLY_TOOLS}
-                sendLabel={t.reply.sendLabel}
-              />
-            </>
-          }
-          side={
-            <>
-              <TicketStatusCard
-                mode="pick"
-                options={t.statusOptions}
-                activeStatus={t.status}
-              />
-              <RailCard heading="// Properties">
-                {t.properties.map((p) => (
-                  <RailPropertyRow
-                    key={p.label}
-                    label={p.label}
-                    value={p.value}
-                    editable={p.editable}
-                  />
-                ))}
-              </RailCard>
-              <RailCard heading="// Quick actions">
-                <TicketActionList actions={t.actions} />
-              </RailCard>
-            </>
-          }
-        />
+                      {msg.body}
+                    </TicketThreadMessage>
+                  ))}
+                </div>
+                <TicketReply
+                  placeholder={t.reply.placeholder}
+                  defaultValue={t.reply.defaultValue}
+                  tools={REPLY_TOOLS}
+                  sendLabel={t.reply.sendLabel}
+                />
+              </>
+            }
+            side={
+              <>
+                <TicketStatusCard
+                  mode="pick"
+                  options={t.statusOptions}
+                  activeStatus={t.status}
+                />
+                <RailCard heading="// Properties">
+                  {t.properties.map((p) => (
+                    <RailPropertyRow
+                      key={p.label}
+                      label={p.label}
+                      value={p.value}
+                      editable={p.editable}
+                    />
+                  ))}
+                </RailCard>
+                <RailCard heading="// Quick actions">
+                  <TicketActionList actions={t.actions} />
+                </RailCard>
+              </>
+            }
+          />
+        )}
       </div>
     </>
+  );
+}
+
+function DetailNotice({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="rounded-[14px] border border-ink/8 bg-card px-[18px] py-12 text-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+      {children}
+    </p>
   );
 }
 
