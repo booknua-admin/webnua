@@ -15,6 +15,7 @@ import { RangeField } from './_shared/RangeField';
 import { SectionShell } from './_shared/SectionShell';
 import { SelectableElement } from './_shared/SelectableElement';
 import { ColorField, ThemePresetField } from './_shared/ThemeField';
+import { ToggleField } from './_shared/ToggleField';
 import { VariantField, type VariantOption } from './_shared/VariantField';
 
 // =============================================================================
@@ -50,8 +51,10 @@ export type HeroData = {
   subSize: SubSize;
   ctaPrimaryLabel: string;
   ctaPrimaryHref: string;
+  ctaPrimaryVisible: boolean;
   ctaSecondaryLabel: string;
   ctaSecondaryHref: string;
+  ctaSecondaryVisible: boolean;
   heroImageUrl: string;
 };
 
@@ -78,8 +81,10 @@ const DEFAULTS: HeroData = {
   subSize: 'm',
   ctaPrimaryLabel: 'Book a callout',
   ctaPrimaryHref: '/schedule',
+  ctaPrimaryVisible: true,
   ctaSecondaryLabel: 'Call now',
   ctaSecondaryHref: 'tel:0400000000',
+  ctaSecondaryVisible: true,
   heroImageUrl: '',
 };
 
@@ -300,8 +305,14 @@ function HeroFields({
     const isPrimary = selectedElement === 'ctaPrimary';
     const labelKey = isPrimary ? 'ctaPrimaryLabel' : 'ctaSecondaryLabel';
     const hrefKey = isPrimary ? 'ctaPrimaryHref' : 'ctaSecondaryHref';
+    const visibleKey = isPrimary ? 'ctaPrimaryVisible' : 'ctaSecondaryVisible';
     return (
       <BuilderFormSection>
+        <ToggleField
+          label="Visible"
+          value={d[visibleKey]}
+          onChange={(v) => set(visibleKey, v)}
+        />
         <CopyField
           label={isPrimary ? 'Primary button · label' : 'Secondary button · label'}
           value={d[labelKey]}
@@ -420,6 +431,15 @@ function HeroPreview({
           onSelect: onSelectElement,
         });
 
+        // A CTA shows when visible + labelled. In the editor a hidden-but-
+        // labelled CTA still renders (dimmed) so it can be re-selected.
+        const editing = !!onSelectElement;
+        const primaryShown = d.ctaPrimaryVisible && !!d.ctaPrimaryLabel;
+        const secondaryShown = d.ctaSecondaryVisible && !!d.ctaSecondaryLabel;
+        const renderPrimary = primaryShown || (editing && !!d.ctaPrimaryLabel);
+        const renderSecondary =
+          secondaryShown || (editing && !!d.ctaSecondaryLabel);
+
         const content = (
           <div className={`flex flex-col ${ALIGN_CLASS[d.contentAlign]}`}>
             {d.eyebrow ? (
@@ -455,10 +475,14 @@ function HeroPreview({
                 </p>
               </SelectableElement>
             ) : null}
-            {d.ctaPrimaryLabel || d.ctaSecondaryLabel ? (
+            {renderPrimary || renderSecondary ? (
               <div className="mt-8 flex flex-wrap items-center gap-3">
-                {d.ctaPrimaryLabel ? (
-                  <SelectableElement {...sel('ctaPrimary')} display="inline-block">
+                {renderPrimary ? (
+                  <SelectableElement
+                    {...sel('ctaPrimary')}
+                    display="inline-block"
+                    className={primaryShown ? undefined : 'opacity-40'}
+                  >
                     <span
                       className="inline-flex items-center rounded-lg px-6 py-3 text-[14px] font-semibold"
                       style={{ backgroundColor: accent, color: '#ffffff' }}
@@ -467,8 +491,12 @@ function HeroPreview({
                     </span>
                   </SelectableElement>
                 ) : null}
-                {d.ctaSecondaryLabel ? (
-                  <SelectableElement {...sel('ctaSecondary')} display="inline-block">
+                {renderSecondary ? (
+                  <SelectableElement
+                    {...sel('ctaSecondary')}
+                    display="inline-block"
+                    className={secondaryShown ? undefined : 'opacity-40'}
+                  >
                     <span
                       className="inline-flex items-center rounded-lg border px-6 py-3 text-[14px] font-semibold"
                       style={{ borderColor: theme.heading, color: theme.heading }}
@@ -488,12 +516,10 @@ function HeroPreview({
           return (
             <div className="flex min-h-[480px] items-center px-8 py-20 @2xl:px-16">
               {hasForm ? (
-                <div className="grid w-full gap-10 @2xl:grid-cols-[1fr_auto] @2xl:items-center">
-                  <div
-                    className={`w-full max-w-[560px] ${ALIGN_SELF[d.contentAlign]}`}
-                  >
-                    {content}
-                  </div>
+                // Content + form sit in a centred band so the form is a real
+                // column, not a small panel lost in empty space.
+                <div className="mx-auto grid w-full max-w-[1060px] items-center gap-12 @2xl:grid-cols-[1fr_400px]">
+                  <div className="w-full">{content}</div>
                   <HeroFormBlock theme={theme} accent={accent} />
                 </div>
               ) : (
@@ -617,7 +643,7 @@ function HeroFormBlock({
 }) {
   return (
     <div
-      className="w-full max-w-[360px] rounded-xl border p-5"
+      className="w-full rounded-xl border p-6"
       style={{ backgroundColor: theme.card, borderColor: theme.cardBorder }}
     >
       <p
