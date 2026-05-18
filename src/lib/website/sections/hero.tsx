@@ -514,7 +514,7 @@ function HeroPreview({
 
         if (overlay) {
           return (
-            <div className="flex min-h-[480px] items-center px-8 py-20 @2xl:px-16">
+            <div className="flex min-h-[480px] items-center px-8 py-20 @2xl:px-12">
               {hasForm ? (
                 // Content + form sit in a centred band so the form is a real
                 // column, not a small panel lost in empty space.

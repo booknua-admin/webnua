@@ -793,7 +793,7 @@ function CTAPreview({
 
         if (background) {
           return (
-            <div className="flex min-h-[360px] flex-col justify-center px-8 py-20 @2xl:px-16">
+            <div className="flex min-h-[360px] flex-col justify-center px-8 py-20 @2xl:px-12">
               <div className={`w-full max-w-[640px] ${ALIGN_SELF[d.align]}`}>
                 {copy}
               </div>
