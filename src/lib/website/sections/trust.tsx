@@ -23,6 +23,7 @@ import {
 } from '../section-theme';
 import { ColumnsField } from './_shared/ColumnsField';
 import { CopyField } from './_shared/CopyField';
+import { gridColumnsClass } from './_shared/grid';
 import { IconField } from './_shared/IconField';
 import { MediaField } from './_shared/MediaField';
 import { RangeField } from './_shared/RangeField';
@@ -158,14 +159,6 @@ const HEADLINE_SIZE_CLASS: Record<HeadlineSize, string> = {
   m: 'text-[26px] @2xl:text-[32px]',
   l: 'text-[32px] @2xl:text-[44px]',
   xl: 'text-[38px] @2xl:text-[54px]',
-};
-
-const COL_CLASS: Record<number, string> = {
-  2: 'grid-cols-2',
-  3: 'grid-cols-1 @md:grid-cols-3',
-  4: 'grid-cols-2 @md:grid-cols-4',
-  5: 'grid-cols-2 @md:grid-cols-3 @2xl:grid-cols-5',
-  6: 'grid-cols-2 @md:grid-cols-3 @2xl:grid-cols-6',
 };
 
 const ALIGN_CLASS: Record<TrustAlign, string> = {
@@ -619,7 +612,7 @@ function TrustPreview({
                 No items yet. Add one in the editor.
               </p>
             ) : (
-              <div className={`grid gap-y-8 ${COL_CLASS[d.columns] ?? COL_CLASS[5]}`}>
+              <div className={`grid gap-y-8 ${gridColumnsClass(d.columns)}`}>
                 {d.items.map((item, i) => (
                   <SelectableElement key={item.id} {...sel('items')}>
                     <div

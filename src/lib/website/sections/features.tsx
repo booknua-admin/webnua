@@ -22,6 +22,7 @@ import {
 import { DEFAULT_SECTION_ICON, getSectionIcon } from '../section-icons';
 import { ColumnsField } from './_shared/ColumnsField';
 import { CopyField } from './_shared/CopyField';
+import { gridColumnsClass } from './_shared/grid';
 import { IconField } from './_shared/IconField';
 import { MediaField } from './_shared/MediaField';
 import { SectionShell } from './_shared/SectionShell';
@@ -179,13 +180,6 @@ const HEADLINE_SIZE_CLASS: Record<HeadlineSize, string> = {
   m: 'text-[26px] @2xl:text-[32px]',
   l: 'text-[32px] @2xl:text-[42px]',
   xl: 'text-[38px] @2xl:text-[52px]',
-};
-
-const COL_CLASS: Record<number, string> = {
-  2: 'grid-cols-1 @md:grid-cols-2',
-  3: 'grid-cols-1 @md:grid-cols-2 @2xl:grid-cols-3',
-  4: 'grid-cols-1 @md:grid-cols-2 @2xl:grid-cols-4',
-  5: 'grid-cols-1 @md:grid-cols-2 @2xl:grid-cols-5',
 };
 
 const ALIGN_CLASS: Record<FeaturesAlign, string> = {
@@ -662,7 +656,7 @@ function FeaturesPreview({
                 No items yet. Add one in the editor.
               </p>
             ) : (
-              <div className={`grid gap-6 ${COL_CLASS[d.columns] ?? COL_CLASS[4]}`}>
+              <div className={`grid gap-6 ${gridColumnsClass(d.columns)}`}>
                 {d.items.map((item, i) => (
                   <SelectableElement key={item.id} {...sel('items')}>
                     <FeatureCard
