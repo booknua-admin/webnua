@@ -15,6 +15,7 @@ import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from
 import { getSectionIcon } from '../section-icons';
 import {
   brandThemeDefaults,
+  isColorDark,
   mixHex,
   resolveTheme,
   type ResolvedTheme,
@@ -59,12 +60,23 @@ export type CtaSignal = {
   label: string;
 };
 
+export type CtaPanelBg = 'colour' | 'image';
+
 export type CtaPanel = {
   icon: string;
   heading: string;
   sub: string;
   buttonLabel: string;
   buttonHref: string;
+  /** Panel background — a flat colour or a background image. */
+  bgType: CtaPanelBg;
+  /** Colour background. Empty = the auto tint (soft / accent by side). */
+  bgColor: string;
+  imageUrl: string;
+  /** Scrim colour layered over the background image. */
+  overlayColor: string;
+  /** Scrim strength 0–100. */
+  overlayOpacity: number;
 };
 
 export type CTAData = {
@@ -136,6 +148,11 @@ const DEFAULTS: CTAData = {
     sub: 'Subscribe to our newsletter for the latest updates, tips, and offers.',
     buttonLabel: 'Subscribe now',
     buttonHref: '#',
+    bgType: 'colour',
+    bgColor: '',
+    imageUrl: '',
+    overlayColor: '#0a0a0a',
+    overlayOpacity: 55,
   },
   panelB: {
     icon: 'headphones',
@@ -143,6 +160,11 @@ const DEFAULTS: CTAData = {
     sub: 'Our support team is here to help you with anything you need.',
     buttonLabel: 'Contact support',
     buttonHref: '#',
+    bgType: 'colour',
+    bgColor: '',
+    imageUrl: '',
+    overlayColor: '#0a0a0a',
+    overlayOpacity: 55,
   },
   dualDivider: 'OR',
 };
@@ -235,6 +257,11 @@ const IMAGE_SIDE_OPTIONS: readonly VariantOption<'left' | 'right'>[] = [
   { id: 'right', label: 'Image right' },
 ];
 
+const PANEL_BG_OPTIONS: readonly VariantOption<CtaPanelBg>[] = [
+  { id: 'colour', label: 'Colour' },
+  { id: 'image', label: 'Image' },
+];
+
 // -- Fields -----------------------------------------------------------------
 
 function CTAFields({
@@ -253,6 +280,7 @@ function CTAFields({
     brandThemeDefaults(brand),
     CTA_HARDCODED_THEME,
   );
+  const accent = brand?.accentColor ?? '#d24317';
 
   const setColor = (key: keyof SectionTheme, value: string) =>
     set('theme', { ...d.theme, [key]: value });
@@ -454,34 +482,77 @@ function CTAFields({
     const key = selectedElement;
     const panel = d[key];
     const upd = (patch: Partial<CtaPanel>) => setPanel(key, { ...panel, ...patch });
+    const autoColour =
+      key === 'panelB' ? accent : mixHex(accent, resolved.background, 0.9);
     return (
-      <BuilderFormSection>
-        <IconField value={panel.icon} onChange={(v) => upd({ icon: v })} />
-        <CopyField
-          label="Heading"
-          value={panel.heading}
-          onChange={(v) => upd({ heading: v })}
-        />
-        <CopyField
-          label="Text"
-          value={panel.sub}
-          onChange={(v) => upd({ sub: v })}
-          multiline
-          rows={3}
-        />
-        <BuilderFormRow>
+      <>
+        <BuilderFormSection>
+          <IconField value={panel.icon} onChange={(v) => upd({ icon: v })} />
           <CopyField
-            label="Button label"
-            value={panel.buttonLabel}
-            onChange={(v) => upd({ buttonLabel: v })}
+            label="Heading"
+            value={panel.heading}
+            onChange={(v) => upd({ heading: v })}
           />
           <CopyField
-            label="Button link"
-            value={panel.buttonHref}
-            onChange={(v) => upd({ buttonHref: v })}
+            label="Text"
+            value={panel.sub}
+            onChange={(v) => upd({ sub: v })}
+            multiline
+            rows={3}
           />
-        </BuilderFormRow>
-      </BuilderFormSection>
+          <BuilderFormRow>
+            <CopyField
+              label="Button label"
+              value={panel.buttonLabel}
+              onChange={(v) => upd({ buttonLabel: v })}
+            />
+            <CopyField
+              label="Button link"
+              value={panel.buttonHref}
+              onChange={(v) => upd({ buttonHref: v })}
+            />
+          </BuilderFormRow>
+        </BuilderFormSection>
+        <BuilderFormSection>
+          <VariantField
+            label="Background"
+            value={panel.bgType}
+            options={PANEL_BG_OPTIONS}
+            onChange={(v) => upd({ bgType: v })}
+          />
+          {panel.bgType === 'colour' ? (
+            <ColorField
+              label="Panel colour"
+              value={panel.bgColor || autoColour}
+              inherited={!panel.bgColor}
+              inheritedLabel="Auto"
+              onChange={(v) => upd({ bgColor: v })}
+              onReset={() => upd({ bgColor: '' })}
+            />
+          ) : (
+            <>
+              <MediaField
+                label="Panel image"
+                value={panel.imageUrl}
+                onChange={(v) => upd({ imageUrl: v })}
+              />
+              <ColorField
+                label="Overlay colour"
+                value={panel.overlayColor}
+                onChange={(v) => upd({ overlayColor: v })}
+              />
+              <RangeField
+                label="Overlay strength"
+                value={panel.overlayOpacity}
+                onChange={(v) => upd({ overlayOpacity: v })}
+                min={0}
+                max={100}
+                suffix="%"
+              />
+            </>
+          )}
+        </BuilderFormSection>
+      </>
     );
   }
 
@@ -796,54 +867,81 @@ function DualPanel({
   accent: string;
   headingFont: string;
 }) {
-  const solid = variant === 'solid';
-  const bg = solid ? accent : mixHex(accent, theme.background, 0.9);
-  const heading = solid ? '#ffffff' : theme.heading;
-  const body = solid ? 'rgba(255,255,255,0.82)' : theme.body;
+  // Auto background — solid accent for panel B, a soft tint for panel A.
+  const autoColour =
+    variant === 'solid' ? accent : mixHex(accent, theme.background, 0.9);
+  const hasImage = panel.bgType === 'image' && !!panel.imageUrl;
+  const surfaceColour = panel.bgType === 'colour' ? panel.bgColor || autoColour : autoColour;
+  // Light text over an image (scrim darkens it) or a dark colour surface.
+  const dark = hasImage || isColorDark(surfaceColour);
+
+  const heading = dark ? '#ffffff' : theme.heading;
+  const body = dark ? 'rgba(255,255,255,0.82)' : theme.body;
   const def = getSectionIcon(panel.icon);
   const Icon = def?.Icon;
 
   return (
     <div
-      className="flex h-full flex-col items-start px-9 py-12 @2xl:px-12"
-      style={{ backgroundColor: bg }}
+      className="relative flex h-full flex-col items-start overflow-hidden px-9 py-12 @2xl:px-12"
+      style={{ backgroundColor: surfaceColour }}
     >
-      {Icon ? (
-        <span
-          className="mb-5 flex h-14 w-14 items-center justify-center rounded-full"
-          style={{
-            backgroundColor: solid ? 'rgba(255,255,255,0.16)' : mixHex(accent, theme.background, 0.72),
-          }}
-        >
-          <Icon size={24} strokeWidth={1.9} color={solid ? '#ffffff' : accent} aria-hidden />
-        </span>
+      {hasImage ? (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={panel.imageUrl}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundColor: panel.overlayColor,
+              opacity: Math.max(0, Math.min(1, panel.overlayOpacity / 100)),
+            }}
+          />
+        </>
       ) : null}
-      <h3
-        className="text-[22px] font-bold tracking-[-0.01em]"
-        style={{ fontFamily: headingFont, color: heading }}
-      >
-        {panel.heading || 'Panel heading'}
-      </h3>
-      {panel.sub ? (
-        <p
-          className="mt-2 max-w-[340px] whitespace-pre-line text-[14px] leading-[1.55]"
-          style={{ color: body }}
+      <div className="relative z-10 flex flex-col items-start">
+        {Icon ? (
+          <span
+            className="mb-5 flex h-14 w-14 items-center justify-center rounded-full"
+            style={{
+              backgroundColor: dark
+                ? 'rgba(255,255,255,0.16)'
+                : mixHex(accent, theme.background, 0.72),
+            }}
+          >
+            <Icon size={24} strokeWidth={1.9} color={dark ? '#ffffff' : accent} aria-hidden />
+          </span>
+        ) : null}
+        <h3
+          className="text-[22px] font-bold tracking-[-0.01em]"
+          style={{ fontFamily: headingFont, color: heading }}
         >
-          {panel.sub}
-        </p>
-      ) : null}
-      {panel.buttonLabel ? (
-        <span
-          className="mt-5 inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-[13.5px] font-semibold"
-          style={{
-            backgroundColor: solid ? '#ffffff' : accent,
-            color: solid ? accent : '#ffffff',
-          }}
-        >
-          {panel.buttonLabel}
-          <span aria-hidden>→</span>
-        </span>
-      ) : null}
+          {panel.heading || 'Panel heading'}
+        </h3>
+        {panel.sub ? (
+          <p
+            className="mt-2 max-w-[340px] whitespace-pre-line text-[14px] leading-[1.55]"
+            style={{ color: body }}
+          >
+            {panel.sub}
+          </p>
+        ) : null}
+        {panel.buttonLabel ? (
+          <span
+            className="mt-5 inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-[13.5px] font-semibold"
+            style={{
+              backgroundColor: dark ? '#ffffff' : accent,
+              color: dark ? '#111111' : '#ffffff',
+            }}
+          >
+            {panel.buttonLabel}
+            <span aria-hidden>→</span>
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
