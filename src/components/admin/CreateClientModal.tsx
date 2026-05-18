@@ -14,7 +14,12 @@ import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import {
@@ -190,6 +195,9 @@ export function CreateClientModal({
     <Dialog open={open} onOpenChange={close}>
       <DialogContent size="lg" className="max-h-[calc(100vh-4rem)] p-0">
         <DialogTitle className="sr-only">Create a client</DialogTitle>
+        <DialogDescription className="sr-only">
+          Capture a brief and generate a website and / or funnel for a new client.
+        </DialogDescription>
 
         {/* header */}
         <div className="border-b border-paper-2 px-8 py-5">
