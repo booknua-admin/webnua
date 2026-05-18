@@ -47,6 +47,7 @@ import type {
 } from '@/lib/website/types';
 import { useAutosave } from '@/lib/website/use-autosave';
 import { useBrandStyle } from '@/lib/website/use-brand-style';
+import { useUndoableState } from '@/lib/website/use-undoable-state';
 import { useUserPendingSubmission } from '@/lib/website/use-publish-state';
 
 import { AddSectionDialog } from './AddSectionDialog';
@@ -159,9 +160,16 @@ export function SectionEditor({ mode }: SectionEditorProps) {
 
   // Seed from the mode's sections. The page-level query already merges the
   // content_drafts autosave buffer into these before passing them down.
-  const [sections, setSections] = useState<Section[]>(() =>
-    seedSectionsForMode(mode),
-  );
+  // Undoable section state — in-memory bounded history (see useUndoableState).
+  const {
+    value: sections,
+    set: setSections,
+    reset: resetSections,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useUndoableState<Section[]>(() => seedSectionsForMode(mode));
 
   // In singleton mode the only section is auto-selected. In page / funnel
   // step modes the user picks (rail click or preview click).
@@ -180,10 +188,10 @@ export function SectionEditor({ mode }: SectionEditorProps) {
 
   // Reset local state when the source content changes (e.g. tab swap).
   useEffect(() => {
-    setSections(seedSectionsForMode(mode));
+    resetSections(seedSectionsForMode(mode));
     setSelectedSectionId(mode.kind === 'singleton' ? mode.section.id : null);
     setSelectedElementId(null);
-  }, [mode, slot]);
+  }, [mode, slot, resetSections]);
 
   // Selecting a section resets the element selection and collapses the rail
   // (the inspector becomes the focus). Re-selecting the same section just
@@ -378,6 +386,7 @@ export function SectionEditor({ mode }: SectionEditorProps) {
             bodyFont={brand.bodyFont}
           />
         }
+        history={{ onUndo: undo, onRedo: redo, canUndo, canRedo }}
       />
       <div
         className={`grid min-h-0 flex-1 overflow-hidden grid-rows-[minmax(0,1fr)] ${gridCols} ${

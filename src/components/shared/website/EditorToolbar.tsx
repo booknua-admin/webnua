@@ -91,6 +91,13 @@ export type EditorToolbarProps = {
   /** Site-level style control (the brand font menu). Rendered in the right
    *  cluster; omit to hide. */
   siteStyles?: React.ReactNode;
+  /** Undo / redo controls. Omit to hide. */
+  history?: {
+    onUndo: () => void;
+    onRedo: () => void;
+    canUndo: boolean;
+    canRedo: boolean;
+  };
 };
 
 export function EditorToolbar({
@@ -104,6 +111,7 @@ export function EditorToolbar({
   onSubmitForReview,
   publishMenu,
   siteStyles,
+  history,
 }: EditorToolbarProps) {
   const canPublish = useCan('publish');
   const canEditAnything = useCanAny(
@@ -157,6 +165,30 @@ export function EditorToolbar({
       </div>
 
       <div className="flex shrink-0 items-center gap-3">
+        {history ? (
+          <div className="flex items-center">
+            <button
+              type="button"
+              onClick={history.onUndo}
+              disabled={!history.canUndo}
+              aria-label="Undo"
+              title="Undo"
+              className="rounded px-1.5 text-[15px] leading-none text-ink-quiet transition-colors hover:text-ink disabled:opacity-30 disabled:hover:text-ink-quiet"
+            >
+              ↶
+            </button>
+            <button
+              type="button"
+              onClick={history.onRedo}
+              disabled={!history.canRedo}
+              aria-label="Redo"
+              title="Redo"
+              className="rounded px-1.5 text-[15px] leading-none text-ink-quiet transition-colors hover:text-ink disabled:opacity-30 disabled:hover:text-ink-quiet"
+            >
+              ↷
+            </button>
+          </div>
+        ) : null}
         {autosave ? (
           <AutosaveIndicator
             status={autosave.status}
