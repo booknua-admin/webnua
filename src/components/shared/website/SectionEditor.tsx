@@ -36,6 +36,7 @@ import { useCan, useUser } from '@/lib/auth/user-stub';
 import { publishFunnelDraft } from '@/lib/funnel/mutations';
 import type { Funnel, FunnelStep } from '@/lib/funnel/types';
 import type { DraftSlot } from '@/lib/website/content-drafts';
+import { defaultFormConfig } from '@/lib/website/form-config';
 import { useBrandForClient } from '@/lib/website/queries';
 import { getSectionDefinition } from '@/lib/website/sections';
 import type {
@@ -232,6 +233,10 @@ export function SectionEditor({ mode }: SectionEditorProps) {
       enabled: true,
       data: definition.defaultData() as Record<string, unknown>,
     };
+    // The `form` section IS a form — it is born with a default form config
+    // on the envelope. Every other section starts form-less; the operator
+    // attaches a form via the fields panel.
+    if (type === 'form') newSection.form = defaultFormConfig();
     setSections((current) => [...current, newSection]);
     setSelectedSectionId(newSection.id);
   };

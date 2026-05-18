@@ -2042,6 +2042,7 @@ export type Database = {
         | "reviews"
         | "faq"
         | "cta"
+        | "form"
         | "schedulePicker"
         | "thanksConfirmation"
         | "header"
@@ -2248,6 +2249,7 @@ export const Constants = {
         "reviews",
         "faq",
         "cta",
+        "form",
         "schedulePicker",
         "thanksConfirmation",
         "header",

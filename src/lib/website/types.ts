@@ -27,6 +27,7 @@ export type SectionType =
   | 'about'
   | 'contact'
   | 'cta'
+  | 'form'
   | 'schedulePicker'      // funnel-only
   | 'thanksConfirmation'  // funnel-only
   // Website-level singletons — never in a page's sections[]

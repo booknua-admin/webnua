@@ -16,6 +16,7 @@ import { CapabilityGate } from '@/components/shared/CapabilityGate';
 import type { BrandObject, Section } from '@/lib/website/types';
 import { getSectionDefinition } from '@/lib/website/sections';
 
+import { FormBlock } from './FormBlock';
 import { SectionHoverToolbar } from './SectionHoverToolbar';
 
 /** Preview device — constrains the canvas width so the section container
@@ -112,6 +113,14 @@ export function PagePreviewPane({
                     selectedElement={isSelected ? selectedElementId : undefined}
                     onSelectElement={isSelected ? onSelectElement : undefined}
                   />
+                  {section.form ? (
+                    <FormBlock
+                      form={section.form}
+                      brand={brand}
+                      selectedElement={isSelected ? selectedElementId : undefined}
+                      onSelectElement={isSelected ? onSelectElement : undefined}
+                    />
+                  ) : null}
                 </div>
                 {!section.enabled ? (
                   <span className="absolute left-3 top-3 z-20 rounded bg-ink/90 px-2 py-1 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-paper">
