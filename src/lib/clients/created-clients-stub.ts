@@ -17,7 +17,7 @@
 
 import { useSyncExternalStore } from 'react';
 
-import type { FunnelStep } from '@/lib/funnel/types';
+import type { Funnel, FunnelStep } from '@/lib/funnel/types';
 import type { BrandObject, Page, Section } from '@/lib/website/types';
 
 const STORAGE_KEY = 'webnua.dev.created-clients';
@@ -38,6 +38,7 @@ export type CreatedClient = {
   footer: Section | null;
   /** Generated funnel — null when no funnel was generated. */
   funnelName: string | null;
+  funnel: Funnel | null;
   funnelSteps: FunnelStep[] | null;
 };
 

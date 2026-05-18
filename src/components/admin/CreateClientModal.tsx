@@ -178,7 +178,7 @@ export function CreateClientModal({
       ]);
       const [site, funnel] = await Promise.all([
         wantWebsite ? generateSiteStub(brief) : Promise.resolve(null),
-        wantFunnel ? generateFunnelStub() : Promise.resolve(null),
+        wantFunnel ? generateFunnelStub(brief) : Promise.resolve(null),
       ]);
       const created = addCreatedClient({
         name: business.name,
@@ -189,6 +189,7 @@ export function CreateClientModal({
         header: site?.header ?? null,
         footer: site?.footer ?? null,
         funnelName: funnel?.funnel.name ?? null,
+        funnel: funnel?.funnel ?? null,
         funnelSteps: funnel?.steps ?? null,
       });
       onOpenChange(false);

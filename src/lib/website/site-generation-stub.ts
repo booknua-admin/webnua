@@ -44,7 +44,7 @@ export type SiteGenerationResult = {
 /** The page set a generated site ships with. */
 const SITE_PAGE_TYPES: readonly PageType[] = ['home', 'services', 'about', 'contact'];
 
-function briefToContext(brief: ClientBrief, pageType: PageType): GenerationContext {
+export function briefToGenerationContext(brief: ClientBrief, pageType: PageType): GenerationContext {
   return {
     flavour: 'first-page',
     pageType,
@@ -64,9 +64,9 @@ export function generateSiteSync(brief: ClientBrief): SiteGenerationResult {
     .toString(36)
     .slice(2, 6)}`;
   const pages = SITE_PAGE_TYPES.map(
-    (pageType) => generateSync(briefToContext(brief, pageType)).page,
+    (pageType) => generateSync(briefToGenerationContext(brief, pageType)).page,
   );
-  const chrome = briefToContext(brief, 'home');
+  const chrome = briefToGenerationContext(brief, 'home');
   return {
     generationId,
     pages,

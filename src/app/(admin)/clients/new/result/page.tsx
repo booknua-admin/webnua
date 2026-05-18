@@ -70,9 +70,16 @@ function ResultBody() {
                   </>
                 }
               />
-              <Button variant="secondary" asChild>
-                <Link href="/clients/new">← All generated</Link>
-              </Button>
+              <div className="flex shrink-0 gap-2">
+                <Button asChild>
+                  <Link href={`/clients/new/result/edit?c=${id}&view=${activeView}`}>
+                    Open {activeView} in editor →
+                  </Link>
+                </Button>
+                <Button variant="secondary" asChild>
+                  <Link href="/clients/new">← All generated</Link>
+                </Button>
+              </div>
             </div>
 
             {hasWebsite && hasFunnel ? (
