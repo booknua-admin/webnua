@@ -68,33 +68,41 @@ const AUTOMATION_SELECT =
 
 // ---- Trigger-type vocabulary ------------------------------------------------
 
-// The four library types, in display order.
+// The six library types, in display order.
 const TYPE_ORDER = [
   'lead_created',
   'lead_stale_24h',
+  'booking_upcoming',
   'job_completed',
   'booking_no_show',
+  'customer_dormant',
 ] as const;
 
 const TYPE_LABEL: Record<string, string> = {
   lead_created: 'Instant confirm SMS',
   lead_stale_24h: '24-hour follow-up sequence',
+  booking_upcoming: 'Appointment reminder',
   job_completed: 'Review request loop',
   booking_no_show: 'No-show recovery',
+  customer_dormant: 'Win-back re-engagement',
 };
 
 const TYPE_TAG: Record<string, string> = {
   lead_created: '// LEAD CAPTURE',
   lead_stale_24h: '// LEAD NURTURE',
+  booking_upcoming: '// BOOKING REMINDER',
   job_completed: '// REPUTATION LOOP',
   booking_no_show: '// BOOKING RECOVERY',
+  customer_dormant: '// RE-ENGAGEMENT',
 };
 
 const TRIGGER_NAME: Record<string, string> = {
   lead_created: 'New lead submits the funnel form',
   lead_stale_24h: 'Lead status = "New" for 24+ hours',
+  booking_upcoming: 'Booking starts within 24 hours',
   job_completed: 'Job marked "Completed"',
   booking_no_show: 'Customer marked no-show',
+  customer_dormant: 'Customer inactive for 60+ days',
 };
 
 const TYPE_DESCRIPTION: Record<string, ReactNode> = {
@@ -111,6 +119,13 @@ const TYPE_DESCRIPTION: Record<string, ReactNode> = {
       <strong>Pauses automatically once you mark the lead Contacted.</strong>
     </>
   ),
+  booking_upcoming: (
+    <>
+      Reminds a customer of an upcoming booking —{' '}
+      <strong>a day-before nudge and a same-day heads-up</strong> — so fewer
+      jobs get missed.
+    </>
+  ),
   job_completed: (
     <>
       Sends a Google review request a couple of hours after you mark a job
@@ -121,6 +136,12 @@ const TYPE_DESCRIPTION: Record<string, ReactNode> = {
     <>
       If a booked customer doesn&apos;t answer the door, this sends a friendly
       apology <strong>with a rebooking link</strong>.
+    </>
+  ),
+  customer_dormant: (
+    <>
+      Re-engages a past customer who hasn&apos;t booked in a while —{' '}
+      <strong>a check-in SMS and a follow-up offer email</strong>.
     </>
   ),
 };
