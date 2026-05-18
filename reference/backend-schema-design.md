@@ -282,6 +282,13 @@ A `(client_id, policy_key)` row absent = inherit. Provenance:
 
 ### 1.4 Content model — website & funnel
 
+> **SUPERSEDED — see `reference/backend-builder-data-model.md`.** The §7
+> page-builder pass overturned §3.3: there are **no `pages` / `sections` /
+> `funnel_steps` / `website_nav_links` tables** — the live editable tree is a
+> JSONB version snapshot, like every other version. The builder-data-model doc
+> §6 carries the ratified table set. The definitions below are kept for the
+> reasoning trail only; Phase 1b builds from the sibling doc, not from here.
+
 See §3 for the section-storage decision (the load-bearing call here).
 
 #### `websites`
@@ -898,6 +905,13 @@ prose-matching problem this extraction exists to kill.
 
 ## §3 — Section data storage 🔴
 
+> **§7 pass complete — `reference/backend-builder-data-model.md` is the
+> authority.** That pass pressure-tested §3.3 and **overturned it:** the live
+> editable tree is a JSONB version snapshot, not a normalised `sections` table
+> (Option B). §3.4's eager-bulk evolution was ratified. §3 below is kept as the
+> reasoning trail; where it conflicts with the builder-data-model doc, that doc
+> wins.
+
 This is the load-bearing storage decision and (per §7) it deserves its own
 deeper pass before any builder migration is written. What follows is a
 **recommendation with reasoning**, not a final lock.
@@ -1213,6 +1227,12 @@ is resolved." That makes the isolated-session approach even more attractive.
 
 ## §7 — The page builder data model needs its own pass
 
+> **DONE — `reference/backend-builder-data-model.md`.** This pass ran. It
+> overturned §3.3 (live tree = snapshot, Option B), ratified eager-bulk
+> evolution, chose Supabase Storage for images, and ruled out a DB `CHECK` on
+> section `data`. Choosing Option B dissolved the header/footer and
+> polymorphic-parent questions. Phase 1b builds from that doc.
+
 §3 gives a recommendation; it should **not** be treated as finalised here. The
 page builder is the densest, most evolution-exposed corner of the schema, and
 three of its decisions interact in ways that deserve a dedicated session before
@@ -1367,17 +1387,16 @@ reasoning is kept so the decisions stay legible later.
   (`editTheme`), cohesion, future brand-versioning cleanliness.
 - **`[JC-7]` Read-state as join tables — CONFIRMED.** `notification_reads` +
   `lead_reads` — per-viewer correctness, future fan-out.
-- **`[JC-8]` Section *storage* — CONFIRMED, pending §7 ratification.** Hybrid:
-  normalised live `sections` rows, frozen-JSONB version snapshots, `data` as
-  JSONB + `schema_version` either way (§3.3). The §7 page-builder pass ratifies
-  before any builder migration is written.
-- **`[JC-8a]` Section schema *evolution* — RESOLVED: EAGER BULK (push),
-  pending §7 ratification.** Split out from `[JC-8]`. The prior asymmetric
-  story (persist-on-live / migrate-on-read-only for snapshots) was overturned:
-  migration runs **once, at the deploy that ships the shape change**, across
-  live rows *and* snapshots; `schema_version` is a detection backstop, not a
-  per-read mechanism. §3.4 carries the three-option comparison and the honest
-  failure mode. §7 ratifies.
+- **`[JC-8]` Section *storage* — RESOLVED by the §7 pass: REVISED.** §3.3
+  proposed normalising the live tree into `pages`/`sections` tables; the §7
+  pass (`backend-builder-data-model.md`) overturned that — the live editable
+  draft is a JSONB version snapshot like every other version (Option B). No
+  `pages`/`sections` tables. Frozen-JSONB snapshots + `data` JSONB +
+  `schema_version` are kept.
+- **`[JC-8a]` Section schema *evolution* — RATIFIED by the §7 pass.** Eager
+  bulk migration: runs **once, at the deploy that ships the shape change**,
+  across every snapshot; `schema_version` is a detection backstop, not a
+  per-read mechanism. Option B makes it uniform (one population — snapshots).
 - **`[JC-9]` Policy values as JSONB keyed by `policy_key` — CONFIRMED, with a
   caveat.** JSONB keeps the 6 heterogeneous value types uniform. **Caveat
   accepted:** a strict app-level validator against `PolicyValueMap` runs on
@@ -1387,11 +1406,9 @@ reasoning is kept so the decisions stay legible later.
   before data wiring). The §6 reasoning (one isolated swap seam; RLS is
   untestable against a stub; the tenant boundary is not retrofit polish) is
   decisive.
-- **Open, not a `[JC]`:** the `sections` polymorphic-parent shape — two
-  nullable FKs (`page_id`, `funnel_step_id`) + a website back-reference for
-  singletons, with a `CHECK`, vs a `(container_kind, container_id)` pair.
-  Proposed the nullable-FK form (real FKs, real cascade). Folded into the §7
-  builder pass.
+- ~~**Open, not a `[JC]`:** the `sections` polymorphic-parent shape.~~
+  **CLOSED by the §7 pass.** Option B has no `sections` table at all, so there
+  is no polymorphic parent to resolve — the question dissolved.
 
 ---
 
