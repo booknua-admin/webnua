@@ -764,7 +764,12 @@ function CTAPreview({
             ) : null}
             {d.showSignals && d.signals.length > 0 ? (
               <SelectableElement {...sel('signals')} className="mt-8">
-                <SignalRow signals={d.signals} theme={theme} accent={accent} />
+                <SignalRow
+                  signals={d.signals}
+                  theme={theme}
+                  accent={accent}
+                  align={d.align}
+                />
               </SelectableElement>
             ) : null}
           </div>
@@ -991,13 +996,15 @@ function SignalRow({
   signals,
   theme,
   accent,
+  align,
 }: {
   signals: CtaSignal[];
   theme: ResolvedTheme;
   accent: string;
+  align: CtaAlign;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+    <div className={`flex flex-wrap items-center gap-x-3 gap-y-2 ${ROW_JUSTIFY[align]}`}>
       {signals.map((signal, i) => {
         const def = getSectionIcon(signal.icon);
         const Icon = def?.Icon;
