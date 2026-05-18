@@ -57,6 +57,8 @@ const BRANDS_BY_CLIENT: Record<string, BrandObject> = {
     voice: { formality: 4, urgency: 3, technicality: 2 },
     audienceLine: 'home owners and small businesses in Perth metro',
     industryCategory: 'electrical services',
+    headingFont: 'inter-tight',
+    bodyFont: 'inter-tight',
     topJobsToBeBooked: [
       'Emergency callouts after-hours',
       'Switchboard upgrades to modern RCDs',
@@ -70,6 +72,8 @@ const BRANDS_BY_CLIENT: Record<string, BrandObject> = {
     voice: { formality: 3, urgency: 2, technicality: 1 },
     audienceLine: 'busy households booking recurring cleans',
     industryCategory: 'residential cleaning',
+    headingFont: 'inter-tight',
+    bodyFont: 'inter-tight',
     topJobsToBeBooked: [
       'Fortnightly home cleans',
       'End-of-lease deep cleans',
@@ -83,6 +87,8 @@ const BRANDS_BY_CLIENT: Record<string, BrandObject> = {
     voice: { formality: 3, urgency: 4, technicality: 2 },
     audienceLine: 'drivers + homeowners locked out, mostly at the worst time',
     industryCategory: 'mobile locksmith',
+    headingFont: 'inter-tight',
+    bodyFont: 'inter-tight',
     topJobsToBeBooked: [
       'Emergency lockouts (24/7)',
       'Lock changes after a move',
@@ -96,6 +102,8 @@ const BRANDS_BY_CLIENT: Record<string, BrandObject> = {
     voice: { formality: 3, urgency: 2, technicality: 1 },
     audienceLine: 'Dublin landlords + property managers',
     industryCategory: 'commercial cleaning',
+    headingFont: 'inter-tight',
+    bodyFont: 'inter-tight',
     topJobsToBeBooked: [
       'End-of-tenancy cleans',
       'Office cleaning contracts',
