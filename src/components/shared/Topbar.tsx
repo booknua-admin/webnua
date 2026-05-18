@@ -1,3 +1,7 @@
+'use client';
+
+import { NotificationBell } from '@/components/client/notifications/NotificationBell';
+import { useRole } from '@/lib/auth/user-stub';
 import { cn } from '@/lib/utils';
 
 type TopbarProps = {
@@ -12,6 +16,10 @@ type TopbarProps = {
 
 function Topbar({ breadcrumb, middle, search, actions, className }: TopbarProps) {
   const centre = middle ?? search;
+  const { role, hydrated } = useRole();
+  // The notification bell is a client-role fixture — every client page that
+  // mounts a Topbar gets it for free; operators never see it.
+  const showBell = hydrated && role === 'client';
   return (
     <div
       data-slot="topbar"
@@ -28,7 +36,12 @@ function Topbar({ breadcrumb, middle, search, actions, className }: TopbarProps)
       ) : (
         <div className="flex-1" />
       )}
-      {actions ? <div className="flex items-center gap-3">{actions}</div> : null}
+      {showBell || actions ? (
+        <div className="flex items-center gap-3">
+          {showBell ? <NotificationBell /> : null}
+          {actions}
+        </div>
+      ) : null}
     </div>
   );
 }
