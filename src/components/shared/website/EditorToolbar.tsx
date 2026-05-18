@@ -166,14 +166,14 @@ export function EditorToolbar({
 
       <div className="flex shrink-0 items-center gap-3">
         {history ? (
-          <div className="flex items-center">
+          <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={history.onUndo}
               disabled={!history.canUndo}
               aria-label="Undo"
               title="Undo"
-              className="rounded px-1.5 text-[15px] leading-none text-ink-quiet transition-colors hover:text-ink disabled:opacity-30 disabled:hover:text-ink-quiet"
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-rule bg-card text-[16px] leading-none text-ink-mid transition-colors hover:border-rust hover:text-rust disabled:opacity-35 disabled:hover:border-rule disabled:hover:text-ink-mid"
             >
               ↶
             </button>
@@ -183,7 +183,7 @@ export function EditorToolbar({
               disabled={!history.canRedo}
               aria-label="Redo"
               title="Redo"
-              className="rounded px-1.5 text-[15px] leading-none text-ink-quiet transition-colors hover:text-ink disabled:opacity-30 disabled:hover:text-ink-quiet"
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-rule bg-card text-[16px] leading-none text-ink-mid transition-colors hover:border-rust hover:text-rust disabled:opacity-35 disabled:hover:border-rule disabled:hover:text-ink-mid"
             >
               ↷
             </button>
