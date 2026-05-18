@@ -10,6 +10,7 @@ import type { SectionTypeDefinition } from '../registry';
 
 import { ctaSection } from './cta';
 import { faqSection } from './faq';
+import { featuresSection } from './features';
 import { footerSection } from './footer';
 import { headerSection } from './header';
 import { heroSection } from './hero';
@@ -25,6 +26,7 @@ export const SECTION_REGISTRY: readonly SectionTypeDefinition[] = [
   heroSection,
   offerSection,
   trustSection,
+  featuresSection,
   servicesSection,
   reviewsSection,
   faqSection,
@@ -63,6 +65,7 @@ export function getSectionsForContainer(
 // Re-export per-section data types for typed consumers.
 export type { CTAData } from './cta';
 export type { FAQData, FAQItem } from './faq';
+export type { FeatureItem, FeaturesData } from './features';
 export type { FooterData } from './footer';
 export type { HeaderData } from './header';
 export type { HeroData } from './hero';
