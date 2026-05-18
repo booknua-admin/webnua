@@ -20,6 +20,7 @@
 
 import type { GenerationContext, PrimaryIntent, Audience } from './generation-context';
 import { getSectionDefinition } from './sections';
+import { trustSection } from './sections/trust';
 import type {
   Page,
   PageSEO,
@@ -352,31 +353,18 @@ function fillOffer(ctx: GenerationContext, voice: VoiceVariant): GeneratedSectio
 }
 
 function fillTrust(ctx: GenerationContext): GeneratedSection {
-  const ratingSource =
-    ctx.audience === 'cold-ad'
-      ? 'Google · 184 verified reviews'
-      : 'Google reviews';
+  const base = trustSection.defaultData();
   return {
     type: 'trust',
     enabled: true,
     data: {
-      intro: '// TRUSTED',
-      ratingValue: '4.9',
-      ratingMax: '5.0',
-      ratingSource,
-      yearsLabel: '8 yrs in business',
-      licenceLabel: 'Lic #12345',
-      guaranteeLabel: '12-mo workmanship guarantee',
+      ...base,
+      headline:
+        ctx.audience === 'cold-ad'
+          ? 'Trusted by hundreds of local customers.'
+          : base.headline,
     },
-    populatedFields: [
-      'intro',
-      'ratingValue',
-      'ratingMax',
-      'ratingSource',
-      'yearsLabel',
-      'licenceLabel',
-      'guaranteeLabel',
-    ],
+    populatedFields: ['eyebrow', 'headline', 'sub', 'items'],
   };
 }
 

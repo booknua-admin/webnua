@@ -119,13 +119,9 @@ const voltlineLandingOffer: OfferData = {
 
 const voltlineLandingTrust: TrustData = {
   ...trustSection.defaultData(),
-  intro: '// 1,840+ JOBS · PERTH HOMEOWNERS TRUST US',
-  ratingValue: '4.9',
-  ratingMax: '5',
-  ratingSource: 'Google · 184 reviews',
-  yearsLabel: '11 yrs in Perth',
-  licenceLabel: 'EC Lic 47829',
-  guaranteeLabel: '$20M public liability',
+  eyebrow: 'PERTH HOMEOWNERS TRUST US',
+  headline: '1,840+ jobs done right.',
+  sub: 'Eleven years of licensed electrical work across Perth metro.',
 };
 
 const voltlineLandingServices: ServicesData = {

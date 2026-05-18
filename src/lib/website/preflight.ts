@@ -235,18 +235,15 @@ const trustEvidenceRule: PreflightRule = {
     for (const page of snapshot.pages) {
       for (const section of enabledSectionsByType(page, 'trust')) {
         const data = section.data as Partial<TrustData>;
-        const signals = [
-          data.ratingValue,
-          data.yearsLabel,
-          data.licenceLabel,
-          data.guaranteeLabel,
-        ].filter(nonEmpty);
+        const signals = (data.items ?? []).filter(
+          (it) => nonEmpty(it.value) || nonEmpty(it.label),
+        );
         if (signals.length === 0) {
           results.push({
             ruleId: 'trust-evidence',
             status: 'warn',
             title: 'Trust section is empty',
-            message: `Trust section on ${page.title || page.slug} has no rating, years, licence, or guarantee filled in.`,
+            message: `Trust section on ${page.title || page.slug} has no trust stats or client logos filled in.`,
             pageId: page.id,
             sectionId: section.id,
             fixHref: pageEditorHref(websiteId, page.id),

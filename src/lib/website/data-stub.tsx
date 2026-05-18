@@ -38,6 +38,7 @@ import type {
 import { heroSection } from './sections/hero';
 import { offerSection } from './sections/offer';
 import { servicesSection } from './sections/services';
+import { trustSection } from './sections/trust';
 import type { CTAData } from './sections/cta';
 import type { FAQData } from './sections/faq';
 import type { FooterData } from './sections/footer';
@@ -220,13 +221,10 @@ const voltlineFooter: Section = mkSection<FooterData>('sec-vl-footer', 'footer',
 });
 
 const voltlineHomeTrust: TrustData = {
-  intro: '// PERTH HOMEOWNERS TRUST US',
-  ratingValue: '4.9',
-  ratingMax: '5',
-  ratingSource: 'Google · 174 reviews',
-  yearsLabel: '8 years in Perth',
-  licenceLabel: 'Lic #EC-12345',
-  guaranteeLabel: '12-mo workmanship guarantee',
+  ...trustSection.defaultData(),
+  eyebrow: 'PERTH HOMEOWNERS TRUST US',
+  headline: 'Local service. Proven results.',
+  sub: 'Licensed electricians Perth homeowners have trusted for eight years.',
 };
 
 const voltlineHomeCTA: CTAData = {
@@ -368,13 +366,10 @@ const freshhomeFooter: Section = mkSection<FooterData>('sec-fh-footer', 'footer'
 });
 
 const freshhomeHomeTrust: TrustData = {
-  intro: '// PERTH FAMILIES TRUST US',
-  ratingValue: '4.9',
-  ratingMax: '5',
-  ratingSource: 'Google · 312 reviews',
-  yearsLabel: '4 years cleaning Perth',
-  licenceLabel: 'Police-checked, insured',
-  guaranteeLabel: 'Satisfaction guarantee or we re-clean free',
+  ...trustSection.defaultData(),
+  eyebrow: 'PERTH FAMILIES TRUST US',
+  headline: 'A cleaner home, every time.',
+  sub: 'Police-checked, insured cleaners with a re-clean-free satisfaction guarantee.',
 };
 
 const freshhomeHomeCTA: CTAData = {
