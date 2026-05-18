@@ -21,9 +21,9 @@ import { Badge } from '@/components/ui/badge';
 import { Eyebrow } from '@/components/ui/eyebrow';
 import { StatusDot } from '@/components/ui/status-dot';
 import { useUser } from '@/lib/auth/user-stub';
+import { useAdminClients } from '@/lib/clients/clients-store';
 import { useAllFunnels, useFunnelsForClient } from '@/lib/funnel/queries';
 import type { Funnel } from '@/lib/funnel/types';
-import { adminClients } from '@/lib/nav/admin-clients';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 export default function FunnelsHubPage() {
@@ -70,8 +70,9 @@ function ClientFunnelsList({
   activeClientId: string;
 }) {
   const { data, isLoading, isError } = useFunnelsForClient(activeClientId);
+  const allClients = useAdminClients();
   const funnels = data ?? [];
-  const client = adminClients.find((c) => c.id === activeClientId);
+  const client = allClients.find((c) => c.id === activeClientId);
 
   return (
     <>
@@ -192,6 +193,7 @@ function NoFunnelsState({ reason }: { reason: string }) {
 
 function AdminAgencyRoster() {
   const { data, isLoading, isError } = useAllFunnels();
+  const allClients = useAdminClients();
   const funnels = data ?? [];
   const totalLive = funnels.filter((f) => f.publishedVersionId).length;
 
@@ -228,7 +230,7 @@ function AdminAgencyRoster() {
         ) : (
           <>
             <div className="grid grid-cols-1 gap-3">
-              {adminClients.map((client) => {
+              {allClients.map((client) => {
                 const clientFunnels = funnels.filter(
                   (f) => f.clientId === client.id,
                 );

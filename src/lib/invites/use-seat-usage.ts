@@ -15,6 +15,7 @@
 
 import { useSyncExternalStore } from 'react';
 
+import { subscribeRoster } from '@/lib/auth/roster-store';
 import { subscribeSeatLimits } from '@/lib/clients/seat-limit-stub';
 import { subscribeClientInvites } from './client-invite-stub';
 import { getClientSeatUsage, type SeatUsage } from './seats';
@@ -41,9 +42,11 @@ function snapshotFor(clientId: string): SeatUsage {
 function subscribe(callback: () => void): () => void {
   const offInvites = subscribeClientInvites(callback);
   const offLimits = subscribeSeatLimits(callback);
+  const offRoster = subscribeRoster(callback);
   return () => {
     offInvites();
     offLimits();
+    offRoster();
   };
 }
 

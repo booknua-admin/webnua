@@ -1,21 +1,15 @@
 'use client';
 
 // =============================================================================
-// STUB — workspace-context stand-in. Drives the agency vs sub-account
-// two-tier model (GoHighLevel-style): operator's default view is the agency
-// (cross-client birds-eye); drilling into a client via the picker switches
-// the context to that sub-account.
+// workspace-context — agency vs sub-account mode (GoHighLevel-style).
 //
-// Active workspace lives in localStorage under `webnua.dev.active-client-id`.
-//   - missing / null → agency mode (cross-client)
-//   - clientId string → sub-account mode for that client
+// Active workspace is kept in localStorage (approved UI state — not moved to DB).
+//   - missing / null → agency mode (cross-client birds-eye)
+//   - clientId string (slug) → sub-account mode for that client
 //
-// For client-role users, this context has no effect — they only ever see
-// their own workspace. The picker is hidden on the client side.
-//
-// Deletion points (when real auth ships):
-//   1. This file — workspace resolution moves to backend membership lookups.
-//   2. <WorkspaceProvider> mount in src/app/layout.tsx.
+// `activeClient` resolves from the live clients-store cache, not the dead
+// adminClients stub. The provider subscribes to clients-store so it
+// re-resolves once clients hydrate.
 // =============================================================================
 
 import {
@@ -26,7 +20,14 @@ import {
   useSyncExternalStore,
 } from 'react';
 
-import { type AdminClient, adminClients } from '@/lib/nav/admin-clients';
+import {
+  getAdminClients,
+  subscribeClients,
+  type AdminClient,
+} from '@/lib/clients/clients-store';
+
+// Re-export for backward compatibility with callers that imported from here.
+export type { AdminClient };
 
 export const STUB_ACTIVE_CLIENT_KEY = 'webnua.dev.active-client-id';
 
@@ -47,14 +48,16 @@ function readStoredClientId(): string | null {
 function subscribeWorkspace(callback: () => void) {
   window.addEventListener('storage', callback);
   window.addEventListener(WORKSPACE_EVENT, callback);
+  window.addEventListener('webnua:clients-change', callback);
   return () => {
     window.removeEventListener('storage', callback);
     window.removeEventListener(WORKSPACE_EVENT, callback);
+    window.removeEventListener('webnua:clients-change', callback);
   };
 }
 
 type WorkspaceContextValue = {
-  /** Active client id, or null when in agency (cross-client) mode. */
+  /** Active client id (slug), or null when in agency (cross-client) mode. */
   activeClientId: string | null;
   /** Resolved active client object, or null when in agency mode. */
   activeClient: AdminClient | null;
@@ -80,10 +83,17 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     () => false,
   );
 
+  // Subscribe to the clients cache so activeClient resolves once hydrateClients fires.
+  const clients = useSyncExternalStore(
+    subscribeClients,
+    getAdminClients,
+    () => [] as AdminClient[],
+  ) as AdminClient[];
+
   const activeClient = useMemo(() => {
     if (!storedId) return null;
-    return adminClients.find((c) => c.id === storedId) ?? null;
-  }, [storedId]);
+    return clients.find((c: AdminClient) => c.id === storedId) ?? null;
+  }, [storedId, clients]);
 
   const setActiveClientId = useCallback((id: string) => {
     try {

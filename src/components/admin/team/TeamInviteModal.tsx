@@ -17,10 +17,11 @@ import {
 } from '@/components/shared/invite/InviteModalChrome';
 import { cn } from '@/lib/utils';
 import { useUser } from '@/lib/auth/user-stub';
+import { useAdminClients, type AdminClient } from '@/lib/clients/clients-store';
 import { INVITE_TTL_DAYS } from '@/lib/invites/shared-types';
-import { adminClients, type AdminClient } from '@/lib/nav/admin-clients';
 import { TEAM_ROLES, getTeamRoleDef, type TeamRole } from '@/lib/team/roles';
 import type { TeamInvite, TeamInviteDraft } from '@/lib/team/types';
+import { addTeamInvite } from '@/lib/team/team-invite-stub';
 import { InviteStepper } from './InviteStepper';
 import { PermissionPreview } from './PermissionPreview';
 import { RoleSelectCard } from './RoleSelectCard';
@@ -40,6 +41,7 @@ const EMPTY_DRAFT: TeamInviteDraft = {
 
 function TeamInviteModal({ open, onOpenChange }: TeamInviteModalProps) {
   const user = useUser();
+  const adminClients = useAdminClients();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [draft, setDraft] = useState<TeamInviteDraft>(EMPTY_DRAFT);
   const [sentInvite, setSentInvite] = useState<TeamInvite | null>(null);
@@ -99,7 +101,7 @@ function TeamInviteModal({ open, onOpenChange }: TeamInviteModalProps) {
       magicLink: `https://app.webnua.io/invite/wb_${token.slice(0, 16)}`,
       status: 'pending',
     };
-    console.log('[stub] team invite issued', invite);
+    addTeamInvite(invite);
     setSentInvite(invite);
     setStep(3);
   }

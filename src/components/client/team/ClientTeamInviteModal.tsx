@@ -33,12 +33,12 @@ import {
 } from '@/components/shared/invite/InviteModalChrome';
 import { SeatUsageMeter } from '@/components/client/team/SeatUsageMeter';
 import { useUser } from '@/lib/auth/user-stub';
+import { useAdminClients } from '@/lib/clients/clients-store';
 import { addClientInvite } from '@/lib/invites/client-invite-stub';
 import type { ClientUserInvite, ClientUserInviteDraft } from '@/lib/invites/client-invite';
 import { canInviteToClient, type SeatUsage } from '@/lib/invites/seats';
 import { INVITE_TTL_DAYS } from '@/lib/invites/shared-types';
 import { useClientSeatUsage } from '@/lib/invites/use-seat-usage';
-import { adminClients } from '@/lib/nav/admin-clients';
 
 type ClientTeamInviteModalProps = {
   open: boolean;
@@ -59,6 +59,7 @@ function ClientTeamInviteModal({
   clientId,
 }: ClientTeamInviteModalProps) {
   const user = useUser();
+  const adminClients = useAdminClients();
   const usage = useClientSeatUsage(clientId);
   const [step, setStep] = useState<1 | 2>(1);
   const [draft, setDraft] = useState<ClientUserInviteDraft>(EMPTY_DRAFT);

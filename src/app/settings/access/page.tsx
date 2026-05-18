@@ -16,7 +16,7 @@
 // scales beyond what fits on one screen.
 // =============================================================================
 
-import { useMemo } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 
 import { AccessClientRosterRow } from '@/components/shared/settings/AccessClientRosterRow';
 import { ClientSeatLimitCard } from '@/components/shared/settings/ClientSeatLimitCard';
@@ -41,9 +41,13 @@ import {
 import {
   getClientUserDefs,
   getUserDefsForClient,
-  useUserContext,
-} from '@/lib/auth/user-stub';
-import { adminClients } from '@/lib/nav/admin-clients';
+  setUserGrant,
+  resetGrants,
+  subscribeRoster,
+  type RosterUser,
+} from '@/lib/auth/roster-store';
+import { useUser } from '@/lib/auth/user-stub';
+import { useAdminClients } from '@/lib/clients/clients-store';
 import { findWebsite, getWebsitesForClient } from '@/lib/website/data-stub';
 import { useForcePublishLog } from '@/lib/website/queries';
 import type { Website } from '@/lib/website/types';
@@ -109,13 +113,16 @@ function SubAccountView({
   clientId: string;
   clientName: string;
 }) {
-  const ctx = useUserContext();
-  const websites = useMemo(() => getWebsitesForClient(clientId), [clientId]);
-  const userDefs = useMemo(() => getUserDefsForClient(clientId), [clientId]);
+  const currentUser = useUser();
+  const rosterUsers = useSyncExternalStore(
+    subscribeRoster,
+    (): RosterUser[] => getUserDefsForClient(clientId),
+    (): RosterUser[] => [],
+  ) as RosterUser[];
+  const websites = useMemo(() => getWebsitesForClient(clientId), [clientId]) as Website[];
 
   const gridUsers = useMemo<CapabilityToggleGridUser[]>(() => {
-    return userDefs.map((def) => {
-      const liveUser = ctx.allUsers.find((u) => u.id === def.id);
+    return rosterUsers.map((def) => {
       const userWebsites = def.accessibleWebsiteIds
         .map((id) => findWebsite(id))
         .filter((w): w is NonNullable<typeof w> => w != null)
@@ -126,10 +133,10 @@ function SubAccountView({
         email: def.email,
         role: def.role,
         websites: userWebsites,
-        capabilities: liveUser?.capabilities ?? new Set<Capability>(),
+        capabilities: def.capabilities,
       };
     });
-  }, [ctx.allUsers, userDefs]);
+  }, [rosterUsers]);
 
   const handleToggle = (
     userId: string,
@@ -137,7 +144,7 @@ function SubAccountView({
     capability: Capability,
     enabled: boolean,
   ) => {
-    const user = ctx.allUsers.find((u) => u.id === userId);
+    const user = rosterUsers.find((u) => u.id === userId);
     if (!user) return;
     const next = new Set(user.capabilities);
     if (enabled) next.add(capability);
@@ -147,10 +154,10 @@ function SubAccountView({
         ? new Set<Capability>(ADMIN_DEFAULTS)
         : new Set<Capability>(CLIENT_DEFAULTS);
     const explicit: Capability[] = [];
-    for (const cap of next) {
+    for (const cap of next as Set<Capability>) {
       if (!roleFloor.has(cap)) explicit.push(cap);
     }
-    ctx.setUserGrant(userId, websiteId, explicit);
+    setUserGrant(userId, websiteId, explicit);
   };
 
   const auditEntries = useAuditLog();
@@ -201,12 +208,12 @@ function SubAccountView({
           >
             <div className="mb-4 flex items-center justify-between gap-3">
               <p className="font-mono text-[11px] font-bold uppercase tracking-[0.08em] text-ink-quiet">
-                <strong className="text-ink">{userDefs.length}</strong>{' '}
-                {userDefs.length === 1 ? 'user' : 'users'} ·{' '}
+                <strong className="text-ink">{rosterUsers.length}</strong>{' '}
+                {rosterUsers.length === 1 ? 'user' : 'users'} ·{' '}
                 <strong className="text-ink">{websites.length}</strong>{' '}
                 {websites.length === 1 ? 'website' : 'websites'}
               </p>
-              <Button size="sm" variant="secondary" onClick={ctx.resetGrants}>
+              <Button size="sm" variant="secondary" onClick={resetGrants}>
                 Reset to defaults
               </Button>
             </div>
@@ -231,7 +238,7 @@ function SubAccountView({
             <ClientSeatLimitCard
               clientId={clientId}
               clientName={clientName}
-              actorId={ctx.user?.id ?? 'unknown'}
+              actorId={currentUser?.id ?? 'unknown'}
             />
           </SettingsSection>
 
@@ -260,36 +267,47 @@ function SubAccountView({
 // -- Agency birds-eye view (cross-client, no per-user editing) ------------
 
 function AgencyOverview() {
-  const ctx = useUserContext();
   const workspace = useWorkspace();
-  const clientUserDefs = getClientUserDefs();
-  const totalClientUsers = clientUserDefs.length;
+  const adminClients = useAdminClients();
+  const allRosterUsers = useSyncExternalStore(
+    subscribeRoster,
+    getClientUserDefs,
+    (): RosterUser[] => [],
+  ) as RosterUser[];
+  const totalClientUsers = allRosterUsers.length;
   const auditEntries = useAuditLog();
   const totalAuditEntries = auditEntries.length;
   const pendingApprovals = useAllPendingApprovals();
   const pendingCount = pendingApprovals.length;
 
+  type PerClientEntry = {
+    client: (typeof adminClients)[number];
+    userCount: number;
+    totalCapsGranted: number;
+  };
   const perClient = useMemo(() => {
     return adminClients.map((client) => {
-      const users = getUserDefsForClient(client.id);
-      const totalCapsGranted = users.reduce((sum, def) => {
-        const liveUser = ctx.allUsers.find((u) => u.id === def.id);
-        if (!liveUser) return sum;
+      const users: RosterUser[] = getUserDefsForClient(client.id);
+      const totalCapsGranted = users.reduce((sum: number, def: RosterUser) => {
         // Don't count role-floor caps (viewBuilder for clients) — they
         // aren't a "grant", they're the floor.
         const floor = new Set<Capability>(CLIENT_DEFAULTS);
         let count = 0;
-        for (const cap of liveUser.capabilities) {
+        for (const cap of def.capabilities as Set<Capability>) {
           if (!floor.has(cap)) count++;
         }
         return sum + count;
       }, 0);
       return { client, userCount: users.length, totalCapsGranted };
     });
-  }, [ctx.allUsers]);
+    // allRosterUsers is not used directly but is the reactive signal that
+    // the in-memory roster cache changed — without it, perClient wouldn't
+    // recompute when getUserDefsForClient's underlying data updates.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminClients, allRosterUsers]) as PerClientEntry[];
 
   const totalCapsGrantedAcrossAll = useMemo(
-    () => perClient.reduce((s, c) => s + c.totalCapsGranted, 0),
+    () => perClient.reduce((s: number, c: PerClientEntry) => s + c.totalCapsGranted, 0),
     [perClient],
   );
 

@@ -1,5 +1,4 @@
 import { AppShell } from '@/components/shared/AppShell';
-import { DevRoleSwitcher } from '@/components/shared/DevRoleSwitcher';
 import { ClientSidebar } from '@/components/client/ClientSidebar';
 
 export default function ClientLayout({
@@ -10,7 +9,6 @@ export default function ClientLayout({
   return (
     <>
       <AppShell sidebar={<ClientSidebar />}>{children}</AppShell>
-      <DevRoleSwitcher />
     </>
   );
 }

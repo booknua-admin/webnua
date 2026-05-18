@@ -27,7 +27,7 @@ import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBann
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/lib/auth/user-stub';
-import { adminClients } from '@/lib/nav/admin-clients';
+import { useAdminClients } from '@/lib/clients/clients-store';
 import {
   useEffectiveDraft,
   useWebsiteForClient,
@@ -341,6 +341,7 @@ function NavSummaryCard({
 // -- Empty states ----------------------------------------------------------
 
 function AgencyEmptyState() {
+  const adminClients = useAdminClients();
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb current="Website" />} />
@@ -430,6 +431,7 @@ function NoWebsiteState({
   clientId?: string;
 }) {
   const workspace = useWorkspace();
+  const adminClients = useAdminClients();
   const clientName =
     clientId ? adminClients.find((c) => c.id === clientId)?.name : undefined;
 

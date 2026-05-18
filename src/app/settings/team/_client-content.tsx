@@ -14,14 +14,19 @@ import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { TeamRow } from '@/components/shared/settings/TeamRow';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { inviteInitials } from '@/components/shared/invite/InviteModalChrome';
-import { getUserDefsForClient, useUser } from '@/lib/auth/user-stub';
+import {
+  getUserDefsForClient,
+  subscribeRoster,
+  type RosterUser,
+} from '@/lib/auth/roster-store';
+import { useUser } from '@/lib/auth/user-stub';
+import { useAdminClients } from '@/lib/clients/clients-store';
 import {
   getAllClientInvites,
   subscribeClientInvites,
 } from '@/lib/invites/client-invite-stub';
 import type { ClientUserInvite } from '@/lib/invites/client-invite';
 import { useClientSeatUsage } from '@/lib/invites/use-seat-usage';
-import { adminClients } from '@/lib/nav/admin-clients';
 
 const EMPTY_INVITES: ClientUserInvite[] = [];
 
@@ -33,20 +38,25 @@ export function ClientSettingsTeamContent() {
     subscribeClientInvites,
     getAllClientInvites,
     () => EMPTY_INVITES,
-  );
+  ) as ClientUserInvite[];
 
   const pendingInvites = useMemo(
     () =>
       clientId
         ? allInvites.filter(
-            (inv) => inv.clientId === clientId && inv.status === 'pending',
+            (inv: ClientUserInvite) => inv.clientId === clientId && inv.status === 'pending',
           )
         : [],
     [allInvites, clientId],
-  );
+  ) as ClientUserInvite[];
 
   const usage = useClientSeatUsage(clientId ?? '');
-  const members = clientId ? getUserDefsForClient(clientId) : [];
+  const adminClients = useAdminClients();
+  const members = useSyncExternalStore(
+    subscribeRoster,
+    () => (clientId ? getUserDefsForClient(clientId) : []),
+    () => [] as ReturnType<typeof getUserDefsForClient>,
+  ) as RosterUser[];
   const clientName =
     adminClients.find((c) => c.id === clientId)?.name ?? 'your account';
 
