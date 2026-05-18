@@ -27,6 +27,8 @@ export type SectionRailRowProps = {
   selected: boolean;
   onSelect: () => void;
   onToggleEnabled: (enabled: boolean) => void;
+  /** Remove this section. Omitted for singleton rows (header / footer). */
+  onRemove?: () => void;
   /** True when this row is the only section in a website-level singleton
    *  rail (header / footer). Suppresses drag handle, enable switch, and
    *  the numbered index — singletons are always-on and unreorderable. */
@@ -39,6 +41,7 @@ export function SectionRailRow({
   selected,
   onSelect,
   onToggleEnabled,
+  onRemove,
   singleton = false,
 }: SectionRailRowProps) {
   const def = getSectionDefinition(section.type);
@@ -95,6 +98,18 @@ export function SectionRailRow({
             />
           </CapabilityGate>
         )}
+        {!singleton && onRemove ? (
+          <CapabilityGate capability="editSections" mode="hide">
+            <button
+              type="button"
+              onClick={onRemove}
+              aria-label={`Delete ${def.label}`}
+              className="mt-0.5 text-[13px] leading-none text-ink-quiet opacity-0 transition-opacity hover:text-warn focus-visible:opacity-100 group-hover:opacity-100"
+            >
+              ✕
+            </button>
+          </CapabilityGate>
+        ) : null}
       </div>
     </div>
   );

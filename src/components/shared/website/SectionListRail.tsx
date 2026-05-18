@@ -32,6 +32,7 @@ export type SectionListRailProps = {
   selectedSectionId: string | null;
   onSelectSection: (id: string) => void;
   onToggleSectionEnabled: (id: string, enabled: boolean) => void;
+  onRemoveSection?: (id: string) => void;
   onRequestAddSection?: () => void;
 };
 
@@ -41,6 +42,7 @@ export function SectionListRail({
   selectedSectionId,
   onSelectSection,
   onToggleSectionEnabled,
+  onRemoveSection,
   onRequestAddSection,
 }: SectionListRailProps) {
   const isSingleton = mode.kind === 'singleton';
@@ -92,6 +94,11 @@ export function SectionListRail({
               onSelect={() => onSelectSection(section.id)}
               onToggleEnabled={(enabled) =>
                 onToggleSectionEnabled(section.id, enabled)
+              }
+              onRemove={
+                !isSingleton && onRemoveSection
+                  ? () => onRemoveSection(section.id)
+                  : undefined
               }
               singleton={isSingleton}
             />

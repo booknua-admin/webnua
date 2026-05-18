@@ -203,6 +203,11 @@ export function SectionEditor({ mode }: SectionEditorProps) {
     setSelectedSectionId(newSection.id);
   };
 
+  const handleRemoveSection = (id: string) => {
+    setSections((current) => current.filter((s) => s.id !== id));
+    setSelectedSectionId((current) => (current === id ? null : current));
+  };
+
   // Funnel publish (Lane A — funnels have no approval queue). The funnel
   // editor publishes directly; websites route through /website/review.
   const handleFunnelPublish = async () => {
@@ -325,6 +330,7 @@ export function SectionEditor({ mode }: SectionEditorProps) {
           selectedSectionId={selectedSectionId}
           onSelectSection={setSelectedSectionId}
           onToggleSectionEnabled={handleToggleSectionEnabled}
+          onRemoveSection={handleRemoveSection}
           onRequestAddSection={() => setAddOpen(true)}
         />
         <PagePreviewPane
