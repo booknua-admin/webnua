@@ -21,6 +21,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { AppError, normalizeError } from '@/lib/errors';
 import { supabase } from '@/lib/supabase/client';
+import type { SelectedCustomer } from '@/lib/customers/queries';
 
 import type {
   AdminBookingDetail,
@@ -777,6 +778,95 @@ export function useRescheduleBooking() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: rescheduleBooking,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['bookings'] });
+    },
+  });
+}
+
+// ---- Customer resolution ----------------------------------------------------
+
+/** Resolve a picked customer to a concrete `customer_id` + display snapshot,
+ *  inserting a `customers` row first when the picker handed back a new one. */
+async function resolveCustomer(
+  clientId: string,
+  customer: SelectedCustomer,
+): Promise<{ id: string; name: string; phone: string | null }> {
+  if (customer.kind === 'existing') {
+    return { id: customer.id, name: customer.name, phone: customer.phone };
+  }
+  const { data, error } = await supabase
+    .from('customers')
+    .insert({
+      client_id: clientId,
+      name: customer.name,
+      phone: customer.phone,
+    })
+    .select('id')
+    .single();
+  if (error) throw normalizeError(error);
+  return { id: data.id, name: customer.name, phone: customer.phone };
+}
+
+// ---- Create booking (write) -------------------------------------------------
+
+export type CreateBookingInput = {
+  /** Client UUID — resolved from the workspace slug by the modal. */
+  clientId: string;
+  customer: SelectedCustomer;
+  title: string;
+  serviceType: string;
+  startsAt: string;
+  endsAt: string;
+  price: number | null;
+  notes: string;
+};
+
+async function createBooking(
+  input: CreateBookingInput,
+): Promise<{ id: string }> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw AppError.auth();
+
+  if (new Date(input.endsAt).getTime() <= new Date(input.startsAt).getTime()) {
+    throw AppError.validation(
+      { time: 'The end time must be after the start time.' },
+      'The end time must be after the start time.',
+    );
+  }
+
+  const customer = await resolveCustomer(input.clientId, input.customer);
+
+  const { data, error } = await supabase
+    .from('bookings')
+    .insert({
+      client_id: input.clientId,
+      title: input.title,
+      service_type: input.serviceType,
+      starts_at: input.startsAt,
+      ends_at: input.endsAt,
+      customer_id: customer.id,
+      customer_name_snapshot: customer.name,
+      customer_phone_snapshot: customer.phone,
+      price: input.price,
+      status: 'scheduled',
+      notes: input.notes.trim() || null,
+      created_by: user.id,
+    })
+    .select('id')
+    .single();
+  if (error) throw normalizeError(error);
+  return { id: data.id };
+}
+
+/** Create a one-off booking. On success the bookings queries are invalidated
+ *  so the new job appears on the calendar grid. */
+export function useCreateBooking() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createBooking,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['bookings'] });
     },

@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button';
 import { normalizeError } from '@/lib/errors';
 import { useClientCalendar } from '@/lib/bookings/queries';
 import { voltlineCalendar } from '@/lib/calendar/client-calendar';
-import { voltlineNewBooking } from '@/lib/bookings/new-booking-modal';
 
 function ClientCalendarContent() {
   const { hero } = voltlineCalendar;
@@ -30,7 +29,7 @@ function ClientCalendarContent() {
           <Button variant="secondary" className="h-9" asChild>
             <a href="/recurring/new">+ Recurring</a>
           </Button>
-          <AddBookingButton data={voltlineNewBooking} />
+          <AddBookingButton />
         </div>
         {isLoading ? (
           <CalendarNotice>{'// Loading calendar…'}</CalendarNotice>
