@@ -1,26 +1,34 @@
 // =============================================================================
-// brand-style-stub — STUB. localStorage overlay for a client's brand fonts
-// (Phase 6 · section-library uplift · font editor).
+// brand-style-stub — STUB. localStorage overlay for a client's brand-level
+// style defaults (Phase 6 · section-library uplift · brand defaults).
 //
-// Fonts are brand/site-level (one heading + one body font for the whole
-// site), but there is no brand-editing surface or brands-table write path
-// yet — so font choices persist here, keyed by clientId, the same overlay
-// pattern as the other stub stores. The editor merges this over the brand
-// it resolves; the "Site fonts" menu writes to it.
+// Holds the fonts AND the colour defaults a section inherits when it has not
+// overridden a colour itself. There is no brand-editing surface / brands-
+// table write path yet, so choices persist here keyed by clientId — the same
+// overlay pattern as the other stub stores. The editor merges this over the
+// resolved brand; the AI builder will write the same keys when it picks a
+// palette.
 //
-// Replace with a brands-table UPDATE when the brand-editing surface ships.
+// Also stores the per-browser "don't ask again" preference for the
+// apply-to-all modal.
+//
+// Replace with a brands-table write when the brand-editing surface ships.
 // =============================================================================
 
-export type BrandFontChoice = {
+export type BrandStyle = {
   headingFont?: string;
   bodyFont?: string;
+  headingColor?: string;
+  bodyColor?: string;
+  backgroundColor?: string;
 };
 
-type Store = Record<string, BrandFontChoice>;
+type Store = Record<string, BrandStyle>;
 
-const KEY = 'webnua.dev.brand-fonts';
-const EVENT = 'webnua:brand-fonts-change';
-const EMPTY: BrandFontChoice = {};
+const KEY = 'webnua.dev.brand-style';
+const EVENT = 'webnua:brand-style-change';
+const DISMISS_KEY = 'webnua.dev.apply-to-all-dismissed';
+const EMPTY: BrandStyle = {};
 
 // Snapshot cache keyed on the raw localStorage string — keeps the object
 // reference stable for useSyncExternalStore (see CLAUDE.md snapshot rule).
@@ -40,27 +48,27 @@ function readStore(): Store {
   return cachedStore;
 }
 
-export function getBrandFontChoice(clientId: string): BrandFontChoice {
+export function getBrandStyle(clientId: string): BrandStyle {
   return readStore()[clientId] ?? EMPTY;
 }
 
-export function setBrandFont(
+export function setBrandStyleValue(
   clientId: string,
-  key: keyof BrandFontChoice,
-  fontId: string,
+  key: keyof BrandStyle,
+  value: string,
 ): void {
   if (typeof window === 'undefined') return;
   const store = readStore();
   const next: Store = {
     ...store,
-    [clientId]: { ...store[clientId], [key]: fontId },
+    [clientId]: { ...store[clientId], [key]: value },
   };
   window.localStorage.setItem(KEY, JSON.stringify(next));
-  cachedRaw = null; // force a re-read on the next getBrandFontChoice
+  cachedRaw = null; // force a re-read on the next getBrandStyle
   window.dispatchEvent(new CustomEvent(EVENT));
 }
 
-export function subscribeBrandFonts(callback: () => void): () => void {
+export function subscribeBrandStyle(callback: () => void): () => void {
   if (typeof window === 'undefined') return () => {};
   window.addEventListener(EVENT, callback);
   window.addEventListener('storage', callback);
@@ -68,4 +76,16 @@ export function subscribeBrandFonts(callback: () => void): () => void {
     window.removeEventListener(EVENT, callback);
     window.removeEventListener('storage', callback);
   };
+}
+
+// -- apply-to-all "don't ask again" -----------------------------------------
+
+export function isApplyToAllDismissed(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.localStorage.getItem(DISMISS_KEY) === '1';
+}
+
+export function dismissApplyToAll(): void {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(DISMISS_KEY, '1');
 }

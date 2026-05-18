@@ -125,6 +125,13 @@ export type BrandObject = {
   headingFont?: string;
   /** Curated Google Font id for body copy. Absent → the platform default. */
   bodyFont?: string;
+  /** Brand-level colour defaults — a section inherits these when it has not
+   *  overridden the colour itself (see lib/website/section-theme.ts). Set by
+   *  the operator's "apply to all", or by the AI builder when it picks a
+   *  palette. Absent → the section's own hardcoded default applies. */
+  headingColor?: string;
+  bodyColor?: string;
+  backgroundColor?: string;
 };
 
 // ---- Versions -------------------------------------------------------------

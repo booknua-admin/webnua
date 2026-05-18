@@ -14,7 +14,7 @@
 
 import { useState } from 'react';
 
-import { setBrandFont } from '@/lib/website/brand-style-stub';
+import { setBrandStyleValue } from '@/lib/website/brand-style-stub';
 import { CURATED_FONTS, DEFAULT_FONT_ID } from '@/lib/website/google-fonts';
 import { GoogleFontLoader } from '@/lib/website/sections/_shared/GoogleFontLoader';
 import { CapabilityGate } from '@/components/shared/CapabilityGate';
@@ -65,12 +65,12 @@ export function SiteFontsMenu({
                 <FontPicker
                   label="Headings"
                   value={headingFont}
-                  onChange={(id) => setBrandFont(clientId, 'headingFont', id)}
+                  onChange={(id) => setBrandStyleValue(clientId, 'headingFont', id)}
                 />
                 <FontPicker
                   label="Body"
                   value={bodyFont}
-                  onChange={(id) => setBrandFont(clientId, 'bodyFont', id)}
+                  onChange={(id) => setBrandStyleValue(clientId, 'bodyFont', id)}
                 />
               </div>
             </CapabilityGate>

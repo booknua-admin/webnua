@@ -1,24 +1,24 @@
 'use client';
 
 // =============================================================================
-// Theme controls (Phase 6 · element-inspector model):
+// Theme controls (Phase 6 · element-inspector model + brand defaults):
 //
-//   ThemePresetField — a row of preset theme circles; picking one applies a
-//     whole SectionTheme. Lives in a section's section-level settings as a
-//     quick start.
-//   ColorField — a single labelled colour picker. Lives under whichever
-//     element owns that colour (background → section level, heading colour
-//     → headline element, text colour → sub-headline element). Splitting the
-//     colours across element selections is what removes the old "circles and
-//     swatches both edit colour" redundancy.
+//   ThemePresetField — preset theme circles; picking one applies a whole
+//     SectionTheme. A section-level quick start.
+//   ColorField — a single labelled colour picker for an element's colour.
+//     A colour can be inherited from the brand default (no override) or set
+//     locally. Changing it offers "apply to all" — promote to a brand
+//     default so every section follows.
 //
 // Both gate on `editTheme`.
 // =============================================================================
 
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
+import { ApplyToAllModal } from '@/components/shared/website/ApplyToAllModal';
 import { BuilderField } from '@/components/shared/builder/BuilderField';
 import { CapabilityGate } from '@/components/shared/CapabilityGate';
+import { isApplyToAllDismissed } from '@/lib/website/brand-style-stub';
 import {
   matchPresetId,
   THEME_PRESETS,
@@ -86,13 +86,37 @@ export function ThemePresetField({
 
 export type ColorFieldProps = {
   label: ReactNode;
+  /** The effective colour shown in the swatch (resolved if inherited). */
   value: string;
+  /** Sets a per-section override. */
   onChange: (next: string) => void;
   helper?: ReactNode;
+  /** True when the section has no override — the colour is inherited from
+   *  the brand default. */
+  inherited?: boolean;
+  /** Clears the override (back to inherited). Shown only when overridden. */
+  onReset?: () => void;
+  /** Enables the "apply to all" modal after a change — promote the colour
+   *  to a brand default. `scopeLabel` is the plural element name. */
+  applyToAll?: { scopeLabel: string; onApply: (color: string) => void };
 };
 
-export function ColorField({ label, value, onChange, helper }: ColorFieldProps) {
+export function ColorField({
+  label,
+  value,
+  onChange,
+  helper,
+  inherited = false,
+  onReset,
+  applyToAll,
+}: ColorFieldProps) {
   const { sectionLabel } = useSectionFieldContext();
+  const [modalOpen, setModalOpen] = useState(false);
+
+  const handleChange = (next: string) => {
+    onChange(next);
+    if (applyToAll && !isApplyToAllDismissed()) setModalOpen(true);
+  };
 
   return (
     <BuilderField label={label} helper={helper}>
@@ -104,19 +128,42 @@ export function ColorField({ label, value, onChange, helper }: ColorFieldProps) 
           fieldLabel: typeof label === 'string' ? label : undefined,
         }}
       >
-        <label className="flex w-fit cursor-pointer items-center gap-2.5 rounded-md border border-rule bg-card px-2.5 py-2">
-          <input
-            type="color"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className="h-7 w-7 cursor-pointer rounded border border-rule bg-transparent p-0"
-            aria-label={typeof label === 'string' ? label : 'Colour'}
-          />
-          <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-ink">
-            {value}
-          </span>
-        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex w-fit cursor-pointer items-center gap-2.5 rounded-md border border-rule bg-card px-2.5 py-2">
+            <input
+              type="color"
+              value={value}
+              onChange={(e) => handleChange(e.target.value)}
+              className="h-7 w-7 cursor-pointer rounded border border-rule bg-transparent p-0"
+              aria-label={typeof label === 'string' ? label : 'Colour'}
+            />
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-ink">
+              {value}
+            </span>
+          </label>
+          {inherited ? (
+            <span className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
+              Brand default
+            </span>
+          ) : onReset ? (
+            <button
+              type="button"
+              onClick={onReset}
+              className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-rust transition-colors hover:text-rust-deep"
+            >
+              ↺ Reset
+            </button>
+          ) : null}
+        </div>
       </CapabilityGate>
+      {applyToAll ? (
+        <ApplyToAllModal
+          open={modalOpen}
+          onOpenChange={setModalOpen}
+          scopeLabel={applyToAll.scopeLabel}
+          onApplyEverywhere={() => applyToAll.onApply(value)}
+        />
+      ) : null}
     </BuilderField>
   );
 }

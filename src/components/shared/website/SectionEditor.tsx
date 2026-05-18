@@ -46,7 +46,7 @@ import type {
   Website,
 } from '@/lib/website/types';
 import { useAutosave } from '@/lib/website/use-autosave';
-import { useBrandFonts } from '@/lib/website/use-brand-fonts';
+import { useBrandStyle } from '@/lib/website/use-brand-style';
 import { useUserPendingSubmission } from '@/lib/website/use-publish-state';
 
 import { AddSectionDialog } from './AddSectionDialog';
@@ -132,15 +132,16 @@ function containerForMode(mode: SectionEditorMode): ContainerKind {
 export function SectionEditor({ mode }: SectionEditorProps) {
   const clientId = clientIdForMode(mode);
   const brandQuery = useBrandForClient(clientId);
-  // Brand fonts are edited site-wide via the toolbar's font menu; the
-  // overlay is merged over the resolved brand so previews re-render live.
-  const brandFontOverride = useBrandFonts(clientId);
+  // Brand-level style (fonts + colour defaults) is edited site-wide via the
+  // font menu and the "apply to all" path; the overlay is merged over the
+  // resolved brand so every section preview re-renders live.
+  const brandStyleOverride = useBrandStyle(clientId);
   const brand = useMemo(
     () =>
       brandQuery.data
-        ? { ...brandQuery.data, ...brandFontOverride }
+        ? { ...brandQuery.data, ...brandStyleOverride }
         : null,
-    [brandQuery.data, brandFontOverride],
+    [brandQuery.data, brandStyleOverride],
   );
   const slot = useMemo(() => slotForMode(mode), [mode]);
   const user = useUser();
@@ -417,6 +418,8 @@ export function SectionEditor({ mode }: SectionEditorProps) {
             hideClose={isSingleton}
             selectedElement={selectedElementId}
             onSelectElement={setSelectedElementId}
+            clientId={clientId}
+            brand={brand}
           />
         ) : null}
       </div>

@@ -12,7 +12,7 @@
 // Per-field capability gating happens INSIDE the Fields component.
 // =============================================================================
 
-import type { Section } from '@/lib/website/types';
+import type { BrandObject, Section } from '@/lib/website/types';
 import { getSectionDefinition } from '@/lib/website/sections';
 import { SectionFieldContextProvider } from '@/lib/website/sections/_shared/field-context';
 
@@ -28,6 +28,10 @@ export type SectionFieldsPanelProps = {
   selectedElement: string | null;
   /** Select / deselect an element (null returns to section level). */
   onSelectElement: (id: string | null) => void;
+  /** The client + resolved brand — threaded to the Fields component for the
+   *  brand-style-defaults ("apply to all") path. */
+  clientId?: string;
+  brand?: BrandObject;
 };
 
 export function SectionFieldsPanel({
@@ -37,6 +41,8 @@ export function SectionFieldsPanel({
   hideClose = false,
   selectedElement,
   onSelectElement,
+  clientId,
+  brand,
 }: SectionFieldsPanelProps) {
   const def = getSectionDefinition(section.type);
   if (!def) {
@@ -102,6 +108,8 @@ export function SectionFieldsPanel({
             data={section.data as never}
             onChange={onChange as never}
             selectedElement={selectedElement}
+            clientId={clientId}
+            brand={brand}
           />
         </SectionFieldContextProvider>
       </div>

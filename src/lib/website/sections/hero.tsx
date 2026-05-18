@@ -2,8 +2,13 @@
 
 import { BuilderFormSection } from '@/components/shared/builder/BuilderField';
 
+import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
-import type { SectionTheme } from '../section-theme';
+import {
+  brandThemeDefaults,
+  resolveTheme,
+  type SectionTheme,
+} from '../section-theme';
 import { CopyField } from './_shared/CopyField';
 import { MediaField } from './_shared/MediaField';
 import { RangeField } from './_shared/RangeField';
@@ -13,29 +18,25 @@ import { ColorField, ThemePresetField } from './_shared/ThemeField';
 import { VariantField, type VariantOption } from './_shared/VariantField';
 
 // =============================================================================
-// Hero section — above-the-fold lead. Element-inspector model: the preview's
-// regions (eyebrow / headline / sub / CTAs) are individually selectable; the
-// Fields panel shows only the selected element's settings, or section-level
-// settings (theme / layout / overlay strength / image) when no element is
-// selected.
+// Hero section — above-the-fold lead. Element-inspector model + brand-default
+// colour inheritance: `theme` holds per-section colour *overrides*; the
+// effective colour resolves `override ?? brand default ?? hero hardcoded`.
 // =============================================================================
 
 export type HeroLayout = 'split' | 'overlay';
 export type HeadlineSize = 'm' | 'l' | 'xl';
 export type SubSize = 's' | 'm' | 'l';
 
-/** Selectable element ids within the hero preview. */
 type HeroElement = 'eyebrow' | 'headline' | 'subheadline' | 'ctaPrimary' | 'ctaSecondary';
 
 export type HeroData = {
   layout: HeroLayout;
+  /** Per-section colour overrides — absent fields inherit the brand default. */
   theme: SectionTheme;
   imageSide: 'left' | 'right';
-  /** Scrim opacity for the overlay layout, 0–100. */
   overlayOpacity: number;
   eyebrow: string;
   headline: string;
-  /** Second headline line, rendered in the brand accent colour. */
   headlineAccent: string;
   headlineSize: HeadlineSize;
   sub: string;
@@ -47,9 +48,17 @@ export type HeroData = {
   heroImageUrl: string;
 };
 
+/** The hero's own colours — the last link in the resolve chain, so a fresh
+ *  hero looks striking even with no brand defaults set. */
+const HERO_HARDCODED_THEME: SectionTheme = {
+  background: '#0d1f3a',
+  heading: '#ffffff',
+  body: '#c4cdda',
+};
+
 const DEFAULTS: HeroData = {
   layout: 'split',
-  theme: { background: '#0d1f3a', heading: '#ffffff', body: '#c4cdda' },
+  theme: {}, // overrides nothing — inherits brand defaults / the hardcoded look
   imageSide: 'right',
   overlayOpacity: 88,
   eyebrow: 'LOCAL · TRUSTED',
@@ -66,13 +75,17 @@ const DEFAULTS: HeroData = {
 };
 
 function defaultData(): HeroData {
-  return { ...DEFAULTS, theme: { ...DEFAULTS.theme } };
+  return { ...DEFAULTS, theme: {} };
 }
 
-/** Merge persisted data over defaults — covers sections saved before the
- *  Phase 6 uplift reshaped the hero. */
 function withDefaults(data: HeroData): HeroData {
   return { ...DEFAULTS, ...data };
+}
+
+function omitThemeKey(theme: SectionTheme, key: keyof SectionTheme): SectionTheme {
+  const next = { ...theme };
+  delete next[key];
+  return next;
 }
 
 // Static class strings — Tailwind scans these literals; the runtime lookup
@@ -131,12 +144,35 @@ const SUB_SIZE_OPTIONS: readonly VariantOption<SubSize>[] = [
 
 // -- Fields -----------------------------------------------------------------
 
-function HeroFields({ data, onChange, selectedElement }: SectionFieldsProps<HeroData>) {
+function HeroFields({
+  data,
+  onChange,
+  selectedElement,
+  clientId,
+  brand,
+}: SectionFieldsProps<HeroData>) {
   const d = withDefaults(data);
   const set = <K extends keyof HeroData>(key: K, value: HeroData[K]) =>
     onChange({ ...d, [key]: value });
+
+  const resolved = resolveTheme(
+    d.theme,
+    brandThemeDefaults(brand),
+    HERO_HARDCODED_THEME,
+  );
+
   const setColor = (key: keyof SectionTheme, value: string) =>
     set('theme', { ...d.theme, [key]: value });
+  const clearColor = (key: keyof SectionTheme) =>
+    set('theme', omitThemeKey(d.theme, key));
+  const applyColorEverywhere = (
+    brandKey: 'headingColor' | 'bodyColor',
+    themeKey: keyof SectionTheme,
+    color: string,
+  ) => {
+    if (clientId) setBrandStyleValue(clientId, brandKey, color);
+    set('theme', omitThemeKey(d.theme, themeKey));
+  };
 
   if (selectedElement === 'eyebrow') {
     return (
@@ -182,8 +218,14 @@ function HeroFields({ data, onChange, selectedElement }: SectionFieldsProps<Hero
         />
         <ColorField
           label="Heading colour"
-          value={d.theme.heading}
+          value={resolved.heading}
+          inherited={d.theme.heading === undefined}
           onChange={(v) => setColor('heading', v)}
+          onReset={() => clearColor('heading')}
+          applyToAll={{
+            scopeLabel: 'headings',
+            onApply: (color) => applyColorEverywhere('headingColor', 'heading', color),
+          }}
         />
       </BuilderFormSection>
     );
@@ -209,8 +251,14 @@ function HeroFields({ data, onChange, selectedElement }: SectionFieldsProps<Hero
         />
         <ColorField
           label="Text colour"
-          value={d.theme.body}
+          value={resolved.body}
+          inherited={d.theme.body === undefined}
           onChange={(v) => setColor('body', v)}
+          onReset={() => clearColor('body')}
+          applyToAll={{
+            scopeLabel: 'body text',
+            onApply: (color) => applyColorEverywhere('bodyColor', 'body', color),
+          }}
         />
       </BuilderFormSection>
     );
@@ -245,8 +293,10 @@ function HeroFields({ data, onChange, selectedElement }: SectionFieldsProps<Hero
         <ThemePresetField value={d.theme} onChange={(v) => set('theme', v)} />
         <ColorField
           label="Background"
-          value={d.theme.background}
+          value={resolved.background}
+          inherited={d.theme.background === undefined}
           onChange={(v) => setColor('background', v)}
+          onReset={() => clearColor('background')}
         />
       </BuilderFormSection>
       <BuilderFormSection>
@@ -296,10 +346,15 @@ function HeroPreview({
 }: SectionPreviewProps<HeroData>) {
   const d = withDefaults(data);
   const overlay = d.layout === 'overlay';
+  const resolved = resolveTheme(
+    d.theme,
+    brandThemeDefaults(brand),
+    HERO_HARDCODED_THEME,
+  );
 
   return (
     <SectionShell
-      theme={d.theme}
+      theme={resolved}
       brand={brand}
       inset="flush"
       pad="none"
@@ -307,7 +362,7 @@ function HeroPreview({
         overlay ? (
           <HeroBackground
             url={d.heroImageUrl}
-            scrim={d.theme.background}
+            scrim={resolved.background}
             opacity={d.overlayOpacity / 100}
           />
         ) : undefined
@@ -452,7 +507,6 @@ function HeroBackground({
   scrim: string;
   opacity: number;
 }) {
-  // Scale the three-stop scrim gradient by the chosen opacity.
   const a = (multiplier: number) => {
     const v = Math.round(Math.max(0, Math.min(1, opacity * multiplier)) * 255);
     return v.toString(16).padStart(2, '0');

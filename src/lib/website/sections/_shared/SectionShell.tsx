@@ -19,11 +19,7 @@
 import type { ReactNode } from 'react';
 
 import { getFont } from '@/lib/website/google-fonts';
-import {
-  resolveTheme,
-  type ResolvedTheme,
-  type SectionTheme,
-} from '@/lib/website/section-theme';
+import type { ResolvedTheme } from '@/lib/website/section-theme';
 import type { BrandObject } from '@/lib/website/types';
 
 import { GoogleFontLoader } from './GoogleFontLoader';
@@ -40,8 +36,9 @@ export type SectionShellRenderProps = {
 };
 
 type SectionShellProps = {
-  /** The section's editable colour theme. */
-  theme: SectionTheme;
+  /** The section's resolved colour theme (the Preview resolves it against
+   *  the brand defaults before passing it down). */
+  theme: ResolvedTheme;
   brand: BrandObject;
   /** Vertical padding scale. `none` for sections that self-manage spacing
    *  (heroes, bleeding-image layouts); `tight` for slim bands; `roomy` for
@@ -77,7 +74,7 @@ export function SectionShell({
   className,
   children,
 }: SectionShellProps) {
-  const tokens = resolveTheme(theme);
+  const tokens = theme;
   const headingFont = getFont(brand.headingFont);
   const bodyFont = getFont(brand.bodyFont);
   const banded = inset === 'band';

@@ -1,30 +1,31 @@
 // =============================================================================
 // Section themes — the per-section colour model (Phase 6 · section-library
-// uplift). Replaces the fixed 4-surface enum: a section now carries an
-// editable colour theme — 6 presets shown as circle swatches, each colour
-// adjustable with a colour picker.
+// uplift). A section stores colour *overrides*; the effective colour resolves
+// down a chain:
 //
-// A theme is three editable colours (background / heading / body); the
-// remaining tokens (muted, border, card) are derived so the editing UI
-// stays small. The brand accent colour is applied on top, unchanged — brand
-// consistency is not a per-section choice.
+//   section override  ??  brand default  ??  section hardcoded default
 //
-// Deliberately NOT global @theme tokens — a section-library concern. Themes
-// are plain hex (the colour picker emits hex), so mixing is exact.
+// So a brand-level default (set by the user's "apply to all", or by the AI
+// builder when it picks a palette) flows into every section that has not
+// overridden that colour — while a section keeps a sensible look of its own
+// when nothing is set.
+//
+// THEME_PRESETS are full themes shown as circle swatches. Themes are plain
+// hex (the colour picker emits hex) so mixing is exact.
 // =============================================================================
 
-/** The three editable colours a section stores. */
-export type SectionTheme = {
+/** A complete set of the three section colours. */
+export type ThemeColors = {
   background: string;
   heading: string;
   body: string;
 };
 
+/** A section's stored colours — every field optional (absent = inherit). */
+export type SectionTheme = Partial<ThemeColors>;
+
 /** Fully-resolved tokens a section's Preview renders against. */
-export type ResolvedTheme = {
-  background: string;
-  heading: string;
-  body: string;
+export type ResolvedTheme = ThemeColors & {
   /** Eyebrow / quiet meta text — body, lightened toward the background. */
   muted: string;
   /** Hairline / divider. */
@@ -40,7 +41,14 @@ export type ResolvedTheme = {
 export type SectionThemePreset = {
   id: string;
   label: string;
-  theme: SectionTheme;
+  theme: ThemeColors;
+};
+
+/** The ultimate fallback when nothing up the chain has a value. */
+export const DEFAULT_SECTION_THEME: ThemeColors = {
+  background: '#ffffff',
+  heading: '#0a0a0a',
+  body: '#4a4a45',
 };
 
 /** The starter themes shown as circle swatches in the theme picker. */
@@ -53,35 +61,60 @@ export const THEME_PRESETS: readonly SectionThemePreset[] = [
   { id: 'sand', label: 'Sand', theme: { background: '#ece2d2', heading: '#2b2218', body: '#5c5142' } },
 ];
 
-/** The neutral default — a fresh section starts white. */
-export const DEFAULT_SECTION_THEME: SectionTheme = {
-  background: '#ffffff',
-  heading: '#0a0a0a',
-  body: '#4a4a45',
-};
-
-/** Id of the preset matching this theme exactly, or null when customised. */
+/** Id of the preset matching this theme exactly, or null when customised /
+ *  partial. */
 export function matchPresetId(theme: SectionTheme): string | null {
-  const eq = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+  const eq = (a: string | undefined, b: string) =>
+    !!a && a.toLowerCase() === b.toLowerCase();
   const found = THEME_PRESETS.find(
     (p) =>
-      eq(p.theme.background, theme.background) &&
-      eq(p.theme.heading, theme.heading) &&
-      eq(p.theme.body, theme.body),
+      eq(theme.background, p.theme.background) &&
+      eq(theme.heading, p.theme.heading) &&
+      eq(theme.body, p.theme.body),
   );
   return found?.id ?? null;
 }
 
-export function resolveTheme(theme: SectionTheme): ResolvedTheme {
-  const isDark = luminance(theme.background) < 0.5;
+/** Build a SectionTheme from a brand's colour defaults, omitting unset
+ *  keys (so they fall through to the next link in the resolve chain). */
+export function brandThemeDefaults(
+  brand:
+    | { headingColor?: string; bodyColor?: string; backgroundColor?: string }
+    | null
+    | undefined,
+): SectionTheme {
+  const t: SectionTheme = {};
+  if (brand?.backgroundColor) t.background = brand.backgroundColor;
+  if (brand?.headingColor) t.heading = brand.headingColor;
+  if (brand?.bodyColor) t.body = brand.bodyColor;
+  return t;
+}
+
+/** Resolve a section's colours down the override → brand → hardcoded chain. */
+export function resolveTheme(
+  overrides: SectionTheme,
+  brandDefaults?: SectionTheme,
+  hardcoded?: SectionTheme,
+): ResolvedTheme {
+  const pick = (k: keyof ThemeColors): string =>
+    overrides[k] ??
+    brandDefaults?.[k] ??
+    hardcoded?.[k] ??
+    DEFAULT_SECTION_THEME[k];
+
+  const background = pick('background');
+  const heading = pick('heading');
+  const body = pick('body');
+  const isDark = luminance(background) < 0.5;
+
   return {
-    background: theme.background,
-    heading: theme.heading,
-    body: theme.body,
-    muted: mixHex(theme.body, theme.background, 0.32),
-    border: mixHex(theme.body, theme.background, 0.84),
-    card: mixHex(theme.background, theme.heading, isDark ? 0.08 : 0.04),
-    cardBorder: mixHex(theme.background, theme.heading, isDark ? 0.18 : 0.1),
+    background,
+    heading,
+    body,
+    muted: mixHex(body, background, 0.32),
+    border: mixHex(body, background, 0.84),
+    card: mixHex(background, heading, isDark ? 0.08 : 0.04),
+    cardBorder: mixHex(background, heading, isDark ? 0.18 : 0.1),
     isDark,
   };
 }

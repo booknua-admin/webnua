@@ -31,6 +31,12 @@ export type SectionFieldsProps<TData> = {
    *  = no element → the Fields component renders section-level settings.
    *  Optional — non-editor consumers omit it. */
   selectedElement?: string | null;
+  /** The client the section belongs to — lets a Fields component write
+   *  brand-level style defaults (the "apply to all" path). */
+  clientId?: string;
+  /** The resolved brand — carries the brand-level style defaults a Fields
+   *  component shows as the effective value of an un-overridden colour. */
+  brand?: BrandObject;
 };
 
 export type SectionPreviewProps<TData> = {
