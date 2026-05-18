@@ -64,6 +64,8 @@ type ClientBookingDetail = {
   customer: {
     initial: string;
     name: string;
+    /** Bare phone number — drives the "Call" action's tel: link. */
+    phone: string;
     /** Full contact line — `<strong>` segments render ink-bold */
     contact: React.ReactNode;
   };

@@ -17,6 +17,7 @@ const voltlineBooking: ClientBookingDetail = {
   customer: {
     initial: 'LR',
     name: 'Liam Reilly',
+    phone: '0412 884 273',
     contact: (
       <>
         <strong>0412 884 273</strong> · liam.reilly@gmail.com · Highgate, Perth ·

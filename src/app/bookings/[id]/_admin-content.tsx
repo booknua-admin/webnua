@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 
 import { AdminBookingHero } from '@/components/shared/bookings/AdminBookingHero';
 import { BookingHistoryRow } from '@/components/shared/bookings/BookingHistoryRow';
@@ -20,8 +20,22 @@ import { freshhomeBooking } from '@/lib/bookings/admin-booking';
 function AdminBookingDetailContent() {
   const b = freshhomeBooking;
   const params = useParams();
+  const router = useRouter();
   const id = Array.isArray(params.id) ? params.id[0] : (params.id ?? '');
   const completeHref = `/bookings/${id}/complete`;
+  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+    b.location.address.replace(/\s·\s/g, ', '),
+  )}`;
+
+  const cancelBooking = () => {
+    if (
+      window.confirm(
+        'Cancel this booking? The slot is freed on the calendar.',
+      )
+    ) {
+      router.push('/calendar');
+    }
+  };
   return (
     <>
       <Topbar
@@ -52,7 +66,11 @@ function AdminBookingDetailContent() {
                   <Button variant="secondary" className="h-9" asChild>
                     <a href="/leads/larsen">Open lead →</a>
                   </Button>
-                  <Button variant="ghost" className="h-9">
+                  <Button
+                    variant="ghost"
+                    className="h-9"
+                    onClick={cancelBooking}
+                  >
                     Cancel booking
                   </Button>
                 </>
@@ -102,8 +120,14 @@ function AdminBookingDetailContent() {
                   {b.location.address}
                 </span>
               </div>
-              <Button variant="secondary" className="h-9 w-full text-[12px]">
-                Open in Maps ↗
+              <Button
+                variant="secondary"
+                className="h-9 w-full text-[12px]"
+                asChild
+              >
+                <a href={mapsUrl} target="_blank" rel="noopener noreferrer">
+                  Open in Maps ↗
+                </a>
               </Button>
             </RailCard>
 
