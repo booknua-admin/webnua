@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 
 import { cn } from '@/lib/utils';
@@ -137,7 +138,11 @@ function AdminClientPicker({ clients }: AdminClientPickerProps) {
             </button>
           ))}
           <div className="mt-1 border-t border-paper/[0.08]" />
-          <div className="flex items-center gap-3 rounded px-2 py-2 text-paper/55 transition-colors hover:bg-paper/[0.06] hover:text-paper">
+          <Link
+            href="/clients/new"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-3 rounded px-2 py-2 text-paper/55 transition-colors hover:bg-paper/[0.06] hover:text-paper"
+          >
             <ClientLogo initial="+" small ghost />
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-bold text-paper">
@@ -147,10 +152,14 @@ function AdminClientPicker({ clients }: AdminClientPickerProps) {
                 Start the funnel build
               </div>
             </div>
-          </div>
-          <div className="px-2 py-2 text-center font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-rust-light hover:text-rust">
+          </Link>
+          <Link
+            href="/clients/new"
+            onClick={() => setOpen(false)}
+            className="block px-2 py-2 text-center font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-rust-light transition-colors hover:text-rust"
+          >
             View all clients →
-          </div>
+          </Link>
         </div>
       ) : null}
     </div>
