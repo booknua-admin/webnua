@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 
+import { useState } from 'react';
+
 import { AdminBookingHero } from '@/components/shared/bookings/AdminBookingHero';
 import { BookingHistoryRow } from '@/components/shared/bookings/BookingHistoryRow';
 import { BookingJobGrid } from '@/components/shared/bookings/BookingJobGrid';
@@ -10,6 +12,7 @@ import { BookingNotesBox } from '@/components/shared/bookings/BookingNotesBox';
 import { BookingSection } from '@/components/shared/bookings/BookingSection';
 import { RescheduleBookingButton } from '@/components/shared/bookings/RescheduleBookingButton';
 import { freshhomeReschedule } from '@/lib/bookings/reschedule-modal';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { RailCard } from '@/components/shared/RailCard';
 import { RailPropertyRow } from '@/components/shared/RailPropertyRow';
@@ -27,15 +30,7 @@ function AdminBookingDetailContent() {
     b.location.address.replace(/\s·\s/g, ', '),
   )}`;
 
-  const cancelBooking = () => {
-    if (
-      window.confirm(
-        'Cancel this booking? The slot is freed on the calendar.',
-      )
-    ) {
-      router.push('/calendar');
-    }
-  };
+  const [cancelOpen, setCancelOpen] = useState(false);
   return (
     <>
       <Topbar
@@ -69,7 +64,7 @@ function AdminBookingDetailContent() {
                   <Button
                     variant="ghost"
                     className="h-9"
-                    onClick={cancelBooking}
+                    onClick={() => setCancelOpen(true)}
                   >
                     Cancel booking
                   </Button>
@@ -139,6 +134,17 @@ function AdminBookingDetailContent() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={cancelOpen}
+        onOpenChange={setCancelOpen}
+        title="Cancel this booking?"
+        description="The slot is freed on the calendar and the customer is notified."
+        confirmLabel="Cancel booking"
+        cancelLabel="Keep booking"
+        tone="destructive"
+        onConfirm={() => router.push('/calendar')}
+      />
     </>
   );
 }

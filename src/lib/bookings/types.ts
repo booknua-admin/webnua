@@ -71,6 +71,8 @@ type ClientBookingDetail = {
   };
   job: BookingJobCell[];
   notes: React.ReactNode;
+  /** Plain-text form of `notes` — seeds the editable "Edit job notes" modal. */
+  notesText: string;
   history: BookingHistoryItemCompact[];
   actions: ClientBookingActionGroup[];
   /** "// NEXT" tail card — explanatory text instead of buttons */
