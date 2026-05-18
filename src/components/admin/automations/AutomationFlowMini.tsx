@@ -8,9 +8,15 @@ import type { AutomationFlowMini as AutomationFlowMiniData } from '@/lib/automat
 type AutomationFlowMiniProps = {
   flow: AutomationFlowMiniData;
   className?: string;
+  /** Called when the row's enable toggle is flipped. */
+  onToggle?: (enabled: boolean) => void;
 };
 
-function AutomationFlowMini({ flow, className }: AutomationFlowMiniProps) {
+function AutomationFlowMini({
+  flow,
+  className,
+  onToggle,
+}: AutomationFlowMiniProps) {
   const toneBg = flow.clientTone
     ? CLIENT_TONE_BG[flow.clientTone]
     : CLIENT_TONE_BG.generic;
@@ -75,7 +81,10 @@ function AutomationFlowMini({ flow, className }: AutomationFlowMiniProps) {
       onKeyDown={(e) => e.stopPropagation()}
       role="presentation"
     >
-      <Switch defaultChecked={flow.enabled} />
+      <Switch
+        checked={flow.enabled}
+        onCheckedChange={(value) => onToggle?.(value)}
+      />
     </div>
   );
 

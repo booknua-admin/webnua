@@ -199,6 +199,8 @@ export type AutomationTestSendData = {
  */
 export type AutomationEditor = {
   id: string;
+  /** Whether the flow is currently enabled — drives the footer toggle. */
+  enabled: boolean;
   /** Page-header eyebrow, e.g. "// FreshHome · 24-hour follow-up sequence". */
   eyebrow: string;
   /** Page-header title (ReactNode — `<em>` renders rust). */

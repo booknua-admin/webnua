@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 
 import { AutomationAddStep } from '@/components/admin/automations/AutomationAddStep';
 import { AutomationEditorLayout } from '@/components/admin/automations/AutomationEditorLayout';
@@ -16,16 +16,25 @@ import { EditorFooterActions } from '@/components/shared/EditorFooterActions';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
-import { adminEditor } from '@/lib/automations/admin-editor';
+import {
+  useAutomationEditor,
+  useToggleAutomation,
+} from '@/lib/automations/queries';
 import { useRole } from '@/lib/auth/user-stub';
+import { normalizeError } from '@/lib/errors';
 
 export default function AutomationEditorPage() {
   const { role, hydrated } = useRole();
   const router = useRouter();
+  const params = useParams();
+  const id = Array.isArray(params.id) ? params.id[0] : (params.id ?? '');
 
   useEffect(() => {
     if (hydrated && role === 'client') router.replace('/automations');
   }, [hydrated, role, router]);
+
+  const { data: editor, isLoading, error } = useAutomationEditor(id ?? '');
+  const toggle = useToggleAutomation();
 
   if (!hydrated || role !== 'admin') {
     return (
@@ -36,8 +45,6 @@ export default function AutomationEditorPage() {
       </div>
     );
   }
-
-  const editor = adminEditor;
 
   return (
     <>
@@ -50,60 +57,89 @@ export default function AutomationEditorPage() {
         }
       />
       <div className="flex flex-col px-10 py-10">
-        <PageHeader
-          eyebrow={editor.eyebrow}
-          title={editor.title}
-          subtitle={editor.subtitle}
-        />
-        <AutomationEditorLayout
-          canvas={
-            <>
-              <AutomationTriggerBox trigger={editor.trigger} />
-              {editor.steps.map((step) => (
-                <div key={step.id}>
-                  <AutomationStepConnector />
-                  <AutomationEditorStep step={step} />
-                </div>
-              ))}
-              <div className="mt-5">
-                <AutomationAddStep label={editor.addStepLabel} />
-              </div>
-            </>
-          }
-          rail={
-            <>
-              <AutomationVariableList
-                heading={editor.rail.variables.heading}
-                items={editor.rail.variables.items}
-              />
-              <AutomationTestSendCard
-                heading={editor.rail.testSend.heading}
-                body={editor.rail.testSend.body}
-                buttonLabel={editor.rail.testSend.buttonLabel}
-                data={editor.testSend}
-              />
-              <AutomationPerformanceCard
-                heading={editor.rail.performance.heading}
-                metrics={editor.rail.performance.metrics}
-              />
-            </>
-          }
-        />
-        <EditorFooterActions
-          progress={editor.footer.progress}
-          actions={
-            <>
-              <Button variant="ghost" asChild>
-                <Link href={editor.footer.backHref}>
-                  {editor.footer.backLabel}
-                </Link>
-              </Button>
-              <Button variant="secondary">{editor.footer.disableLabel}</Button>
-              <Button>{editor.footer.saveLabel}</Button>
-            </>
-          }
-        />
+        {isLoading ? (
+          <EditorNotice>{'// Loading automation…'}</EditorNotice>
+        ) : error || !editor ? (
+          <EditorNotice>
+            {`// ${error ? normalizeError(error).message : 'Automation not found'}`}
+          </EditorNotice>
+        ) : (
+          <>
+            <PageHeader
+              eyebrow={editor.eyebrow}
+              title={editor.title}
+              subtitle={editor.subtitle}
+            />
+            <AutomationEditorLayout
+              canvas={
+                <>
+                  <AutomationTriggerBox trigger={editor.trigger} />
+                  {editor.steps.map((step) => (
+                    <div key={step.id}>
+                      <AutomationStepConnector />
+                      <AutomationEditorStep step={step} />
+                    </div>
+                  ))}
+                  <div className="mt-5">
+                    <AutomationAddStep label={editor.addStepLabel} />
+                  </div>
+                </>
+              }
+              rail={
+                <>
+                  <AutomationVariableList
+                    heading={editor.rail.variables.heading}
+                    items={editor.rail.variables.items}
+                  />
+                  <AutomationTestSendCard
+                    heading={editor.rail.testSend.heading}
+                    body={editor.rail.testSend.body}
+                    buttonLabel={editor.rail.testSend.buttonLabel}
+                    data={editor.testSend}
+                  />
+                  <AutomationPerformanceCard
+                    heading={editor.rail.performance.heading}
+                    metrics={editor.rail.performance.metrics}
+                  />
+                </>
+              }
+            />
+            <EditorFooterActions
+              progress={editor.footer.progress}
+              actions={
+                <>
+                  <Button variant="ghost" asChild>
+                    <Link href={editor.footer.backHref}>
+                      {editor.footer.backLabel}
+                    </Link>
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={toggle.isPending}
+                    onClick={() =>
+                      toggle.mutate({
+                        id: editor.id,
+                        enabled: !editor.enabled,
+                      })
+                    }
+                  >
+                    {editor.footer.disableLabel}
+                  </Button>
+                  <Button>{editor.footer.saveLabel}</Button>
+                </>
+              }
+            />
+          </>
+        )}
       </div>
     </>
+  );
+}
+
+function EditorNotice({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="rounded-2xl border border-rule bg-card px-10 py-12 text-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+      {children}
+    </p>
   );
 }
