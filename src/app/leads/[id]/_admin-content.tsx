@@ -61,7 +61,7 @@ function AdminLeadDetailContent() {
                     metaParts={lead.metaParts}
                     clientPillLabel={lead.clientPillLabel}
                   />
-                  <LeadStatusSwitcher defaultStatus={lead.status} />
+                  <LeadStatusSwitcher leadId={id} defaultStatus={lead.status} />
                   <LeadTimeline
                     count={lead.timeline.eventCount}
                     events={lead.timeline.events}

@@ -15,7 +15,7 @@
 
 import type { ReactNode } from 'react';
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { AppError, normalizeError } from '@/lib/errors';
 import { supabase } from '@/lib/supabase/client';
@@ -728,5 +728,59 @@ export function useLeadConversation(id: string) {
     queryKey: ['leads', 'conversation', id],
     queryFn: () => fetchLeadConversation(id),
     enabled: id.length > 0,
+  });
+}
+
+// ---- Lead status (write) ----------------------------------------------------
+
+/** Move a lead to a new status and log the transition onto its timeline. */
+async function updateLeadStatus(input: {
+  leadId: string;
+  status: LeadStatus;
+}): Promise<void> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw AppError.auth();
+
+  // Read the current status so the timeline event records the transition.
+  const { data: lead, error: leadError } = await supabase
+    .from('leads')
+    .select('status')
+    .eq('id', input.leadId)
+    .single();
+  if (leadError) throw normalizeError(leadError);
+
+  const previous = lead.status as LeadStatus;
+  if (previous === input.status) return;
+
+  const { error: updateError } = await supabase
+    .from('leads')
+    .update({ status: input.status })
+    .eq('id', input.leadId);
+  if (updateError) throw normalizeError(updateError);
+
+  const { error: eventError } = await supabase.from('lead_events').insert({
+    lead_id: input.leadId,
+    kind: 'status_changed',
+    occurred_at: new Date().toISOString(),
+    actor_user_id: user.id,
+    payload: {
+      from: LEAD_STATUS_LABEL[previous],
+      to: LEAD_STATUS_LABEL[input.status],
+    },
+  });
+  if (eventError) throw normalizeError(eventError);
+}
+
+/** Change a lead's status. On success every leads query is invalidated so the
+ *  inbox, detail header and timeline reflect the move. */
+export function useUpdateLeadStatus() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateLeadStatus,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['leads'] });
+    },
   });
 }
