@@ -18,9 +18,21 @@ import { getSectionDefinition } from '@/lib/website/sections';
 
 import { SectionHoverToolbar } from './SectionHoverToolbar';
 
+/** Preview device — constrains the canvas width so the section container
+ *  queries render the matching responsive layout. */
+export type DevicePreview = 'desktop' | 'tablet' | 'mobile';
+
+const DEVICE_WIDTH: Record<DevicePreview, string> = {
+  desktop: 'max-w-[1100px]',
+  tablet: 'max-w-[840px]',
+  mobile: 'max-w-[420px]',
+};
+
 export type PagePreviewPaneProps = {
   sections: Section[];
   brand: BrandObject;
+  /** Device preview width. Default desktop. */
+  device?: DevicePreview;
   onSelectSection?: (sectionId: string) => void;
   selectedSectionId?: string | null;
   selectedElementId?: string | null;
@@ -36,6 +48,7 @@ export type PagePreviewPaneProps = {
 export function PagePreviewPane({
   sections,
   brand,
+  device = 'desktop',
   onSelectSection,
   selectedSectionId,
   selectedElementId,
@@ -54,7 +67,9 @@ export function PagePreviewPane({
 
   return (
     <div className="h-full min-h-0 overflow-y-auto bg-paper-2 py-6">
-      <div className="mx-auto flex max-w-[1100px] flex-col gap-4 px-4">
+      <div
+        className={`mx-auto flex ${DEVICE_WIDTH[device]} flex-col gap-4 px-4 transition-[max-width] duration-200`}
+      >
         {sections.length === 0 ? (
           <div className="rounded-xl border border-dashed border-rule bg-paper px-7 py-9 text-center">
             <p className="mb-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-rust">

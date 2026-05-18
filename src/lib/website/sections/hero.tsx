@@ -91,9 +91,9 @@ function omitThemeKey(theme: SectionTheme, key: keyof SectionTheme): SectionThem
 // Static class strings — Tailwind scans these literals; the runtime lookup
 // just picks one.
 const HEADLINE_SIZE_CLASS: Record<HeadlineSize, string> = {
-  m: 'text-[32px] md:text-[40px]',
-  l: 'text-[40px] md:text-[52px]',
-  xl: 'text-[48px] md:text-[64px]',
+  m: 'text-[32px] @2xl:text-[40px]',
+  l: 'text-[40px] @2xl:text-[52px]',
+  xl: 'text-[48px] @2xl:text-[64px]',
 };
 
 const SUB_SIZE_CLASS: Record<SubSize, string> = {
@@ -439,7 +439,7 @@ function HeroPreview({
 
         if (overlay) {
           return (
-            <div className="flex min-h-[480px] items-center px-8 py-20 md:px-16">
+            <div className="flex min-h-[480px] items-center px-8 py-20 @2xl:px-16">
               <div className="max-w-[600px]">{content}</div>
             </div>
           );
@@ -451,14 +451,14 @@ function HeroPreview({
         const contentCell = (
           <div
             key="content"
-            className="flex flex-col justify-center px-8 py-14 md:px-12 md:py-16"
+            className="flex flex-col justify-center px-8 py-14 @2xl:px-12 @2xl:py-16"
           >
             <div className="max-w-[520px]">{content}</div>
           </div>
         );
 
         return (
-          <div className="grid min-h-[460px] md:grid-cols-2">
+          <div className="grid min-h-[460px] @2xl:grid-cols-2">
             {d.imageSide === 'left'
               ? [imageCell, contentCell]
               : [contentCell, imageCell]}
@@ -478,7 +478,7 @@ function HeroImage({
 }) {
   return (
     <div
-      className="relative min-h-[280px] w-full overflow-hidden md:min-h-full"
+      className="relative min-h-[280px] w-full overflow-hidden @2xl:min-h-full"
       style={{ backgroundColor: theme.card }}
     >
       {url ? (

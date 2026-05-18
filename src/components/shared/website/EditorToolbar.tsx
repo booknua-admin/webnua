@@ -32,6 +32,14 @@ import { cn } from '@/lib/utils';
 import type { AutosaveStatus } from '@/lib/website/use-autosave';
 
 import { AutosaveIndicator } from './AutosaveIndicator';
+import type { DevicePreview } from './PagePreviewPane';
+
+const DEVICE_GLYPH: Record<DevicePreview, string> = {
+  desktop: '▭',
+  tablet: '▢',
+  mobile: '▯',
+};
+const DEVICE_ORDER: readonly DevicePreview[] = ['desktop', 'tablet', 'mobile'];
 
 export type EditorToolbarTab = {
   id: string;
@@ -98,6 +106,11 @@ export type EditorToolbarProps = {
     canUndo: boolean;
     canRedo: boolean;
   };
+  /** Device-preview toggle. Omit to hide. */
+  device?: {
+    value: DevicePreview;
+    onChange: (device: DevicePreview) => void;
+  };
 };
 
 export function EditorToolbar({
@@ -112,6 +125,7 @@ export function EditorToolbar({
   publishMenu,
   siteStyles,
   history,
+  device,
 }: EditorToolbarProps) {
   const canPublish = useCan('publish');
   const canEditAnything = useCanAny(
@@ -195,6 +209,27 @@ export function EditorToolbar({
             lastSavedAt={autosave.lastSavedAt}
             onRetry={autosave.onRetry}
           />
+        ) : null}
+        {device ? (
+          <div className="flex items-center gap-0.5 rounded-md border border-rule bg-card p-0.5">
+            {DEVICE_ORDER.map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => device.onChange(d)}
+                aria-label={`${d} preview`}
+                title={`${d} preview`}
+                className={cn(
+                  'flex h-6 w-7 items-center justify-center rounded text-[14px] leading-none transition-colors',
+                  device.value === d
+                    ? 'bg-ink text-paper'
+                    : 'text-ink-quiet hover:text-ink',
+                )}
+              >
+                {DEVICE_GLYPH[d]}
+              </button>
+            ))}
+          </div>
         ) : null}
         {siteStyles}
         <a

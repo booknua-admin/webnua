@@ -57,11 +57,13 @@ type SectionShellProps = {
   children: (props: SectionShellRenderProps) => ReactNode;
 };
 
+// Container-query padding — responds to the section's own width (the device
+// preview), not the browser viewport.
 const PAD: Record<NonNullable<SectionShellProps['pad']>, string> = {
   none: '',
-  tight: 'py-12 md:py-14',
-  default: 'py-16 md:py-20',
-  roomy: 'py-20 md:py-28',
+  tight: 'py-12 @2xl:py-14',
+  default: 'py-16 @2xl:py-20',
+  roomy: 'py-20 @2xl:py-28',
 };
 
 export function SectionShell({
@@ -80,9 +82,11 @@ export function SectionShell({
   const banded = inset === 'band';
 
   const sectionClass = [
-    'relative w-full',
+    // `@container` makes the section a container-query context, so its
+    // responsive classes track the device-preview width, not the viewport.
+    'relative w-full @container',
     backgroundLayer ? 'overflow-hidden' : '',
-    banded ? 'px-6 md:px-10' : '',
+    banded ? 'px-6 @2xl:px-10' : '',
     PAD[pad],
     className ?? '',
   ]

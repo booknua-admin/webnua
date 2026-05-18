@@ -58,7 +58,7 @@ import {
   type EditorToolbarTab,
 } from './EditorToolbar';
 import { ForcePublishMenu } from './ForcePublishMenu';
-import { PagePreviewPane } from './PagePreviewPane';
+import { PagePreviewPane, type DevicePreview } from './PagePreviewPane';
 import { SectionFieldsPanel } from './SectionFieldsPanel';
 import { SiteFontsMenu } from './SiteFontsMenu';
 
@@ -182,6 +182,7 @@ export function SectionEditor({ mode }: SectionEditorProps) {
   const [selectedElementId, setSelectedElementId] = useState<string | null>(
     null,
   );
+  const [device, setDevice] = useState<DevicePreview>('desktop');
 
   // Reset local state when the source content changes (e.g. tab swap).
   useEffect(() => {
@@ -375,6 +376,7 @@ export function SectionEditor({ mode }: SectionEditorProps) {
           />
         }
         history={{ onUndo: undo, onRedo: redo, canUndo, canRedo }}
+        device={{ value: device, onChange: setDevice }}
       />
       <div
         className={`grid min-h-0 flex-1 overflow-hidden grid-rows-[minmax(0,1fr)] ${gridCols} ${
@@ -384,6 +386,7 @@ export function SectionEditor({ mode }: SectionEditorProps) {
         <PagePreviewPane
           sections={sections}
           brand={brand}
+          device={device}
           selectedSectionId={selectedSectionId}
           onSelectSection={handleSelectSection}
           selectedElementId={selectedElementId}
