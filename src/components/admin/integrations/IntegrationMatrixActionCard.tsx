@@ -1,3 +1,7 @@
+'use client';
+
+import { useState } from 'react';
+
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -26,6 +30,11 @@ function IntegrationMatrixActionCard({
   tone = 'neutral',
   className,
 }: IntegrationMatrixActionCardProps) {
+  // STUB: the per-item CTA fires a fire-and-forget notification to the client
+  // (a reauth request / setup nudge). Track which have been sent so the button
+  // settles into a confirmed state rather than staying inertly re-clickable.
+  const [sent, setSent] = useState<Record<string, boolean>>({});
+
   return (
     <div
       data-slot="integration-matrix-action-card"
@@ -69,9 +78,19 @@ function IntegrationMatrixActionCard({
               </span>
               <span className="text-ink [&_em]:not-italic [&_em]:text-ink/55">{item.text}</span>
             </div>
-            <Button variant="outline" size="sm">
-              {item.cta}
-            </Button>
+            {sent[item.id] ? (
+              <Button variant="outline" size="sm" disabled className="text-good">
+                Sent ✓
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSent((prev) => ({ ...prev, [item.id]: true }))}
+              >
+                {item.cta}
+              </Button>
+            )}
           </div>
         ))}
       </div>

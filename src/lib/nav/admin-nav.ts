@@ -20,12 +20,6 @@ export const adminWorkspaceNav: NavSection = {
     { label: 'Internal automations', href: '/automations', icon: '⤿' },
     { label: 'Campaigns', href: '/campaigns', icon: '↗' },
     { label: 'Reviews', href: '/reviews', icon: '★' },
-    {
-      label: 'Integrations',
-      href: '/integrations',
-      icon: '⚭',
-      badge: { text: '1' },
-    },
     { label: 'Calendar', href: '/calendar', icon: '▤' },
     { label: 'Settings', href: '/settings', icon: '⚙' },
   ],

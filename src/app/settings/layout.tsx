@@ -18,7 +18,6 @@ const AGENCY_ONLY = [
   '/settings/workspace',
   '/settings/plans',
   '/settings/defaults',
-  '/settings/integration-defaults',
   '/settings/seats',
   '/settings/api',
 ];

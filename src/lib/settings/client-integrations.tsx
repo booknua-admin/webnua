@@ -1,4 +1,5 @@
 import type {
+  IntegrationAction,
   IntegrationLogoTone,
   IntegrationStatus,
 } from '@/components/shared/settings/IntegrationCard';
@@ -11,7 +12,7 @@ type ClientIntegration = {
   statusLabel?: string;
   logo: { initial: string; tone: IntegrationLogoTone };
   meta?: React.ReactNode;
-  action: { label: string; href?: string };
+  action: IntegrationAction;
 };
 
 export const clientIntegrationsHero = {
@@ -56,7 +57,7 @@ export const clientIntegrations: ClientIntegration[] = [
         Connected as <strong>info@voltline.com.au</strong> · synced 2m ago
       </>
     ),
-    action: { label: 'Manage' },
+    action: { label: 'Manage', kind: 'manage' },
   },
   {
     id: 'meta',
@@ -70,7 +71,7 @@ export const clientIntegrations: ClientIntegration[] = [
         Connected as <strong>Voltline Perth</strong> · 2 pages · synced 8m ago
       </>
     ),
-    action: { label: 'Manage' },
+    action: { label: 'Manage', kind: 'manage' },
   },
   {
     id: 'ga',
@@ -89,7 +90,7 @@ export const clientIntegrations: ClientIntegration[] = [
         Last sync <strong>2 days ago</strong> · token expired
       </>
     ),
-    action: { label: 'Reauthorize' },
+    action: { label: 'Reauthorize', kind: 'reauthorize' },
   },
   {
     id: 'gads',
@@ -99,7 +100,7 @@ export const clientIntegrations: ClientIntegration[] = [
     status: 'missing',
     logo: { initial: '▲', tone: 'gads' },
     meta: <>Optional · only if running Google ads</>,
-    action: { label: 'Connect' },
+    action: { label: 'Connect', kind: 'connect' },
   },
   {
     id: 'stripe',
@@ -113,6 +114,6 @@ export const clientIntegrations: ClientIntegration[] = [
     status: 'missing',
     logo: { initial: 'S', tone: 'stripe' },
     meta: <>⚠ Required for the funnel · 2 min setup</>,
-    action: { label: 'Connect' },
+    action: { label: 'Connect', kind: 'connect' },
   },
 ];

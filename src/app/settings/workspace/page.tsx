@@ -1,10 +1,8 @@
-import { IntegrationCard } from '@/components/shared/settings/IntegrationCard';
 import { SettingsFieldRow } from '@/components/shared/settings/SettingsFieldRow';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
-import { adminConnectedIntegrations } from '@/lib/settings/admin-integrations';
 import { adminWorkspaceFields, adminWorkspacePlanFields } from '@/lib/settings/admin-workspace';
 
 export default function AdminSettingsWorkspacePage() {
@@ -15,14 +13,13 @@ export default function AdminSettingsWorkspacePage() {
         eyebrow="Workspace · Webnua Perth"
         title={
           <>
-            Settings + <em>integrations</em>.
+            Workspace <em>settings</em>.
           </>
         }
         subtitle={
           <>
             Workspace-level settings for Webnua Perth.{' '}
-            <strong>Team, integrations, billing, defaults.</strong> Most of this you set once and
-            forget.
+            <strong>Identity, plan, usage.</strong> Most of this you set once and forget.
           </>
         }
       >
@@ -39,26 +36,6 @@ export default function AdminSettingsWorkspacePage() {
                 value={field.mono ? <span className="font-mono">{field.value}</span> : field.value}
               />
             ))}
-          </SettingsSection>
-
-          <SettingsSection
-            heading="Integrations"
-            description="Connected services that power the platform. We add integrations sparingly — every one is a maintenance commitment."
-          >
-            <div className="flex flex-col gap-2.5">
-              {adminConnectedIntegrations.slice(0, 6).map((item) => (
-                <IntegrationCard
-                  key={item.id}
-                  name={item.name}
-                  description={item.description}
-                  status={item.status}
-                  statusLabel={item.statusLabel}
-                  logo={item.logo}
-                  meta={item.meta}
-                  action={item.action}
-                />
-              ))}
-            </div>
           </SettingsSection>
 
           <SettingsSection

@@ -3,6 +3,9 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
+import { ConnectIntegrationButton } from './ConnectIntegrationButton';
+import type { ConnectIntegrationMode } from './ConnectIntegrationModal';
+
 type IntegrationStatus = 'connected' | 'warning' | 'missing' | 'partial';
 
 type IntegrationLogoTone = 'gbp' | 'meta' | 'ga' | 'gads' | 'stripe' | 'generic';
@@ -11,6 +14,9 @@ type IntegrationAction = {
   label: string;
   href?: string;
   variant?: 'default' | 'secondary' | 'outline' | 'destructive';
+  // When set, the action opens the connect-integration modal in this mode
+  // instead of acting as a link. Takes precedence over href.
+  kind?: ConnectIntegrationMode;
 };
 
 type IntegrationCardProps = {
@@ -121,7 +127,14 @@ function IntegrationCard({
       </div>
 
       <div data-slot="integration-card-actions" className="shrink-0">
-        {action.href ? (
+        {action.kind ? (
+          <ConnectIntegrationButton
+            mode={action.kind}
+            integration={{ name, logoInitial: logo.initial }}
+            label={action.label}
+            variant={buttonVariant}
+          />
+        ) : action.href ? (
           <Button asChild variant={buttonVariant} size="sm">
             <Link href={action.href}>{action.label}</Link>
           </Button>
