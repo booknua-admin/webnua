@@ -173,7 +173,10 @@ function readClientSlug(rel: ClientSlugRel): string | null {
 async function loadSessionUser(authUserId: string): Promise<User | null> {
   const { data: profile, error } = await supabase
     .from('users')
-    .select('id, display_name, email, role, client:clients(slug)')
+    // Disambiguate the embed: `users` and `clients` have two FK paths
+    // (`users.client_id` and `clients.onboarded_by`), so the relationship is
+    // pinned to the `users_client_id_fkey` constraint explicitly.
+    .select('id, display_name, email, role, client:clients!users_client_id_fkey(slug)')
     .eq('id', authUserId)
     .single();
 
