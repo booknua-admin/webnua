@@ -16,7 +16,10 @@ import { RailCard } from '@/components/shared/RailCard';
 import { RailPropertyRow } from '@/components/shared/RailPropertyRow';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
-import { useAdminBookingDetail } from '@/lib/bookings/queries';
+import {
+  useAdminBookingDetail,
+  useUpdateBookingStatus,
+} from '@/lib/bookings/queries';
 import { freshhomeReschedule } from '@/lib/bookings/reschedule-modal';
 import { normalizeError } from '@/lib/errors';
 
@@ -27,6 +30,7 @@ function AdminBookingDetailContent() {
   const completeHref = `/bookings/${id}/complete`;
   const { data: b, isLoading, error } = useAdminBookingDetail(id ?? '');
   const [cancelOpen, setCancelOpen] = useState(false);
+  const cancelBooking = useUpdateBookingStatus();
 
   const mapsUrl = b
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
@@ -163,7 +167,12 @@ function AdminBookingDetailContent() {
               confirmLabel="Cancel booking"
               cancelLabel="Keep booking"
               tone="destructive"
-              onConfirm={() => router.push('/calendar')}
+              onConfirm={() =>
+                cancelBooking.mutate(
+                  { bookingId: id, status: 'cancelled' },
+                  { onSuccess: () => router.push('/calendar') },
+                )
+              }
             />
           </>
         )}
