@@ -9,6 +9,7 @@ import type { ContainerKind, SectionType } from '../types';
 import type { SectionTypeDefinition } from '../registry';
 
 import { aboutSection } from './about';
+import { contactSection } from './contact';
 import { ctaSection } from './cta';
 import { faqSection } from './faq';
 import { featuresSection } from './features';
@@ -35,6 +36,7 @@ export const SECTION_REGISTRY: readonly SectionTypeDefinition[] = [
   reviewsSection,
   faqSection,
   ctaSection,
+  contactSection,
   // Funnel-only stackable
   schedulePickerSection,
   thanksConfirmationSection,
@@ -68,6 +70,7 @@ export function getSectionsForContainer(
 
 // Re-export per-section data types for typed consumers.
 export type { AboutData, AboutFeature, AboutStat } from './about';
+export type { ContactData, ContactInfoItem } from './contact';
 export type { CTAData } from './cta';
 export type { FAQData, FAQItem } from './faq';
 export type { FeatureItem, FeaturesData } from './features';
