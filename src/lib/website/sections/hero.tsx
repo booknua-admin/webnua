@@ -6,20 +6,23 @@ import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from
 import type { SectionTheme } from '../section-theme';
 import { CopyField } from './_shared/CopyField';
 import { MediaField } from './_shared/MediaField';
+import { RangeField } from './_shared/RangeField';
 import { SectionShell } from './_shared/SectionShell';
 import { SelectableElement } from './_shared/SelectableElement';
 import { ColorField, ThemePresetField } from './_shared/ThemeField';
 import { VariantField, type VariantOption } from './_shared/VariantField';
 
 // =============================================================================
-// Hero section — above-the-fold lead. Phase 6 element-inspector model: the
-// preview's regions (eyebrow / headline / sub / CTAs) are individually
-// selectable; the Fields panel shows only the selected element's settings.
-// With no element selected it shows section-level settings (theme preset,
-// background colour, layout, image).
+// Hero section — above-the-fold lead. Element-inspector model: the preview's
+// regions (eyebrow / headline / sub / CTAs) are individually selectable; the
+// Fields panel shows only the selected element's settings, or section-level
+// settings (theme / layout / overlay strength / image) when no element is
+// selected.
 // =============================================================================
 
 export type HeroLayout = 'split' | 'overlay';
+export type HeadlineSize = 'm' | 'l' | 'xl';
+export type SubSize = 's' | 'm' | 'l';
 
 /** Selectable element ids within the hero preview. */
 type HeroElement = 'eyebrow' | 'headline' | 'subheadline' | 'ctaPrimary' | 'ctaSecondary';
@@ -28,11 +31,15 @@ export type HeroData = {
   layout: HeroLayout;
   theme: SectionTheme;
   imageSide: 'left' | 'right';
+  /** Scrim opacity for the overlay layout, 0–100. */
+  overlayOpacity: number;
   eyebrow: string;
   headline: string;
   /** Second headline line, rendered in the brand accent colour. */
   headlineAccent: string;
+  headlineSize: HeadlineSize;
   sub: string;
+  subSize: SubSize;
   ctaPrimaryLabel: string;
   ctaPrimaryHref: string;
   ctaSecondaryLabel: string;
@@ -44,10 +51,13 @@ const DEFAULTS: HeroData = {
   layout: 'split',
   theme: { background: '#0d1f3a', heading: '#ffffff', body: '#c4cdda' },
   imageSide: 'right',
+  overlayOpacity: 88,
   eyebrow: 'LOCAL · TRUSTED',
   headline: 'Power back on,',
   headlineAccent: 'guaranteed within the hour.',
+  headlineSize: 'l',
   sub: 'Licensed sparkies covering Perth metro. Fixed callout, transparent quote — no surprises, ever.',
+  subSize: 'm',
   ctaPrimaryLabel: 'Book a callout',
   ctaPrimaryHref: '/schedule',
   ctaSecondaryLabel: 'Call now',
@@ -64,6 +74,20 @@ function defaultData(): HeroData {
 function withDefaults(data: HeroData): HeroData {
   return { ...DEFAULTS, ...data };
 }
+
+// Static class strings — Tailwind scans these literals; the runtime lookup
+// just picks one.
+const HEADLINE_SIZE_CLASS: Record<HeadlineSize, string> = {
+  m: 'text-[32px] md:text-[40px]',
+  l: 'text-[40px] md:text-[52px]',
+  xl: 'text-[48px] md:text-[64px]',
+};
+
+const SUB_SIZE_CLASS: Record<SubSize, string> = {
+  s: 'text-[14px]',
+  m: 'text-[16px]',
+  l: 'text-[18px]',
+};
 
 const HEADLINE_ALTS = [
   DEFAULTS.headline,
@@ -93,6 +117,18 @@ const IMAGE_SIDE_OPTIONS: readonly VariantOption<'left' | 'right'>[] = [
   { id: 'right', label: 'Image right' },
 ];
 
+const HEADLINE_SIZE_OPTIONS: readonly VariantOption<HeadlineSize>[] = [
+  { id: 'm', label: 'Medium' },
+  { id: 'l', label: 'Large' },
+  { id: 'xl', label: 'Extra large' },
+];
+
+const SUB_SIZE_OPTIONS: readonly VariantOption<SubSize>[] = [
+  { id: 's', label: 'Small' },
+  { id: 'm', label: 'Medium' },
+  { id: 'l', label: 'Large' },
+];
+
 // -- Fields -----------------------------------------------------------------
 
 function HeroFields({ data, onChange, selectedElement }: SectionFieldsProps<HeroData>) {
@@ -102,7 +138,6 @@ function HeroFields({ data, onChange, selectedElement }: SectionFieldsProps<Hero
   const setColor = (key: keyof SectionTheme, value: string) =>
     set('theme', { ...d.theme, [key]: value });
 
-  // -- element panels --
   if (selectedElement === 'eyebrow') {
     return (
       <BuilderFormSection>
@@ -139,6 +174,12 @@ function HeroFields({ data, onChange, selectedElement }: SectionFieldsProps<Hero
           rows={2}
           helper={<>Second line — rendered in the brand accent colour.</>}
         />
+        <VariantField
+          label="Size"
+          value={d.headlineSize}
+          options={HEADLINE_SIZE_OPTIONS}
+          onChange={(v) => set('headlineSize', v)}
+        />
         <ColorField
           label="Heading colour"
           value={d.theme.heading}
@@ -159,6 +200,12 @@ function HeroFields({ data, onChange, selectedElement }: SectionFieldsProps<Hero
           onChange={(v) => set('sub', v)}
           multiline
           rows={3}
+        />
+        <VariantField
+          label="Size"
+          value={d.subSize}
+          options={SUB_SIZE_OPTIONS}
+          onChange={(v) => set('subSize', v)}
         />
         <ColorField
           label="Text colour"
@@ -216,7 +263,17 @@ function HeroFields({ data, onChange, selectedElement }: SectionFieldsProps<Hero
             options={IMAGE_SIDE_OPTIONS}
             onChange={(v) => set('imageSide', v)}
           />
-        ) : null}
+        ) : (
+          <RangeField
+            label="Overlay strength"
+            value={d.overlayOpacity}
+            onChange={(v) => set('overlayOpacity', v)}
+            min={40}
+            max={100}
+            suffix="%"
+            helper={<>How strongly the scrim darkens the image.</>}
+          />
+        )}
       </BuilderFormSection>
       <BuilderFormSection>
         <MediaField
@@ -248,7 +305,11 @@ function HeroPreview({
       pad="none"
       backgroundLayer={
         overlay ? (
-          <HeroBackground url={d.heroImageUrl} scrim={d.theme.background} />
+          <HeroBackground
+            url={d.heroImageUrl}
+            scrim={d.theme.background}
+            opacity={d.overlayOpacity / 100}
+          />
         ) : undefined
       }
     >
@@ -273,7 +334,7 @@ function HeroPreview({
             ) : null}
             <SelectableElement {...sel('headline')} className="mt-4">
               <h2
-                className="text-[40px] font-bold leading-[1.06] tracking-[-0.02em] md:text-[52px]"
+                className={`${HEADLINE_SIZE_CLASS[d.headlineSize]} font-bold leading-[1.06] tracking-[-0.02em]`}
                 style={{ fontFamily: headingFont, color: theme.heading }}
               >
                 <span className="block">{d.headline}</span>
@@ -287,7 +348,7 @@ function HeroPreview({
             {d.sub ? (
               <SelectableElement {...sel('subheadline')} className="mt-5">
                 <p
-                  className="max-w-[460px] text-[16px] leading-[1.6]"
+                  className={`${SUB_SIZE_CLASS[d.subSize]} max-w-[460px] leading-[1.6]`}
                   style={{ color: theme.body }}
                 >
                   {d.sub}
@@ -382,7 +443,20 @@ function HeroImage({
   );
 }
 
-function HeroBackground({ url, scrim }: { url: string; scrim: string }) {
+function HeroBackground({
+  url,
+  scrim,
+  opacity,
+}: {
+  url: string;
+  scrim: string;
+  opacity: number;
+}) {
+  // Scale the three-stop scrim gradient by the chosen opacity.
+  const a = (multiplier: number) => {
+    const v = Math.round(Math.max(0, Math.min(1, opacity * multiplier)) * 255);
+    return v.toString(16).padStart(2, '0');
+  };
   return (
     <>
       {url ? (
@@ -392,7 +466,7 @@ function HeroBackground({ url, scrim }: { url: string; scrim: string }) {
       <div
         className="absolute inset-0"
         style={{
-          background: `linear-gradient(100deg, ${scrim} 0%, ${scrim}f0 38%, ${scrim}73 100%)`,
+          background: `linear-gradient(100deg, ${scrim}${a(1)} 0%, ${scrim}${a(0.92)} 38%, ${scrim}${a(0.5)} 100%)`,
         }}
       />
     </>
