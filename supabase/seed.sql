@@ -331,3 +331,40 @@ insert into public.notification_reads (notification_id, user_id, read_at)
 values
   ('9a000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000002',
    now() - interval '2 days');
+
+-- ===== Phase 2 fixtures · capability grant + builder baseline ================
+-- Mark (Voltline) is the platform's stub editor — a workspace-wide grant
+-- (website_id NULL) gives him the Lane B editor capability set. Liam stays a
+-- view-only client (no grant -> viewBuilder floor only). This is what makes
+-- the §6 RLS negative tests meaningful.
+insert into public.capability_grants (id, user_id, website_id, capabilities)
+values (
+  '11000000-0000-4000-8000-000000000001',
+  'a0000000-0000-4000-8000-000000000002',
+  null,
+  '{editCopy,editMedia,editSEO,editSections,useAI}'::capability[]
+);
+
+-- A minimal Voltline website + draft baseline version so the builder-family
+-- RLS policies have real rows to validate against (Lane B submit, publish gate).
+insert into public.websites (id, client_id, name, domain_primary)
+values (
+  'e1000000-0000-4000-8000-000000000001',
+  'c0000000-0000-4000-8000-000000000001',
+  'Voltline website',
+  'voltline.com.au'
+);
+
+insert into public.website_versions (id, website_id, status, snapshot, created_by, notes)
+values (
+  'f1000000-0000-4000-8000-000000000001',
+  'e1000000-0000-4000-8000-000000000001',
+  'draft',
+  '{}'::jsonb,
+  'a0000000-0000-4000-8000-000000000002',
+  'Seed draft baseline'
+);
+
+update public.websites
+set draft_version_id = 'f1000000-0000-4000-8000-000000000001'
+where id = 'e1000000-0000-4000-8000-000000000001';

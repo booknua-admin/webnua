@@ -8,36 +8,33 @@ import { PageHeader } from '@/components/shared/PageHeader';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  clientLeads,
-  clientLeadsHero,
-  clientLeadsTabs,
-} from '@/lib/leads/client-leads';
+import { normalizeError } from '@/lib/errors';
+import { clientLeadsHero, clientLeadsTabs } from '@/lib/leads/client-leads';
+import { useClientLeadsInbox } from '@/lib/leads/queries';
 
 function ClientLeadsContent() {
   const [activeTab, setActiveTab] = useState('new');
+  const { data: leads, isLoading, error } = useClientLeadsInbox();
 
   // Tab ids map 1:1 to LeadStatus (plus `all`). Counts are recomputed from
-  // the data so the badge and the filtered list always agree.
-  const tabs = useMemo(
-    () =>
-      clientLeadsTabs.map((tab) => ({
-        ...tab,
-        count:
-          tab.id === 'all'
-            ? clientLeads.length
-            : clientLeads.filter((lead) => lead.status === tab.id).length,
-      })),
-    [],
-  );
+  // the live rows so the badge and the filtered list always agree.
+  const tabs = useMemo(() => {
+    const rows = leads ?? [];
+    return clientLeadsTabs.map((tab) => ({
+      ...tab,
+      count:
+        tab.id === 'all'
+          ? rows.length
+          : rows.filter((lead) => lead.status === tab.id).length,
+    }));
+  }, [leads]);
 
-  const visibleLeads = useMemo(
-    () =>
-      activeTab === 'all'
-        ? clientLeads
-        : clientLeads.filter((lead) => lead.status === activeTab),
-    [activeTab],
-  );
+  const visibleLeads = useMemo(() => {
+    const rows = leads ?? [];
+    return activeTab === 'all'
+      ? rows
+      : rows.filter((lead) => lead.status === activeTab);
+  }, [leads, activeTab]);
 
   return (
     <>
@@ -65,10 +62,14 @@ function ClientLeadsContent() {
         </div>
 
         <div className="overflow-hidden rounded-[14px] border border-ink/8 bg-card">
-          {visibleLeads.length === 0 ? (
-            <p className="px-[18px] py-12 text-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
-              {'// No leads in this view'}
-            </p>
+          {isLoading ? (
+            <InboxNotice>{'// Loading leads…'}</InboxNotice>
+          ) : error ? (
+            <InboxNotice>
+              {`// ${normalizeError(error).message}`}
+            </InboxNotice>
+          ) : visibleLeads.length === 0 ? (
+            <InboxNotice>{'// No leads in this view'}</InboxNotice>
           ) : (
             visibleLeads.map((lead) => (
               <LeadRow
@@ -90,6 +91,14 @@ function ClientLeadsContent() {
         </div>
       </div>
     </>
+  );
+}
+
+function InboxNotice({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="px-[18px] py-12 text-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+      {children}
+    </p>
   );
 }
 

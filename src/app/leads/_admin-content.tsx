@@ -9,26 +9,30 @@ import { LeadsHero } from '@/components/shared/leads/LeadsHero';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { normalizeError } from '@/lib/errors';
 import {
-  adminLeads,
   adminLeadsClientFilters,
   adminLeadsHero,
   adminLeadsTabs,
 } from '@/lib/leads/admin-leads';
+import { useAdminLeadsInbox } from '@/lib/leads/queries';
 
 function AdminLeadsContent() {
   const [activeClient, setActiveClient] = useState('all');
   const [activeTab, setActiveTab] = useState('new');
+  const { data: leads, isLoading, error } = useAdminLeadsInbox();
 
   // The client filter narrows the pool first; tab counts + the visible
   // list are both computed against that already-narrowed pool so the two
   // filters compose correctly.
+  const allLeads = useMemo(() => leads ?? [], [leads]);
+
   const clientPool = useMemo(
     () =>
       activeClient === 'all'
-        ? adminLeads
-        : adminLeads.filter((lead) => lead.clientTone === activeClient),
-    [activeClient],
+        ? allLeads
+        : allLeads.filter((lead) => lead.clientTone === activeClient),
+    [allLeads, activeClient],
   );
 
   const clientFilters = useMemo(
@@ -37,10 +41,10 @@ function AdminLeadsContent() {
         ...chip,
         count:
           chip.id === 'all'
-            ? adminLeads.length
-            : adminLeads.filter((lead) => lead.clientTone === chip.id).length,
+            ? allLeads.length
+            : allLeads.filter((lead) => lead.clientTone === chip.id).length,
       })),
-    [],
+    [allLeads],
   );
 
   // Tab ids map 1:1 to LeadStatus. Counts recomputed from the client pool.
@@ -62,9 +66,7 @@ function AdminLeadsContent() {
     <>
       <Topbar
         hideSearch
-        breadcrumb={
-          <TopbarBreadcrumb trail={['Workspace']} current="Leads" />
-        }
+        breadcrumb={<TopbarBreadcrumb trail={['Workspace']} current="Leads" />}
       />
       <div className="flex flex-col gap-5 px-10 py-10">
         <LeadsHero
@@ -108,10 +110,12 @@ function AdminLeadsContent() {
             <div>{'// Age'}</div>
             <div className="text-right">{'// Activity'}</div>
           </div>
-          {visibleLeads.length === 0 ? (
-            <p className="px-[18px] py-12 text-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
-              {'// No leads in this view'}
-            </p>
+          {isLoading ? (
+            <InboxNotice>{'// Loading leads…'}</InboxNotice>
+          ) : error ? (
+            <InboxNotice>{`// ${normalizeError(error).message}`}</InboxNotice>
+          ) : visibleLeads.length === 0 ? (
+            <InboxNotice>{'// No leads in this view'}</InboxNotice>
           ) : (
             visibleLeads.map((lead) => (
               <LeadRow
@@ -136,6 +140,14 @@ function AdminLeadsContent() {
         </div>
       </div>
     </>
+  );
+}
+
+function InboxNotice({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="px-[18px] py-12 text-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+      {children}
+    </p>
   );
 }
 
