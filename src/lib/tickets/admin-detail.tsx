@@ -108,9 +108,14 @@ export const adminTicketDetail: AdminTicketDetail = {
     { label: 'Submitted', value: '12 min ago' },
   ],
   actions: [
-    { icon: '▦', label: 'Open Voltline website' },
-    { icon: '+', label: 'Create new page draft' },
-    { icon: '↗', label: 'Add internal note' },
-    { icon: '⤿', label: 'Convert to subtasks' },
+    { kind: 'link', icon: '▦', label: 'Open Voltline website', href: '/website' },
+    {
+      kind: 'link',
+      icon: '+',
+      label: 'Create new page draft',
+      href: '/website/new',
+    },
+    { kind: 'inert', icon: '↗', label: 'Add internal note' },
+    { kind: 'inert', icon: '⤿', label: 'Convert to subtasks' },
   ],
 };
