@@ -8,11 +8,30 @@ import type { LeadTab } from '@/lib/leads/types';
 type LeadTabsBarProps = {
   tabs: LeadTab[];
   defaultActiveId?: string;
+  /** Controlled active tab id. When provided, the bar surrenders local
+   *  state and the parent owns activeId via onChange. */
+  value?: string;
+  onChange?: (id: string) => void;
   className?: string;
 };
 
-function LeadTabsBar({ tabs, defaultActiveId, className }: LeadTabsBarProps) {
-  const [activeId, setActiveId] = useState(defaultActiveId ?? tabs[0]?.id);
+function LeadTabsBar({
+  tabs,
+  defaultActiveId,
+  value,
+  onChange,
+  className,
+}: LeadTabsBarProps) {
+  const [internalActiveId, setInternalActiveId] = useState(
+    defaultActiveId ?? tabs[0]?.id,
+  );
+  const isControlled = value !== undefined;
+  const activeId = isControlled ? value : internalActiveId;
+
+  const handleSelect = (id: string) => {
+    if (!isControlled) setInternalActiveId(id);
+    onChange?.(id);
+  };
 
   return (
     <div
@@ -29,7 +48,7 @@ function LeadTabsBar({ tabs, defaultActiveId, className }: LeadTabsBarProps) {
             role="tab"
             aria-selected={isActive}
             data-state={isActive ? 'active' : 'inactive'}
-            onClick={() => setActiveId(tab.id)}
+            onClick={() => handleSelect(tab.id)}
             className={cn(
               'inline-flex items-center gap-1.5 rounded-full border border-transparent px-3.5 py-2 text-[13px] transition-colors',
               isActive

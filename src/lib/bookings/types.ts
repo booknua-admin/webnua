@@ -64,11 +64,15 @@ type ClientBookingDetail = {
   customer: {
     initial: string;
     name: string;
+    /** Bare phone number — drives the "Call" action's tel: link. */
+    phone: string;
     /** Full contact line — `<strong>` segments render ink-bold */
     contact: React.ReactNode;
   };
   job: BookingJobCell[];
   notes: React.ReactNode;
+  /** Plain-text form of `notes` — seeds the editable "Edit job notes" modal. */
+  notesText: string;
   history: BookingHistoryItemCompact[];
   actions: ClientBookingActionGroup[];
   /** "// NEXT" tail card — explanatory text instead of buttons */

@@ -38,10 +38,18 @@ import {
   type DraftSlot,
   loadDraftSections,
 } from '@/lib/website/draft-stub';
-import type { Page, Section, Website } from '@/lib/website/types';
+import { getSectionDefinition } from '@/lib/website/sections';
+import type {
+  ContainerKind,
+  Page,
+  Section,
+  SectionType,
+  Website,
+} from '@/lib/website/types';
 import { useAutosave } from '@/lib/website/use-autosave';
 import { useUserPendingSubmission } from '@/lib/website/use-publish-state';
 
+import { AddSectionDialog } from './AddSectionDialog';
 import { WebsiteEditorPendingBanner } from './WebsiteEditorPendingBanner';
 
 import {
@@ -115,6 +123,11 @@ function domainForMode(mode: SectionEditorMode): string {
     : mode.website.domain.primary;
 }
 
+/** The container new sections are added into. Singleton mode has no add. */
+function containerForMode(mode: SectionEditorMode): ContainerKind {
+  return mode.kind === 'funnelStep' ? 'funnelStep' : 'page';
+}
+
 export function SectionEditor({ mode }: SectionEditorProps) {
   const brand = getBrandForClient(clientIdForMode(mode));
   const slot = useMemo(() => slotForMode(mode), [mode]);
@@ -144,6 +157,8 @@ export function SectionEditor({ mode }: SectionEditorProps) {
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(
     () => (mode.kind === 'singleton' ? mode.section.id : null),
   );
+
+  const [addOpen, setAddOpen] = useState(false);
 
   // Reset local state when the source content changes (e.g. tab swap).
   // Re-hydrate from the autosave draft for the new slot if present.
@@ -185,6 +200,19 @@ export function SectionEditor({ mode }: SectionEditorProps) {
     setSections((current) =>
       current.map((s) => (s.id === id ? { ...s, data: nextData } : s)),
     );
+  };
+
+  const handleAddSection = (type: SectionType) => {
+    const definition = getSectionDefinition(type);
+    if (!definition) return;
+    const newSection: Section = {
+      id: `sec-${Math.random().toString(36).slice(2, 9)}`,
+      type,
+      enabled: true,
+      data: definition.defaultData() as Record<string, unknown>,
+    };
+    setSections((current) => [...current, newSection]);
+    setSelectedSectionId(newSection.id);
   };
 
   if (!brand) {
@@ -287,6 +315,7 @@ export function SectionEditor({ mode }: SectionEditorProps) {
           selectedSectionId={selectedSectionId}
           onSelectSection={setSelectedSectionId}
           onToggleSectionEnabled={handleToggleSectionEnabled}
+          onRequestAddSection={() => setAddOpen(true)}
         />
         <PagePreviewPane
           sections={sections}
@@ -309,6 +338,12 @@ export function SectionEditor({ mode }: SectionEditorProps) {
           />
         ) : null}
       </div>
+      <AddSectionDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        container={containerForMode(mode)}
+        onAdd={handleAddSection}
+      />
     </div>
   );
 }

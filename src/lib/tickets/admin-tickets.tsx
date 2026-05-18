@@ -74,11 +74,6 @@ export const adminTicketTabs: TicketTab[] = [
   { id: 'done', label: 'Done', count: 12 },
 ];
 
-export const adminTicketFilters = {
-  active: ['Website'] as string[],
-  available: ['+ Category', '+ Client'] as string[],
-};
-
 export const adminTickets: AdminTicketRow[] = [
   {
     id: 'TKT-0247',

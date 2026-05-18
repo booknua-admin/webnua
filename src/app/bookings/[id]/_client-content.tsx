@@ -1,10 +1,17 @@
+'use client';
+
+import { useParams, useRouter } from 'next/navigation';
+import { useState } from 'react';
+
 import { BookingActionBtn } from '@/components/shared/bookings/BookingActionBtn';
 import { BookingHistoryRow } from '@/components/shared/bookings/BookingHistoryRow';
 import { BookingJobGrid } from '@/components/shared/bookings/BookingJobGrid';
 import { BookingNotesBox } from '@/components/shared/bookings/BookingNotesBox';
 import { BookingSection } from '@/components/shared/bookings/BookingSection';
 import { ClientBookingHero } from '@/components/shared/bookings/ClientBookingHero';
+import { EditJobNotesModal } from '@/components/shared/bookings/EditJobNotesModal';
 import { RescheduleBookingButton } from '@/components/shared/bookings/RescheduleBookingButton';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { RailCard } from '@/components/shared/RailCard';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { voltlineBooking } from '@/lib/bookings/client-booking';
@@ -12,6 +19,12 @@ import { voltlineReschedule } from '@/lib/bookings/reschedule-modal';
 
 function ClientBookingDetailContent() {
   const b = voltlineBooking;
+  const params = useParams();
+  const router = useRouter();
+  const id = Array.isArray(params.id) ? params.id[0] : (params.id ?? '');
+  const completeHref = `/bookings/${id}/complete`;
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
   return (
     <>
       <Topbar
@@ -68,25 +81,40 @@ function ClientBookingDetailContent() {
           <div className="sticky top-[100px] flex flex-col gap-3">
             {b.actions.map((group) => (
               <RailCard key={group.heading} heading={group.heading}>
-                {group.actions.map((a, i) =>
-                  a.label === 'Reschedule' ? (
-                    <RescheduleBookingButton
-                      key={i}
-                      data={voltlineReschedule}
-                      label={a.label}
-                      variant="action-row"
-                      icon={a.icon}
-                    />
-                  ) : (
+                {group.actions.map((a, i) => {
+                  if (a.label === 'Reschedule') {
+                    return (
+                      <RescheduleBookingButton
+                        key={i}
+                        data={voltlineReschedule}
+                        label={a.label}
+                        variant="action-row"
+                        icon={a.icon}
+                      />
+                    );
+                  }
+                  let href = a.href;
+                  let onClick: (() => void) | undefined;
+                  if (a.label === 'Mark job complete') {
+                    href = completeHref;
+                  } else if (a.label.startsWith('Call ')) {
+                    href = `tel:${b.customer.phone.replace(/\s+/g, '')}`;
+                  } else if (a.label === 'Cancel booking') {
+                    onClick = () => setCancelOpen(true);
+                  } else if (a.label === 'Edit job notes') {
+                    onClick = () => setNotesOpen(true);
+                  }
+                  return (
                     <BookingActionBtn
                       key={i}
                       icon={a.icon}
                       label={a.label}
                       tone={a.tone ?? 'secondary'}
-                      href={a.href}
+                      href={href}
+                      onClick={onClick}
                     />
-                  ),
-                )}
+                  );
+                })}
               </RailCard>
             ))}
             {b.nextNote ? (
@@ -99,6 +127,27 @@ function ClientBookingDetailContent() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={cancelOpen}
+        onOpenChange={setCancelOpen}
+        title="Cancel this booking?"
+        description="The slot is freed on your calendar and the customer is notified."
+        confirmLabel="Cancel booking"
+        cancelLabel="Keep booking"
+        tone="destructive"
+        onConfirm={() => router.push('/calendar')}
+      />
+      {notesOpen ? (
+        <EditJobNotesModal
+          open
+          onOpenChange={setNotesOpen}
+          initialNotes={b.notesText}
+          onSave={(notes) =>
+            console.log('[stub] job notes saved', { id, notes })
+          }
+        />
+      ) : null}
     </>
   );
 }

@@ -1,3 +1,7 @@
+'use client';
+
+import { useMemo, useState } from 'react';
+
 import { FilterChips } from '@/components/shared/FilterChips';
 import { LeadRow } from '@/components/shared/leads/LeadRow';
 import { LeadTabsBar } from '@/components/shared/leads/LeadTabsBar';
@@ -13,6 +17,47 @@ import {
 } from '@/lib/leads/admin-leads';
 
 function AdminLeadsContent() {
+  const [activeClient, setActiveClient] = useState('all');
+  const [activeTab, setActiveTab] = useState('new');
+
+  // The client filter narrows the pool first; tab counts + the visible
+  // list are both computed against that already-narrowed pool so the two
+  // filters compose correctly.
+  const clientPool = useMemo(
+    () =>
+      activeClient === 'all'
+        ? adminLeads
+        : adminLeads.filter((lead) => lead.clientTone === activeClient),
+    [activeClient],
+  );
+
+  const clientFilters = useMemo(
+    () =>
+      adminLeadsClientFilters.map((chip) => ({
+        ...chip,
+        count:
+          chip.id === 'all'
+            ? adminLeads.length
+            : adminLeads.filter((lead) => lead.clientTone === chip.id).length,
+      })),
+    [],
+  );
+
+  // Tab ids map 1:1 to LeadStatus. Counts recomputed from the client pool.
+  const tabs = useMemo(
+    () =>
+      adminLeadsTabs.map((tab) => ({
+        ...tab,
+        count: clientPool.filter((lead) => lead.status === tab.id).length,
+      })),
+    [clientPool],
+  );
+
+  const visibleLeads = useMemo(
+    () => clientPool.filter((lead) => lead.status === activeTab),
+    [clientPool, activeTab],
+  );
+
   return (
     <>
       <Topbar
@@ -29,8 +74,9 @@ function AdminLeadsContent() {
 
         <FilterChips
           label="// CLIENT"
-          chips={adminLeadsClientFilters}
-          defaultActiveId="all"
+          chips={clientFilters}
+          value={activeClient}
+          onChange={setActiveClient}
         />
 
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -50,7 +96,7 @@ function AdminLeadsContent() {
           </div>
         </div>
 
-        <LeadTabsBar tabs={adminLeadsTabs} defaultActiveId="new" />
+        <LeadTabsBar tabs={tabs} value={activeTab} onChange={setActiveTab} />
 
         <div className="overflow-hidden rounded-2xl border border-ink/8 bg-card">
           <div className="grid grid-cols-[36px_180px_1fr_110px_90px_100px] items-center gap-3 border-b border-ink/8 bg-paper-2/40 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
@@ -61,25 +107,31 @@ function AdminLeadsContent() {
             <div>{'// Age'}</div>
             <div className="text-right">{'// Activity'}</div>
           </div>
-          {adminLeads.map((lead) => (
-            <LeadRow
-              key={lead.id}
-              variant="admin"
-              initial={lead.initial}
-              name={lead.name}
-              clientName={lead.clientName}
-              clientService={lead.clientService}
-              clientTone={lead.clientTone}
-              preview={lead.preview}
-              status={lead.status}
-              statusLabel={lead.statusLabel}
-              age={lead.age}
-              meta={lead.meta}
-              metaTone={lead.metaTone}
-              unread={lead.unread}
-              href={lead.href}
-            />
-          ))}
+          {visibleLeads.length === 0 ? (
+            <p className="px-[18px] py-12 text-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+              {'// No leads in this view'}
+            </p>
+          ) : (
+            visibleLeads.map((lead) => (
+              <LeadRow
+                key={lead.id}
+                variant="admin"
+                initial={lead.initial}
+                name={lead.name}
+                clientName={lead.clientName}
+                clientService={lead.clientService}
+                clientTone={lead.clientTone}
+                preview={lead.preview}
+                status={lead.status}
+                statusLabel={lead.statusLabel}
+                age={lead.age}
+                meta={lead.meta}
+                metaTone={lead.metaTone}
+                unread={lead.unread}
+                href={lead.href}
+              />
+            ))
+          )}
         </div>
       </div>
     </>

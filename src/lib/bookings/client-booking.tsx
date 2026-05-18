@@ -17,6 +17,7 @@ const voltlineBooking: ClientBookingDetail = {
   customer: {
     initial: 'LR',
     name: 'Liam Reilly',
+    phone: '0412 884 273',
     contact: (
       <>
         <strong>0412 884 273</strong> · liam.reilly@gmail.com · Highgate, Perth ·
@@ -47,6 +48,8 @@ const voltlineBooking: ClientBookingDetail = {
       pot plant. Dog is friendly but loud — give him a sec.
     </>
   ),
+  notesText:
+    'Existing ceiling fan in master bedroom needs replacing — new unit already purchased, just needs the install. RCD on the main switchboard is old and tripping intermittently. Front door key under the pot plant. Dog is friendly but loud — give him a sec.',
   history: [
     {
       date: '15 April 2026',

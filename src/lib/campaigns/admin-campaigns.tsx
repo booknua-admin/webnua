@@ -53,6 +53,7 @@ const adminCampaigns: AdminCampaignsPage = {
   rows: [
     {
       id: 'freshhome-first-clean',
+      clientId: 'freshhome',
       logoInitial: 'F',
       name: 'FreshHome · $99 first clean',
       meta: (
@@ -71,6 +72,7 @@ const adminCampaigns: AdminCampaignsPage = {
     },
     {
       id: 'keyhero-response',
+      clientId: 'keyhero',
       logoInitial: 'K',
       name: 'KeyHero · 30-min response',
       meta: (
@@ -89,6 +91,7 @@ const adminCampaigns: AdminCampaignsPage = {
     },
     {
       id: 'neatworks-dublin',
+      clientId: 'neatworks',
       logoInitial: 'N',
       name: 'NeatWorks · Dublin residential',
       meta: (
@@ -106,6 +109,7 @@ const adminCampaigns: AdminCampaignsPage = {
     },
     {
       id: 'voltline-response',
+      clientId: 'voltline',
       logoInitial: 'V',
       name: 'Voltline · 90-min response',
       meta: (

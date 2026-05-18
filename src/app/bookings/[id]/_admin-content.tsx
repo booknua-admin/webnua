@@ -1,3 +1,10 @@
+'use client';
+
+import Link from 'next/link';
+import { useParams, useRouter } from 'next/navigation';
+
+import { useState } from 'react';
+
 import { AdminBookingHero } from '@/components/shared/bookings/AdminBookingHero';
 import { BookingHistoryRow } from '@/components/shared/bookings/BookingHistoryRow';
 import { BookingJobGrid } from '@/components/shared/bookings/BookingJobGrid';
@@ -5,6 +12,7 @@ import { BookingNotesBox } from '@/components/shared/bookings/BookingNotesBox';
 import { BookingSection } from '@/components/shared/bookings/BookingSection';
 import { RescheduleBookingButton } from '@/components/shared/bookings/RescheduleBookingButton';
 import { freshhomeReschedule } from '@/lib/bookings/reschedule-modal';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { RailCard } from '@/components/shared/RailCard';
 import { RailPropertyRow } from '@/components/shared/RailPropertyRow';
@@ -14,6 +22,15 @@ import { freshhomeBooking } from '@/lib/bookings/admin-booking';
 
 function AdminBookingDetailContent() {
   const b = freshhomeBooking;
+  const params = useParams();
+  const router = useRouter();
+  const id = Array.isArray(params.id) ? params.id[0] : (params.id ?? '');
+  const completeHref = `/bookings/${id}/complete`;
+  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+    b.location.address.replace(/\s·\s/g, ', '),
+  )}`;
+
+  const [cancelOpen, setCancelOpen] = useState(false);
   return (
     <>
       <Topbar
@@ -37,14 +54,18 @@ function AdminBookingDetailContent() {
               customer={b.customer}
               actions={
                 <>
-                  <Button variant="default" className="h-9">
-                    Mark complete
+                  <Button variant="default" className="h-9" asChild>
+                    <Link href={completeHref}>Mark complete</Link>
                   </Button>
                   <RescheduleBookingButton data={freshhomeReschedule} />
                   <Button variant="secondary" className="h-9" asChild>
                     <a href="/leads/larsen">Open lead →</a>
                   </Button>
-                  <Button variant="ghost" className="h-9">
+                  <Button
+                    variant="ghost"
+                    className="h-9"
+                    onClick={() => setCancelOpen(true)}
+                  >
                     Cancel booking
                   </Button>
                 </>
@@ -94,8 +115,14 @@ function AdminBookingDetailContent() {
                   {b.location.address}
                 </span>
               </div>
-              <Button variant="secondary" className="h-9 w-full text-[12px]">
-                Open in Maps ↗
+              <Button
+                variant="secondary"
+                className="h-9 w-full text-[12px]"
+                asChild
+              >
+                <a href={mapsUrl} target="_blank" rel="noopener noreferrer">
+                  Open in Maps ↗
+                </a>
               </Button>
             </RailCard>
 
@@ -107,6 +134,17 @@ function AdminBookingDetailContent() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={cancelOpen}
+        onOpenChange={setCancelOpen}
+        title="Cancel this booking?"
+        description="The slot is freed on the calendar and the customer is notified."
+        confirmLabel="Cancel booking"
+        cancelLabel="Keep booking"
+        tone="destructive"
+        onConfirm={() => router.push('/calendar')}
+      />
     </>
   );
 }

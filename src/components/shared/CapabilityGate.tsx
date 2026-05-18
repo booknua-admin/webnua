@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { type ReactNode } from 'react';
 
 import {
@@ -10,6 +11,7 @@ import {
 import { CAP_EXPLAINER } from '@/lib/auth/explainers';
 import type { Capability } from '@/lib/auth/capabilities';
 import { useCan } from '@/lib/auth/user-stub';
+import { buildRequestChangeHref } from '@/lib/tickets/request-change';
 import { cn } from '@/lib/utils';
 
 import { RequestChangeAffordance } from './RequestChangeAffordance';
@@ -21,8 +23,10 @@ import { RequestChangeAffordance } from './RequestChangeAffordance';
 //   - 'hide'    → render null when user lacks the cap
 //   - 'disable' → render children inert + tooltip explainer
 //   - 'request' → render children inert + hover affordance to open a
-//                 request-change ticket (callback stubbed in 1a; real
-//                 ticket creation wires up in a later session)
+//                 request-change ticket. By default the affordance routes
+//                 to the /tickets/new submit form, prefilled with the
+//                 field context (design doc §1.3 / §3.3 Lane C). A caller
+//                 may pass `onRequestChange` to override that behaviour.
 //
 // `request` mode falls back to `hide` when the cap's explainer has no
 // requestLabel (viewBuilder, approve). This is deliberate — those caps
@@ -42,9 +46,12 @@ export type CapabilityGateProps = {
   children: ReactNode;
   /** Override the default CAP_EXPLAINER short text in `disable` mode. */
   disabledExplainer?: string;
-  /** Forwarded to onRequestChange in `request` mode. */
+  /** Field context carried into the request-change ticket in `request` mode. */
   requestContext?: RequestChangeContext;
-  /** Fired when the user clicks the request-change affordance. */
+  /**
+   * Overrides the default request-change behaviour (route to /tickets/new).
+   * Fired with the field context when the affordance is clicked.
+   */
   onRequestChange?: (ctx: RequestChangeContext) => void;
   className?: string;
 };
@@ -59,6 +66,7 @@ export function CapabilityGate({
   className,
 }: CapabilityGateProps) {
   const has = useCan(capability);
+  const router = useRouter();
 
   if (has) {
     return <>{children}</>;
@@ -95,10 +103,19 @@ export function CapabilityGate({
     return null;
   }
 
+  const ctx = requestContext ?? {};
+  const handleRequest = () => {
+    if (onRequestChange) {
+      onRequestChange(ctx);
+      return;
+    }
+    router.push(buildRequestChangeHref({ capability, ...ctx }));
+  };
+
   return (
     <RequestChangeAffordance
       label={explainer.requestLabel}
-      onClick={() => onRequestChange?.(requestContext ?? {})}
+      onClick={handleRequest}
       className={className}
     >
       {children}
