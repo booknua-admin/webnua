@@ -1,4 +1,5 @@
 import type {
+  IntegrationAction,
   IntegrationLogoTone,
   IntegrationStatus,
 } from '@/components/shared/settings/IntegrationCard';
@@ -11,7 +12,7 @@ type AdminIntegration = {
   statusLabel?: string;
   logo: { initial: string; tone?: IntegrationLogoTone };
   meta?: React.ReactNode;
-  action: { label: string; href?: string };
+  action: IntegrationAction;
 };
 
 export const adminConnectedIntegrations: AdminIntegration[] = [
@@ -25,7 +26,7 @@ export const adminConnectedIntegrations: AdminIntegration[] = [
     ),
     status: 'connected',
     logo: { initial: 'R' },
-    action: { label: 'Manage →' },
+    action: { label: 'Manage →', kind: 'manage' },
   },
   {
     id: 'twilio',
@@ -37,7 +38,7 @@ export const adminConnectedIntegrations: AdminIntegration[] = [
     ),
     status: 'connected',
     logo: { initial: 'T' },
-    action: { label: 'Manage →' },
+    action: { label: 'Manage →', kind: 'manage' },
   },
   {
     id: 'meta-ads',
@@ -49,7 +50,7 @@ export const adminConnectedIntegrations: AdminIntegration[] = [
     ),
     status: 'connected',
     logo: { initial: 'M', tone: 'meta' },
-    action: { label: 'Manage →' },
+    action: { label: 'Manage →', kind: 'manage' },
   },
   {
     id: 'gbp',
@@ -62,7 +63,7 @@ export const adminConnectedIntegrations: AdminIntegration[] = [
     status: 'partial',
     statusLabel: '3 / 4 connected',
     logo: { initial: 'G', tone: 'gbp' },
-    action: { label: 'Connect Voltline →' },
+    action: { label: 'Connect Voltline →', kind: 'connect' },
   },
   {
     id: 'vercel',
@@ -74,7 +75,7 @@ export const adminConnectedIntegrations: AdminIntegration[] = [
     ),
     status: 'connected',
     logo: { initial: 'V' },
-    action: { label: 'Manage →' },
+    action: { label: 'Manage →', kind: 'manage' },
   },
   {
     id: 'anthropic',
@@ -86,7 +87,7 @@ export const adminConnectedIntegrations: AdminIntegration[] = [
     ),
     status: 'connected',
     logo: { initial: 'A' },
-    action: { label: 'Manage →' },
+    action: { label: 'Manage →', kind: 'manage' },
   },
 ];
 
@@ -97,7 +98,7 @@ export const adminAvailableIntegrations: AdminIntegration[] = [
     description: 'Payment processing for client billing · 1.75% + 30c per transaction (AU)',
     status: 'missing',
     logo: { initial: 'S', tone: 'stripe' },
-    action: { label: 'Connect →' },
+    action: { label: 'Connect →', kind: 'connect' },
   },
   {
     id: 'xero',
@@ -105,6 +106,6 @@ export const adminAvailableIntegrations: AdminIntegration[] = [
     description: 'Accounting sync · invoice export, BAS reporting',
     status: 'missing',
     logo: { initial: 'X' },
-    action: { label: 'Connect →' },
+    action: { label: 'Connect →', kind: 'connect' },
   },
 ];
