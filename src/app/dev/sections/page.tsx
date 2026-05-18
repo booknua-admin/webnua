@@ -17,10 +17,7 @@ import { useState } from 'react';
 
 import { DEFAULT_PREVIEW_BRAND, getBrandForClient } from '@/lib/website/data-stub';
 import { CURATED_FONTS } from '@/lib/website/google-fonts';
-import {
-  SECTION_SURFACES,
-  type SectionSurface,
-} from '@/lib/website/section-surface';
+import { THEME_PRESETS } from '@/lib/website/section-theme';
 import { getImplementedSections } from '@/lib/website/sections';
 import type { BrandObject } from '@/lib/website/types';
 
@@ -41,7 +38,7 @@ export default function DevSectionsPage() {
   const [clientId, setClientId] = useState<string>('voltline');
   const [headingFont, setHeadingFont] = useState('inter-tight');
   const [bodyFont, setBodyFont] = useState('inter-tight');
-  const [surfaceOverride, setSurfaceOverride] = useState<SectionSurface | ''>('');
+  const [themeOverride, setThemeOverride] = useState<string>('');
 
   const baseBrand = getBrandForClient(clientId) ?? DEFAULT_PREVIEW_BRAND;
   const brand: BrandObject = { ...baseBrand, headingFont, bodyFont };
@@ -74,18 +71,16 @@ export default function DevSectionsPage() {
           <Control label="Body font">
             <FontSelect value={bodyFont} onChange={setBodyFont} />
           </Control>
-          <Control label="Surface">
+          <Control label="Theme">
             <select
-              value={surfaceOverride}
-              onChange={(e) =>
-                setSurfaceOverride(e.target.value as SectionSurface | '')
-              }
+              value={themeOverride}
+              onChange={(e) => setThemeOverride(e.target.value)}
               className="rounded border border-white/15 bg-ink-soft px-2 py-1 text-[12px] text-paper"
             >
               <option value="">(section default)</option>
-              {SECTION_SURFACES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
+              {THEME_PRESETS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
                 </option>
               ))}
             </select>
@@ -96,7 +91,8 @@ export default function DevSectionsPage() {
       <main>
         {sections.flatMap((def) => {
           const base = def.defaultData() as Record<string, unknown>;
-          const hasSurface = 'surface' in base;
+          const hasTheme = 'theme' in base;
+          const overridePreset = THEME_PRESETS.find((p) => p.id === themeOverride);
           const cases = [
             { label: 'default', data: {} as Record<string, unknown> },
             ...(EXTRA_CASES[def.type] ?? []),
@@ -106,8 +102,8 @@ export default function DevSectionsPage() {
             const data = {
               ...base,
               ...c.data,
-              ...(hasSurface && surfaceOverride
-                ? { surface: surfaceOverride }
+              ...(hasTheme && overridePreset
+                ? { theme: overridePreset.theme }
                 : {}),
             };
             return (

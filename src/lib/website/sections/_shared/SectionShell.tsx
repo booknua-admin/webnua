@@ -4,15 +4,15 @@
 // SectionShell — the shared full-bleed wrapper every uplifted section's
 // Preview renders inside (Phase 6 · section-library uplift).
 //
-// Owns: the surface background + base body-text colour, the brand body font,
-// loading the brand's Google Fonts, and (in `band` inset) a centred
-// max-width content band.
+// Owns: the section background + base body-text colour (from the section's
+// editable colour theme), the brand body font, loading the brand's Google
+// Fonts, and (in `band` inset) a centred max-width content band.
 //
 // It deliberately REPLACES the old per-section `rounded-xl border bg-card`
 // editor-card framing — an uplifted section renders edge-to-edge like a real
 // website section, not a boxed schematic.
 //
-// `children` is a render-prop receiving the resolved SurfaceTokens + the
+// `children` is a render-prop receiving the resolved theme tokens + the
 // heading / body font stacks + the brand accent.
 // =============================================================================
 
@@ -20,17 +20,17 @@ import type { ReactNode } from 'react';
 
 import { getFont } from '@/lib/website/google-fonts';
 import {
-  getSurfaceTokens,
-  type SectionSurface,
-  type SurfaceTokens,
-} from '@/lib/website/section-surface';
+  resolveTheme,
+  type ResolvedTheme,
+  type SectionTheme,
+} from '@/lib/website/section-theme';
 import type { BrandObject } from '@/lib/website/types';
 
 import { GoogleFontLoader } from './GoogleFontLoader';
 
 export type SectionShellRenderProps = {
-  /** Resolved colour tokens for the active surface. */
-  surface: SurfaceTokens;
+  /** Resolved colour tokens for the section's theme. */
+  theme: ResolvedTheme;
   /** CSS font-family stack for display headings. */
   headingFont: string;
   /** CSS font-family stack for body copy. */
@@ -40,7 +40,8 @@ export type SectionShellRenderProps = {
 };
 
 type SectionShellProps = {
-  surface: SectionSurface;
+  /** The section's editable colour theme. */
+  theme: SectionTheme;
   brand: BrandObject;
   /** Vertical padding scale. `none` for sections that self-manage spacing
    *  (heroes, bleeding-image layouts); `tight` for slim bands; `roomy` for
@@ -67,7 +68,7 @@ const PAD: Record<NonNullable<SectionShellProps['pad']>, string> = {
 };
 
 export function SectionShell({
-  surface,
+  theme,
   brand,
   pad = 'default',
   inset = 'band',
@@ -76,7 +77,7 @@ export function SectionShell({
   className,
   children,
 }: SectionShellProps) {
-  const tokens = getSurfaceTokens(surface);
+  const tokens = resolveTheme(theme);
   const headingFont = getFont(brand.headingFont);
   const bodyFont = getFont(brand.bodyFont);
   const banded = inset === 'band';
@@ -93,10 +94,9 @@ export function SectionShell({
 
   return (
     <section
-      data-surface={surface}
       className={sectionClass}
       style={{
-        backgroundColor: tokens.bg,
+        backgroundColor: tokens.background,
         color: tokens.body,
         fontFamily: bodyFont.stack,
       }}
@@ -112,7 +112,7 @@ export function SectionShell({
         style={banded ? { maxWidth } : undefined}
       >
         {children({
-          surface: tokens,
+          theme: tokens,
           headingFont: headingFont.stack,
           bodyFont: bodyFont.stack,
           accent: brand.accentColor,

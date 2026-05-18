@@ -3,21 +3,19 @@
 import { BuilderFormRow, BuilderFormSection } from '@/components/shared/builder/BuilderField';
 
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
-import {
-  type SectionSurface,
-  type SurfaceTokens,
-} from '../section-surface';
+import type { ResolvedTheme, SectionTheme } from '../section-theme';
 import { CopyField } from './_shared/CopyField';
 import { MediaField } from './_shared/MediaField';
 import { SectionShell } from './_shared/SectionShell';
+import { ThemeField } from './_shared/ThemeField';
 import { VariantField, type VariantOption } from './_shared/VariantField';
 
 // =============================================================================
 // Hero section — above-the-fold lead. Phase 6 uplift: renders full-bleed
-// through SectionShell at production fidelity, with two editable axes —
-// `layout` (split image vs image overlay) and `surface` (the four tonal
-// surfaces). The headline is a two-line shape: `headline` + an accent-
-// coloured `headlineAccent` line, matching the reference set.
+// through SectionShell at production fidelity, with three editable axes —
+// `layout` (split image vs image overlay, cycled), `theme` (the editable
+// colour theme), and `imageSide`. The headline is a two-line shape:
+// `headline` + an accent-coloured `headlineAccent` line.
 // =============================================================================
 
 export type HeroLayout = 'split' | 'overlay';
@@ -25,8 +23,8 @@ export type HeroLayout = 'split' | 'overlay';
 export type HeroData = {
   /** Structural arrangement. */
   layout: HeroLayout;
-  /** Tonal surface the section renders on. */
-  surface: SectionSurface;
+  /** Editable colour theme. */
+  theme: SectionTheme;
   /** Which side the image sits on in the `split` layout. */
   imageSide: 'left' | 'right';
   eyebrow: string;
@@ -43,7 +41,7 @@ export type HeroData = {
 
 const DEFAULTS: HeroData = {
   layout: 'split',
-  surface: 'dark',
+  theme: { background: '#0d1f3a', heading: '#ffffff', body: '#c4cdda' },
   imageSide: 'right',
   eyebrow: 'LOCAL · TRUSTED',
   headline: 'Power back on,',
@@ -57,11 +55,11 @@ const DEFAULTS: HeroData = {
 };
 
 function defaultData(): HeroData {
-  return { ...DEFAULTS };
+  return { ...DEFAULTS, theme: { ...DEFAULTS.theme } };
 }
 
 /** Merge persisted data over defaults — covers sections saved before the
- *  Phase 6 uplift added `layout` / `surface` / `headlineAccent` / `imageSide`. */
+ *  Phase 6 uplift reshaped the hero (e.g. the old `surface` field). */
 function withDefaults(data: HeroData): HeroData {
   return { ...DEFAULTS, ...data };
 }
@@ -89,16 +87,9 @@ const LAYOUT_OPTIONS: readonly VariantOption<HeroLayout>[] = [
   { id: 'overlay', label: 'Image overlay' },
 ];
 
-const SURFACE_OPTIONS: readonly VariantOption<SectionSurface>[] = [
-  { id: 'paper', label: 'Paper' },
-  { id: 'white', label: 'White' },
-  { id: 'light', label: 'Light' },
-  { id: 'dark', label: 'Dark' },
-];
-
 const IMAGE_SIDE_OPTIONS: readonly VariantOption<'left' | 'right'>[] = [
-  { id: 'left', label: 'Left' },
-  { id: 'right', label: 'Right' },
+  { id: 'left', label: 'Image left' },
+  { id: 'right', label: 'Image right' },
 ];
 
 // -- Fields -----------------------------------------------------------------
@@ -111,17 +102,12 @@ function HeroFields({ data, onChange }: SectionFieldsProps<HeroData>) {
   return (
     <>
       <BuilderFormSection>
+        <ThemeField value={d.theme} onChange={(v) => set('theme', v)} />
         <VariantField
           label="Layout"
           value={d.layout}
           options={LAYOUT_OPTIONS}
           onChange={(v) => set('layout', v)}
-        />
-        <VariantField
-          label="Surface"
-          value={d.surface}
-          options={SURFACE_OPTIONS}
-          onChange={(v) => set('surface', v)}
         />
         {d.layout === 'split' ? (
           <VariantField
@@ -201,10 +187,9 @@ function HeroFields({ data, onChange }: SectionFieldsProps<HeroData>) {
       </BuilderFormSection>
       <BuilderFormSection>
         <MediaField
-          label="Hero image URL"
+          label="Hero image"
           value={d.heroImageUrl}
           onChange={(v) => set('heroImageUrl', v)}
-          helper="Paste a URL or leave blank for the placeholder."
         />
       </BuilderFormSection>
     </>
@@ -219,17 +204,17 @@ function HeroPreview({ data, brand }: SectionPreviewProps<HeroData>) {
 
   return (
     <SectionShell
-      surface={d.surface}
+      theme={d.theme}
       brand={brand}
       inset="flush"
       pad="none"
       backgroundLayer={overlay ? <HeroBackground url={d.heroImageUrl} /> : undefined}
     >
-      {({ surface, headingFont, accent }) => {
+      {({ theme, headingFont, accent }) => {
         // Overlay sits on a dark image scrim — force light text regardless
-        // of the chosen surface (the surface only sets the no-image fallback).
-        const heading = overlay ? '#ffffff' : surface.heading;
-        const body = overlay ? 'rgba(255, 255, 255, 0.86)' : surface.body;
+        // of the chosen theme (the theme only sets the no-image fallback).
+        const heading = overlay ? '#ffffff' : theme.heading;
+        const body = overlay ? 'rgba(255, 255, 255, 0.86)' : theme.body;
 
         const content = (
           <>
@@ -260,7 +245,7 @@ function HeroPreview({ data, brand }: SectionPreviewProps<HeroData>) {
                 {d.sub}
               </p>
             ) : null}
-            {(d.ctaPrimaryLabel || d.ctaSecondaryLabel) ? (
+            {d.ctaPrimaryLabel || d.ctaSecondaryLabel ? (
               <div className="mt-8 flex flex-wrap items-center gap-3">
                 {d.ctaPrimaryLabel ? (
                   <span
@@ -292,7 +277,7 @@ function HeroPreview({ data, brand }: SectionPreviewProps<HeroData>) {
         }
 
         const imageCell = (
-          <HeroImage key="image" url={d.heroImageUrl} tokens={surface} />
+          <HeroImage key="image" url={d.heroImageUrl} theme={theme} />
         );
         const contentCell = (
           <div
@@ -315,11 +300,11 @@ function HeroPreview({ data, brand }: SectionPreviewProps<HeroData>) {
   );
 }
 
-function HeroImage({ url, tokens }: { url: string; tokens: SurfaceTokens }) {
+function HeroImage({ url, theme }: { url: string; theme: ResolvedTheme }) {
   return (
     <div
       className="relative min-h-[280px] w-full overflow-hidden md:min-h-full"
-      style={{ backgroundColor: tokens.cardBg }}
+      style={{ backgroundColor: theme.card }}
     >
       {url ? (
         // eslint-disable-next-line @next/next/no-img-element
@@ -328,7 +313,7 @@ function HeroImage({ url, tokens }: { url: string; tokens: SurfaceTokens }) {
         <div className="absolute inset-0 flex items-center justify-center">
           <span
             className="text-[12px] font-semibold uppercase tracking-[0.16em]"
-            style={{ color: tokens.muted }}
+            style={{ color: theme.muted }}
           >
             Hero image
           </span>
