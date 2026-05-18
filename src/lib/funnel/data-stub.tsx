@@ -177,11 +177,11 @@ const voltlineLandingServices: ServicesData = {
 
 const voltlineLandingCTA: CTAData = {
   ...ctaSection.defaultData(),
-  tag: '// READY?',
-  headline: "Sparkie at your door this hour.",
+  eyebrow: 'READY?',
+  headline: 'Sparkie at your door this hour.',
   sub: 'One call, fixed callout, written quote on arrival.',
-  ctaLabel: "Book today's slot →",
-  ctaHref: '#schedule',
+  primaryLabel: "Book today's slot",
+  primaryHref: '#schedule',
 };
 
 const voltlineSchedulePicker: SchedulePickerData = {

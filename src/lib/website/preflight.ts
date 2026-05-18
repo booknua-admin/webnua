@@ -208,8 +208,14 @@ const ctaSectionRule: PreflightRule = {
       for (const section of enabledSectionsByType(page, 'cta')) {
         const data = section.data as Partial<CTAData>;
         const missing: string[] = [];
-        if (!nonEmpty(data.headline)) missing.push('headline');
-        if (!nonEmpty(data.ctaLabel)) missing.push('button label');
+        if ((data.layout ?? 'centered') === 'dual') {
+          const hasButton =
+            nonEmpty(data.panelA?.buttonLabel) || nonEmpty(data.panelB?.buttonLabel);
+          if (!hasButton) missing.push('panel button');
+        } else {
+          if (!nonEmpty(data.headline)) missing.push('headline');
+          if (!nonEmpty(data.primaryLabel)) missing.push('button label');
+        }
         if (missing.length > 0) {
           results.push({
             ruleId: 'cta-content',

@@ -20,6 +20,7 @@
 
 import type { GenerationContext, PrimaryIntent, Audience } from './generation-context';
 import { getSectionDefinition } from './sections';
+import { ctaSection } from './sections/cta';
 import { reviewsSection } from './sections/reviews';
 import { trustSection } from './sections/trust';
 import type {
@@ -488,13 +489,14 @@ function fillCta(ctx: GenerationContext, voice: VoiceVariant): GeneratedSection 
     type: 'cta',
     enabled: true,
     data: {
-      tag: '// READY?',
+      ...ctaSection.defaultData(),
+      eyebrow: 'READY?',
       headline,
       sub: 'One call, fixed callout, written quote on arrival.',
-      ctaLabel: intentCtaLabel(ctx.primaryIntent),
-      ctaHref: intentHref(ctx.primaryIntent),
+      primaryLabel: intentCtaLabel(ctx.primaryIntent),
+      primaryHref: intentHref(ctx.primaryIntent),
     },
-    populatedFields: ['tag', 'headline', 'sub', 'ctaLabel', 'ctaHref'],
+    populatedFields: ['eyebrow', 'headline', 'sub', 'primaryLabel', 'primaryHref'],
   };
 }
 

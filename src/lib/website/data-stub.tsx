@@ -35,6 +35,7 @@ import type {
   Website,
 } from './types';
 
+import { ctaSection } from './sections/cta';
 import { heroSection } from './sections/hero';
 import { offerSection } from './sections/offer';
 import { reviewsSection } from './sections/reviews';
@@ -229,11 +230,12 @@ const voltlineHomeTrust: TrustData = {
 };
 
 const voltlineHomeCTA: CTAData = {
-  tag: '// READY?',
+  ...ctaSection.defaultData(),
+  eyebrow: 'READY?',
   headline: 'Sparkie at your door this hour.',
   sub: 'One call, fixed callout, written quote on arrival.',
-  ctaLabel: 'Book a callout',
-  ctaHref: '/schedule',
+  primaryLabel: 'Book a callout',
+  primaryHref: '/schedule',
 };
 
 const voltlineNav: NavLink[] = [
@@ -374,11 +376,12 @@ const freshhomeHomeTrust: TrustData = {
 };
 
 const freshhomeHomeCTA: CTAData = {
-  tag: '// READY FOR A CLEAN HOME?',
+  ...ctaSection.defaultData(),
+  eyebrow: 'READY FOR A CLEAN HOME?',
   headline: 'Same-day quote. Same cleaner every visit.',
   sub: 'SMS your suburb + home size — we text back a fortnightly price in under an hour.',
-  ctaLabel: 'Get a quote',
-  ctaHref: 'sms:0411444555',
+  primaryLabel: 'Get a quote',
+  primaryHref: 'sms:0411444555',
 };
 
 const freshhomeServicesFAQ: FAQData = {
@@ -608,11 +611,12 @@ const keyheroFooter: Section = mkSection<FooterData>('sec-kh-footer', 'footer', 
 });
 
 const keyheroHomeCTA: CTAData = {
-  tag: '// LOCKED OUT?',
-  headline: 'We\'re 25 minutes away.',
+  ...ctaSection.defaultData(),
+  eyebrow: 'LOCKED OUT?',
+  headline: "We're 25 minutes away.",
   sub: 'Call now for an upfront quote. Mobile across Perth metro, day or night.',
-  ctaLabel: 'Call now',
-  ctaHref: 'tel:0411666777',
+  primaryLabel: 'Call now',
+  primaryHref: 'tel:0411666777',
 };
 
 const keyheroNav: NavLink[] = [
