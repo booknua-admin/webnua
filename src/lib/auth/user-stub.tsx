@@ -3,7 +3,8 @@
 // =============================================================================
 // STUB — user-resolution stand-in. Replaces the prior role-stub.
 //
-// Three hardcoded stub users (Craig admin / Mark@Voltline / Anna@FreshHome).
+// Four hardcoded stub users (Craig admin / Mark@Voltline editor /
+// Liam@Voltline view-only / Anna@FreshHome view-only).
 // Active user id + view-as override id + per-user grant overrides live in
 // localStorage. Switching is via <DevRoleSwitcher>. When real auth ships,
 // replace this provider with the Supabase-backed equivalent — every consumer
@@ -13,7 +14,8 @@
 //   1. This file — src/lib/auth/user-stub.tsx
 //   2. The <UserProvider> mount in src/app/layout.tsx
 //   3. <DevRoleSwitcher> + its mounts in (client) + (admin) + shared layouts
-//   4. The /dev/capabilities verification route — src/app/dev/capabilities/
+//   4. The /dev/* verification routes — src/app/dev/* (capabilities,
+//      sections, generation-preview, agency-policy)
 //
 // Existing `useRole()` API surface preserved exactly — every consumer of
 // the old role-stub continues to work unchanged.
