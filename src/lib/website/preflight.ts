@@ -181,7 +181,11 @@ const offerContentRule: PreflightRule = {
         const data = section.data as Partial<OfferData>;
         const missing: string[] = [];
         if (!nonEmpty(data.title)) missing.push('title');
-        if (!nonEmpty(data.priceLabel)) missing.push('price label');
+        if ((data.layout ?? 'card') === 'stack') {
+          if ((data.items ?? []).length === 0) missing.push('value items');
+        } else if (!nonEmpty(data.priceLabel)) {
+          missing.push('price label');
+        }
         if (missing.length > 0) {
           results.push({
             ruleId: 'offer-content',

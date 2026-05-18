@@ -22,6 +22,7 @@ import type { GenerationContext, PrimaryIntent, Audience } from './generation-co
 import { getSectionDefinition } from './sections';
 import { ctaSection } from './sections/cta';
 import { faqSection } from './sections/faq';
+import { offerSection } from './sections/offer';
 import { reviewsSection } from './sections/reviews';
 import { trustSection } from './sections/trust';
 import type {
@@ -328,16 +329,17 @@ function fillOffer(ctx: GenerationContext, voice: VoiceVariant): GeneratedSectio
     'Diagnosis + written quote before work starts',
     '12-month workmanship guarantee',
     'No callout surcharge after hours',
-  ].join('\n');
+  ].map((text) => ({ id: `inc-${rid()}`, text }));
   return {
     type: 'offer',
     enabled: true,
     data: {
-      tag: '// OFFER',
+      ...offerSection.defaultData(),
+      tag: 'OFFER',
       title,
       priceLabel: '$99',
       priceCaption: 'Fixed callout',
-      includedText: inclusions,
+      inclusions,
       scarcityCopy: 'Same-day slots fill by mid-morning.',
       ctaLabel: intentLabel,
       ctaHref: intentHref(ctx.primaryIntent),
@@ -347,7 +349,7 @@ function fillOffer(ctx: GenerationContext, voice: VoiceVariant): GeneratedSectio
       'title',
       'priceLabel',
       'priceCaption',
-      'includedText',
+      'inclusions',
       'scarcityCopy',
       'ctaLabel',
       'ctaHref',
