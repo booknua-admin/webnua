@@ -407,6 +407,13 @@ export type Database = {
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "capability_grants_website_id_fkey"
+            columns: ["website_id"]
+            isOneToOne: false
+            referencedRelation: "websites"
+            referencedColumns: ["id"]
+          },
         ]
       }
       client_user_invites: {
@@ -516,6 +523,61 @@ export type Database = {
           },
         ]
       }
+      content_drafts: {
+        Row: {
+          funnel_id: string | null
+          id: string
+          page_key: string | null
+          saved_at: string
+          scope_kind: Database["public"]["Enums"]["draft_scope_kind"]
+          sections: Json
+          updated_by: string
+          website_id: string | null
+        }
+        Insert: {
+          funnel_id?: string | null
+          id?: string
+          page_key?: string | null
+          saved_at: string
+          scope_kind: Database["public"]["Enums"]["draft_scope_kind"]
+          sections: Json
+          updated_by: string
+          website_id?: string | null
+        }
+        Update: {
+          funnel_id?: string | null
+          id?: string
+          page_key?: string | null
+          saved_at?: string
+          scope_kind?: Database["public"]["Enums"]["draft_scope_kind"]
+          sections?: Json
+          updated_by?: string
+          website_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_drafts_funnel_id_fkey"
+            columns: ["funnel_id"]
+            isOneToOne: false
+            referencedRelation: "funnels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_drafts_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_drafts_website_id_fkey"
+            columns: ["website_id"]
+            isOneToOne: false
+            referencedRelation: "websites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       customers: {
         Row: {
           address: string | null
@@ -563,6 +625,255 @@ export type Database = {
           },
         ]
       }
+      force_publish_audit_log: {
+        Row: {
+          actor_user_id: string
+          created_at: string
+          id: string
+          new_version_id: string
+          reason: string
+          website_id: string
+        }
+        Insert: {
+          actor_user_id: string
+          created_at?: string
+          id?: string
+          new_version_id: string
+          reason: string
+          website_id: string
+        }
+        Update: {
+          actor_user_id?: string
+          created_at?: string
+          id?: string
+          new_version_id?: string
+          reason?: string
+          website_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "force_publish_audit_log_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "force_publish_audit_log_new_version_id_fkey"
+            columns: ["new_version_id"]
+            isOneToOne: false
+            referencedRelation: "website_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "force_publish_audit_log_website_id_fkey"
+            columns: ["website_id"]
+            isOneToOne: false
+            referencedRelation: "websites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      funnel_approval_submissions: {
+        Row: {
+          diff: Json
+          funnel_id: string
+          id: string
+          note: string | null
+          pending_funnel_version_id: string
+          rejection_reason: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          status: Database["public"]["Enums"]["approval_status"]
+          submitted_at: string
+          submitter_id: string
+        }
+        Insert: {
+          diff: Json
+          funnel_id: string
+          id?: string
+          note?: string | null
+          pending_funnel_version_id: string
+          rejection_reason?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: Database["public"]["Enums"]["approval_status"]
+          submitted_at?: string
+          submitter_id: string
+        }
+        Update: {
+          diff?: Json
+          funnel_id?: string
+          id?: string
+          note?: string | null
+          pending_funnel_version_id?: string
+          rejection_reason?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: Database["public"]["Enums"]["approval_status"]
+          submitted_at?: string
+          submitter_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "funnel_approval_submissions_funnel_id_fkey"
+            columns: ["funnel_id"]
+            isOneToOne: false
+            referencedRelation: "funnels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "funnel_approval_submissions_pending_funnel_version_id_fkey"
+            columns: ["pending_funnel_version_id"]
+            isOneToOne: false
+            referencedRelation: "funnel_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "funnel_approval_submissions_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "funnel_approval_submissions_submitter_id_fkey"
+            columns: ["submitter_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      funnel_versions: {
+        Row: {
+          created_at: string
+          created_by: string
+          funnel_id: string
+          id: string
+          notes: string | null
+          parent_version_id: string | null
+          published_at: string | null
+          published_by: string | null
+          snapshot: Json
+          status: Database["public"]["Enums"]["version_status"]
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          funnel_id: string
+          id?: string
+          notes?: string | null
+          parent_version_id?: string | null
+          published_at?: string | null
+          published_by?: string | null
+          snapshot: Json
+          status: Database["public"]["Enums"]["version_status"]
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          funnel_id?: string
+          id?: string
+          notes?: string | null
+          parent_version_id?: string | null
+          published_at?: string | null
+          published_by?: string | null
+          snapshot?: Json
+          status?: Database["public"]["Enums"]["version_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "funnel_versions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "funnel_versions_funnel_id_fkey"
+            columns: ["funnel_id"]
+            isOneToOne: false
+            referencedRelation: "funnels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "funnel_versions_parent_version_id_fkey"
+            columns: ["parent_version_id"]
+            isOneToOne: false
+            referencedRelation: "funnel_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "funnel_versions_published_by_fkey"
+            columns: ["published_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      funnels: {
+        Row: {
+          client_id: string
+          created_at: string
+          domain_aliases: string[]
+          domain_primary: string
+          domain_ssl_status: Database["public"]["Enums"]["ssl_status"]
+          draft_version_id: string | null
+          id: string
+          name: string
+          published_version_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          domain_aliases?: string[]
+          domain_primary: string
+          domain_ssl_status?: Database["public"]["Enums"]["ssl_status"]
+          draft_version_id?: string | null
+          id?: string
+          name: string
+          published_version_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          domain_aliases?: string[]
+          domain_primary?: string
+          domain_ssl_status?: Database["public"]["Enums"]["ssl_status"]
+          draft_version_id?: string | null
+          id?: string
+          name?: string
+          published_version_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "funnels_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "funnels_draft_version_id_fkey"
+            columns: ["draft_version_id"]
+            isOneToOne: false
+            referencedRelation: "funnel_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "funnels_published_version_id_fkey"
+            columns: ["published_version_id"]
+            isOneToOne: false
+            referencedRelation: "funnel_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       generation_log: {
         Row: {
           client_id: string
@@ -573,7 +884,7 @@ export type Database = {
           model_value: string | null
           page_id: string | null
           reason: Database["public"]["Enums"]["generation_fallback_reason"]
-          section_type: string
+          section_type: Database["public"]["Enums"]["section_type"]
         }
         Insert: {
           client_id: string
@@ -584,7 +895,7 @@ export type Database = {
           model_value?: string | null
           page_id?: string | null
           reason: Database["public"]["Enums"]["generation_fallback_reason"]
-          section_type: string
+          section_type: Database["public"]["Enums"]["section_type"]
         }
         Update: {
           client_id?: string
@@ -595,7 +906,7 @@ export type Database = {
           model_value?: string | null
           page_id?: string | null
           reason?: Database["public"]["Enums"]["generation_fallback_reason"]
-          section_type?: string
+          section_type?: Database["public"]["Enums"]["section_type"]
         }
         Relationships: [
           {
@@ -1364,6 +1675,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "tickets_context_website_id_fkey"
+            columns: ["context_website_id"]
+            isOneToOne: false
+            referencedRelation: "websites"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "tickets_created_by_fkey"
             columns: ["created_by"]
             isOneToOne: false
@@ -1459,6 +1777,206 @@ export type Database = {
           },
         ]
       }
+      website_approval_submissions: {
+        Row: {
+          diff: Json
+          id: string
+          note: string | null
+          pending_version_id: string
+          rejection_reason: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          status: Database["public"]["Enums"]["approval_status"]
+          submitted_at: string
+          submitter_id: string
+          website_id: string
+        }
+        Insert: {
+          diff: Json
+          id?: string
+          note?: string | null
+          pending_version_id: string
+          rejection_reason?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: Database["public"]["Enums"]["approval_status"]
+          submitted_at?: string
+          submitter_id: string
+          website_id: string
+        }
+        Update: {
+          diff?: Json
+          id?: string
+          note?: string | null
+          pending_version_id?: string
+          rejection_reason?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: Database["public"]["Enums"]["approval_status"]
+          submitted_at?: string
+          submitter_id?: string
+          website_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "website_approval_submissions_pending_version_id_fkey"
+            columns: ["pending_version_id"]
+            isOneToOne: false
+            referencedRelation: "website_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "website_approval_submissions_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "website_approval_submissions_submitter_id_fkey"
+            columns: ["submitter_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "website_approval_submissions_website_id_fkey"
+            columns: ["website_id"]
+            isOneToOne: false
+            referencedRelation: "websites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      website_versions: {
+        Row: {
+          created_at: string
+          created_by: string
+          id: string
+          notes: string | null
+          parent_version_id: string | null
+          published_at: string | null
+          published_by: string | null
+          snapshot: Json
+          status: Database["public"]["Enums"]["version_status"]
+          website_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          id?: string
+          notes?: string | null
+          parent_version_id?: string | null
+          published_at?: string | null
+          published_by?: string | null
+          snapshot: Json
+          status: Database["public"]["Enums"]["version_status"]
+          website_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          id?: string
+          notes?: string | null
+          parent_version_id?: string | null
+          published_at?: string | null
+          published_by?: string | null
+          snapshot?: Json
+          status?: Database["public"]["Enums"]["version_status"]
+          website_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "website_versions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "website_versions_parent_version_id_fkey"
+            columns: ["parent_version_id"]
+            isOneToOne: false
+            referencedRelation: "website_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "website_versions_published_by_fkey"
+            columns: ["published_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "website_versions_website_id_fkey"
+            columns: ["website_id"]
+            isOneToOne: false
+            referencedRelation: "websites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      websites: {
+        Row: {
+          client_id: string
+          created_at: string
+          domain_aliases: string[]
+          domain_primary: string
+          domain_ssl_status: Database["public"]["Enums"]["ssl_status"]
+          draft_version_id: string | null
+          id: string
+          name: string
+          published_version_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          domain_aliases?: string[]
+          domain_primary: string
+          domain_ssl_status?: Database["public"]["Enums"]["ssl_status"]
+          draft_version_id?: string | null
+          id?: string
+          name: string
+          published_version_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          domain_aliases?: string[]
+          domain_primary?: string
+          domain_ssl_status?: Database["public"]["Enums"]["ssl_status"]
+          draft_version_id?: string | null
+          id?: string
+          name?: string
+          published_version_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "websites_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "websites_draft_version_id_fkey"
+            columns: ["draft_version_id"]
+            isOneToOne: false
+            referencedRelation: "website_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "websites_published_version_id_fkey"
+            columns: ["published_version_id"]
+            isOneToOne: false
+            referencedRelation: "website_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -1489,6 +2007,8 @@ export type Database = {
         | "manageDomain"
       client_lifecycle: "onboarding" | "live" | "paused" | "churned"
       delay_unit: "minutes" | "hours" | "days"
+      draft_scope_kind: "page" | "header" | "footer" | "funnel_step"
+      funnel_step_type: "landing" | "schedule" | "thanks" | "optin" | "upsell"
       generation_fallback_reason: "missing" | "invalid"
       invite_status: "pending" | "accepted" | "expired" | "revoked"
       lead_event_kind:
@@ -1503,6 +2023,7 @@ export type Database = {
       lead_status: "new" | "contacted" | "booked" | "completed" | "lost"
       lead_urgency: "asap" | "today" | "soon" | "none"
       notification_kind: "lead" | "review" | "auto" | "booking" | "alert"
+      page_type: "home" | "about" | "services" | "contact" | "generic"
       payment_method: "card" | "cash" | "invoice_7" | "invoice_14"
       policy_key:
         | "defaultClientCapabilities"
@@ -1512,6 +2033,19 @@ export type Database = {
         | "automationDefaults"
         | "pricingDefaults"
       recurrence_frequency: "weekly" | "fortnightly" | "monthly" | "custom"
+      section_type:
+        | "hero"
+        | "offer"
+        | "trust"
+        | "services"
+        | "reviews"
+        | "faq"
+        | "cta"
+        | "schedulePicker"
+        | "thanksConfirmation"
+        | "header"
+        | "footer"
+      ssl_status: "pending" | "live" | "error"
       team_role: "owner" | "operator" | "junior"
       ticket_awaiting: "operator" | "client"
       ticket_category:
@@ -1525,6 +2059,7 @@ export type Database = {
       ticket_status: "open" | "in_progress" | "blocked" | "done"
       ticket_urgency: "rush" | "soon" | "none"
       user_role: "admin" | "client"
+      version_status: "draft" | "pending_approval" | "published" | "archived"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1675,6 +2210,8 @@ export const Constants = {
       ],
       client_lifecycle: ["onboarding", "live", "paused", "churned"],
       delay_unit: ["minutes", "hours", "days"],
+      draft_scope_kind: ["page", "header", "footer", "funnel_step"],
+      funnel_step_type: ["landing", "schedule", "thanks", "optin", "upsell"],
       generation_fallback_reason: ["missing", "invalid"],
       invite_status: ["pending", "accepted", "expired", "revoked"],
       lead_event_kind: [
@@ -1690,6 +2227,7 @@ export const Constants = {
       lead_status: ["new", "contacted", "booked", "completed", "lost"],
       lead_urgency: ["asap", "today", "soon", "none"],
       notification_kind: ["lead", "review", "auto", "booking", "alert"],
+      page_type: ["home", "about", "services", "contact", "generic"],
       payment_method: ["card", "cash", "invoice_7", "invoice_14"],
       policy_key: [
         "defaultClientCapabilities",
@@ -1700,6 +2238,20 @@ export const Constants = {
         "pricingDefaults",
       ],
       recurrence_frequency: ["weekly", "fortnightly", "monthly", "custom"],
+      section_type: [
+        "hero",
+        "offer",
+        "trust",
+        "services",
+        "reviews",
+        "faq",
+        "cta",
+        "schedulePicker",
+        "thanksConfirmation",
+        "header",
+        "footer",
+      ],
+      ssl_status: ["pending", "live", "error"],
       team_role: ["owner", "operator", "junior"],
       ticket_awaiting: ["operator", "client"],
       ticket_category: [
@@ -1714,6 +2266,7 @@ export const Constants = {
       ticket_status: ["open", "in_progress", "blocked", "done"],
       ticket_urgency: ["rush", "soon", "none"],
       user_role: ["admin", "client"],
+      version_status: ["draft", "pending_approval", "published", "archived"],
     },
   },
 } as const
