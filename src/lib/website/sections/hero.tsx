@@ -468,7 +468,7 @@ function HeroPreview({
             {d.sub ? (
               <SelectableElement {...sel('subheadline')} className="mt-5">
                 <p
-                  className={`${SUB_SIZE_CLASS[d.subSize]} max-w-[460px] leading-[1.6]`}
+                  className={`${SUB_SIZE_CLASS[d.subSize]} max-w-[460px] whitespace-pre-line leading-[1.6]`}
                   style={{ color: theme.body }}
                 >
                   {d.sub}

@@ -263,7 +263,7 @@ const reviewsPopulatedRule: PreflightRule = {
     for (const page of snapshot.pages) {
       for (const section of enabledSectionsByType(page, 'reviews')) {
         const data = section.data as Partial<ReviewsData>;
-        const reviews = data.reviews ?? [];
+        const reviews = data.items ?? [];
         if (reviews.length === 0) {
           results.push({
             ruleId: 'reviews-populated',

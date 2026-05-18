@@ -9,7 +9,6 @@ import {
 } from '@/components/shared/builder/BuilderField';
 import { CapabilityGate } from '@/components/shared/CapabilityGate';
 import { Button } from '@/components/ui/button';
-import { Star } from 'lucide-react';
 
 import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
@@ -28,6 +27,7 @@ import { IconField } from './_shared/IconField';
 import { MediaField } from './_shared/MediaField';
 import { RangeField } from './_shared/RangeField';
 import { SectionShell } from './_shared/SectionShell';
+import { StarRow } from './_shared/StarRow';
 import { SelectableElement } from './_shared/SelectableElement';
 import { ColorField, ThemePresetField } from './_shared/ThemeField';
 import { ToggleField } from './_shared/ToggleField';
@@ -46,8 +46,6 @@ export type TrustAlign = 'left' | 'center' | 'right';
 export type HeadlineSize = 'm' | 'l' | 'xl';
 
 type TrustElement = 'eyebrow' | 'headline' | 'subheadline' | 'items' | 'badges';
-
-const STAR_COLOR = '#e6a619';
 
 export type TrustItem = {
   id: string;
@@ -594,7 +592,7 @@ function TrustPreview({
               {d.sub ? (
                 <SelectableElement {...sel('subheadline')} className="mt-5">
                   <p
-                    className="max-w-[620px] text-[15px] leading-[1.6]"
+                    className="max-w-[620px] whitespace-pre-line text-[15px] leading-[1.6]"
                     style={{ color: theme.body }}
                   >
                     {d.sub}
@@ -664,18 +662,6 @@ function TrustPreview({
         );
       }}
     </SectionShell>
-  );
-}
-
-function StarRow({ count }: { count: number }) {
-  const n = Math.max(0, Math.min(5, Math.round(count)));
-  if (n === 0) return null;
-  return (
-    <span className="flex items-center gap-0.5" aria-label={`${n} out of 5 stars`}>
-      {Array.from({ length: n }).map((_, i) => (
-        <Star key={i} size={16} color={STAR_COLOR} fill={STAR_COLOR} aria-hidden />
-      ))}
-    </span>
   );
 }
 

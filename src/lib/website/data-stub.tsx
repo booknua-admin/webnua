@@ -37,6 +37,7 @@ import type {
 
 import { heroSection } from './sections/hero';
 import { offerSection } from './sections/offer';
+import { reviewsSection } from './sections/reviews';
 import { servicesSection } from './sections/services';
 import { trustSection } from './sections/trust';
 import type { CTAData } from './sections/cta';
@@ -408,29 +409,36 @@ const freshhomeServicesFAQ: FAQData = {
 };
 
 const freshhomeHomeReviews: ReviewsData = {
-  title: 'What customers say',
-  intro: '',
-  reviews: [
+  ...reviewsSection.defaultData(),
+  eyebrow: 'WHAT CUSTOMERS SAY',
+  headline: 'Trusted by Perth families.',
+  items: [
     {
       id: 'rev-fh-1',
-      author: 'Megan H.',
+      quote:
+        'Same cleaner every fortnight for two years. Zero issues. The skip-free policy when we travel is what sold us.',
+      authorName: 'Megan H.',
+      authorRole: 'Homeowner',
+      avatarUrl: '',
       rating: 5,
-      body: "Same cleaner every fortnight for two years. Zero issues. The skip-free policy when we travel is what sold us.",
-      age: '3 weeks ago',
     },
     {
       id: 'rev-fh-2',
-      author: 'Tom B.',
+      quote:
+        'Booked an end-of-lease in a panic. Bond came back in full. Worth every cent.',
+      authorName: 'Tom B.',
+      authorRole: 'Tenant',
+      avatarUrl: '',
       rating: 5,
-      body: "Booked an end-of-lease in a panic. Bond came back in full. Worth every cent.",
-      age: '1 month ago',
     },
     {
       id: 'rev-fh-3',
-      author: 'Sara P.',
+      quote:
+        'Honest, on time, and they bring everything. Best cleaner we’ve had in 5 years.',
+      authorName: 'Sara P.',
+      authorRole: 'Homeowner',
+      avatarUrl: '',
       rating: 5,
-      body: "Honest, on time, and they bring everything. Best cleaner we’ve had in 5 years.",
-      age: '2 months ago',
     },
   ],
 };

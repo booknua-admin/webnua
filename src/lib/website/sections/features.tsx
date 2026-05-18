@@ -638,7 +638,7 @@ function FeaturesPreview({
               {d.sub ? (
                 <SelectableElement {...sel('subheadline')} className="mt-5">
                   <p
-                    className="max-w-[560px] text-[15px] leading-[1.6]"
+                    className="max-w-[560px] whitespace-pre-line text-[15px] leading-[1.6]"
                     style={{ color: theme.body }}
                   >
                     {d.sub}
@@ -822,7 +822,7 @@ function FeatureCard({
       </h3>
       {item.description ? (
         <p
-          className="mt-2 text-[13.5px] leading-[1.55]"
+          className="mt-2 whitespace-pre-line text-[13.5px] leading-[1.55]"
           style={{ color: theme.body }}
         >
           {item.description}

@@ -20,6 +20,7 @@
 
 import type { GenerationContext, PrimaryIntent, Audience } from './generation-context';
 import { getSectionDefinition } from './sections';
+import { reviewsSection } from './sections/reviews';
 import { trustSection } from './sections/trust';
 import type {
   Page,
@@ -410,37 +411,40 @@ function fillServices(ctx: GenerationContext, voice: VoiceVariant): GeneratedSec
 }
 
 function fillReviews(): GeneratedSection {
+  const base = reviewsSection.defaultData();
   return {
     type: 'reviews',
     enabled: true,
     data: {
-      title: 'What customers say',
-      intro: 'Recent reviews on Google.',
-      reviews: [
+      ...base,
+      items: [
         {
           id: `rev-${rid()}`,
-          author: 'Sarah K.',
+          quote: 'Out in 40 min, fixed and gone in another 30. Honest pricing.',
+          authorName: 'Sarah K.',
+          authorRole: 'Homeowner',
+          avatarUrl: '',
           rating: 5,
-          body: 'Out in 40 min, fixed and gone in another 30. Honest pricing.',
-          age: '2 weeks ago',
         },
         {
           id: `rev-${rid()}`,
-          author: 'Mark R.',
+          quote: 'Switchboard upgrade. Quote was the final invoice. Rare these days.',
+          authorName: 'Mark R.',
+          authorRole: 'Homeowner',
+          avatarUrl: '',
           rating: 5,
-          body: 'Switchboard upgrade. Quote was the final invoice. Rare these days.',
-          age: '1 month ago',
         },
         {
           id: `rev-${rid()}`,
-          author: 'Jules T.',
+          quote: 'Booked Saturday night, came Sunday morning. Saved a freezer of food.',
+          authorName: 'Jules T.',
+          authorRole: 'Homeowner',
+          avatarUrl: '',
           rating: 5,
-          body: 'Booked Saturday night, came Sunday morning. Saved a freezer of food.',
-          age: '1 month ago',
         },
       ],
     },
-    populatedFields: ['title', 'intro', 'reviews'],
+    populatedFields: ['eyebrow', 'headline', 'sub', 'items'],
   };
 }
 
