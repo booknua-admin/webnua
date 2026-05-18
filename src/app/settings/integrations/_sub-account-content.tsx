@@ -3,12 +3,18 @@
 // =============================================================================
 // /settings/integrations — sub-account mode (Cluster 8 · Session 4b). The
 // operator has drilled into one client; this shows that client's integration
-// policy: per provider, whether it inherits the agency default or carries a
+// policy: per provider, whether it inherits the default or carries a
 // per-account override.
 //
 // Reads the resolved `integrationDefaults` policy via usePolicy (which keys to
 // the active workspace) and writes per-client overrides through the override
-// store. Toggling a provider back to the agency value clears the override.
+// store. Toggling a provider back to the inherited value clears the override.
+//
+// "Inherited" is the value the client would resolve to with NO override: the
+// assigned plan's bundle when on a plan (Cluster 9), otherwise the agency
+// default. Comparing against the agency value alone (the pre-plan-layer shape)
+// mislabelled every provider as "overridden" for any client on a plan whose
+// integration bundle differs from the agency default.
 // =============================================================================
 
 import { PolicyOverrideRow } from '@/components/shared/settings/PolicyOverrideRow';
@@ -42,12 +48,17 @@ export function SubAccountIntegrationsContent({
 }: SubAccountIntegrationsContentProps) {
   const resolution = usePolicy('integrationDefaults');
   const effective = resolution.effectiveValue.sharedProviders;
-  const agency = resolution.agencyValue.sharedProviders;
+  // The inherited baseline = the value with no per-account override: the
+  // assigned plan's bundle when on a plan, else the agency default.
+  const onPlan = resolution.planValue !== undefined;
+  const inherited = (resolution.planValue ?? resolution.agencyValue)
+    .sharedProviders;
+  const inheritedSourceLabel = onPlan ? 'plan' : 'agency';
 
   // Write the next per-provider map as an override — or clear the override
-  // entirely when it lands back on the agency value.
+  // entirely when it lands back on the inherited value.
   function applyProviders(nextShared: SharedProviders) {
-    if (sameProviders(nextShared, agency)) {
+    if (sameProviders(nextShared, inherited)) {
       clearOverride(clientId, 'integrationDefaults');
     } else {
       setOverride(clientId, 'integrationDefaults', {
@@ -94,17 +105,20 @@ export function SubAccountIntegrationsContent({
             <div className="flex flex-col gap-4">
               {INTEGRATION_PROVIDERS.map((provider) => {
                 const shared = effective[provider.id] ?? false;
-                const agencyShared = agency[provider.id] ?? false;
-                const overridden = shared !== agencyShared;
+                const inheritedShared = inherited[provider.id] ?? false;
+                const overridden = shared !== inheritedShared;
                 return (
                   <PolicyOverrideRow
                     key={provider.id}
                     label={provider.name}
                     description={provider.description}
                     source={overridden ? 'overridden' : 'inherited'}
-                    agencyHint={`agency · ${agencyShared ? 'supplied' : 'per sub-account'}`}
+                    agencyHint={`${inheritedSourceLabel} · ${inheritedShared ? 'supplied' : 'per sub-account'}`}
                     onRevert={() =>
-                      applyProviders({ ...effective, [provider.id]: agencyShared })
+                      applyProviders({
+                        ...effective,
+                        [provider.id]: inheritedShared,
+                      })
                     }
                   >
                     <div className="flex items-center gap-3">
