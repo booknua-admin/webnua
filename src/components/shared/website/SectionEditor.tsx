@@ -46,6 +46,7 @@ import type {
   Website,
 } from '@/lib/website/types';
 import { useAutosave } from '@/lib/website/use-autosave';
+import { useBrandFonts } from '@/lib/website/use-brand-fonts';
 import { useUserPendingSubmission } from '@/lib/website/use-publish-state';
 
 import { AddSectionDialog } from './AddSectionDialog';
@@ -59,6 +60,7 @@ import { ForcePublishMenu } from './ForcePublishMenu';
 import { PagePreviewPane } from './PagePreviewPane';
 import { SectionFieldsPanel } from './SectionFieldsPanel';
 import { SectionListRail } from './SectionListRail';
+import { SiteFontsMenu } from './SiteFontsMenu';
 
 export type SectionEditorMode =
   | {
@@ -128,8 +130,18 @@ function containerForMode(mode: SectionEditorMode): ContainerKind {
 }
 
 export function SectionEditor({ mode }: SectionEditorProps) {
-  const brandQuery = useBrandForClient(clientIdForMode(mode));
-  const brand = brandQuery.data ?? null;
+  const clientId = clientIdForMode(mode);
+  const brandQuery = useBrandForClient(clientId);
+  // Brand fonts are edited site-wide via the toolbar's font menu; the
+  // overlay is merged over the resolved brand so previews re-render live.
+  const brandFontOverride = useBrandFonts(clientId);
+  const brand = useMemo(
+    () =>
+      brandQuery.data
+        ? { ...brandQuery.data, ...brandFontOverride }
+        : null,
+    [brandQuery.data, brandFontOverride],
+  );
   const slot = useMemo(() => slotForMode(mode), [mode]);
   const user = useUser();
   const router = useRouter();
@@ -357,6 +369,13 @@ export function SectionEditor({ mode }: SectionEditorProps) {
           mode.kind === 'funnelStep' ? null : (
             <ForcePublishMenu websiteId={mode.website.id} hidden={locked} />
           )
+        }
+        siteStyles={
+          <SiteFontsMenu
+            clientId={clientId}
+            headingFont={brand.headingFont}
+            bodyFont={brand.bodyFont}
+          />
         }
       />
       <div

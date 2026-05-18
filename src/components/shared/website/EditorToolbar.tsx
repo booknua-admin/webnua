@@ -88,6 +88,9 @@ export type EditorToolbarProps = {
   /** Render a chevron menu next to Publish with the force-publish item.
    *  Wired in by chunk F; omit to hide the menu. */
   publishMenu?: React.ReactNode;
+  /** Site-level style control (the brand font menu). Rendered in the right
+   *  cluster; omit to hide. */
+  siteStyles?: React.ReactNode;
 };
 
 export function EditorToolbar({
@@ -100,6 +103,7 @@ export function EditorToolbar({
   onPublish,
   onSubmitForReview,
   publishMenu,
+  siteStyles,
 }: EditorToolbarProps) {
   const canPublish = useCan('publish');
   const canEditAnything = useCanAny(
@@ -160,6 +164,7 @@ export function EditorToolbar({
             onRetry={autosave.onRetry}
           />
         ) : null}
+        {siteStyles}
         <a
           href={`https://${domain}`}
           target="_blank"
