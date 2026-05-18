@@ -1,11 +1,3 @@
-type RescheduleCompareSide = {
-  tag: string;
-  /** "13:30 — 15:30" */
-  time: string;
-  /** "Wed, May 13 · 2 hrs" */
-  day: string;
-};
-
 type RescheduleReasonOption = {
   id: string;
   label: string;
@@ -30,8 +22,6 @@ type RescheduleModalData = {
   /** "Reschedule <em>Petrov fortnightly</em>" */
   title: React.ReactNode;
   subtitle: React.ReactNode;
-  was: RescheduleCompareSide;
-  now: RescheduleCompareSide;
   reasons: RescheduleReasonOption[];
   defaultReasonId: string;
   smsPreview: ReschedulePreviewToken[];
@@ -55,16 +45,6 @@ const freshhomeReschedule: RescheduleModalData = {
       notice.
     </>
   ),
-  was: {
-    tag: '// WAS BOOKED',
-    time: '13:30 — 15:30',
-    day: 'Wed, May 13 · 2 hrs',
-  },
-  now: {
-    tag: '// NEW TIME',
-    time: '10:00 — 12:00',
-    day: 'Thu, May 14 · 2 hrs',
-  },
   reasons: [
     { id: 'equipment', label: 'Equipment issue' },
     { id: 'conflict', label: 'Scheduling conflict' },
@@ -123,16 +103,6 @@ const voltlineReschedule: RescheduleModalData = {
       Same-day reschedules need at least 2 hours' notice.
     </>
   ),
-  was: {
-    tag: '// WAS BOOKED',
-    time: '13:00 — 15:00',
-    day: 'Wed, May 13 · 2 hrs',
-  },
-  now: {
-    tag: '// NEW TIME',
-    time: '15:30 — 17:30',
-    day: 'Wed, May 13 · 2 hrs',
-  },
   reasons: [
     { id: 'running_late', label: 'Running late' },
     { id: 'earlier_job_overran', label: 'Earlier job overran' },
@@ -180,7 +150,6 @@ const voltlineReschedule: RescheduleModalData = {
 
 export { freshhomeReschedule, voltlineReschedule };
 export type {
-  RescheduleCompareSide,
   RescheduleModalData,
   ReschedulePreviewToken,
   RescheduleReasonOption,

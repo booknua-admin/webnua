@@ -3,10 +3,13 @@
 import { useState } from 'react';
 
 import { RescheduleModal } from '@/components/shared/bookings/RescheduleModal';
+import type { RescheduleTarget } from '@/components/shared/bookings/RescheduleModal';
 import { Button } from '@/components/ui/button';
 import type { RescheduleModalData } from '@/lib/bookings/reschedule-modal';
 
 type RescheduleBookingButtonProps = {
+  /** The booking being rescheduled — seeds the modal's date/time inputs. */
+  booking: RescheduleTarget;
   data: RescheduleModalData;
   /** Override the trigger label; defaults to "Reschedule". */
   label?: string;
@@ -18,6 +21,7 @@ type RescheduleBookingButtonProps = {
 };
 
 function RescheduleBookingButton({
+  booking,
   data,
   label = 'Reschedule',
   variant = 'button',
@@ -47,7 +51,12 @@ function RescheduleBookingButton({
           {label}
         </button>
       )}
-      <RescheduleModal open={open} onOpenChange={setOpen} data={data} />
+      <RescheduleModal
+        open={open}
+        onOpenChange={setOpen}
+        booking={booking}
+        data={data}
+      />
     </>
   );
 }

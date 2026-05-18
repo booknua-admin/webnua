@@ -49,6 +49,11 @@ type ClientBookingActionGroup = {
 };
 
 type ClientBookingDetail = {
+  /** The booking's UUID — drives the reschedule write. */
+  id: string;
+  /** Raw `starts_at` / `ends_at` ISO timestamps — seed the reschedule form. */
+  startsAt: string;
+  endsAt: string;
   /** "// CALENDAR · WED MAY 13 · 13:00 — 15:00" */
   tag: string;
   /** "Ceiling fan + RCD <em>replacement</em>" */
@@ -80,6 +85,11 @@ type ClientBookingDetail = {
 };
 
 type AdminBookingDetail = {
+  /** The booking's UUID — drives the reschedule write. */
+  id: string;
+  /** Raw `starts_at` / `ends_at` ISO timestamps — seed the reschedule form. */
+  startsAt: string;
+  endsAt: string;
   hero: {
     eyebrow: string;
     title: React.ReactNode;

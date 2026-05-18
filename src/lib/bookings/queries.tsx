@@ -552,6 +552,9 @@ function buildClientBookingDetail(
   ];
 
   return {
+    id: b.id,
+    startsAt: b.starts_at,
+    endsAt: b.ends_at,
     tag: `// CALENDAR · ${dayLabel(b.starts_at).toUpperCase()} · ${timeRange(
       b.starts_at,
       b.ends_at,
@@ -649,6 +652,9 @@ function buildAdminBookingDetail(
   ];
 
   return {
+    id: b.id,
+    startsAt: b.starts_at,
+    endsAt: b.ends_at,
     hero: {
       eyebrow: `Calendar · ${dayLabel(b.starts_at)} · ${clockLabel(
         b.starts_at,
@@ -737,6 +743,40 @@ export function useUpdateBookingStatus() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: updateBookingStatus,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['bookings'] });
+    },
+  });
+}
+
+// ---- Reschedule (write) -----------------------------------------------------
+
+/** Move a booking to a new start/end. Times are ISO timestamps composed from
+ *  the modal's date + time inputs (wall-clock-in-UTC, see time.ts). */
+async function rescheduleBooking(input: {
+  bookingId: string;
+  startsAt: string;
+  endsAt: string;
+}): Promise<void> {
+  if (new Date(input.endsAt).getTime() <= new Date(input.startsAt).getTime()) {
+    throw AppError.validation(
+      { time: 'The end time must be after the start time.' },
+      'The end time must be after the start time.',
+    );
+  }
+  const { error } = await supabase
+    .from('bookings')
+    .update({ starts_at: input.startsAt, ends_at: input.endsAt })
+    .eq('id', input.bookingId);
+  if (error) throw normalizeError(error);
+}
+
+/** Reschedule a booking. On success the bookings queries are invalidated so
+ *  the calendar grid + booking detail reflect the new time. */
+export function useRescheduleBooking() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: rescheduleBooking,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['bookings'] });
     },

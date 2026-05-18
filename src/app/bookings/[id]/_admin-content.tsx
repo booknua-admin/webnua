@@ -72,7 +72,14 @@ function AdminBookingDetailContent() {
                       <Button variant="default" className="h-9" asChild>
                         <Link href={completeHref}>Mark complete</Link>
                       </Button>
-                      <RescheduleBookingButton data={freshhomeReschedule} />
+                      <RescheduleBookingButton
+                        booking={{
+                          id: b.id,
+                          startsAt: b.startsAt,
+                          endsAt: b.endsAt,
+                        }}
+                        data={freshhomeReschedule}
+                      />
                       <Button variant="secondary" className="h-9" asChild>
                         <Link href="/leads">Open leads →</Link>
                       </Button>

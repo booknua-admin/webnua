@@ -109,6 +109,11 @@ function ClientBookingDetailContent() {
                         return (
                           <RescheduleBookingButton
                             key={i}
+                            booking={{
+                              id: b.id,
+                              startsAt: b.startsAt,
+                              endsAt: b.endsAt,
+                            }}
                             data={voltlineReschedule}
                             label={a.label}
                             variant="action-row"
