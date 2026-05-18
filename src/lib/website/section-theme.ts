@@ -157,3 +157,8 @@ function luminance(hex: string): number {
   const [r, g, b] = parseHex(hex);
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
 }
+
+/** True when a colour is dark enough to want light text on top of it. */
+export function isColorDark(hex: string): boolean {
+  return luminance(hex) < 0.5;
+}

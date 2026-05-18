@@ -1,141 +1,433 @@
 'use client';
 
 import { BuilderFormRow, BuilderFormSection } from '@/components/shared/builder/BuilderField';
+import { Menu } from 'lucide-react';
 
+import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import {
+  brandThemeDefaults,
+  resolveTheme,
+  type ResolvedTheme,
+  type SectionTheme,
+} from '../section-theme';
 import { CopyField } from './_shared/CopyField';
 import { MediaField } from './_shared/MediaField';
+import { SectionShell } from './_shared/SectionShell';
+import { SelectableElement } from './_shared/SelectableElement';
+import { ColorField, ThemePresetField } from './_shared/ThemeField';
+import { ToggleField } from './_shared/ToggleField';
+import { VariantField, type VariantOption } from './_shared/VariantField';
 
 // =============================================================================
-// Header — website-level singleton. Logo + (placeholder for nav) + optional
-// global CTA. Wraps every page on the website.
+// Header — website-level singleton. Logo + navigation + an optional global
+// CTA, in one of three layouts. Element-inspector model + brand-default
+// colour inheritance, the hero pattern.
 //
-// **Important:** nav data lives on Website.nav, NOT inside HeaderData.
-// Session 4 doesn't wire nav editing inside the Header editor (would
-// require extending the singleton editor's API to thread Website-level
-// context into Fields — a deliberate punt). The preview shows nav as a
-// labelled placeholder. Real nav editing surfaces on the website hub or
-// in a future polish session.
+// **Nav links live on `Website.nav`, NOT in HeaderData** (design doc §2.5).
+// The header editor does not edit nav — the preview renders representative
+// nav links so the bar looks complete; the live site substitutes the real
+// Website.nav at render time.
 // =============================================================================
+
+export type HeaderLayout = 'logo-left' | 'logo-center' | 'menu-right';
+export type HeaderCtaStyle = 'solid' | 'outline';
+
+type HeaderElement = 'logo' | 'cta';
 
 export type HeaderData = {
+  /** Per-section colour overrides — absent fields inherit the brand default. */
+  theme: SectionTheme;
+  layout: HeaderLayout;
   logoText: string;
+  /** Small line beneath the logo text — e.g. "Electrical". */
+  logoTagline: string;
   logoImageUrl: string;
   showCta: boolean;
   ctaLabel: string;
   ctaHref: string;
+  ctaStyle: HeaderCtaStyle;
 };
 
+/** The header's own colours — last link in the resolve chain. */
+const HEADER_HARDCODED_THEME: SectionTheme = {
+  background: '#ffffff',
+  heading: '#0f1115',
+  body: '#5b6270',
+};
+
+/** Representative nav links — the live site substitutes Website.nav. */
+const SAMPLE_NAV = ['Home', 'Services', 'About', 'Contact'] as const;
+
 const DEFAULTS: HeaderData = {
-  logoText: 'Voltline',
+  theme: {},
+  layout: 'logo-left',
+  logoText: 'Your Business',
+  logoTagline: '',
   logoImageUrl: '',
   showCta: true,
-  ctaLabel: 'Call us',
-  ctaHref: 'tel:0411222333',
+  ctaLabel: 'Get a quote',
+  ctaHref: '/contact',
+  ctaStyle: 'solid',
 };
 
 function defaultData(): HeaderData {
-  return { ...DEFAULTS };
+  return { ...DEFAULTS, theme: {} };
 }
 
-function HeaderFields({ data, onChange }: SectionFieldsProps<HeaderData>) {
-  const set = <K extends keyof HeaderData>(key: K, value: HeaderData[K]) =>
-    onChange({ ...data, [key]: value });
+function withDefaults(data: HeaderData): HeaderData {
+  return { ...DEFAULTS, ...data };
+}
 
-  return (
-    <>
+function omitThemeKey(theme: SectionTheme, key: keyof SectionTheme): SectionTheme {
+  const next = { ...theme };
+  delete next[key];
+  return next;
+}
+
+const LAYOUT_OPTIONS: readonly VariantOption<HeaderLayout>[] = [
+  { id: 'logo-left', label: 'Logo left' },
+  { id: 'logo-center', label: 'Logo centred' },
+  { id: 'menu-right', label: 'Menu right' },
+];
+
+const CTA_STYLE_OPTIONS: readonly VariantOption<HeaderCtaStyle>[] = [
+  { id: 'solid', label: 'Solid' },
+  { id: 'outline', label: 'Outline' },
+];
+
+// -- Fields -----------------------------------------------------------------
+
+function HeaderFields({
+  data,
+  onChange,
+  selectedElement,
+  clientId,
+  brand,
+}: SectionFieldsProps<HeaderData>) {
+  const d = withDefaults(data);
+  const set = <K extends keyof HeaderData>(key: K, value: HeaderData[K]) =>
+    onChange({ ...d, [key]: value });
+
+  const resolved = resolveTheme(
+    d.theme,
+    brandThemeDefaults(brand),
+    HEADER_HARDCODED_THEME,
+  );
+
+  const setColor = (key: keyof SectionTheme, value: string) =>
+    set('theme', { ...d.theme, [key]: value });
+  const clearColor = (key: keyof SectionTheme) =>
+    set('theme', omitThemeKey(d.theme, key));
+  const applyColorEverywhere = (color: string) => {
+    if (clientId) setBrandStyleValue(clientId, 'headingColor', color);
+    set('theme', omitThemeKey(d.theme, 'heading'));
+  };
+
+  if (selectedElement === 'logo') {
+    return (
       <BuilderFormSection>
         <CopyField
           label="Logo text"
-          value={data.logoText}
+          value={d.logoText}
           originalValue={DEFAULTS.logoText}
           onChange={(v) => set('logoText', v)}
-          helper="Shown when no logo image is set."
+          helper={<>Shown when no logo image is set.</>}
+        />
+        <CopyField
+          label="Tagline"
+          value={d.logoTagline}
+          onChange={(v) => set('logoTagline', v)}
+          helper={<>Optional small line beneath the logo text.</>}
         />
         <MediaField
-          label="Logo image URL"
-          value={data.logoImageUrl}
+          label="Logo image"
+          value={d.logoImageUrl}
           onChange={(v) => set('logoImageUrl', v)}
-          helper="Optional. Falls back to logo text if blank."
+        />
+        <ColorField
+          label="Logo / nav colour"
+          value={resolved.heading}
+          inherited={d.theme.heading === undefined}
+          onChange={(v) => setColor('heading', v)}
+          onReset={() => clearColor('heading')}
+          applyToAll={{ scopeLabel: 'headings', onApply: applyColorEverywhere }}
         />
       </BuilderFormSection>
+    );
+  }
+
+  if (selectedElement === 'cta') {
+    return (
       <BuilderFormSection>
+        <ToggleField
+          label="Show CTA"
+          value={d.showCta}
+          onChange={(v) => set('showCta', v)}
+        />
         <BuilderFormRow>
           <CopyField
-            label="Header CTA · label"
-            value={data.ctaLabel}
+            label="Label"
+            value={d.ctaLabel}
             originalValue={DEFAULTS.ctaLabel}
             onChange={(v) => set('ctaLabel', v)}
           />
           <CopyField
-            label="Header CTA · href"
-            value={data.ctaHref}
+            label="Link"
+            value={d.ctaHref}
             originalValue={DEFAULTS.ctaHref}
             onChange={(v) => set('ctaHref', v)}
           />
         </BuilderFormRow>
-        <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
-          Nav links live on the Website (capped at 6, design doc §2.5).
-          Editable in a future session.
+        <VariantField
+          label="Style"
+          value={d.ctaStyle}
+          options={CTA_STYLE_OPTIONS}
+          onChange={(v) => set('ctaStyle', v)}
+        />
+      </BuilderFormSection>
+    );
+  }
+
+  // -- section-level settings (no element selected) --
+  return (
+    <>
+      <BuilderFormSection>
+        <ThemePresetField value={d.theme} onChange={(v) => set('theme', v)} />
+        <ColorField
+          label="Background"
+          value={resolved.background}
+          inherited={d.theme.background === undefined}
+          onChange={(v) => setColor('background', v)}
+          onReset={() => clearColor('background')}
+        />
+      </BuilderFormSection>
+      <BuilderFormSection>
+        <VariantField
+          label="Layout"
+          value={d.layout}
+          options={LAYOUT_OPTIONS}
+          onChange={(v) => set('layout', v)}
+        />
+        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
+          Nav links are set on the website (capped at 6). The preview shows
+          representative links.
         </p>
       </BuilderFormSection>
     </>
   );
 }
 
-function HeaderPreview({ data, brand }: SectionPreviewProps<HeaderData>) {
+// -- Preview ----------------------------------------------------------------
+
+function HeaderPreview({
+  data,
+  brand,
+  selectedElement,
+  onSelectElement,
+}: SectionPreviewProps<HeaderData>) {
+  const d = withDefaults(data);
+  const resolved = resolveTheme(
+    d.theme,
+    brandThemeDefaults(brand),
+    HEADER_HARDCODED_THEME,
+  );
+
   return (
-    <header
-      data-section-type="header"
-      className="flex items-center justify-between gap-6 rounded-xl border border-rule bg-paper px-7 py-4 md:px-9"
-    >
-      <div className="flex items-center gap-2.5">
-        {data.logoImageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={data.logoImageUrl}
-            alt={data.logoText}
-            className="h-8 w-auto"
-          />
-        ) : (
+    <SectionShell theme={resolved} brand={brand} inset="flush" pad="none">
+      {({ theme, headingFont, accent }) => {
+        const sel = (id: HeaderElement) => ({
+          id,
+          selected: selectedElement === id,
+          onSelect: onSelectElement,
+        });
+
+        const logo = (
+          <SelectableElement {...sel('logo')} display="inline-block">
+            <Logo data={d} theme={theme} accent={accent} headingFont={headingFont} />
+          </SelectableElement>
+        );
+
+        const cta =
+          d.showCta && d.ctaLabel ? (
+            <SelectableElement {...sel('cta')} display="inline-block">
+              <CtaButton label={d.ctaLabel} style={d.ctaStyle} accent={accent} theme={theme} />
+            </SelectableElement>
+          ) : null;
+
+        const hamburger = (
           <span
-            className="text-[18px] font-extrabold tracking-[-0.02em]"
-            style={{ color: brand.accentColor }}
+            className="flex h-9 w-9 items-center justify-center rounded-md @2xl:hidden"
+            style={{ border: `1px solid ${theme.border}` }}
           >
-            {data.logoText || 'Logo'}
+            <Menu size={18} color={theme.heading} aria-hidden />
           </span>
-        )}
-      </div>
-      <nav
-        aria-label="Site navigation"
-        className="hidden items-center gap-5 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet md:flex"
+        );
+
+        return (
+          <div className="flex items-center gap-6 px-8 py-4 @2xl:px-12">
+            {d.layout === 'logo-center' ? (
+              <>
+                <NavLinks
+                  items={SAMPLE_NAV.slice(0, 2)}
+                  theme={theme}
+                  accent={accent}
+                  className="hidden flex-1 @2xl:flex"
+                />
+                {logo}
+                <div className="flex flex-1 items-center justify-end gap-6">
+                  <NavLinks
+                    items={SAMPLE_NAV.slice(2)}
+                    theme={theme}
+                    accent={accent}
+                    className="hidden @2xl:flex"
+                  />
+                  <span className="hidden @2xl:inline-block">{cta}</span>
+                </div>
+                {hamburger}
+              </>
+            ) : d.layout === 'menu-right' ? (
+              <>
+                {logo}
+                <div className="flex flex-1 items-center justify-end gap-7">
+                  <NavLinks
+                    items={SAMPLE_NAV}
+                    theme={theme}
+                    accent={accent}
+                    className="hidden @2xl:flex"
+                  />
+                  <span className="hidden @2xl:inline-block">{cta}</span>
+                </div>
+                {hamburger}
+              </>
+            ) : (
+              <>
+                {logo}
+                <NavLinks
+                  items={SAMPLE_NAV}
+                  theme={theme}
+                  accent={accent}
+                  className="hidden flex-1 justify-center @2xl:flex"
+                />
+                <span className="hidden @2xl:inline-block">{cta}</span>
+                {hamburger}
+              </>
+            )}
+          </div>
+        );
+      }}
+    </SectionShell>
+  );
+}
+
+function Logo({
+  data,
+  theme,
+  accent,
+  headingFont,
+}: {
+  data: HeaderData;
+  theme: ResolvedTheme;
+  accent: string;
+  headingFont: string;
+}) {
+  if (data.logoImageUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={data.logoImageUrl} alt={data.logoText} className="h-9 w-auto" />
+    );
+  }
+  return (
+    <div className="leading-none">
+      <span
+        className="text-[19px] font-extrabold tracking-[-0.02em]"
+        style={{ fontFamily: headingFont, color: theme.heading }}
       >
-        <span className="rounded border border-dashed border-rule px-2 py-0.5">
-          [ site nav · from Website.nav ]
-        </span>
-      </nav>
-      {data.showCta && data.ctaLabel ? (
+        {data.logoText || 'Logo'}
+      </span>
+      {data.logoTagline ? (
         <span
-          className="inline-flex items-center rounded-[7px] px-3.5 py-2 text-[12px] font-bold text-paper"
-          style={{ backgroundColor: brand.accentColor }}
+          className="mt-0.5 block text-[10px] font-semibold uppercase tracking-[0.18em]"
+          style={{ color: accent }}
         >
-          {data.ctaLabel}
+          {data.logoTagline}
         </span>
       ) : null}
-    </header>
+    </div>
+  );
+}
+
+function NavLinks({
+  items,
+  theme,
+  accent,
+  className,
+}: {
+  items: readonly string[];
+  theme: ResolvedTheme;
+  accent: string;
+  className?: string;
+}) {
+  return (
+    <nav className={`items-center gap-7 ${className ?? ''}`} aria-label="Site navigation">
+      {items.map((item, i) => (
+        <span
+          key={item}
+          className="text-[14px] font-medium"
+          style={{ color: i === 0 ? accent : theme.body }}
+        >
+          {item}
+        </span>
+      ))}
+    </nav>
+  );
+}
+
+function CtaButton({
+  label,
+  style,
+  accent,
+  theme,
+}: {
+  label: string;
+  style: HeaderCtaStyle;
+  accent: string;
+  theme: ResolvedTheme;
+}) {
+  if (style === 'outline') {
+    return (
+      <span
+        className="inline-flex items-center rounded-lg border-2 px-4 py-2 text-[13px] font-semibold"
+        style={{ borderColor: theme.heading, color: theme.heading }}
+      >
+        {label}
+      </span>
+    );
+  }
+  return (
+    <span
+      className="inline-flex items-center rounded-lg px-4 py-2 text-[13px] font-semibold"
+      style={{ backgroundColor: accent, color: '#ffffff' }}
+    >
+      {label}
+    </span>
   );
 }
 
 export const headerSection = defineSection<HeaderData>({
   type: 'header',
   label: '// HEADER',
-  description: 'Site header — logo + nav + optional global CTA. Wraps every page.',
+  description: 'Site header — logo, navigation, and an optional CTA. Wraps every page.',
   defaultData,
   Fields: HeaderFields,
   Preview: HeaderPreview,
   capabilityHints: {
-    copyFields: ['logoText', 'ctaLabel', 'ctaHref'],
+    copyFields: ['logoText', 'logoTagline', 'ctaLabel', 'ctaHref'],
     mediaFields: ['logoImageUrl'],
+  },
+  elementLabels: {
+    logo: 'Logo',
+    cta: 'CTA button',
   },
   allowedContainers: ['websiteHeader'],
   implemented: true,

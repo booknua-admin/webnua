@@ -181,7 +181,11 @@ const offerContentRule: PreflightRule = {
         const data = section.data as Partial<OfferData>;
         const missing: string[] = [];
         if (!nonEmpty(data.title)) missing.push('title');
-        if (!nonEmpty(data.priceLabel)) missing.push('price label');
+        if ((data.layout ?? 'card') === 'stack') {
+          if ((data.items ?? []).length === 0) missing.push('value items');
+        } else if (!nonEmpty(data.priceLabel)) {
+          missing.push('price label');
+        }
         if (missing.length > 0) {
           results.push({
             ruleId: 'offer-content',
@@ -208,8 +212,14 @@ const ctaSectionRule: PreflightRule = {
       for (const section of enabledSectionsByType(page, 'cta')) {
         const data = section.data as Partial<CTAData>;
         const missing: string[] = [];
-        if (!nonEmpty(data.headline)) missing.push('headline');
-        if (!nonEmpty(data.ctaLabel)) missing.push('button label');
+        if ((data.layout ?? 'centered') === 'dual') {
+          const hasButton =
+            nonEmpty(data.panelA?.buttonLabel) || nonEmpty(data.panelB?.buttonLabel);
+          if (!hasButton) missing.push('panel button');
+        } else {
+          if (!nonEmpty(data.headline)) missing.push('headline');
+          if (!nonEmpty(data.primaryLabel)) missing.push('button label');
+        }
         if (missing.length > 0) {
           results.push({
             ruleId: 'cta-content',
@@ -235,18 +245,15 @@ const trustEvidenceRule: PreflightRule = {
     for (const page of snapshot.pages) {
       for (const section of enabledSectionsByType(page, 'trust')) {
         const data = section.data as Partial<TrustData>;
-        const signals = [
-          data.ratingValue,
-          data.yearsLabel,
-          data.licenceLabel,
-          data.guaranteeLabel,
-        ].filter(nonEmpty);
+        const signals = (data.items ?? []).filter(
+          (it) => nonEmpty(it.value) || nonEmpty(it.label),
+        );
         if (signals.length === 0) {
           results.push({
             ruleId: 'trust-evidence',
             status: 'warn',
             title: 'Trust section is empty',
-            message: `Trust section on ${page.title || page.slug} has no rating, years, licence, or guarantee filled in.`,
+            message: `Trust section on ${page.title || page.slug} has no trust stats or client logos filled in.`,
             pageId: page.id,
             sectionId: section.id,
             fixHref: pageEditorHref(websiteId, page.id),
@@ -266,7 +273,7 @@ const reviewsPopulatedRule: PreflightRule = {
     for (const page of snapshot.pages) {
       for (const section of enabledSectionsByType(page, 'reviews')) {
         const data = section.data as Partial<ReviewsData>;
-        const reviews = data.reviews ?? [];
+        const reviews = data.items ?? [];
         if (reviews.length === 0) {
           results.push({
             ruleId: 'reviews-populated',

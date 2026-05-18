@@ -94,6 +94,8 @@ export type ColorFieldProps = {
   /** True when the section has no override — the colour is inherited from
    *  the brand default. */
   inherited?: boolean;
+  /** Label shown when `inherited` is true. Default "Brand default". */
+  inheritedLabel?: string;
   /** Clears the override (back to inherited). Shown only when overridden. */
   onReset?: () => void;
   /** Enables the "apply to all" modal after a change — promote the colour
@@ -107,6 +109,7 @@ export function ColorField({
   onChange,
   helper,
   inherited = false,
+  inheritedLabel = 'Brand default',
   onReset,
   applyToAll,
 }: ColorFieldProps) {
@@ -143,7 +146,7 @@ export function ColorField({
           </label>
           {inherited ? (
             <span className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
-              Brand default
+              {inheritedLabel}
             </span>
           ) : onReset ? (
             <button

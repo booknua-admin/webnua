@@ -35,9 +35,15 @@ import type {
   Website,
 } from './types';
 
+import { ctaSection } from './sections/cta';
+import { faqSection } from './sections/faq';
+import { footerSection } from './sections/footer';
+import { headerSection } from './sections/header';
 import { heroSection } from './sections/hero';
 import { offerSection } from './sections/offer';
+import { reviewsSection } from './sections/reviews';
 import { servicesSection } from './sections/services';
+import { trustSection } from './sections/trust';
 import type { CTAData } from './sections/cta';
 import type { FAQData } from './sections/faq';
 import type { FooterData } from './sections/footer';
@@ -201,40 +207,37 @@ const voltlineHomeServices: ServicesData = {
 };
 
 const voltlineHeader: Section = mkSection<HeaderData>('sec-vl-header', 'header', {
+  ...headerSection.defaultData(),
   logoText: 'Voltline',
-  logoImageUrl: '',
-  showCta: true,
+  logoTagline: 'Electrical',
   ctaLabel: 'Call us',
   ctaHref: 'tel:0411222333',
 });
 
 const voltlineFooter: Section = mkSection<FooterData>('sec-vl-footer', 'footer', {
-  brandLine: 'Voltline · Licensed electricians serving Perth metro',
+  ...footerSection.defaultData(),
+  logoText: 'Voltline',
+  brandLine: 'Licensed electricians serving Perth metro.',
+  contactAddress: 'Servicing Perth metro, WA',
   contactPhone: '0411 222 333',
   contactEmail: 'hello@voltline.com.au',
-  addressLine: 'Servicing Perth metro, WA',
-  socialTwitter: '',
-  socialInstagram: '@voltlineperth',
-  socialFacebook: 'voltline.perth',
   legalText: '© 2026 Voltline Pty Ltd · Lic #EC-12345 · ABN 12 345 678 901',
 });
 
 const voltlineHomeTrust: TrustData = {
-  intro: '// PERTH HOMEOWNERS TRUST US',
-  ratingValue: '4.9',
-  ratingMax: '5',
-  ratingSource: 'Google · 174 reviews',
-  yearsLabel: '8 years in Perth',
-  licenceLabel: 'Lic #EC-12345',
-  guaranteeLabel: '12-mo workmanship guarantee',
+  ...trustSection.defaultData(),
+  eyebrow: 'PERTH HOMEOWNERS TRUST US',
+  headline: 'Local service. Proven results.',
+  sub: 'Licensed electricians Perth homeowners have trusted for eight years.',
 };
 
 const voltlineHomeCTA: CTAData = {
-  tag: '// READY?',
+  ...ctaSection.defaultData(),
+  eyebrow: 'READY?',
   headline: 'Sparkie at your door this hour.',
   sub: 'One call, fixed callout, written quote on arrival.',
-  ctaLabel: 'Book a callout',
-  ctaHref: '/schedule',
+  primaryLabel: 'Book a callout',
+  primaryHref: '/schedule',
 };
 
 const voltlineNav: NavLink[] = [
@@ -349,45 +352,42 @@ const freshhomeHomeHeroDraft: HeroData = {
 };
 
 const freshhomeHeader: Section = mkSection<HeaderData>('sec-fh-header', 'header', {
+  ...headerSection.defaultData(),
   logoText: 'FreshHome',
-  logoImageUrl: '',
-  showCta: true,
+  logoTagline: 'Cleaning',
   ctaLabel: 'Get a quote',
   ctaHref: '/contact',
 });
 
 const freshhomeFooter: Section = mkSection<FooterData>('sec-fh-footer', 'footer', {
-  brandLine: 'FreshHome · Fortnightly cleaning across Perth',
+  ...footerSection.defaultData(),
+  logoText: 'FreshHome',
+  brandLine: 'Fortnightly cleaning across Perth.',
+  contactAddress: 'Servicing Perth northern suburbs',
   contactPhone: '0411 444 555',
   contactEmail: 'hello@freshhome.com.au',
-  addressLine: 'Servicing Perth northern suburbs',
-  socialTwitter: '',
-  socialInstagram: '@freshhome.perth',
-  socialFacebook: 'freshhome.perth',
   legalText: '© 2026 FreshHome Cleaning Pty Ltd · ABN 98 765 432 109',
 });
 
 const freshhomeHomeTrust: TrustData = {
-  intro: '// PERTH FAMILIES TRUST US',
-  ratingValue: '4.9',
-  ratingMax: '5',
-  ratingSource: 'Google · 312 reviews',
-  yearsLabel: '4 years cleaning Perth',
-  licenceLabel: 'Police-checked, insured',
-  guaranteeLabel: 'Satisfaction guarantee or we re-clean free',
+  ...trustSection.defaultData(),
+  eyebrow: 'PERTH FAMILIES TRUST US',
+  headline: 'A cleaner home, every time.',
+  sub: 'Police-checked, insured cleaners with a re-clean-free satisfaction guarantee.',
 };
 
 const freshhomeHomeCTA: CTAData = {
-  tag: '// READY FOR A CLEAN HOME?',
+  ...ctaSection.defaultData(),
+  eyebrow: 'READY FOR A CLEAN HOME?',
   headline: 'Same-day quote. Same cleaner every visit.',
   sub: 'SMS your suburb + home size — we text back a fortnightly price in under an hour.',
-  ctaLabel: 'Get a quote',
-  ctaHref: 'sms:0411444555',
+  primaryLabel: 'Get a quote',
+  primaryHref: 'sms:0411444555',
 };
 
 const freshhomeServicesFAQ: FAQData = {
-  title: 'Common questions',
-  intro: '',
+  ...faqSection.defaultData(),
+  headline: 'Common questions',
   items: [
     {
       id: 'faq-fh-1',
@@ -413,29 +413,36 @@ const freshhomeServicesFAQ: FAQData = {
 };
 
 const freshhomeHomeReviews: ReviewsData = {
-  title: 'What customers say',
-  intro: '',
-  reviews: [
+  ...reviewsSection.defaultData(),
+  eyebrow: 'WHAT CUSTOMERS SAY',
+  headline: 'Trusted by Perth families.',
+  items: [
     {
       id: 'rev-fh-1',
-      author: 'Megan H.',
+      quote:
+        'Same cleaner every fortnight for two years. Zero issues. The skip-free policy when we travel is what sold us.',
+      authorName: 'Megan H.',
+      authorRole: 'Homeowner',
+      avatarUrl: '',
       rating: 5,
-      body: "Same cleaner every fortnight for two years. Zero issues. The skip-free policy when we travel is what sold us.",
-      age: '3 weeks ago',
     },
     {
       id: 'rev-fh-2',
-      author: 'Tom B.',
+      quote:
+        'Booked an end-of-lease in a panic. Bond came back in full. Worth every cent.',
+      authorName: 'Tom B.',
+      authorRole: 'Tenant',
+      avatarUrl: '',
       rating: 5,
-      body: "Booked an end-of-lease in a panic. Bond came back in full. Worth every cent.",
-      age: '1 month ago',
     },
     {
       id: 'rev-fh-3',
-      author: 'Sara P.',
+      quote:
+        'Honest, on time, and they bring everything. Best cleaner we’ve had in 5 years.',
+      authorName: 'Sara P.',
+      authorRole: 'Homeowner',
+      avatarUrl: '',
       rating: 5,
-      body: "Honest, on time, and they bring everything. Best cleaner we’ve had in 5 years.",
-      age: '2 months ago',
     },
   ],
 };
@@ -586,30 +593,30 @@ const keyheroHomeHero: HeroData = {
 };
 
 const keyheroHeader: Section = mkSection<HeaderData>('sec-kh-header', 'header', {
+  ...headerSection.defaultData(),
   logoText: 'KeyHero',
-  logoImageUrl: '',
-  showCta: true,
+  logoTagline: 'Locksmiths',
   ctaLabel: 'Call now · 24/7',
   ctaHref: 'tel:0411666777',
 });
 
 const keyheroFooter: Section = mkSection<FooterData>('sec-kh-footer', 'footer', {
-  brandLine: 'KeyHero · Mobile locksmiths · Perth metro · 24/7',
+  ...footerSection.defaultData(),
+  logoText: 'KeyHero',
+  brandLine: 'Mobile locksmiths · Perth metro · 24/7.',
+  contactAddress: 'Servicing Perth metro, WA',
   contactPhone: '0411 666 777',
   contactEmail: 'help@keyhero.com.au',
-  addressLine: 'Servicing Perth metro, WA',
-  socialTwitter: '',
-  socialInstagram: '',
-  socialFacebook: 'keyhero.perth',
   legalText: '© 2026 KeyHero Locksmiths · ABN 55 123 456 789',
 });
 
 const keyheroHomeCTA: CTAData = {
-  tag: '// LOCKED OUT?',
-  headline: 'We\'re 25 minutes away.',
+  ...ctaSection.defaultData(),
+  eyebrow: 'LOCKED OUT?',
+  headline: "We're 25 minutes away.",
   sub: 'Call now for an upfront quote. Mobile across Perth metro, day or night.',
-  ctaLabel: 'Call now',
-  ctaHref: 'tel:0411666777',
+  primaryLabel: 'Call now',
+  primaryHref: 'tel:0411666777',
 };
 
 const keyheroNav: NavLink[] = [

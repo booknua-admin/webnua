@@ -2,24 +2,48 @@
 
 import { BuilderFormSection } from '@/components/shared/builder/BuilderField';
 
+import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import {
+  brandThemeDefaults,
+  mixHex,
+  resolveTheme,
+  type SectionTheme,
+} from '../section-theme';
 import { CopyField } from './_shared/CopyField';
+import { SectionShell } from './_shared/SectionShell';
+import { SelectableElement } from './_shared/SelectableElement';
+import { ColorField, ThemePresetField } from './_shared/ThemeField';
 
 // =============================================================================
-// Schedule picker section — funnel-only (allowedContainers: ['funnelStep']).
-// Calendar-integrated booking picker. Stub-layer copy + a visual mockup of
-// the picker; real integration (calendar source, slot logic, timezone
-// handling) lands when bookings backend wires in.
+// Schedule picker section — funnel-only. A calendar-integrated booking
+// picker. Uplifted to the hero pattern (SectionShell + theme + element-
+// inspector) for visual consistency; the slot grid is a MOCKUP — the real
+// front-end booking system is a later stage. Element-inspector model +
+// brand-default colour inheritance.
 // =============================================================================
+
+type ScheduleElement = 'eyebrow' | 'headline' | 'subheadline';
 
 export type SchedulePickerData = {
+  /** Per-section colour overrides — absent fields inherit the brand default. */
+  theme: SectionTheme;
+  eyebrow: string;
   title: string;
   intro: string;
   durationLabel: string;
   earliestSlotLabel: string;
 };
 
+const SCHEDULE_HARDCODED_THEME: SectionTheme = {
+  background: '#ffffff',
+  heading: '#0f1115',
+  body: '#5b6270',
+};
+
 const DEFAULTS: SchedulePickerData = {
+  theme: {},
+  eyebrow: 'SCHEDULE',
   title: 'Pick a time',
   intro: "We'll SMS to confirm within 10 minutes of booking.",
   durationLabel: '1-hour window',
@@ -27,129 +51,267 @@ const DEFAULTS: SchedulePickerData = {
 };
 
 function defaultData(): SchedulePickerData {
-  return { ...DEFAULTS };
+  return { ...DEFAULTS, theme: {} };
 }
 
-const TITLE_ALTS = [
-  'Pick a time',
-  'Book your callout',
-  'Schedule a sparkie',
-] as const;
+function withDefaults(data: SchedulePickerData): SchedulePickerData {
+  return { ...DEFAULTS, ...data };
+}
 
-function SchedulePickerFields({ data, onChange }: SectionFieldsProps<SchedulePickerData>) {
+function omitThemeKey(theme: SectionTheme, key: keyof SectionTheme): SectionTheme {
+  const next = { ...theme };
+  delete next[key];
+  return next;
+}
+
+const TITLE_ALTS = [DEFAULTS.title, 'Book your callout', 'Schedule a visit'] as const;
+
+// -- Fields -----------------------------------------------------------------
+
+function SchedulePickerFields({
+  data,
+  onChange,
+  selectedElement,
+  clientId,
+  brand,
+}: SectionFieldsProps<SchedulePickerData>) {
+  const d = withDefaults(data);
   const set = <K extends keyof SchedulePickerData>(
     key: K,
     value: SchedulePickerData[K],
-  ) => onChange({ ...data, [key]: value });
+  ) => onChange({ ...d, [key]: value });
 
-  return (
-    <>
+  const resolved = resolveTheme(
+    d.theme,
+    brandThemeDefaults(brand),
+    SCHEDULE_HARDCODED_THEME,
+  );
+
+  const setColor = (key: keyof SectionTheme, value: string) =>
+    set('theme', { ...d.theme, [key]: value });
+  const clearColor = (key: keyof SectionTheme) =>
+    set('theme', omitThemeKey(d.theme, key));
+  const applyHeading = (color: string) => {
+    if (clientId) setBrandStyleValue(clientId, 'headingColor', color);
+    set('theme', omitThemeKey(d.theme, 'heading'));
+  };
+
+  if (selectedElement === 'eyebrow') {
+    return (
       <BuilderFormSection>
         <CopyField
-          label="Section title"
-          value={data.title}
+          label="Eyebrow"
+          value={d.eyebrow}
+          originalValue={DEFAULTS.eyebrow}
+          onChange={(v) => set('eyebrow', v)}
+        />
+      </BuilderFormSection>
+    );
+  }
+
+  if (selectedElement === 'headline') {
+    return (
+      <BuilderFormSection>
+        <CopyField
+          label="Title"
+          value={d.title}
           originalValue={DEFAULTS.title}
           alternatives={TITLE_ALTS}
           onChange={(v) => set('title', v)}
         />
+        <ColorField
+          label="Heading colour"
+          value={resolved.heading}
+          inherited={d.theme.heading === undefined}
+          onChange={(v) => setColor('heading', v)}
+          onReset={() => clearColor('heading')}
+          applyToAll={{ scopeLabel: 'headings', onApply: applyHeading }}
+        />
+      </BuilderFormSection>
+    );
+  }
+
+  if (selectedElement === 'subheadline') {
+    return (
+      <BuilderFormSection>
         <CopyField
           label="Intro"
-          value={data.intro}
+          value={d.intro}
           originalValue={DEFAULTS.intro}
           onChange={(v) => set('intro', v)}
           multiline
           rows={2}
         />
       </BuilderFormSection>
+    );
+  }
+
+  // -- section-level settings --
+  return (
+    <>
+      <BuilderFormSection>
+        <ThemePresetField value={d.theme} onChange={(v) => set('theme', v)} />
+        <ColorField
+          label="Background"
+          value={resolved.background}
+          inherited={d.theme.background === undefined}
+          onChange={(v) => setColor('background', v)}
+          onReset={() => clearColor('background')}
+        />
+      </BuilderFormSection>
       <BuilderFormSection>
         <CopyField
           label="Duration label"
-          value={data.durationLabel}
+          value={d.durationLabel}
           originalValue={DEFAULTS.durationLabel}
           onChange={(v) => set('durationLabel', v)}
-          helper="Shown as the visit-window label inside each slot."
+          helper={<>Shown as the visit-window label.</>}
         />
         <CopyField
           label="Earliest-slot caption"
-          value={data.earliestSlotLabel}
+          value={d.earliestSlotLabel}
           originalValue={DEFAULTS.earliestSlotLabel}
           onChange={(v) => set('earliestSlotLabel', v)}
-          helper="Real picker reads from the calendar integration. Stub displays this verbatim."
+          helper={<>The real picker reads availability from the booking system.</>}
         />
       </BuilderFormSection>
     </>
   );
 }
 
-function SchedulePickerPreview({ data, brand }: SectionPreviewProps<SchedulePickerData>) {
-  // Mock 4 slots for the visual preview — not real availability.
-  const mockSlots = [
-    { day: 'Wed', date: 'May 14', times: ['10am', '2pm', '4pm'] },
-    { day: 'Thu', date: 'May 15', times: ['8am', '11am', '3pm'] },
-    { day: 'Fri', date: 'May 16', times: ['9am', '1pm'] },
-    { day: 'Sat', date: 'May 17', times: ['10am', '12pm'] },
-  ];
+// -- Preview ----------------------------------------------------------------
+
+// Mock slots — not real availability. The booking system replaces these.
+const MOCK_SLOTS = [
+  { day: 'Wed', date: 'May 14', times: ['10am', '2pm', '4pm'] },
+  { day: 'Thu', date: 'May 15', times: ['8am', '11am', '3pm'] },
+  { day: 'Fri', date: 'May 16', times: ['9am', '1pm'] },
+  { day: 'Sat', date: 'May 17', times: ['10am', '12pm'] },
+];
+
+function SchedulePickerPreview({
+  data,
+  brand,
+  selectedElement,
+  onSelectElement,
+}: SectionPreviewProps<SchedulePickerData>) {
+  const d = withDefaults(data);
+  const resolved = resolveTheme(
+    d.theme,
+    brandThemeDefaults(brand),
+    SCHEDULE_HARDCODED_THEME,
+  );
 
   return (
-    <section
-      data-section-type="schedulePicker"
-      className="rounded-xl border border-rule bg-paper px-7 py-8 md:px-9"
-    >
-      <p
-        className="mb-2 font-mono text-[11px] font-bold uppercase tracking-[0.16em]"
-        style={{ color: brand.accentColor }}
-      >
-        // SCHEDULE
-      </p>
-      <h3 className="mb-2 text-[26px] font-extrabold leading-[1.12] tracking-[-0.015em] text-ink">
-        {data.title}
-      </h3>
-      {data.intro ? (
-        <p className="mb-4 max-w-[520px] text-[14px] leading-[1.55] text-ink-mid">
-          {data.intro}
-        </p>
-      ) : null}
-      <p className="mb-3 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
-        {data.earliestSlotLabel} · {data.durationLabel}
-      </p>
-      <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
-        {mockSlots.map((slot) => (
-          <div
-            key={slot.day}
-            className="rounded-lg border border-rule bg-card px-3 py-3"
-          >
-            <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
-              {slot.day} · {slot.date}
-            </p>
-            <div className="mt-2 flex flex-col gap-1">
-              {slot.times.map((time) => (
-                <span
-                  key={time}
-                  className="rounded border border-rule bg-paper px-2 py-1 text-center text-[12px] text-ink"
+    <SectionShell theme={resolved} brand={brand} pad="roomy">
+      {({ theme, headingFont, accent }) => {
+        const sel = (id: ScheduleElement) => ({
+          id,
+          selected: selectedElement === id,
+          onSelect: onSelectElement,
+        });
+
+        return (
+          <div className="flex flex-col">
+            <div className="mb-7 flex flex-col items-center text-center">
+              {d.eyebrow ? (
+                <SelectableElement {...sel('eyebrow')}>
+                  <p
+                    className="text-[12px] font-bold uppercase tracking-[0.18em]"
+                    style={{ color: accent }}
+                  >
+                    {d.eyebrow}
+                  </p>
+                </SelectableElement>
+              ) : null}
+              <SelectableElement {...sel('headline')} className="mt-3">
+                <h2
+                  className="text-[30px] font-bold leading-[1.12] tracking-[-0.02em] @2xl:text-[40px]"
+                  style={{ fontFamily: headingFont, color: theme.heading }}
                 >
-                  {time}
-                </span>
+                  {d.title}
+                </h2>
+              </SelectableElement>
+              {d.intro ? (
+                <SelectableElement {...sel('subheadline')} className="mt-4">
+                  <p
+                    className="max-w-[520px] whitespace-pre-line text-[15px] leading-[1.6]"
+                    style={{ color: theme.body }}
+                  >
+                    {d.intro}
+                  </p>
+                </SelectableElement>
+              ) : null}
+            </div>
+
+            <p
+              className="mb-3 text-center text-[11px] font-bold uppercase tracking-[0.14em]"
+              style={{ color: theme.muted }}
+            >
+              {d.earliestSlotLabel} · {d.durationLabel}
+            </p>
+
+            <div className="grid grid-cols-2 gap-3 @lg:grid-cols-4">
+              {MOCK_SLOTS.map((slot) => (
+                <div
+                  key={slot.day}
+                  className="rounded-xl px-3.5 py-3.5"
+                  style={{
+                    backgroundColor: theme.card,
+                    border: `1px solid ${theme.cardBorder}`,
+                  }}
+                >
+                  <p
+                    className="text-[11px] font-bold uppercase tracking-[0.14em]"
+                    style={{ color: theme.muted }}
+                  >
+                    {slot.day} · {slot.date}
+                  </p>
+                  <div className="mt-2.5 flex flex-col gap-1.5">
+                    {slot.times.map((time) => (
+                      <span
+                        key={time}
+                        className="rounded-md py-1.5 text-center text-[12.5px] font-medium"
+                        style={{
+                          backgroundColor: mixHex(accent, theme.background, 0.9),
+                          color: theme.heading,
+                        }}
+                      >
+                        {time}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
+
+            <p
+              className="mt-4 text-center text-[11px] uppercase tracking-[0.14em]"
+              style={{ color: theme.muted }}
+            >
+              Mockup · live availability connects when the booking system is wired up.
+            </p>
           </div>
-        ))}
-      </div>
-      <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
-        Mockup · real availability pulls from the calendar integration.
-      </p>
-    </section>
+        );
+      }}
+    </SectionShell>
   );
 }
 
 export const schedulePickerSection = defineSection<SchedulePickerData>({
   type: 'schedulePicker',
   label: '// SCHEDULE PICKER',
-  description: 'Calendar-integrated booking picker. Funnel schedule steps only.',
+  description: 'Calendar-integrated booking picker (mockup — booking system lands later).',
   defaultData,
   Fields: SchedulePickerFields,
   Preview: SchedulePickerPreview,
   capabilityHints: {
-    copyFields: ['title', 'intro', 'durationLabel', 'earliestSlotLabel'],
+    copyFields: ['eyebrow', 'title', 'intro', 'durationLabel', 'earliestSlotLabel'],
+  },
+  elementLabels: {
+    eyebrow: 'Eyebrow',
+    headline: 'Title',
+    subheadline: 'Intro',
   },
   allowedContainers: ['funnelStep'],
   implemented: true,
