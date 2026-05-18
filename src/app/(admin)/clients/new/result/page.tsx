@@ -1,22 +1,29 @@
 'use client';
 
 // =============================================================================
-// /clients/new/result — the generated-client result viewer. Reads ?c=<id>
-// from the created-clients overlay and renders the generated website pages
-// and / or funnel steps as stacked section previews (the registry Preview
-// components, the same render the editor uses).
+// /clients/new/result — the post-generation review screen. Reads the freshly
+// created client's website + funnel back from Supabase (?c=<client slug>) and
+// renders the generated sections as live previews, with "Open in editor"
+// links into the real /website and /funnels surfaces.
 // =============================================================================
 
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
 
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
-import { findCreatedClient } from '@/lib/clients/created-clients-stub';
+import { useAdminClients } from '@/lib/clients/clients-store';
+import { useFunnelsForClient, useFunnelWithDraft } from '@/lib/funnel/queries';
 import { getSectionDefinition } from '@/lib/website/sections';
+import {
+  useBrandForClient,
+  useEffectiveDraft,
+  useWebsiteForClient,
+} from '@/lib/website/queries';
 import type { BrandObject, Section } from '@/lib/website/types';
+import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 type View = 'website' | 'funnel';
 
@@ -29,14 +36,40 @@ export default function GeneratedClientResultPage() {
 }
 
 function ResultBody() {
+  const router = useRouter();
   const params = useSearchParams();
-  const id = params.get('c');
-  const client = id ? findCreatedClient(id) : null;
+  const slug = params.get('c');
+  const { setActiveClientId } = useWorkspace();
 
-  const hasWebsite = !!client?.pages?.length;
-  const hasFunnel = !!client?.funnelSteps?.length;
+  const clients = useAdminClients();
+  const client = clients.find((c) => c.id === slug);
+
+  const website = useWebsiteForClient(slug);
+  const draft = useEffectiveDraft(website.data?.id ?? null);
+  const brand = useBrandForClient(slug);
+
+  const funnels = useFunnelsForClient(slug);
+  const funnel = funnels.data?.[0] ?? null;
+  const funnelDraft = useFunnelWithDraft(funnel?.id ?? null);
+
+  const hasWebsite = !!website.data;
+  const hasFunnel = !!funnel;
   const [view, setView] = useState<View>('website');
   const activeView: View = view === 'website' && !hasWebsite ? 'funnel' : view;
+
+  const loading =
+    website.isLoading || funnels.isLoading || brand.isLoading ||
+    (hasWebsite && draft.isLoading) ||
+    (hasFunnel && funnelDraft.isLoading);
+
+  const openWebsiteEditor = () => {
+    if (slug) setActiveClientId(slug);
+    router.push('/website');
+  };
+  const openFunnelEditor = () => {
+    if (slug) setActiveClientId(slug);
+    router.push('/funnels');
+  };
 
   return (
     <>
@@ -49,39 +82,45 @@ function ResultBody() {
         }
       />
       <div className="px-10 py-10">
-        {!client ? (
-          <div className="rounded-xl border border-dashed border-rule bg-card px-8 py-14 text-center">
-            <p className="text-[14px] text-ink-mid">
-              That generated client could not be found.
-            </p>
-            <Button variant="secondary" asChild className="mt-4">
-              <Link href="/clients/new">← Back to generated clients</Link>
+        <div className="mb-7 flex items-start justify-between gap-6">
+          <PageHeader
+            eyebrow="Generated"
+            title={<>{client?.name ?? slug ?? 'Generated client'}</>}
+            subtitle={
+              <>
+                Created in Supabase — live in the roster, the picker, and the
+                editors.
+              </>
+            }
+          />
+          <div className="flex shrink-0 gap-2">
+            {hasWebsite ? (
+              <Button onClick={openWebsiteEditor}>Open website editor →</Button>
+            ) : null}
+            {hasFunnel ? (
+              <Button
+                variant={hasWebsite ? 'secondary' : 'default'}
+                onClick={openFunnelEditor}
+              >
+                Open funnel editor →
+              </Button>
+            ) : null}
+            <Button variant="secondary" asChild>
+              <Link href="/clients/new">← New</Link>
             </Button>
           </div>
+        </div>
+
+        {loading ? (
+          <p className="rounded-xl border border-dashed border-rule bg-card px-8 py-14 text-center text-[13px] text-ink-quiet">
+            Loading the generated client…
+          </p>
+        ) : !hasWebsite && !hasFunnel ? (
+          <p className="rounded-xl border border-dashed border-rule bg-card px-8 py-14 text-center text-[13px] text-ink-quiet">
+            Nothing generated for this client.
+          </p>
         ) : (
           <>
-            <div className="mb-7 flex items-start justify-between gap-6">
-              <PageHeader
-                eyebrow="Generated"
-                title={<>{client.name}</>}
-                subtitle={
-                  <>
-                    {client.industry} · {client.serviceArea}
-                  </>
-                }
-              />
-              <div className="flex shrink-0 gap-2">
-                <Button asChild>
-                  <Link href={`/clients/new/result/edit?c=${id}&view=${activeView}`}>
-                    Open {activeView} in editor →
-                  </Link>
-                </Button>
-                <Button variant="secondary" asChild>
-                  <Link href="/clients/new">← All generated</Link>
-                </Button>
-              </div>
-            </div>
-
             {hasWebsite && hasFunnel ? (
               <div className="mb-6 flex gap-2">
                 <ViewTab label="Website" active={activeView === 'website'} onClick={() => setView('website')} />
@@ -89,40 +128,40 @@ function ResultBody() {
               </div>
             ) : null}
 
-            {activeView === 'website' && client.pages ? (
+            {activeView === 'website' && draft.data && brand.data ? (
               <>
-                {client.header ? (
+                {draft.data.snapshot.header ? (
                   <ArtifactBlock
                     label="Header"
-                    sections={[client.header]}
-                    brand={client.brand}
+                    sections={[draft.data.snapshot.header]}
+                    brand={brand.data}
                   />
                 ) : null}
-                {client.pages.map((page) => (
+                {draft.data.snapshot.pages.map((page) => (
                   <ArtifactBlock
                     key={page.id}
                     label={`Page · ${page.title}`}
                     sections={page.sections}
-                    brand={client.brand}
+                    brand={brand.data as BrandObject}
                   />
                 ))}
-                {client.footer ? (
+                {draft.data.snapshot.footer ? (
                   <ArtifactBlock
                     label="Footer"
-                    sections={[client.footer]}
-                    brand={client.brand}
+                    sections={[draft.data.snapshot.footer]}
+                    brand={brand.data}
                   />
                 ) : null}
               </>
             ) : null}
 
-            {activeView === 'funnel' && client.funnelSteps
-              ? client.funnelSteps.map((stepEntry) => (
+            {activeView === 'funnel' && funnelDraft.data && brand.data
+              ? funnelDraft.data.draft.snapshot.steps.map((step) => (
                   <ArtifactBlock
-                    key={stepEntry.id}
-                    label={`Step · ${stepEntry.title}`}
-                    sections={stepEntry.sections}
-                    brand={client.brand}
+                    key={step.id}
+                    label={`Step · ${step.title}`}
+                    sections={step.sections}
+                    brand={brand.data as BrandObject}
                   />
                 ))
               : null}

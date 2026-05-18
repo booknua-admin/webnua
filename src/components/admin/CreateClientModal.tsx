@@ -16,7 +16,6 @@ import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { addCreatedClient } from '@/lib/clients/created-clients-stub';
 import { cn } from '@/lib/utils';
 import {
   AUDIENCE_CHIPS,
@@ -172,31 +171,15 @@ export function CreateClientModal({
       audience,
     };
     try {
-      const [{ generateSiteStub }, { generateFunnelStub }] = await Promise.all([
-        import('@/lib/website/site-generation-stub'),
-        import('@/lib/funnel/generation-stub'),
-      ]);
-      const [site, funnel] = await Promise.all([
-        wantWebsite ? generateSiteStub(brief) : Promise.resolve(null),
-        wantFunnel ? generateFunnelStub(brief) : Promise.resolve(null),
-      ]);
-      const created = addCreatedClient({
-        name: business.name,
-        industry: brief.industry,
-        serviceArea: business.serviceArea,
-        brand,
-        pages: site?.pages ?? null,
-        header: site?.header ?? null,
-        footer: site?.footer ?? null,
-        funnelName: funnel?.funnel.name ?? null,
-        funnel: funnel?.funnel ?? null,
-        funnelSteps: funnel?.steps ?? null,
-      });
+      // Lazy-loaded — keeps the heavy generation + Supabase write graph out
+      // of the /clients/new page's static import chain.
+      const { createClientWithGeneration } = await import('@/lib/clients/create-client');
+      const result = await createClientWithGeneration({ brief, wantWebsite, wantFunnel });
       onOpenChange(false);
       setTimeout(reset, 200);
-      router.push(`/clients/new/result?c=${created.id}`);
+      router.push(`/clients/new/result?c=${result.clientSlug}`);
     } catch {
-      setError('Generation failed — try again.');
+      setError('Generation failed — check you are signed in as an operator, then try again.');
       setPhase('build');
     }
   };
