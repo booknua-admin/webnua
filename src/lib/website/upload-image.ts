@@ -11,7 +11,9 @@ import { AppError, err, normalizeError, ok, type Result } from '@/lib/errors';
 import { supabase } from '@/lib/supabase/client';
 
 const BUCKET = 'section-media';
-const MAX_BYTES = 10 * 1024 * 1024; // 10 MB — matches the bucket limit.
+// Web-image cap — keeps storage lean (large photos should be compressed
+// before upload). Stricter than the 10 MB Storage-bucket limit.
+const MAX_BYTES = 3 * 1024 * 1024; // 3 MB
 
 export async function uploadSectionImage(
   file: File,
@@ -20,7 +22,11 @@ export async function uploadSectionImage(
     return err(AppError.validation({ file: 'That file is not an image.' }));
   }
   if (file.size > MAX_BYTES) {
-    return err(AppError.validation({ file: 'Image must be under 10 MB.' }));
+    return err(
+      AppError.validation({
+        file: 'Image must be under 3 MB — compress large photos before uploading.',
+      }),
+    );
   }
 
   const ext =

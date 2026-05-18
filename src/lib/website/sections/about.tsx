@@ -48,7 +48,6 @@ type AboutElement =
   | 'headline'
   | 'subheadline'
   | 'extra'
-  | 'media'
   | 'overlay';
 
 export type AboutFeature = {
@@ -542,32 +541,6 @@ function AboutFields({
     );
   }
 
-  if (selectedElement === 'media') {
-    return (
-      <BuilderFormSection>
-        <MediaField
-          label={d.mediaMode === 'collage' ? 'Main image' : 'Image'}
-          value={d.imageUrl}
-          onChange={(v) => set('imageUrl', v)}
-        />
-        {d.mediaMode === 'collage' ? (
-          <>
-            <MediaField
-              label="Collage image 2"
-              value={d.imageUrl2}
-              onChange={(v) => set('imageUrl2', v)}
-            />
-            <MediaField
-              label="Collage image 3"
-              value={d.imageUrl3}
-              onChange={(v) => set('imageUrl3', v)}
-            />
-          </>
-        ) : null}
-      </BuilderFormSection>
-    );
-  }
-
   if (selectedElement === 'overlay') {
     if (d.overlay === 'stat') {
       return (
@@ -663,6 +636,27 @@ function AboutFields({
           />
         ) : null}
       </BuilderFormSection>
+      <BuilderFormSection>
+        <MediaField
+          label={d.mediaMode === 'collage' ? 'Main image' : 'Image'}
+          value={d.imageUrl}
+          onChange={(v) => set('imageUrl', v)}
+        />
+        {d.mediaMode === 'collage' ? (
+          <>
+            <MediaField
+              label="Collage image 2"
+              value={d.imageUrl2}
+              onChange={(v) => set('imageUrl2', v)}
+            />
+            <MediaField
+              label="Collage image 3"
+              value={d.imageUrl3}
+              onChange={(v) => set('imageUrl3', v)}
+            />
+          </>
+        ) : null}
+      </BuilderFormSection>
     </>
   );
 }
@@ -746,20 +740,16 @@ function AboutPreview({
           </div>
         );
 
-        const media = (
-          <SelectableElement {...sel('media')}>
-            <AboutMedia data={d} theme={theme} accent={accent} sel={sel} />
-          </SelectableElement>
-        );
-
         const copyCell = (
           <div key="copy" className="flex flex-col justify-center">
             {copy}
           </div>
         );
+        // The media column is hidden on a narrow canvas — on mobile the
+        // copy carries the section on its own.
         const mediaCell = (
-          <div key="media" className="flex items-center">
-            {media}
+          <div key="media" className="hidden items-center @3xl:flex">
+            <AboutMedia data={d} theme={theme} accent={accent} sel={sel} />
           </div>
         );
 
@@ -1063,7 +1053,6 @@ export const aboutSection = defineSection<AboutData>({
     headline: 'Headline',
     subheadline: 'Intro paragraph',
     extra: 'Extra block',
-    media: 'Image',
     overlay: 'Overlay card',
   },
   allowedContainers: ['page', 'funnelStep'],

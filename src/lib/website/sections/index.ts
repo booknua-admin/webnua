@@ -13,6 +13,7 @@ import { ctaSection } from './cta';
 import { faqSection } from './faq';
 import { featuresSection } from './features';
 import { footerSection } from './footer';
+import { gallerySection } from './gallery';
 import { headerSection } from './header';
 import { heroSection } from './hero';
 import { offerSection } from './offer';
@@ -30,6 +31,7 @@ export const SECTION_REGISTRY: readonly SectionTypeDefinition[] = [
   featuresSection,
   servicesSection,
   aboutSection,
+  gallerySection,
   reviewsSection,
   faqSection,
   ctaSection,
@@ -69,6 +71,7 @@ export type { AboutData, AboutFeature, AboutStat } from './about';
 export type { CTAData } from './cta';
 export type { FAQData, FAQItem } from './faq';
 export type { FeatureItem, FeaturesData } from './features';
+export type { GalleryData, GalleryItem } from './gallery';
 export type { FooterData } from './footer';
 export type { HeaderData } from './header';
 export type { HeroData } from './hero';

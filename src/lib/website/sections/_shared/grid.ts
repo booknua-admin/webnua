@@ -21,3 +21,16 @@ export const GRID_COLUMNS_CLASS: Record<number, string> = {
 export function gridColumnsClass(n: number): string {
   return GRID_COLUMNS_CLASS[n] ?? GRID_COLUMNS_CLASS[3];
 }
+
+// CSS multi-column classes for masonry layouts — same graceful collapse.
+export const MASONRY_COLUMNS_CLASS: Record<number, string> = {
+  2: 'columns-1 @lg:columns-2',
+  3: 'columns-1 @sm:columns-2 @2xl:columns-3',
+  4: 'columns-1 @sm:columns-2 @2xl:columns-4',
+  5: 'columns-1 @sm:columns-2 @lg:columns-3 @2xl:columns-5',
+};
+
+/** Resolve a column count (2–5) to its responsive masonry class string. */
+export function masonryColumnsClass(n: number): string {
+  return MASONRY_COLUMNS_CLASS[n] ?? MASONRY_COLUMNS_CLASS[3];
+}
