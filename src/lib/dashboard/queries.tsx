@@ -19,6 +19,14 @@
 import { useQuery } from '@tanstack/react-query';
 
 import type { ClientStatus } from '@/components/admin/ClientListRow';
+import {
+  fetchSurfaceFunnelTotals,
+  fetchSurfacePageTotals,
+  formatDwell,
+  pageSpeedScore,
+  type SurfaceFunnelTotals,
+  type SurfacePageTotals,
+} from '@/lib/analytics/queries';
 import { AppError, normalizeError } from '@/lib/errors';
 import { supabase } from '@/lib/supabase/client';
 import { relativeTime } from '@/lib/time';
@@ -33,6 +41,7 @@ import type {
   DashboardCallout,
   DashboardQueueItem,
   LandingSnapshot,
+  LandingSnapshotStat,
 } from './client-dashboard-types';
 import type {
   ClientHub,
@@ -254,29 +263,88 @@ function weeklyCounts(times: number[], now: number): number[] {
   return [3, 2, 1, 0].map((w) => countInWeek(times, w, now));
 }
 
-/** The three real conversion steps — the schema has no upstream analytics
- *  (landing visits / engaged scroll), so the funnel is leads → booked →
- *  reviewed, the steps the schema honestly carries (design §5 #14). */
+/** The conversion funnel. The bottom three stages (form submitted → booked →
+ *  reviewed) are always real — sourced from `leads` / `bookings` / `reviews`.
+ *  The top three (landing → engaged → form-started) are visitor-tracking
+ *  rollups (visitor-tracking-design §7); they render only once a surface has
+ *  tracked traffic. With no tracked data the funnel honestly falls back to
+ *  the three live stages it has always shown. */
 function conversionFunnel(
   domain: string,
   now: Date,
   leadCount: number,
   bookedCount: number,
   reviewCount: number,
+  tracked: SurfaceFunnelTotals | null,
 ): HubFunnelConversion {
-  const top = Math.max(leadCount, 1);
+  const hasTracked = !!tracked?.hasData && tracked.landing > 0;
+
+  if (!hasTracked) {
+    const top = Math.max(leadCount, 1);
+    const pct = (n: number): number => Math.round((n / top) * 1000) / 10;
+    return {
+      domain,
+      periodLabel: periodLabel(now),
+      steps: [
+        {
+          kind: 'leads',
+          label: 'New leads',
+          sublabel: 'Funnel form submitted',
+          count: leadCount,
+          pct: 100,
+        },
+        {
+          kind: 'booked',
+          label: 'Booked',
+          sublabel: 'Converted to a job',
+          count: bookedCount,
+          pct: pct(bookedCount),
+        },
+        {
+          kind: 'reviewed',
+          label: 'Reviewed',
+          sublabel: '5★ Google review',
+          count: reviewCount,
+          pct: pct(reviewCount),
+        },
+      ],
+    };
+  }
+
+  const top = tracked.landing;
   const pct = (n: number): number =>
-    Math.round((n / top) * 1000) / 10;
+    Math.min(100, Math.round((n / top) * 1000) / 10);
   return {
     domain,
     periodLabel: periodLabel(now),
     steps: [
       {
-        kind: 'leads',
-        label: 'New leads',
-        sublabel: 'Funnel form submitted',
-        count: leadCount,
+        kind: 'landing',
+        label: 'Landing visits',
+        sublabel: 'Arrived on the page',
+        count: tracked.landing,
         pct: 100,
+      },
+      {
+        kind: 'engaged',
+        label: 'Engaged',
+        sublabel: 'Scrolled past halfway',
+        count: tracked.engaged,
+        pct: pct(tracked.engaged),
+      },
+      {
+        kind: 'form-started',
+        label: 'Form started',
+        sublabel: 'Began typing details',
+        count: tracked.formStarted,
+        pct: pct(tracked.formStarted),
+      },
+      {
+        kind: 'leads',
+        label: 'Form submitted',
+        sublabel: 'Became a new lead',
+        count: leadCount,
+        pct: pct(leadCount),
       },
       {
         kind: 'booked',
@@ -349,6 +417,10 @@ type ClientDashboardJoin = {
   completions: CompletionRow[];
   websiteDomain: string | null;
   ownerName: string;
+  /** Tracked top-of-funnel + page-engagement totals (visitor-tracking §7).
+   *  null when the client has no website. */
+  funnelTotals: SurfaceFunnelTotals | null;
+  pageTotals: SurfacePageTotals | null;
 };
 
 async function fetchClientDashboard(): Promise<ClientDashboard> {
@@ -372,7 +444,7 @@ async function fetchClientDashboard(): Promise<ClientDashboard> {
     supabase.from('bookings').select(BOOKING_SELECT),
     supabase.from('reviews').select(REVIEW_SELECT),
     supabase.from('job_completions').select('amount_charged, completed_at'),
-    supabase.from('websites').select('domain_primary'),
+    supabase.from('websites').select('id, domain_primary'),
   ]);
 
   for (const r of [
@@ -386,16 +458,27 @@ async function fetchClientDashboard(): Promise<ClientDashboard> {
     if (r.error) throw normalizeError(r.error);
   }
 
+  const website =
+    (websiteResult.data as { id: string; domain_primary: string }[])[0] ?? null;
+  // Tracked analytics — fetched only when a website exists. The helpers
+  // swallow their own errors, so a missing rollup never breaks the dashboard.
+  const [funnelTotals, pageTotals] = website
+    ? await Promise.all([
+        fetchSurfaceFunnelTotals(website.id),
+        fetchSurfacePageTotals(website.id),
+      ])
+    : [null, null];
+
   const join: ClientDashboardJoin = {
     client: (clientResult.data as { name: string; slug: string }[])[0] ?? null,
     leads: (leadsResult.data ?? []) as unknown as LeadRow[],
     bookings: (bookingsResult.data ?? []) as unknown as BookingRow[],
     reviews: (reviewsResult.data ?? []) as unknown as ReviewRow[],
     completions: (completionsResult.data ?? []) as CompletionRow[],
-    websiteDomain:
-      (websiteResult.data as { domain_primary: string }[])[0]?.domain_primary ??
-      null,
+    websiteDomain: website?.domain_primary ?? null,
     ownerName: userResult.data?.display_name ?? 'there',
+    funnelTotals,
+    pageTotals,
   };
 
   return composeClientDashboard(join);
@@ -535,6 +618,7 @@ function composeClientDashboard(join: ClientDashboardJoin): ClientDashboard {
     leadsWk,
     bookingsWk,
     reviewsWk,
+    join.funnelTotals,
   );
   const dropToBooked = Math.max(0, leadsWk - bookingsWk);
   const bookRate =
@@ -583,25 +667,89 @@ function composeClientDashboard(join: ClientDashboardJoin): ClientDashboard {
           : 'No new leads yet this week.',
       cta: { label: 'View full analytics →', href: '/funnels' },
     },
-    landingSnapshot: landingSnapshot(domain, join.websiteDomain != null),
+    landingSnapshot: landingSnapshot(
+      domain,
+      join.websiteDomain != null,
+      join.pageTotals,
+      leadsWk,
+    ),
     recentActivity: activityFeed(leads, reviews, 6),
   };
 }
 
-/** The landing-page snapshot card. The domain + live status are real (the
- *  `websites` row); the traffic stats are analytics not yet modelled — they
- *  render honest placeholders (design §5 #14 — the metrics gap). */
-function landingSnapshot(domain: string, hasWebsite: boolean): LandingSnapshot {
-  const placeholderStats: LandingSnapshot['stats'] = [
-    { label: '// VISITS · 7D', value: '—', trend: 'Awaiting analytics', trendTone: 'quiet' },
-    { label: '// CONV. RATE', value: '—', trend: 'Awaiting analytics', trendTone: 'quiet' },
-    { label: '// AVG TIME', value: '—', trend: 'Awaiting analytics', trendTone: 'quiet' },
-    { label: '// PAGE SPEED', value: '—', trend: 'Awaiting analytics', trendTone: 'quiet' },
-  ];
+/** The landing-page snapshot card. The domain + live status come from the
+ *  `websites` row; the four traffic stats are visitor-tracking rollups
+ *  (visitor-tracking-design §7). Before a surface has tracked traffic the
+ *  stats fall back to honest `—` placeholders. */
+function landingSnapshot(
+  domain: string,
+  hasWebsite: boolean,
+  pageTotals: SurfacePageTotals | null,
+  leadCount: number,
+): LandingSnapshot {
+  const placeholder = (label: string): LandingSnapshotStat => ({
+    label,
+    value: '—',
+    trend: 'Awaiting analytics',
+    trendTone: 'quiet',
+  });
+
+  let stats: LandingSnapshot['stats'];
+  if (pageTotals?.hasData) {
+    const speed = pageSpeedScore(
+      pageTotals.lcpP75,
+      pageTotals.clsP75,
+      pageTotals.inpP75,
+    );
+    const convRate =
+      pageTotals.visits > 0
+        ? Math.round((leadCount / pageTotals.visits) * 1000) / 10
+        : null;
+    stats = [
+      {
+        label: '// VISITS · 7D',
+        value: String(pageTotals.visits),
+        trend: `${pageTotals.uniqueVisitors} unique`,
+        trendTone: 'good',
+      },
+      convRate === null
+        ? placeholder('// CONV. RATE')
+        : {
+            label: '// CONV. RATE',
+            value: `${convRate}%`,
+            trend: 'Visits → leads',
+            trendTone: 'good',
+          },
+      pageTotals.avgSeconds === null
+        ? placeholder('// AVG TIME')
+        : {
+            label: '// AVG TIME',
+            value: formatDwell(pageTotals.avgSeconds),
+            trend: 'Time on page',
+            trendTone: 'good',
+          },
+      speed === null
+        ? placeholder('// PAGE SPEED')
+        : {
+            label: '// PAGE SPEED',
+            value: String(speed),
+            trend: speed >= 90 ? 'Fast' : speed >= 50 ? 'Moderate' : 'Needs work',
+            trendTone: speed >= 50 ? 'good' : 'quiet',
+          },
+    ];
+  } else {
+    stats = [
+      placeholder('// VISITS · 7D'),
+      placeholder('// CONV. RATE'),
+      placeholder('// AVG TIME'),
+      placeholder('// PAGE SPEED'),
+    ];
+  }
+
   return {
     domain: domain || 'No website yet',
     meta: hasWebsite ? 'Live' : 'Not published yet',
-    stats: placeholderStats,
+    stats,
   };
 }
 
@@ -635,6 +783,9 @@ type HubJoin = {
   automationsEnabled: number;
   campaign: { name: string; status: string; budget: number | null } | null;
   operatorName: string;
+  /** Tracked top-of-funnel totals for the client's website (visitor-tracking
+   *  §7). null when the client has no website. */
+  funnelTotals: SurfaceFunnelTotals | null;
 };
 
 const HUB_OPERATOR_ACTIONS: OperatorAction[] = [
@@ -690,7 +841,7 @@ async function fetchClientHub(clientSlug: string): Promise<ClientHub> {
       .eq('booking.client_id', clientId),
     supabase
       .from('websites')
-      .select('domain_primary')
+      .select('id, domain_primary')
       .eq('client_id', clientId),
     supabase.from('automations').select('enabled').eq('client_id', clientId),
     supabase
@@ -721,6 +872,11 @@ async function fetchClientHub(clientSlug: string): Promise<ClientHub> {
     created_at: string;
   };
   const automations = (automationsResult.data ?? []) as { enabled: boolean }[];
+  const hubWebsite =
+    (websiteResult.data as { id: string; domain_primary: string }[])[0] ?? null;
+  const funnelTotals = hubWebsite
+    ? await fetchSurfaceFunnelTotals(hubWebsite.id)
+    : null;
 
   const join: HubJoin = {
     clientName: client.name,
@@ -733,9 +889,8 @@ async function fetchClientHub(clientSlug: string): Promise<ClientHub> {
     bookings: (bookingsResult.data ?? []) as unknown as BookingRow[],
     reviews: (reviewsResult.data ?? []) as unknown as ReviewRow[],
     completions: (completionsResult.data ?? []) as unknown as CompletionRow[],
-    websiteDomain:
-      (websiteResult.data as { domain_primary: string }[])[0]
-        ?.domain_primary ?? null,
+    websiteDomain: hubWebsite?.domain_primary ?? null,
+    funnelTotals,
     automationsTotal: automations.length,
     automationsEnabled: automations.filter((a) => a.enabled).length,
     campaign:
@@ -941,7 +1096,14 @@ function composeClientHub(clientId: string, join: HubJoin): ClientHub {
     ),
     recentActivity: activityFeed(leads, reviews, 6),
     weeklyStats,
-    funnel: conversionFunnel(domain, now, leadsWk, bookingsWk, reviewsWk),
+    funnel: conversionFunnel(
+      domain,
+      now,
+      leadsWk,
+      bookingsWk,
+      reviewsWk,
+      join.funnelTotals,
+    ),
     insight: {
       severity:
         leadsWk === 0 ? 'warn' : bookRate >= 50 ? 'good' : 'opportunity',

@@ -39,7 +39,7 @@ import type { Funnel, FunnelStep } from '@/lib/funnel/types';
 import type { DraftSlot } from '@/lib/website/content-drafts';
 import { defaultFormConfig, type FormConfig } from '@/lib/website/form-config';
 import { saveSeoForPages } from '@/lib/website/mutations';
-import { useBrandForClient } from '@/lib/website/queries';
+import { useBrandForClient, useWebsiteForClient } from '@/lib/website/queries';
 import { getSectionDefinition } from '@/lib/website/sections';
 import type {
   ContainerKind,
@@ -123,10 +123,16 @@ function clientIdForMode(mode: SectionEditorMode): string {
   return mode.kind === 'funnelStep' ? mode.funnel.clientId : mode.website.clientId;
 }
 
-function domainForMode(mode: SectionEditorMode): string {
-  return mode.kind === 'funnelStep'
-    ? mode.funnel.domain.primary
-    : mode.website.domain.primary;
+/** The host the surface is served on. A funnel has no host of its own — it
+ *  lives at a path on the website host (`websiteHost` is resolved from the
+ *  client); funnel `domain.primary` is vestigial (migration 0034). */
+function domainForMode(
+  mode: SectionEditorMode,
+  websiteHost: string | null,
+): string {
+  if (mode.kind !== 'funnelStep') return mode.website.domain.primary;
+  const host = websiteHost ?? mode.funnel.domain.primary;
+  return `${host}/${mode.funnel.slug}`;
 }
 
 /** The container new sections are added into. Singleton mode has no add. */
@@ -141,6 +147,11 @@ export function SectionEditor({ mode }: SectionEditorProps) {
   // font menu and the "apply to all" path; the overlay is merged over the
   // resolved brand so every section preview re-renders live.
   const brandStyleOverride = useBrandStyle(clientId);
+  // A funnel is served on the website's host — resolve it so the toolbar's
+  // "View live" link points where the funnel actually lives.
+  const websiteForHost = useWebsiteForClient(
+    mode.kind === 'funnelStep' ? clientId : null,
+  );
   const brand = useMemo(
     () =>
       brandQuery.data
@@ -421,7 +432,7 @@ export function SectionEditor({ mode }: SectionEditorProps) {
         <WebsiteEditorPendingBanner submission={pendingForUser} />
       ) : null}
       <EditorToolbar
-        domain={domainForMode(mode)}
+        domain={domainForMode(mode, websiteForHost.data?.domain.primary ?? null)}
         mode={toolbarMode}
         activePageId={mode.kind === 'page' ? mode.page.id : undefined}
         autosave={{

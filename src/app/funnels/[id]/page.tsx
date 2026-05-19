@@ -22,6 +22,7 @@ import { FunnelSlugEditor } from '@/components/client/funnels/FunnelSlugEditor';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { useCanAny } from '@/lib/auth/user-stub';
 import { useFunnelVersions, useFunnelWithDraft } from '@/lib/funnel/queries';
+import { useWebsiteForClient } from '@/lib/website/queries';
 import type {
   FunnelStep as EditableFunnelStep,
   FunnelVersion as EditableFunnelVersion,
@@ -120,6 +121,11 @@ export default function FunnelDetailPage() {
 
   const { data, isLoading, isError } = useFunnelWithDraft(id);
   const { data: versions } = useFunnelVersions(id);
+  // A funnel is served at the *website's* host + /{slug} — not on a host of
+  // its own (funnel `domain_primary` is vestigial, see migration 0034). Pull
+  // the website so the live link points where the funnel is actually served,
+  // including a client's custom domain.
+  const { data: website } = useWebsiteForClient(data?.funnel.clientId ?? null);
 
   if (isLoading) {
     return <StatusState message="// Loading funnel…" id={id} />;
@@ -134,7 +140,10 @@ export default function FunnelDetailPage() {
   // The funnel is served at {websiteHost}/{slug}. `funnel.clientId` carries
   // the client slug (see lib/funnel/queries.tsx mapFunnel).
   const funnelSlug = funnel.slug ?? 'offer';
-  const host = `${funnel.clientId}.webnua.dev`;
+  // The funnel is served on the website's host (the website's primary domain,
+  // which may be a custom domain). Fall back to the platform subdomain only
+  // while the website query is still resolving / the client has no website.
+  const host = website?.domain.primary ?? `${funnel.clientId}.webnua.dev`;
   const publicUrl = `${host}/${funnelSlug}`;
 
   const steps = buildSteps(editorSteps, publicUrl);

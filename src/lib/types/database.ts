@@ -327,6 +327,141 @@ export type Database = {
           },
         ]
       }
+      analytics_events: {
+        Row: {
+          client_id: string
+          event_type: Database["public"]["Enums"]["analytics_event_type"]
+          id: string
+          ingested_at: string
+          occurred_at: string
+          page_ref: string
+          payload: Json
+          session_id: string
+          surface_id: string
+          surface_kind: string
+          visitor_id: string
+        }
+        Insert: {
+          client_id: string
+          event_type: Database["public"]["Enums"]["analytics_event_type"]
+          id?: string
+          ingested_at?: string
+          occurred_at: string
+          page_ref: string
+          payload?: Json
+          session_id: string
+          surface_id: string
+          surface_kind: string
+          visitor_id: string
+        }
+        Update: {
+          client_id?: string
+          event_type?: Database["public"]["Enums"]["analytics_event_type"]
+          id?: string
+          ingested_at?: string
+          occurred_at?: string
+          page_ref?: string
+          payload?: Json
+          session_id?: string
+          surface_id?: string
+          surface_kind?: string
+          visitor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analytics_events_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      analytics_funnel_daily: {
+        Row: {
+          client_id: string
+          day: string
+          event_count: number
+          stage: string
+          surface_id: string
+          surface_kind: string
+          unique_visitors: number
+        }
+        Insert: {
+          client_id: string
+          day: string
+          event_count?: number
+          stage: string
+          surface_id: string
+          surface_kind: string
+          unique_visitors?: number
+        }
+        Update: {
+          client_id?: string
+          day?: string
+          event_count?: number
+          stage?: string
+          surface_id?: string
+          surface_kind?: string
+          unique_visitors?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analytics_funnel_daily_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      analytics_page_daily: {
+        Row: {
+          avg_seconds: number | null
+          client_id: string
+          cls_p75: number | null
+          day: string
+          inp_p75: number | null
+          lcp_p75: number | null
+          page_ref: string
+          surface_id: string
+          unique_visitors: number
+          visits: number
+        }
+        Insert: {
+          avg_seconds?: number | null
+          client_id: string
+          cls_p75?: number | null
+          day: string
+          inp_p75?: number | null
+          lcp_p75?: number | null
+          page_ref: string
+          surface_id: string
+          unique_visitors?: number
+          visits?: number
+        }
+        Update: {
+          avg_seconds?: number | null
+          client_id?: string
+          cls_p75?: number | null
+          day?: string
+          inp_p75?: number | null
+          lcp_p75?: number | null
+          page_ref?: string
+          surface_id?: string
+          unique_visitors?: number
+          visits?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analytics_page_daily_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campaigns: {
         Row: {
           budget: number | null
@@ -483,6 +618,7 @@ export type Database = {
           primary_contact_phone: string | null
           service_area: string | null
           slug: string
+          tracking_consent_mode: string
           updated_at: string
         }
         Insert: {
@@ -497,6 +633,7 @@ export type Database = {
           primary_contact_phone?: string | null
           service_area?: string | null
           slug: string
+          tracking_consent_mode?: string
           updated_at?: string
         }
         Update: {
@@ -511,6 +648,7 @@ export type Database = {
           primary_contact_phone?: string | null
           service_area?: string | null
           slug?: string
+          tracking_consent_mode?: string
           updated_at?: string
         }
         Relationships: [
@@ -825,6 +963,7 @@ export type Database = {
           name: string
           published_version_id: string | null
           slug: string
+          tracking_key: string
           updated_at: string
         }
         Insert: {
@@ -838,6 +977,7 @@ export type Database = {
           name: string
           published_version_id?: string | null
           slug: string
+          tracking_key?: string
           updated_at?: string
         }
         Update: {
@@ -851,6 +991,7 @@ export type Database = {
           name?: string
           published_version_id?: string | null
           slug?: string
+          tracking_key?: string
           updated_at?: string
         }
         Relationships: [
@@ -1074,6 +1215,7 @@ export type Database = {
           id: string
           source: string | null
           status: Database["public"]["Enums"]["lead_status"]
+          submission_id: string | null
           updated_at: string
           urgency: Database["public"]["Enums"]["lead_urgency"]
         }
@@ -1087,6 +1229,7 @@ export type Database = {
           id?: string
           source?: string | null
           status?: Database["public"]["Enums"]["lead_status"]
+          submission_id?: string | null
           updated_at?: string
           urgency?: Database["public"]["Enums"]["lead_urgency"]
         }
@@ -1100,6 +1243,7 @@ export type Database = {
           id?: string
           source?: string | null
           status?: Database["public"]["Enums"]["lead_status"]
+          submission_id?: string | null
           updated_at?: string
           urgency?: Database["public"]["Enums"]["lead_urgency"]
         }
@@ -1930,6 +2074,7 @@ export type Database = {
           id: string
           name: string
           published_version_id: string | null
+          tracking_key: string
           updated_at: string
         }
         Insert: {
@@ -1942,6 +2087,7 @@ export type Database = {
           id?: string
           name: string
           published_version_id?: string | null
+          tracking_key?: string
           updated_at?: string
         }
         Update: {
@@ -1954,6 +2100,7 @@ export type Database = {
           id?: string
           name?: string
           published_version_id?: string | null
+          tracking_key?: string
           updated_at?: string
         }
         Relationships: [
@@ -1988,6 +2135,15 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
+      analytics_event_type:
+        | "page_view"
+        | "scroll_depth"
+        | "element_click"
+        | "form_start"
+        | "form_field"
+        | "form_abandon"
+        | "form_submit"
+        | "web_vital"
       approval_status: "pending" | "approved" | "rejected" | "recalled"
       automation_channel: "sms" | "email"
       billing_cycle: "monthly" | "yearly"
