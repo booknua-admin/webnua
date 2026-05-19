@@ -18,12 +18,12 @@ import { FunnelFlow } from '@/components/client/funnels/FunnelFlow';
 import { FunnelHero } from '@/components/client/funnels/FunnelHero';
 import { FunnelHistoryCard } from '@/components/client/funnels/FunnelHistoryCard';
 import { FunnelInsightsCard } from '@/components/client/funnels/FunnelInsightsCard';
+import { FunnelSlugEditor } from '@/components/client/funnels/FunnelSlugEditor';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { useCanAny } from '@/lib/auth/user-stub';
 import { useFunnelVersions, useFunnelWithDraft } from '@/lib/funnel/queries';
 import type {
   FunnelStep as EditableFunnelStep,
-  Funnel,
   FunnelVersion as EditableFunnelVersion,
   FunnelStepType,
 } from '@/lib/funnel/types';
@@ -63,7 +63,10 @@ const Dash = () => <span className="text-ink-quiet">—</span>;
 
 // -- Builders (live record → display shape) ----------------------------------
 
-function buildSteps(editorSteps: EditableFunnelStep[], domain: string): FunnelStep[] {
+function buildSteps(
+  editorSteps: EditableFunnelStep[],
+  publicUrl: string,
+): FunnelStep[] {
   return editorSteps.map((step, i) => ({
     id: step.id,
     position: i + 1,
@@ -71,7 +74,7 @@ function buildSteps(editorSteps: EditableFunnelStep[], domain: string): FunnelSt
     tone: i === 0 ? 'first' : i === editorSteps.length - 1 ? 'last' : 'middle',
     thumb: STEP_THUMB[step.type] ?? 'landing',
     name: step.title,
-    url: `${domain}/${step.slug}`.replace(/\/+$/, ''),
+    url: (i === 0 ? publicUrl : `${publicUrl}/${step.slug}`).replace(/\/+$/, ''),
     metricNum: <Dash />,
     metricLabel: '// Awaiting analytics',
     foot: [],
@@ -128,9 +131,13 @@ export default function FunnelDetailPage() {
   const { funnel, draft } = data;
   const editorSteps = draft.snapshot.steps;
   const firstStepId = editorSteps[0]?.id;
-  const domain = funnel.domain.primary;
+  // The funnel is served at {websiteHost}/{slug}. `funnel.clientId` carries
+  // the client slug (see lib/funnel/queries.tsx mapFunnel).
+  const funnelSlug = funnel.slug ?? 'offer';
+  const host = `${funnel.clientId}.webnua.dev`;
+  const publicUrl = `${host}/${funnelSlug}`;
 
-  const steps = buildSteps(editorSteps, domain);
+  const steps = buildSteps(editorSteps, publicUrl);
   const arrows = buildArrows(steps.length);
   const history = buildHistory(versions ?? [], funnel.publishedVersionId);
 
@@ -151,7 +158,7 @@ export default function FunnelDetailPage() {
           title={funnel.name}
           subtitle={
             <>
-              Your booking funnel on <strong>{domain}</strong>. A{' '}
+              Your booking funnel at <strong>{publicUrl}</strong>. A{' '}
               {steps.length}-step path from landing to booked — Webnua manages
               updates, request a change anytime.
             </>
@@ -161,7 +168,7 @@ export default function FunnelDetailPage() {
             { label: 'Steps', value: <>{steps.length}</> },
           ]}
           versionLabel={versionLabel}
-          actions={buildHeroActions(funnel, canEdit, firstStepId)}
+          actions={buildHeroActions(canEdit, firstStepId, publicUrl, funnel.id)}
           agg={{
             label: '// Funnel performance',
             live: false,
@@ -174,6 +181,13 @@ export default function FunnelDetailPage() {
               right: <>Awaiting analytics</>,
             },
           }}
+        />
+
+        <FunnelSlugEditor
+          funnelId={funnel.id}
+          host={host}
+          slug={funnelSlug}
+          canEdit={canEdit}
         />
 
         <FunnelFlow
@@ -240,19 +254,20 @@ export default function FunnelDetailPage() {
 }
 
 function buildHeroActions(
-  funnel: Funnel,
   canEdit: boolean,
   firstStepId: string | undefined,
+  publicUrl: string,
+  funnelId: string,
 ) {
   return {
     viewLiveLabel: '⌕ View live',
-    viewLiveHref: `https://${funnel.domain.primary}`,
+    viewLiveHref: `https://${publicUrl}`,
     requestChangeLabel: '+ Request a change',
     requestChangeHref: '/tickets/new',
     ...(canEdit && firstStepId
       ? {
           editFunnelLabel: 'Edit funnel →',
-          editFunnelHref: `/funnels/${funnel.id}/edit/${firstStepId}`,
+          editFunnelHref: `/funnels/${funnelId}/edit/${firstStepId}`,
         }
       : {}),
   };

@@ -17,6 +17,17 @@ import { createContext, useContext } from 'react';
 import type { FormConfig, FormTestSubmitContext } from '@/lib/website/form-config';
 import type { BrandObject } from '@/lib/website/types';
 
+/** Public-site submit wiring — present only when a form renders on a
+ *  published page/funnel (not the editor). Drives FormBlock's real submit. */
+export type PublicFormSubmit = {
+  /** The client UUID the lead is created against. */
+  clientId: string;
+  /** Human label of the form's origin, e.g. "Form · hero". */
+  sourceLabel: string;
+  /** Funnel-only — where an `afterSubmit: nextStep` form advances to. */
+  nextStepHref?: string | null;
+};
+
 export type SectionFormSlot = {
   form: FormConfig;
   brand: BrandObject;
@@ -25,6 +36,8 @@ export type SectionFormSlot = {
   onSelectElement?: (id: string) => void;
   /** When set, a "Test submit" affordance creates a real lead. */
   testSubmitCtx?: FormTestSubmitContext;
+  /** When set, the form submits for real against the public endpoint. */
+  publicSubmit?: PublicFormSubmit;
 };
 
 const SectionFormSlotContext = createContext<SectionFormSlot | null>(null);

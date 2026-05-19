@@ -40,6 +40,7 @@ type FunnelRow = {
   id: string;
   client_id: string;
   name: string;
+  slug: string;
   domain_primary: string;
   domain_aliases: string[];
   domain_ssl_status: DomainSSLStatus;
@@ -69,6 +70,7 @@ function mapFunnel(row: FunnelRow, clientSlug: string): Funnel {
     id: row.id,
     clientId: clientSlug,
     name: row.name,
+    slug: row.slug,
     domain: {
       primary: row.domain_primary,
       aliases: row.domain_aliases,

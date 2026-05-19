@@ -181,10 +181,10 @@ function FormManager({
   const [picking, setPicking] = useState(false);
 
   const addField = (type: FormFieldType) => {
-    const field = defaultFormField(type);
-    onSetForm({ ...form, fields: [...form.fields, field] });
-    setPicking(false);
-    onSelectElement(field.id);
+    onSetForm({ ...form, fields: [...form.fields, defaultFormField(type)] });
+    // The picker stays open and the new field is NOT auto-selected — so as
+    // many fields as wanted can be added in a row. Each appears in the list
+    // above; click one to edit it, or "Done" to close the picker.
   };
 
   const moveField = (index: number, dir: -1 | 1) => {
@@ -265,13 +265,17 @@ function FormManager({
       {canEdit ? (
         picking ? (
           <div className="rounded-md border border-rule bg-paper p-2.5">
+            <p className="mb-2 text-[12px] leading-[1.5] text-ink-quiet">
+              Pick a type to add a field — add as many as you need, they stack
+              in the list above.
+            </p>
             <FormFieldTypePicker onPick={addField} />
             <button
               type="button"
               onClick={() => setPicking(false)}
               className="mt-2 w-full text-center font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet hover:text-ink"
             >
-              Cancel
+              Done
             </button>
           </div>
         ) : (

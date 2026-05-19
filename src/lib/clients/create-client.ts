@@ -155,12 +155,16 @@ export async function createClientWithGeneration(
   // -- 4. funnel + draft version --
   if (input.wantFunnel) {
     const fr = generateFunnelSync(brief);
+    // The funnel is served at {websiteHost}/{slug}; 'offer' is free because a
+    // new client gets exactly one funnel. domain_primary is vestigial under
+    // path-based routing — kept for the not-null column, set to the host.
     const { data: fn, error: fnErr } = await supabase
       .from('funnels')
       .insert({
         client_id: client.id,
         name: fr.funnel.name,
-        domain_primary: `book.${client.slug}.webnua.site`,
+        slug: 'offer',
+        domain_primary: `${client.slug}.webnua.dev`,
       })
       .select('id')
       .single();

@@ -69,3 +69,53 @@ export async function publishFunnelDraft(
   notifyBuilder();
   return { newVersionId };
 }
+
+// ---- URL slug --------------------------------------------------------------
+
+/** Website page slugs a funnel slug must not collide with — published pages
+ *  win the path (resolve.ts is page-first), so a funnel here would be
+ *  unreachable. */
+const RESERVED_SLUGS = new Set(['home', 'about', 'services', 'contact', '']);
+
+export type UpdateFunnelSlugResult =
+  | { ok: true; slug: string }
+  | { ok: false; message: string };
+
+function slugify(raw: string): string {
+  return raw
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+}
+
+/** Change a funnel's URL slug. The slug is unique per client (DB constraint);
+ *  a clash resolves to a friendly message rather than a thrown error. */
+export async function updateFunnelSlug(
+  funnelId: string,
+  rawSlug: string,
+): Promise<UpdateFunnelSlugResult> {
+  const slug = slugify(rawSlug);
+  if (!slug) {
+    return { ok: false, message: 'Enter a URL — letters, numbers and dashes.' };
+  }
+  if (RESERVED_SLUGS.has(slug)) {
+    return {
+      ok: false,
+      message: `“${slug}” is reserved for website pages — pick another.`,
+    };
+  }
+  const { error } = await supabase
+    .from('funnels')
+    .update({ slug })
+    .eq('id', funnelId);
+  if (error) {
+    if (error.code === '23505') {
+      return { ok: false, message: 'That URL is already used by another funnel.' };
+    }
+    return { ok: false, message: 'Could not update the URL — try again.' };
+  }
+  notifyBuilder();
+  return { ok: true, slug };
+}

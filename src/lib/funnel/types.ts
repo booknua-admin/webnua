@@ -80,6 +80,10 @@ export type Funnel = {
   clientId: string;
   /** Funnel name, e.g. "$99 emergency callout · Voltline". */
   name: string;
+  /** URL slug — the funnel is served at {websiteHost}/{slug}, unique per
+   *  client. Optional only so older non-DB construction sites (the generation
+   *  stub) compile; a funnel read from Supabase always carries it. */
+  slug?: string;
   /** Funnel-specific domain (usually a subdomain or the website's
    *  primary). */
   domain: WebsiteDomain;
