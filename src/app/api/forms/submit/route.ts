@@ -23,6 +23,9 @@
 import { NextResponse } from 'next/server';
 
 import { getServiceClient } from '@/lib/supabase/server';
+import { clientIp, rateLimit } from '@/lib/public-site/rate-limit';
+
+const MAX_FIELDS = 60;
 
 type IncomingField = {
   fieldId?: unknown;
@@ -30,13 +33,16 @@ type IncomingField = {
   type?: unknown;
   value?: unknown;
   leadRole?: unknown;
+  imagePath?: unknown;
 };
 
 type CleanField = {
+  fieldId: string;
   label: string;
   type: string;
   value: string;
   leadRole?: 'name' | 'email' | 'phone';
+  imagePath?: string;
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -52,10 +58,24 @@ function cleanField(raw: IncomingField): CleanField | null {
     raw.leadRole === 'name' || raw.leadRole === 'email' || raw.leadRole === 'phone'
       ? raw.leadRole
       : undefined;
-  return { label: raw.label.slice(0, 200), type: raw.type, value, leadRole: role };
+  return {
+    fieldId: typeof raw.fieldId === 'string' ? raw.fieldId : '',
+    label: raw.label.slice(0, 200),
+    type: raw.type,
+    value,
+    leadRole: role,
+    imagePath:
+      typeof raw.imagePath === 'string' && raw.imagePath
+        ? raw.imagePath
+        : undefined,
+  };
 }
 
 export async function POST(req: Request) {
+  if (!rateLimit(`forms-submit:${clientIp(req)}`, 8, 60_000)) {
+    return bad('Too many submissions — please wait a minute.', 429);
+  }
+
   let body: unknown;
   try {
     body = await req.json();
@@ -74,6 +94,9 @@ export async function POST(req: Request) {
   }
   if (!Array.isArray(fields) || fields.length === 0) {
     return bad('No form fields submitted.');
+  }
+  if (fields.length > MAX_FIELDS) {
+    return bad('Too many form fields.');
   }
   const cleanFields = (fields as IncomingField[])
     .map(cleanField)
@@ -140,7 +163,9 @@ export async function POST(req: Request) {
         value: f.value,
         type: f.type,
       })),
-      attachments: [],
+      attachments: cleanFields
+        .filter((f) => !!f.imagePath)
+        .map((f) => ({ fieldId: f.fieldId, label: f.label, path: f.imagePath })),
     },
   });
   if (eventError) {

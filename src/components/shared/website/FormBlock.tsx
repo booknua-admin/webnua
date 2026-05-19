@@ -190,13 +190,35 @@ export function FormBlock({
     if (!validate()) return;
     setBusy(true);
     try {
-      const assembled: SubmittedFormField[] = form.fields.map((field) => ({
-        fieldId: field.id,
-        label: field.label,
-        type: field.type,
-        value: values[field.id] ?? '',
-        leadRole: field.leadRole,
-      }));
+      // Image fields upload to the private bucket first; the returned path
+      // rides along in the submit payload. A failed upload is best-effort —
+      // the lead is still created, just without that attachment.
+      const assembled: SubmittedFormField[] = [];
+      for (const field of form.fields) {
+        const submitted: SubmittedFormField = {
+          fieldId: field.id,
+          label: field.label,
+          type: field.type,
+          value: values[field.id] ?? '',
+          leadRole: field.leadRole,
+        };
+        const file = files[field.id];
+        if (field.type === 'image' && file) {
+          const fd = new FormData();
+          fd.append('file', file);
+          fd.append('clientId', publicSubmit.clientId);
+          try {
+            const up = await fetch('/api/forms/upload', { method: 'POST', body: fd });
+            if (up.ok) {
+              const uploaded = (await up.json()) as { path?: string };
+              if (uploaded.path) submitted.imagePath = uploaded.path;
+            }
+          } catch {
+            // best-effort — fall through without the attachment
+          }
+        }
+        assembled.push(submitted);
+      }
       const res = await fetch('/api/forms/submit', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -291,7 +313,7 @@ export function FormBlock({
                   value={values[field.id] ?? ''}
                   error={errors[field.id]}
                   colors={colors}
-                  uploadEnabled={!!testSubmitCtx}
+                  uploadEnabled={!!testSubmitCtx || isPublic}
                   onChange={(v) => setValue(field.id, v)}
                   onFile={(f) => setFile(field.id, f)}
                 />

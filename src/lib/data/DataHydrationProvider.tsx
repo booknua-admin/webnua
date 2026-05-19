@@ -44,12 +44,13 @@ async function hydrateAll() {
 
 export function DataHydrationProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
-    // Hydrate on mount.
-    void hydrateAll();
-
-    // Re-hydrate whenever the auth session changes (sign in, sign out, token refresh).
-    const { data: sub } = supabase.auth.onAuthStateChange(() => {
-      void hydrateAll();
+    // Hydrate ONLY when there is an authenticated session. The store tables
+    // are RLS-scoped to authenticated users, so hydrating with no session
+    // (a logged-out app page, or a public client site rendered on
+    // {slug}.webnua.dev) just produces a wall of 401s. `onAuthStateChange`
+    // delivers the session on load via INITIAL_SESSION and again on SIGNED_IN.
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) void hydrateAll();
     });
 
     return () => {
