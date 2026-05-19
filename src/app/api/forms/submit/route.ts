@@ -83,15 +83,23 @@ export async function POST(req: Request) {
     return bad('Invalid request body.');
   }
 
-  const { clientId, source, fields } = (body ?? {}) as {
+  const { clientId, source, fields, submissionId } = (body ?? {}) as {
     clientId?: unknown;
     source?: unknown;
     fields?: unknown;
+    submissionId?: unknown;
   };
 
   if (typeof clientId !== 'string' || !UUID_RE.test(clientId)) {
     return bad('Missing or invalid client.');
   }
+  // Lead-correlation id (visitor-tracking-design §8) — optional; the tracking
+  // script's `form_submit` event carries the same id so the funnel's tracked
+  // and source-of-truth submitted counts can be reconciled.
+  const cleanSubmissionId =
+    typeof submissionId === 'string' && UUID_RE.test(submissionId)
+      ? submissionId
+      : null;
   if (!Array.isArray(fields) || fields.length === 0) {
     return bad('No form fields submitted.');
   }
@@ -144,6 +152,7 @@ export async function POST(req: Request) {
       status: 'new',
       urgency: 'none',
       source: sourceLabel,
+      submission_id: cleanSubmissionId,
     })
     .select('id')
     .single();

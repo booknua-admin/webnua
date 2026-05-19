@@ -180,12 +180,31 @@ function WebsiteHub({ website }: { website: Website }) {
           <WorkspaceContextBanner />
         </div>
 
-        {/* Domain status + review entry point */}
+        {/* Domain status + live link + review entry point */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <DomainStatusIndicator domain={website.domain} />
-          <Button asChild>
-            <Link href="/website/review">Review &amp; publish →</Link>
-          </Button>
+          <div className="flex items-center gap-3">
+            {website.publishedVersionId ? (
+              <a
+                href={`https://${website.domain.primary}`}
+                target="_blank"
+                rel="noreferrer"
+                className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet hover:text-ink"
+              >
+                View live ↗
+              </a>
+            ) : (
+              <span
+                title="Publish this website to view it live."
+                className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet/50"
+              >
+                Not published yet
+              </span>
+            )}
+            <Button asChild>
+              <Link href="/website/review">Review &amp; publish →</Link>
+            </Button>
+          </div>
         </div>
 
         {/* Header + Footer + Nav — website-level singletons */}

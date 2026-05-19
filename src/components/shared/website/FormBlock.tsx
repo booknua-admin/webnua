@@ -14,7 +14,7 @@
 // submit button is a SelectableElement so clicking it opens its inspector.
 // =============================================================================
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useCreateLead } from '@/lib/leads/queries';
 import { uploadLeadAttachment } from '@/lib/leads/upload-attachment';
@@ -92,6 +92,19 @@ export function FormBlock({
   const [notice, setNotice] = useState<{ tone: 'good' | 'warn'; text: string } | null>(
     null,
   );
+  // Lead-correlation id (visitor-tracking-design §8). Generated after mount
+  // and written imperatively to the <form> as `data-webnua-submission` — never
+  // rendered as JSX, so the server HTML and the client agree (no hydration
+  // mismatch). It is posted with the submission AND read off the attribute by
+  // the tracking script's `form_submit` event, so the read layer can
+  // reconcile the tracked count against the source-of-truth `leads` count.
+  const submissionIdRef = useRef<string | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    const id = crypto.randomUUID();
+    submissionIdRef.current = id;
+    formRef.current?.setAttribute('data-webnua-submission', id);
+  }, []);
 
   const setValue = (id: string, value: string) => {
     setValues((v) => ({ ...v, [id]: value }));
@@ -226,6 +239,7 @@ export function FormBlock({
           clientId: publicSubmit.clientId,
           source: publicSubmit.sourceLabel,
           fields: assembled,
+          submissionId: submissionIdRef.current,
         }),
       });
       if (!res.ok) throw new Error('submit failed');
@@ -274,6 +288,7 @@ export function FormBlock({
     <div className="w-full">
       <div className="w-full rounded-xl border p-6" style={cardStyle}>
         <form
+          ref={formRef}
           onSubmit={(e) => {
             e.preventDefault();
             if (isPublic) void handlePublicSubmit();

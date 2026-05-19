@@ -13,7 +13,11 @@
 import type { Metadata } from 'next';
 
 import { PublicSiteRenderer } from '@/components/public-site/PublicSiteRenderer';
-import { resolveSite, type ResolvedTarget } from '@/lib/public-site/resolve';
+import {
+  resolveSite,
+  type ResolvedTarget,
+  type TrackingConfig,
+} from '@/lib/public-site/resolve';
 
 export const revalidate = 60;
 
@@ -94,6 +98,27 @@ function SiteMessage({ heading, body }: { heading: string; body: string }) {
   );
 }
 
+// ---- Visitor-tracking script ----------------------------------------------
+// Injects webnua-track.js on every published page/step. The script reads its
+// config from these data-attributes (it finds itself by the `webnua-track`
+// id, so async hoisting is safe). Never rendered in the editor / authed app —
+// only this published route mounts it.
+
+function TrackingScript({ tracking }: { tracking: TrackingConfig }) {
+  if (!tracking.trackingKey) return null;
+  return (
+    <script
+      id="webnua-track"
+      src="/webnua-track.js"
+      data-tracking-key={tracking.trackingKey}
+      data-surface-kind={tracking.surfaceKind}
+      data-page-ref={tracking.pageRef}
+      data-consent-mode={tracking.consentMode}
+      async
+    />
+  );
+}
+
 // ---- Page -----------------------------------------------------------------
 
 export default async function PublishedPage({
@@ -125,25 +150,31 @@ export default async function PublishedPage({
   }
   if (target.status === 'website') {
     return (
-      <PublicSiteRenderer
-        kind="website"
-        clientId={target.clientId}
-        brand={target.brand}
-        header={target.header}
-        footer={target.footer}
-        nav={target.nav}
-        pages={target.pages}
-        page={target.page}
-      />
+      <>
+        <PublicSiteRenderer
+          kind="website"
+          clientId={target.clientId}
+          brand={target.brand}
+          header={target.header}
+          footer={target.footer}
+          nav={target.nav}
+          pages={target.pages}
+          page={target.page}
+        />
+        <TrackingScript tracking={target.tracking} />
+      </>
     );
   }
   return (
-    <PublicSiteRenderer
-      kind="funnel"
-      clientId={target.clientId}
-      brand={target.brand}
-      step={target.step}
-      nextStepHref={target.nextStepHref}
-    />
+    <>
+      <PublicSiteRenderer
+        kind="funnel"
+        clientId={target.clientId}
+        brand={target.brand}
+        step={target.step}
+        nextStepHref={target.nextStepHref}
+      />
+      <TrackingScript tracking={target.tracking} />
+    </>
   );
 }

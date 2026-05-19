@@ -37,6 +37,16 @@ const PUBLIC_SITE_DOMAIN = (
   process.env.PUBLIC_SITE_DOMAIN ?? 'webnua.dev'
 ).toLowerCase();
 
+/** Per-surface visitor-tracking config threaded to the public renderer so it
+ *  can inject webnua-track.js (visitor-tracking-design.md §4). */
+export type TrackingConfig = {
+  trackingKey: string;
+  surfaceId: string;
+  surfaceKind: 'website' | 'funnel';
+  pageRef: string;
+  consentMode: 'banner' | 'implied';
+};
+
 export type ResolvedTarget =
   | {
       status: 'website';
@@ -49,6 +59,7 @@ export type ResolvedTarget =
       nav: NavLink[];
       pages: Page[];
       page: Page;
+      tracking: TrackingConfig;
     }
   | {
       status: 'funnel';
@@ -60,6 +71,7 @@ export type ResolvedTarget =
       /** Path to the next funnel step (for `afterSubmit: nextStep`), or null
        *  on the last step. */
       nextStepHref: string | null;
+      tracking: TrackingConfig;
     }
   | { status: 'unpublished'; name: string }
   | { status: 'not_found' };
@@ -81,6 +93,7 @@ type WebsiteRow = {
   name: string;
   client_id: string;
   published_version_id: string | null;
+  tracking_key: string;
 };
 
 type FunnelRow = {
@@ -89,6 +102,7 @@ type FunnelRow = {
   client_id: string;
   slug: string;
   published_version_id: string | null;
+  tracking_key: string;
 };
 
 function normalizeHost(raw: string): string {
@@ -164,6 +178,19 @@ async function clientIdBySlug(slug: string): Promise<string | null> {
     .eq('slug', slug)
     .maybeSingle();
   return data ? (data as unknown as { id: string }).id : null;
+}
+
+/** The client's visitor-tracking consent posture. Defaults to `banner`. */
+async function consentModeForClient(
+  clientId: string,
+): Promise<'banner' | 'implied'> {
+  const svc = getServiceClient();
+  const { data } = await svc
+    .from('clients')
+    .select('tracking_consent_mode')
+    .eq('id', clientId)
+    .maybeSingle();
+  return data?.tracking_consent_mode === 'implied' ? 'implied' : 'banner';
 }
 
 async function findFunnelBySlug(
@@ -262,14 +289,15 @@ export const resolveSite = cache(
     }
 
     // ---- Page-first: a path that matches a website page wins. ----
-    if (websiteSnapshot) {
+    if (websiteSnapshot && website) {
       const page = pickPage(websiteSnapshot, segments);
       if (page) {
         const brand = await brandForClient(clientId);
+        const consentMode = await consentModeForClient(clientId);
         return {
           status: 'website',
           clientId,
-          siteName: website?.name ?? page.title,
+          siteName: website.name ?? page.title,
           brand,
           faviconUrl: brand.faviconUrl,
           header: websiteSnapshot.header,
@@ -277,6 +305,13 @@ export const resolveSite = cache(
           nav: websiteSnapshot.nav,
           pages: websiteSnapshot.pages,
           page,
+          tracking: {
+            trackingKey: website.tracking_key,
+            surfaceId: website.id,
+            surfaceKind: 'website',
+            pageRef: page.slug,
+            consentMode,
+          },
         };
       }
     }
@@ -297,6 +332,7 @@ export const resolveSite = cache(
         const step = pickStep(funnelSnapshot, segments.slice(1));
         if (!step) return { status: 'not_found' };
         const brand = await brandForClient(clientId);
+        const consentMode = await consentModeForClient(clientId);
         // Where an `afterSubmit: nextStep` form on this step advances to.
         const order =
           funnelSnapshot.stepOrder.length > 0
@@ -316,6 +352,13 @@ export const resolveSite = cache(
           faviconUrl: brand.faviconUrl,
           step,
           nextStepHref,
+          tracking: {
+            trackingKey: funnel.tracking_key,
+            surfaceId: funnel.id,
+            surfaceKind: 'funnel',
+            pageRef: step.slug,
+            consentMode,
+          },
         };
       }
     }
