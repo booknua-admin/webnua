@@ -14,9 +14,11 @@
  *   data-page-ref       — the page / funnel-step slug
  *   data-consent-mode   — 'banner' | 'implied'
  *
- * Consent (§5): mode 'implied' tracks on load. Mode 'banner' shows a consent
- * banner and, until the visitor accepts, sends ONLY page_view with an
- * ephemeral (non-persisted) visitor id.
+ * Consent (§5): a bottom-of-screen banner. "Accept all" is the obvious
+ * primary action; "Learn more" expands per-category opt-out toggles
+ * (Essential / Analytics / Marketing). Mode 'implied' skips the banner and
+ * tracks on load. Until the visitor decides, only the essential `page_view`
+ * is sent, with an ephemeral (non-persisted) visitor id.
  * ============================================================================= */
 (function () {
   'use strict';
@@ -41,12 +43,6 @@
   };
   if (!CONFIG.trackingKey) return;
 
-  // Never track a Webnua-internal preview (the editor renders the same
-  // Previews; it must not emit events).
-  if (window.self !== window.top && /webnua/i.test(document.referrer)) {
-    // still allow — funnels embed nothing; this is a cheap guard, keep going
-  }
-
   // ---- storage helpers (fail-soft if storage is blocked) -------------------
 
   function lsGet(k) {
@@ -68,55 +64,102 @@
     try {
       return crypto.randomUUID().replace(/-/g, '');
     } catch (e) {
-      return (
-        Date.now().toString(36) + Math.random().toString(36).slice(2, 12)
-      );
+      return Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
     }
   }
 
   // ---- consent (§5) --------------------------------------------------------
+  // Three categories. `essential` is non-optional (the site's own page-view
+  // count); `analytics` covers behaviour + performance signals; `marketing`
+  // covers campaign attribution (UTM params). State is stored per-category in
+  // first-party storage — nothing about consent is sent to Webnua.
 
   var CONSENT_KEY = 'webnua_consent';
-  var consentGranted =
-    CONFIG.consentMode === 'implied' || lsGet(CONSENT_KEY) === 'granted';
+  var CONSENT_VERSION = 1;
 
-  // ---- identity (§9) -------------------------------------------------------
-  // visitor_id persists first-party; before consent (banner mode) it is
-  // ephemeral — a per-load random id, never written to storage.
-
-  var VID_KEY = 'webnua_vid';
-  var visitorId;
-  if (consentGranted) {
-    visitorId = lsGet(VID_KEY);
-    if (!visitorId) {
-      visitorId = randomId();
-      lsSet(VID_KEY, visitorId);
-    }
-  } else {
-    visitorId = 'anon-' + randomId();
+  /** Which consent category an event type needs. */
+  function categoryFor(type) {
+    return type === 'page_view' ? 'essential' : 'analytics';
   }
 
-  // session_id — 30-min idle window. Stored alongside a last-seen stamp.
+  function readConsent() {
+    if (CONFIG.consentMode === 'implied') {
+      return { decided: true, analytics: true, marketing: true };
+    }
+    var raw = lsGet(CONSENT_KEY);
+    if (raw) {
+      try {
+        var p = JSON.parse(raw);
+        if (p && p.v === CONSENT_VERSION) {
+          return {
+            decided: true,
+            analytics: !!p.analytics,
+            marketing: !!p.marketing,
+          };
+        }
+      } catch (e) {
+        /* fall through to undecided */
+      }
+    }
+    return { decided: false, analytics: false, marketing: false };
+  }
+
+  function writeConsent(analytics, marketing) {
+    consent = {
+      decided: true,
+      analytics: !!analytics,
+      marketing: !!marketing,
+    };
+    lsSet(
+      CONSENT_KEY,
+      JSON.stringify({
+        v: CONSENT_VERSION,
+        analytics: consent.analytics,
+        marketing: consent.marketing,
+      }),
+    );
+  }
+
+  var consent = readConsent();
+
+  // ---- identity (§9) -------------------------------------------------------
+  // visitor_id persists first-party ONLY with analytics consent; before that
+  // it is ephemeral — a per-load random id, never written to storage.
+
+  var VID_KEY = 'webnua_vid';
   var SID_KEY = 'webnua_sid';
   var SESSION_IDLE_MS = 30 * 60 * 1000;
-  function resolveSession() {
-    var now = Date.now();
-    if (consentGranted) {
+  var visitorId;
+  var sessionId;
+
+  function resolveIdentity() {
+    if (consent.analytics) {
+      visitorId = lsGet(VID_KEY);
+      if (!visitorId) {
+        visitorId = randomId();
+        lsSet(VID_KEY, visitorId);
+      }
+      var now = Date.now();
       var raw = lsGet(SID_KEY);
       if (raw) {
         var parts = raw.split('|');
-        if (parts.length === 2 && now - parseInt(parts[1], 10) < SESSION_IDLE_MS) {
-          lsSet(SID_KEY, parts[0] + '|' + now);
-          return parts[0];
+        if (
+          parts.length === 2 &&
+          now - parseInt(parts[1], 10) < SESSION_IDLE_MS
+        ) {
+          sessionId = parts[0];
+          lsSet(SID_KEY, sessionId + '|' + now);
+          return;
         }
       }
-      var fresh = randomId();
-      lsSet(SID_KEY, fresh + '|' + now);
-      return fresh;
+      sessionId = randomId();
+      lsSet(SID_KEY, sessionId + '|' + now);
+    } else {
+      visitorId = 'anon-' + randomId();
+      sessionId = 'sess-' + randomId();
     }
-    return 'sess-' + randomId();
   }
-  var sessionId = resolveSession();
+  resolveIdentity();
 
   // ---- event queue + flush -------------------------------------------------
 
@@ -124,13 +167,8 @@
   var flushTimer = null;
   var FLUSH_DEBOUNCE_MS = 3000;
 
-  // Before consent only page_view is essential — everything else waits.
-  function isEssential(type) {
-    return type === 'page_view';
-  }
-
   function enqueue(type, payload) {
-    if (!consentGranted && !isEssential(type)) return;
+    if (categoryFor(type) !== 'essential' && !consent.analytics) return;
     queue.push({
       type: type,
       pageRef: CONFIG.pageRef,
@@ -193,17 +231,7 @@
   // ---- page view -----------------------------------------------------------
 
   function trackPageView() {
-    var params = {};
-    try {
-      var sp = new URLSearchParams(window.location.search);
-      ['utm_source', 'utm_medium', 'utm_campaign'].forEach(function (k) {
-        var v = sp.get(k);
-        if (v) params[k] = v.slice(0, 120);
-      });
-    } catch (e) {
-      /* ignore */
-    }
-    enqueue('page_view', {
+    var payload = {
       surfaceKind: CONFIG.surfaceKind,
       referrer: (document.referrer || '').slice(0, 300),
       path: window.location.pathname,
@@ -214,10 +242,20 @@
           : window.innerWidth < 1024
             ? 'tablet'
             : 'desktop',
-      utm_source: params.utm_source || '',
-      utm_medium: params.utm_medium || '',
-      utm_campaign: params.utm_campaign || '',
-    });
+    };
+    // UTM attribution is the `marketing` category — only captured on consent.
+    if (consent.marketing) {
+      try {
+        var sp = new URLSearchParams(window.location.search);
+        ['utm_source', 'utm_medium', 'utm_campaign'].forEach(function (k) {
+          var v = sp.get(k);
+          if (v) payload[k] = v.slice(0, 120);
+        });
+      } catch (e) {
+        /* ignore */
+      }
+    }
+    enqueue('page_view', payload);
   }
 
   // ---- scroll depth --------------------------------------------------------
@@ -265,7 +303,7 @@
   // form_abandon — page hidden with a started, unsubmitted form
   // form_submit — a form's submit event (carries data-webnua-submission)
 
-  var formState = {}; // formIndex -> { started, submitted }
+  var formState = {}; // formIndex -> { started, submitted, abandoned }
 
   function formIndexOf(formEl) {
     var forms = document.querySelectorAll('form');
@@ -386,62 +424,191 @@
   }
 
   // ---- consent banner (§5) -------------------------------------------------
+  // A bottom-of-screen "Powered by Webnua" banner. Compact state: a one-line
+  // summary + "Learn more" (secondary) + "Accept all" (primary, the obvious
+  // option). "Learn more" expands per-category opt-out toggles. The category
+  // descriptions ARE the cookie/tracking policy — they describe exactly what
+  // this (single, identical-for-every-client) script instruments.
+
+  var CONSENT_CATEGORIES = [
+    {
+      id: 'essential',
+      name: 'Essential',
+      locked: true,
+      desc:
+        'Required for the site to work, plus a basic anonymous page-view ' +
+        'count. Always on.',
+    },
+    {
+      id: 'analytics',
+      name: 'Analytics',
+      locked: false,
+      desc:
+        'How visitors scroll, click and use forms, plus page-speed ' +
+        '(performance) measurements. Helps improve the site.',
+    },
+    {
+      id: 'marketing',
+      name: 'Marketing',
+      locked: false,
+      desc:
+        'Campaign attribution — which ad or link brought you here ' +
+        '(UTM tags). No advertising profiles, no third parties.',
+    },
+  ];
+
+  function applyConsentChange() {
+    // A fresh decision can promote the visitor to a persistent identity.
+    resolveIdentity();
+    if (consent.analytics) {
+      // Behaviour/perf instrumentation only matters once analytics is on —
+      // re-run the on-load scroll check so an already-scrolled page counts.
+      onScroll();
+    }
+  }
 
   function showConsentBanner() {
-    if (CONFIG.consentMode !== 'banner' || consentGranted) return;
+    if (CONFIG.consentMode !== 'banner' || consent.decided) return;
     if (document.getElementById('webnua-consent')) return;
 
     var bar = document.createElement('div');
     bar.id = 'webnua-consent';
     bar.setAttribute('role', 'dialog');
-    bar.setAttribute('aria-label', 'Cookie consent');
+    bar.setAttribute('aria-label', 'Cookie & tracking consent');
     bar.style.cssText =
       'position:fixed;left:0;right:0;bottom:0;z-index:2147483000;' +
-      'background:#0a0a0a;color:#f5f1ea;padding:14px 18px;' +
+      'background:#0a0a0a;color:#f5f1ea;' +
       'font:13px/1.5 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;' +
-      'display:flex;flex-wrap:wrap;align-items:center;gap:12px;' +
-      'box-shadow:0 -2px 16px rgba(0,0,0,0.2)';
+      'box-shadow:0 -2px 24px rgba(0,0,0,0.28);box-sizing:border-box';
 
-    var text = document.createElement('span');
-    text.style.cssText = 'flex:1 1 280px;min-width:200px';
-    text.textContent =
-      'We use cookies to understand how this site is used and improve it. ' +
-      'Essential page analytics run regardless.';
-
-    var accept = document.createElement('button');
-    accept.type = 'button';
-    accept.textContent = 'Accept';
-    accept.style.cssText =
-      'background:#d24317;color:#fff;border:0;border-radius:6px;' +
-      'padding:8px 18px;font-weight:700;cursor:pointer;font-size:13px';
-
-    var decline = document.createElement('button');
-    decline.type = 'button';
-    decline.textContent = 'Decline';
-    decline.style.cssText =
-      'background:transparent;color:#f5f1ea;border:1px solid #6e685c;' +
-      'border-radius:6px;padding:8px 16px;cursor:pointer;font-size:13px';
+    function btn(label, primary) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.style.cssText = primary
+        ? 'background:#d24317;color:#fff;border:0;border-radius:7px;' +
+          'padding:9px 20px;font-weight:700;cursor:pointer;font-size:13px;' +
+          'white-space:nowrap'
+        : 'background:transparent;color:#f5f1ea;border:1px solid #6e685c;' +
+          'border-radius:7px;padding:9px 16px;cursor:pointer;font-size:13px;' +
+          'white-space:nowrap';
+      return b;
+    }
 
     function dismiss() {
       if (bar.parentNode) bar.parentNode.removeChild(bar);
     }
-    accept.addEventListener('click', function () {
-      lsSet(CONSENT_KEY, 'granted');
-      consentGranted = true;
-      // Promote to a persistent identity for the rest of the journey.
-      visitorId = lsGet(VID_KEY) || randomId();
-      lsSet(VID_KEY, visitorId);
-      sessionId = resolveSession();
-      dismiss();
-    });
-    decline.addEventListener('click', function () {
-      lsSet(CONSENT_KEY, 'declined');
-      dismiss();
-    });
 
-    bar.appendChild(text);
-    bar.appendChild(decline);
-    bar.appendChild(accept);
+    var brand =
+      '<span style="font:11px/1 JetBrains Mono,ui-monospace,monospace;' +
+      'letter-spacing:0.12em;text-transform:uppercase;color:#e8743b">' +
+      'Powered by Webnua</span>';
+
+    // -- compact view --------------------------------------------------------
+    function renderCompact() {
+      bar.innerHTML = '';
+      var wrap = document.createElement('div');
+      wrap.style.cssText =
+        'max-width:1100px;margin:0 auto;padding:14px 20px;display:flex;' +
+        'flex-wrap:wrap;align-items:center;gap:14px';
+
+      var copy = document.createElement('div');
+      copy.style.cssText = 'flex:1 1 320px;min-width:240px';
+      copy.innerHTML =
+        brand +
+        '<div style="margin-top:3px">We use cookies to see how this site ' +
+        'is used and to improve it. Accept all, or choose what you share.</div>';
+
+      var actions = document.createElement('div');
+      actions.style.cssText = 'display:flex;gap:10px;align-items:center';
+      var learn = btn('Learn more', false);
+      var accept = btn('Accept all', true);
+      learn.addEventListener('click', renderDetailed);
+      accept.addEventListener('click', function () {
+        writeConsent(true, true);
+        applyConsentChange();
+        dismiss();
+      });
+      actions.appendChild(learn);
+      actions.appendChild(accept);
+
+      wrap.appendChild(copy);
+      wrap.appendChild(actions);
+      bar.appendChild(wrap);
+    }
+
+    // -- detailed view (per-category opt-out) --------------------------------
+    function renderDetailed() {
+      bar.innerHTML = '';
+      var wrap = document.createElement('div');
+      wrap.style.cssText =
+        'max-width:1100px;margin:0 auto;padding:16px 20px;' +
+        'max-height:70vh;overflow-y:auto';
+
+      var head = document.createElement('div');
+      head.innerHTML =
+        brand +
+        '<div style="margin-top:3px;font-weight:700;font-size:14px">' +
+        'Your tracking choices</div>';
+      wrap.appendChild(head);
+
+      var toggles = {};
+      CONSENT_CATEGORIES.forEach(function (cat) {
+        var row = document.createElement('label');
+        row.style.cssText =
+          'display:flex;gap:12px;align-items:flex-start;padding:12px 0;' +
+          'border-bottom:1px solid #2a2a28;cursor:' +
+          (cat.locked ? 'default' : 'pointer');
+
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = cat.locked ? true : true; // opt-out model: on by default
+        cb.disabled = !!cat.locked;
+        cb.style.cssText =
+          'margin-top:2px;width:16px;height:16px;accent-color:#d24317;' +
+          'flex:0 0 auto';
+        toggles[cat.id] = cb;
+
+        var text = document.createElement('div');
+        text.innerHTML =
+          '<div style="font-weight:700">' +
+          cat.name +
+          (cat.locked
+            ? ' <span style="color:#6e685c;font-weight:400">· always on</span>'
+            : '') +
+          '</div><div style="color:#c9c0b0;margin-top:2px">' +
+          cat.desc +
+          '</div>';
+
+        row.appendChild(cb);
+        row.appendChild(text);
+        wrap.appendChild(row);
+      });
+
+      var actions = document.createElement('div');
+      actions.style.cssText =
+        'display:flex;gap:10px;justify-content:flex-end;' +
+        'margin-top:14px;flex-wrap:wrap';
+      var save = btn('Save choices', false);
+      var acceptAll = btn('Accept all', true);
+      save.addEventListener('click', function () {
+        writeConsent(toggles.analytics.checked, toggles.marketing.checked);
+        applyConsentChange();
+        dismiss();
+      });
+      acceptAll.addEventListener('click', function () {
+        writeConsent(true, true);
+        applyConsentChange();
+        dismiss();
+      });
+      actions.appendChild(save);
+      actions.appendChild(acceptAll);
+      wrap.appendChild(actions);
+
+      bar.appendChild(wrap);
+    }
+
+    renderCompact();
     (document.body || document.documentElement).appendChild(bar);
   }
 
