@@ -22,6 +22,7 @@ import {
 } from '../section-theme';
 import { ColumnsField } from './_shared/ColumnsField';
 import { CopyField } from './_shared/CopyField';
+import { LinkField } from './_shared/LinkField';
 import { gridColumnsClass } from './_shared/grid';
 import { IconField } from './_shared/IconField';
 import { MediaField } from './_shared/MediaField';
@@ -108,12 +109,36 @@ const SEED_INCLUSIONS: string[] = [
 ];
 
 const SEED_ITEMS: Omit<OfferValueItem, 'id'>[] = [
-  { icon: 'monitor', title: 'A conversion-focused website', description: 'Built to turn visitors into booked jobs. Live in 14 days.' },
-  { icon: 'target', title: 'Local ad targeting', description: 'Ads targeting high-intent local searches, managed daily.' },
-  { icon: 'users', title: 'Retargeting that works', description: 'Lookalike audiences bring ready-to-buy locals back.' },
-  { icon: 'message', title: 'Fast lead follow-up', description: 'Every lead contacted within 5 minutes via SMS + email.' },
-  { icon: 'star', title: 'Automated reviews', description: 'Review requests fire after every completed job.' },
-  { icon: 'gauge', title: 'A weekly scoreboard', description: 'One simple update every Monday — what is working.' },
+  {
+    icon: 'monitor',
+    title: 'A conversion-focused website',
+    description: 'Built to turn visitors into booked jobs. Live in 14 days.',
+  },
+  {
+    icon: 'target',
+    title: 'Local ad targeting',
+    description: 'Ads targeting high-intent local searches, managed daily.',
+  },
+  {
+    icon: 'users',
+    title: 'Retargeting that works',
+    description: 'Lookalike audiences bring ready-to-buy locals back.',
+  },
+  {
+    icon: 'message',
+    title: 'Fast lead follow-up',
+    description: 'Every lead contacted within 5 minutes via SMS + email.',
+  },
+  {
+    icon: 'star',
+    title: 'Automated reviews',
+    description: 'Review requests fire after every completed job.',
+  },
+  {
+    icon: 'gauge',
+    title: 'A weekly scoreboard',
+    description: 'One simple update every Monday — what is working.',
+  },
 ];
 
 const SEED_SIGNALS: Omit<OfferSignal, 'id'>[] = [
@@ -233,6 +258,7 @@ function OfferFields({
   data,
   onChange,
   selectedElement,
+  pageLinks,
   clientId,
   brand,
 }: SectionFieldsProps<OfferData>) {
@@ -240,16 +266,11 @@ function OfferFields({
   const set = <K extends keyof OfferData>(key: K, value: OfferData[K]) =>
     onChange({ ...d, [key]: value });
 
-  const resolved = resolveTheme(
-    d.theme,
-    brandThemeDefaults(brand),
-    OFFER_HARDCODED_THEME,
-  );
+  const resolved = resolveTheme(d.theme, brandThemeDefaults(brand), OFFER_HARDCODED_THEME);
 
   const setColor = (key: keyof SectionTheme, value: string) =>
     set('theme', { ...d.theme, [key]: value });
-  const clearColor = (key: keyof SectionTheme) =>
-    set('theme', omitThemeKey(d.theme, key));
+  const clearColor = (key: keyof SectionTheme) => set('theme', omitThemeKey(d.theme, key));
   const applyColorEverywhere = (
     brandKey: 'headingColor' | 'bodyColor',
     themeKey: keyof SectionTheme,
@@ -461,11 +482,7 @@ function OfferFields({
   if (selectedElement === 'media') {
     return (
       <BuilderFormSection>
-        <MediaField
-          label="Offer image"
-          value={d.imageUrl}
-          onChange={(v) => set('imageUrl', v)}
-        />
+        <MediaField label="Offer image" value={d.imageUrl} onChange={(v) => set('imageUrl', v)} />
       </BuilderFormSection>
     );
   }
@@ -481,12 +498,7 @@ function OfferFields({
             onChange={(v) => set('stackStyle', v)}
           />
           {d.stackStyle === 'grid' ? (
-            <ColumnsField
-              value={d.columns}
-              onChange={(v) => set('columns', v)}
-              min={2}
-              max={6}
-            />
+            <ColumnsField value={d.columns} onChange={(v) => set('columns', v)} min={2} max={6} />
           ) : null}
           <ToggleField
             label="Number the items"
@@ -514,10 +526,7 @@ function OfferFields({
                   </button>
                 </CapabilityGate>
               </div>
-              <IconField
-                value={item.icon}
-                onChange={(v) => setItem(i, { ...item, icon: v })}
-              />
+              <IconField value={item.icon} onChange={(v) => setItem(i, { ...item, icon: v })} />
               <CopyField
                 label="Title"
                 value={item.title}
@@ -600,21 +609,17 @@ function OfferFields({
   if (selectedElement === 'cta') {
     return (
       <BuilderFormSection>
-        <ToggleField
-          label="Visible"
-          value={d.ctaVisible}
-          onChange={(v) => set('ctaVisible', v)}
-        />
+        <ToggleField label="Visible" value={d.ctaVisible} onChange={(v) => set('ctaVisible', v)} />
         <CopyField
           label="Button label"
           value={d.ctaLabel}
           originalValue={DEFAULTS.ctaLabel}
           onChange={(v) => set('ctaLabel', v)}
         />
-        <CopyField
+        <LinkField
           label="Link"
           value={d.ctaHref}
-          originalValue={DEFAULTS.ctaHref}
+          pageLinks={pageLinks}
           onChange={(v) => set('ctaHref', v)}
         />
       </BuilderFormSection>
@@ -650,12 +655,7 @@ function OfferFields({
               onChange={(v) => set('stackStyle', v)}
             />
             {d.stackStyle === 'grid' ? (
-              <ColumnsField
-                value={d.columns}
-                onChange={(v) => set('columns', v)}
-                min={2}
-                max={6}
-              />
+              <ColumnsField value={d.columns} onChange={(v) => set('columns', v)} min={2} max={6} />
             ) : null}
             <ToggleField
               label="Number the items"
@@ -689,11 +689,7 @@ function OfferPreview({
   onSelectElement,
 }: SectionPreviewProps<OfferData>) {
   const d = withDefaults(data);
-  const resolved = resolveTheme(
-    d.theme,
-    brandThemeDefaults(brand),
-    OFFER_HARDCODED_THEME,
-  );
+  const resolved = resolveTheme(d.theme, brandThemeDefaults(brand), OFFER_HARDCODED_THEME);
 
   return (
     <SectionShell theme={resolved} brand={brand} pad="roomy">

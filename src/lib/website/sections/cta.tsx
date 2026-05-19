@@ -2,11 +2,7 @@
 
 import { useCallback } from 'react';
 
-import {
-  BuilderField,
-  BuilderFormRow,
-  BuilderFormSection,
-} from '@/components/shared/builder/BuilderField';
+import { BuilderField, BuilderFormSection } from '@/components/shared/builder/BuilderField';
 import { CapabilityGate } from '@/components/shared/CapabilityGate';
 import { Button } from '@/components/ui/button';
 
@@ -22,6 +18,7 @@ import {
   type SectionTheme,
 } from '../section-theme';
 import { CopyField } from './_shared/CopyField';
+import { LinkField } from './_shared/LinkField';
 import { IconField } from './_shared/IconField';
 import { MediaField } from './_shared/MediaField';
 import { RangeField } from './_shared/RangeField';
@@ -268,6 +265,7 @@ function CTAFields({
   data,
   onChange,
   selectedElement,
+  pageLinks,
   clientId,
   brand,
 }: SectionFieldsProps<CTAData>) {
@@ -275,17 +273,12 @@ function CTAFields({
   const set = <K extends keyof CTAData>(key: K, value: CTAData[K]) =>
     onChange({ ...d, [key]: value });
 
-  const resolved = resolveTheme(
-    d.theme,
-    brandThemeDefaults(brand),
-    CTA_HARDCODED_THEME,
-  );
+  const resolved = resolveTheme(d.theme, brandThemeDefaults(brand), CTA_HARDCODED_THEME);
   const accent = brand?.accentColor ?? '#d24317';
 
   const setColor = (key: keyof SectionTheme, value: string) =>
     set('theme', { ...d.theme, [key]: value });
-  const clearColor = (key: keyof SectionTheme) =>
-    set('theme', omitThemeKey(d.theme, key));
+  const clearColor = (key: keyof SectionTheme) => set('theme', omitThemeKey(d.theme, key));
   const applyColorEverywhere = (
     brandKey: 'headingColor' | 'bodyColor',
     themeKey: keyof SectionTheme,
@@ -314,8 +307,7 @@ function CTAFields({
     [d, onChange],
   );
 
-  const setPanel = (key: 'panelA' | 'panelB', next: CtaPanel) =>
-    set(key, next);
+  const setPanel = (key: 'panelA' | 'panelB', next: CtaPanel) => set(key, next);
 
   if (selectedElement === 'eyebrow') {
     return (
@@ -404,21 +396,17 @@ function CTAFields({
     const visibleKey = isPrimary ? 'primaryVisible' : 'secondaryVisible';
     return (
       <BuilderFormSection>
-        <ToggleField
-          label="Visible"
-          value={d[visibleKey]}
-          onChange={(v) => set(visibleKey, v)}
-        />
+        <ToggleField label="Visible" value={d[visibleKey]} onChange={(v) => set(visibleKey, v)} />
         <CopyField
           label="Button label"
           value={d[labelKey]}
           originalValue={DEFAULTS[labelKey]}
           onChange={(v) => set(labelKey, v)}
         />
-        <CopyField
+        <LinkField
           label="Link"
           value={d[hrefKey]}
-          originalValue={DEFAULTS[hrefKey]}
+          pageLinks={pageLinks}
           onChange={(v) => set(hrefKey, v)}
         />
       </BuilderFormSection>
@@ -482,17 +470,12 @@ function CTAFields({
     const key = selectedElement;
     const panel = d[key];
     const upd = (patch: Partial<CtaPanel>) => setPanel(key, { ...panel, ...patch });
-    const autoColour =
-      key === 'panelB' ? accent : mixHex(accent, resolved.background, 0.9);
+    const autoColour = key === 'panelB' ? accent : mixHex(accent, resolved.background, 0.9);
     return (
       <>
         <BuilderFormSection>
           <IconField value={panel.icon} onChange={(v) => upd({ icon: v })} />
-          <CopyField
-            label="Heading"
-            value={panel.heading}
-            onChange={(v) => upd({ heading: v })}
-          />
+          <CopyField label="Heading" value={panel.heading} onChange={(v) => upd({ heading: v })} />
           <CopyField
             label="Text"
             value={panel.sub}
@@ -500,18 +483,17 @@ function CTAFields({
             multiline
             rows={3}
           />
-          <BuilderFormRow>
-            <CopyField
-              label="Button label"
-              value={panel.buttonLabel}
-              onChange={(v) => upd({ buttonLabel: v })}
-            />
-            <CopyField
-              label="Button link"
-              value={panel.buttonHref}
-              onChange={(v) => upd({ buttonHref: v })}
-            />
-          </BuilderFormRow>
+          <CopyField
+            label="Button label"
+            value={panel.buttonLabel}
+            onChange={(v) => upd({ buttonLabel: v })}
+          />
+          <LinkField
+            label="Button link"
+            value={panel.buttonHref}
+            pageLinks={pageLinks}
+            onChange={(v) => upd({ buttonHref: v })}
+          />
         </BuilderFormSection>
         <BuilderFormSection>
           <VariantField
@@ -643,11 +625,7 @@ function CTAPreview({
   onSelectElement,
 }: SectionPreviewProps<CTAData>) {
   const d = withDefaults(data);
-  const resolved = resolveTheme(
-    d.theme,
-    brandThemeDefaults(brand),
-    CTA_HARDCODED_THEME,
-  );
+  const resolved = resolveTheme(d.theme, brandThemeDefaults(brand), CTA_HARDCODED_THEME);
 
   const background = d.layout === 'background';
   const dual = d.layout === 'dual';
@@ -764,21 +742,14 @@ function CTAPreview({
             ) : null}
             {d.showSignals && d.signals.length > 0 ? (
               <SelectableElement {...sel('signals')} className="mt-8">
-                <SignalRow
-                  signals={d.signals}
-                  theme={theme}
-                  accent={accent}
-                  align={d.align}
-                />
+                <SignalRow signals={d.signals} theme={theme} accent={accent} align={d.align} />
               </SelectableElement>
             ) : null}
           </div>
         );
 
         if (d.layout === 'split') {
-          const imageCell = (
-            <SplitImage key="img" url={d.imageUrl} theme={theme} />
-          );
+          const imageCell = <SplitImage key="img" url={d.imageUrl} theme={theme} />;
           const copyCell = (
             <div key="copy" className="flex flex-col justify-center">
               {copy}
@@ -794,9 +765,7 @@ function CTAPreview({
         if (background) {
           return (
             <div className="flex min-h-[360px] flex-col justify-center px-8 py-20 @2xl:px-12">
-              <div className={`w-full max-w-[640px] ${ALIGN_SELF[d.align]}`}>
-                {copy}
-              </div>
+              <div className={`w-full max-w-[640px] ${ALIGN_SELF[d.align]}`}>{copy}</div>
             </div>
           );
         }
@@ -873,8 +842,7 @@ function DualPanel({
   headingFont: string;
 }) {
   // Auto background — solid accent for panel B, a soft tint for panel A.
-  const autoColour =
-    variant === 'solid' ? accent : mixHex(accent, theme.background, 0.9);
+  const autoColour = variant === 'solid' ? accent : mixHex(accent, theme.background, 0.9);
   const hasImage = panel.bgType === 'image' && !!panel.imageUrl;
   const surfaceColour = panel.bgType === 'colour' ? panel.bgColor || autoColour : autoColour;
   // Light text over an image (scrim darkens it) or a dark colour surface.
@@ -964,8 +932,7 @@ function CtaButton({
   theme: ResolvedTheme;
   arrow?: boolean;
 }) {
-  const base =
-    'inline-flex items-center gap-2 rounded-lg px-6 py-3 text-[14px] font-semibold';
+  const base = 'inline-flex items-center gap-2 rounded-lg px-6 py-3 text-[14px] font-semibold';
   if (tone === 'outline') {
     return (
       <span
@@ -1011,16 +978,10 @@ function SignalRow({
         return (
           <span key={signal.id} className="flex items-center gap-3">
             {i > 0 ? (
-              <span
-                aria-hidden
-                className="h-4 w-px"
-                style={{ backgroundColor: theme.border }}
-              />
+              <span aria-hidden className="h-4 w-px" style={{ backgroundColor: theme.border }} />
             ) : null}
             <span className="flex items-center gap-1.5">
-              {Icon ? (
-                <Icon size={16} strokeWidth={2} color={accent} aria-hidden />
-              ) : null}
+              {Icon ? <Icon size={16} strokeWidth={2} color={accent} aria-hidden /> : null}
               <span className="text-[13px] font-medium" style={{ color: theme.body }}>
                 {signal.label || 'Signal'}
               </span>
@@ -1055,15 +1016,7 @@ function SplitImage({ url, theme }: { url: string; theme: ResolvedTheme }) {
   );
 }
 
-function BackgroundLayer({
-  url,
-  scrim,
-  opacity,
-}: {
-  url: string;
-  scrim: string;
-  opacity: number;
-}) {
+function BackgroundLayer({ url, scrim, opacity }: { url: string; scrim: string; opacity: number }) {
   const a = (multiplier: number) => {
     const v = Math.round(Math.max(0, Math.min(1, opacity * multiplier)) * 255);
     return v.toString(16).padStart(2, '0');

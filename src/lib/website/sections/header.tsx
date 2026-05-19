@@ -3,7 +3,7 @@
 import { Menu, X } from 'lucide-react';
 import { useState } from 'react';
 
-import { BuilderFormRow, BuilderFormSection } from '@/components/shared/builder/BuilderField';
+import { BuilderFormSection } from '@/components/shared/builder/BuilderField';
 
 import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
@@ -14,6 +14,7 @@ import {
   type SectionTheme,
 } from '../section-theme';
 import { CopyField } from './_shared/CopyField';
+import { LinkField } from './_shared/LinkField';
 import { MediaField } from './_shared/MediaField';
 import { SectionShell } from './_shared/SectionShell';
 import { SelectableElement } from './_shared/SelectableElement';
@@ -115,6 +116,7 @@ function HeaderFields({
   data,
   onChange,
   selectedElement,
+  pageLinks,
   clientId,
   brand,
 }: SectionFieldsProps<HeaderData>) {
@@ -169,20 +171,18 @@ function HeaderFields({
     return (
       <BuilderFormSection>
         <ToggleField label="Show CTA" value={d.showCta} onChange={(v) => set('showCta', v)} />
-        <BuilderFormRow>
-          <CopyField
-            label="Label"
-            value={d.ctaLabel}
-            originalValue={DEFAULTS.ctaLabel}
-            onChange={(v) => set('ctaLabel', v)}
-          />
-          <CopyField
-            label="Link"
-            value={d.ctaHref}
-            originalValue={DEFAULTS.ctaHref}
-            onChange={(v) => set('ctaHref', v)}
-          />
-        </BuilderFormRow>
+        <CopyField
+          label="Label"
+          value={d.ctaLabel}
+          originalValue={DEFAULTS.ctaLabel}
+          onChange={(v) => set('ctaLabel', v)}
+        />
+        <LinkField
+          label="Link"
+          value={d.ctaHref}
+          pageLinks={pageLinks}
+          onChange={(v) => set('ctaHref', v)}
+        />
         <VariantField
           label="Style"
           value={d.ctaStyle}

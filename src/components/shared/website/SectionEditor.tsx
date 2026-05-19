@@ -40,6 +40,7 @@ import type { DraftSlot } from '@/lib/website/content-drafts';
 import { defaultFormConfig, type FormConfig, type FormPageLink } from '@/lib/website/form-config';
 import { saveSeoForPages } from '@/lib/website/mutations';
 import { useBrandForClient, useWebsiteForClient } from '@/lib/website/queries';
+import { applyCtaDefaults } from '@/lib/website/cta-defaults';
 import { getSectionDefinition } from '@/lib/website/sections';
 import type {
   ContainerKind,
@@ -236,7 +237,7 @@ export function SectionEditor({ mode }: SectionEditorProps) {
   const handleAddSection = (type: SectionType) => {
     const definition = getSectionDefinition(type);
     if (!definition) return;
-    const newSection: Section = {
+    let newSection: Section = {
       id: `sec-${Math.random().toString(36).slice(2, 9)}`,
       type,
       enabled: true,
@@ -246,6 +247,10 @@ export function SectionEditor({ mode }: SectionEditorProps) {
     // on the envelope. Every other section starts form-less; the operator
     // attaches a form via the fields panel.
     if (type === 'form') newSection.form = defaultFormConfig();
+    // Point the new section's CTA at a real page (website page mode only).
+    if (mode.kind === 'page') {
+      newSection = applyCtaDefaults(newSection, mode.pages);
+    }
     setSections((current) => [...current, newSection]);
     setSelectedSectionId(newSection.id);
   };

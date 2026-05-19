@@ -17,12 +17,7 @@
 
 import type { ComponentType } from 'react';
 
-import type {
-  BrandObject,
-  ContainerKind,
-  PageType,
-  SectionType,
-} from './types';
+import type { BrandObject, ContainerKind, PageLink, PageType, SectionType } from './types';
 
 export type SectionFieldsProps<TData> = {
   data: TData;
@@ -37,6 +32,8 @@ export type SectionFieldsProps<TData> = {
   /** The resolved brand — carries the brand-level style defaults a Fields
    *  component shows as the effective value of an un-overridden colour. */
   brand?: BrandObject;
+  /** The site's pages — feeds the CTA link pickers. Editor-only. */
+  pageLinks?: PageLink[];
 };
 
 export type SectionPreviewProps<TData> = {

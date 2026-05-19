@@ -136,6 +136,7 @@ export function SectionFieldsPanel({
                 data={section.data as never}
                 onChange={onChange as never}
                 selectedElement={selectedElement}
+                pageLinks={pageLinks}
                 clientId={clientId}
                 brand={brand}
               />
