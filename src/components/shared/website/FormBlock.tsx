@@ -3,19 +3,15 @@
 // =============================================================================
 // FormBlock — the generic renderer for a lead-capture form (FormConfig).
 //
-// One component renders every form on the platform: the dedicated `form`
-// section, and any section that has a `section.form` attached. PagePreviewPane
-// mounts it beneath a section's own Preview whenever `section.form` is set.
+// It renders as a self-contained CARD — it is placed INSIDE a section (the
+// hero's form column, or a section's band via the SectionShell form slot),
+// never as a separate block stacked underneath. The host constrains the
+// width; FormBlock fills it.
 //
 // It is a REAL form — local field state, required + email/phone validation.
 // In the editor a `testSubmitCtx` enables an explicit "Test submit" affordance
-// that creates a genuine lead (via useCreateLead) so the operator can verify
-// the form end-to-end. The form's own styled submit button is NOT a live
-// submit in the editor — it is a SelectableElement for styling; the future
-// public renderer is what wires that button to a real submission.
-//
-// Each field / the title / the submit button is a SelectableElement so
-// clicking it in the editor opens that element's inspector.
+// that creates a genuine lead (useCreateLead). Each field / the title / the
+// submit button is a SelectableElement so clicking it opens its inspector.
 // =============================================================================
 
 import { useState } from 'react';
@@ -25,6 +21,7 @@ import { uploadLeadAttachment } from '@/lib/leads/upload-attachment';
 import type {
   FormConfig,
   FormField,
+  FormTestSubmitContext,
   SubmittedFormField,
 } from '@/lib/website/form-config';
 import type { BrandObject } from '@/lib/website/types';
@@ -36,14 +33,7 @@ export const FORM_TITLE_ELEMENT = '__formTitle';
 export const FORM_SUBMIT_ELEMENT = '__formSubmit';
 export const FORM_SETTINGS_ELEMENT = '__formSettings';
 
-export type { SubmittedFormField };
-
-/** Editor test-submit context — when present a "Test submit" affordance is
- *  shown that creates a real lead for the given client. */
-export type FormTestSubmitContext = {
-  clientId: string;
-  sourceLabel: string;
-};
+export type { SubmittedFormField, FormTestSubmitContext };
 
 export type FormBlockProps = {
   form: FormConfig;
@@ -136,7 +126,6 @@ export function FormBlock({
     if (!validate()) return;
     setBusy(true);
     try {
-      // Upload any image fields to the private lead-attachments bucket.
       const assembled: SubmittedFormField[] = [];
       for (const field of form.fields) {
         const submitted: SubmittedFormField = {
@@ -165,7 +154,6 @@ export function FormBlock({
         fields: assembled,
       });
 
-      // Run the after-submit action in a preview-safe way.
       if (form.afterSubmit.kind === 'message') {
         setDone(true);
       } else if (form.afterSubmit.kind === 'url') {
@@ -189,93 +177,92 @@ export function FormBlock({
     }
   };
 
+  const cardStyle = {
+    backgroundColor: colors.background,
+    borderColor: colors.fieldBorder,
+  };
+
   if (done && form.afterSubmit.kind === 'message') {
     return (
-      <div
-        className="@container w-full px-8 py-12 @2xl:px-12"
-        style={{ backgroundColor: colors.background }}
-      >
-        <div className="mx-auto max-w-[520px] text-center">
-          <p className="text-[22px] font-bold tracking-[-0.01em]" style={{ color: colors.label }}>
-            {form.afterSubmit.heading}
-          </p>
-          <p className="mt-2 text-[14px] leading-[1.6] text-ink-mid">
-            {form.afterSubmit.body}
-          </p>
-        </div>
+      <div className="w-full rounded-xl border p-7 text-center" style={cardStyle}>
+        <p className="text-[20px] font-bold tracking-[-0.01em]" style={{ color: colors.label }}>
+          {form.afterSubmit.heading}
+        </p>
+        <p className="mt-2 text-[14px] leading-[1.6] text-ink-mid">
+          {form.afterSubmit.body}
+        </p>
       </div>
     );
   }
 
   return (
-    <div
-      className="@container w-full px-8 py-12 @2xl:px-12"
-      style={{ backgroundColor: colors.background }}
-    >
-      <form
-        onSubmit={(e) => e.preventDefault()}
-        className="mx-auto flex w-full max-w-[520px] flex-col gap-4"
-        noValidate
-      >
-        {form.showTitle ? (
-          <SelectableElement
-            id={FORM_TITLE_ELEMENT}
-            selected={selectedElement === FORM_TITLE_ELEMENT}
-            onSelect={onSelectElement}
-          >
-            <p
-              className="text-[22px] font-bold tracking-[-0.01em]"
-              style={{ color: colors.label }}
-            >
-              {form.title}
-            </p>
-          </SelectableElement>
-        ) : null}
-
-        {form.fields.length === 0 ? (
-          <p className="rounded-md border border-dashed border-rule px-3 py-6 text-center text-[13px] text-ink-quiet">
-            No fields yet — add one in the form editor.
-          </p>
-        ) : (
-          form.fields.map((field) => (
+    <div className="w-full">
+      <div className="w-full rounded-xl border p-6" style={cardStyle}>
+        <form
+          onSubmit={(e) => e.preventDefault()}
+          className="flex w-full flex-col gap-4"
+          noValidate
+        >
+          {form.showTitle ? (
             <SelectableElement
-              key={field.id}
-              id={field.id}
-              selected={selectedElement === field.id}
+              id={FORM_TITLE_ELEMENT}
+              selected={selectedElement === FORM_TITLE_ELEMENT}
               onSelect={onSelectElement}
             >
-              <FieldInput
-                field={field}
-                value={values[field.id] ?? ''}
-                error={errors[field.id]}
-                colors={colors}
-                uploadEnabled={!!testSubmitCtx}
-                onChange={(v) => setValue(field.id, v)}
-                onFile={(f) => setFile(field.id, f)}
-              />
+              <p
+                className="text-[18px] font-bold tracking-[-0.01em]"
+                style={{ color: colors.label }}
+              >
+                {form.title}
+              </p>
             </SelectableElement>
-          ))
-        )}
+          ) : null}
 
-        <SelectableElement
-          id={FORM_SUBMIT_ELEMENT}
-          selected={selectedElement === FORM_SUBMIT_ELEMENT}
-          onSelect={onSelectElement}
-        >
-          <span
-            className="block w-full rounded-lg py-3 text-center text-[14px] font-bold"
-            style={{
-              backgroundColor: colors.buttonBackground,
-              color: colors.buttonText,
-            }}
+          {form.fields.length === 0 ? (
+            <p className="rounded-md border border-dashed border-rule px-3 py-6 text-center text-[13px] text-ink-quiet">
+              No fields yet — add one in the form editor.
+            </p>
+          ) : (
+            form.fields.map((field) => (
+              <SelectableElement
+                key={field.id}
+                id={field.id}
+                selected={selectedElement === field.id}
+                onSelect={onSelectElement}
+              >
+                <FieldInput
+                  field={field}
+                  value={values[field.id] ?? ''}
+                  error={errors[field.id]}
+                  colors={colors}
+                  uploadEnabled={!!testSubmitCtx}
+                  onChange={(v) => setValue(field.id, v)}
+                  onFile={(f) => setFile(field.id, f)}
+                />
+              </SelectableElement>
+            ))
+          )}
+
+          <SelectableElement
+            id={FORM_SUBMIT_ELEMENT}
+            selected={selectedElement === FORM_SUBMIT_ELEMENT}
+            onSelect={onSelectElement}
           >
-            {form.submitLabel}
-          </span>
-        </SelectableElement>
-      </form>
+            <span
+              className="block w-full rounded-lg py-3 text-center text-[14px] font-bold"
+              style={{
+                backgroundColor: colors.buttonBackground,
+                color: colors.buttonText,
+              }}
+            >
+              {form.submitLabel}
+            </span>
+          </SelectableElement>
+        </form>
+      </div>
 
       {testSubmitCtx ? (
-        <div className="mx-auto mt-4 max-w-[520px] rounded-md border border-dashed border-rust/40 bg-rust-soft/40 px-3.5 py-3">
+        <div className="mt-3 rounded-md border border-dashed border-rust/40 bg-rust-soft/40 px-3.5 py-3">
           <p className="mb-2 text-[12px] leading-[1.5] text-ink-mid">
             <strong className="font-semibold text-ink">Preview</strong> — a test
             submit creates a real lead in the inbox.

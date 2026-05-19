@@ -466,9 +466,6 @@ function fillHero(
     ctx.brand.audienceLine ||
     'Local, licensed and on call — fixed callout, written quote before we start.';
   const phone = ctx.business?.phone?.trim();
-  const wantsForm =
-    (ctx.primaryIntent.kind === 'quote' || ctx.primaryIntent.kind === 'book') &&
-    d.chance('form', 38);
   return {
     type: 'hero',
     enabled: true,
@@ -479,7 +476,6 @@ function fillHero(
       contentAlign: layout === 'overlay' ? d.pick('align', ['left', 'center'] as const) : 'left',
       imageSide: d.pick('side', ['left', 'right'] as const),
       headlineSize: d.pick('size', ['l', 'xl'] as const),
-      formMode: wantsForm ? 'lead' : 'none',
       eyebrow: (ctx.brand.industryCategory || 'Local service').toUpperCase(),
       headline,
       headlineAccent: '',

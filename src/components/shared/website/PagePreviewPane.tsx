@@ -13,10 +13,10 @@
 // =============================================================================
 
 import { CapabilityGate } from '@/components/shared/CapabilityGate';
+import { SectionFormSlotProvider } from '@/lib/website/sections/_shared/section-form-slot';
 import type { BrandObject, Section } from '@/lib/website/types';
 import { getSectionDefinition } from '@/lib/website/sections';
 
-import { FormBlock } from './FormBlock';
 import { SectionHoverToolbar } from './SectionHoverToolbar';
 
 /** Preview device — constrains the canvas width so the section container
@@ -111,28 +111,34 @@ export function PagePreviewPane({
                 }
               >
                 <div className={section.enabled ? '' : 'opacity-45'}>
-                  <Preview
-                    data={section.data as never}
-                    brand={brand}
-                    selectedElement={isSelected ? selectedElementId : undefined}
-                    onSelectElement={isSelected ? onSelectElement : undefined}
-                  />
-                  {section.form ? (
-                    <FormBlock
-                      form={section.form}
+                  {/* The section's attached form (if any) renders WITHIN the
+                      section — SectionShell reads this slot and places the
+                      form in the band; the hero places it in its column. */}
+                  <SectionFormSlotProvider
+                    value={
+                      section.form
+                        ? {
+                            form: section.form,
+                            brand,
+                            selectedElement: isSelected ? selectedElementId : undefined,
+                            onSelectElement: isSelected ? onSelectElement : undefined,
+                            testSubmitCtx: testClientId
+                              ? {
+                                  clientId: testClientId,
+                                  sourceLabel: `Form · ${def.label.replace(/^\/\/\s*/, '')}`,
+                                }
+                              : undefined,
+                          }
+                        : null
+                    }
+                  >
+                    <Preview
+                      data={section.data as never}
                       brand={brand}
                       selectedElement={isSelected ? selectedElementId : undefined}
                       onSelectElement={isSelected ? onSelectElement : undefined}
-                      testSubmitCtx={
-                        testClientId
-                          ? {
-                              clientId: testClientId,
-                              sourceLabel: `Form · ${def.label.replace(/^\/\/\s*/, '')}`,
-                            }
-                          : undefined
-                      }
                     />
-                  ) : null}
+                  </SectionFormSlotProvider>
                 </div>
                 {!section.enabled ? (
                   <span className="absolute left-3 top-3 z-20 rounded bg-ink/90 px-2 py-1 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-paper">

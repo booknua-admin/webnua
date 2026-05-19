@@ -136,8 +136,8 @@ function FormSectionPreview({
   const d = withDefaults(data);
   const resolved = resolveTheme(d.theme, brandThemeDefaults(brand), FORM_HARDCODED_THEME);
 
-  if (!d.eyebrow && !d.heading) return null;
-
+  // Always render the shell — even with an empty heading, the form itself
+  // (the attached section.form) renders in the shell's form slot.
   return (
     <SectionShell theme={resolved} brand={brand} pad="tight">
       {({ theme, headingFont, accent }) => {
@@ -146,6 +146,7 @@ function FormSectionPreview({
           selected: selectedElement === id,
           onSelect: onSelectElement,
         });
+        if (!d.eyebrow && !d.heading) return null;
         return (
           <div className="flex flex-col items-center text-center">
             {d.eyebrow ? (

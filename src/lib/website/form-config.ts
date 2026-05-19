@@ -74,6 +74,15 @@ export type FormConfig = {
   colors: FormColors;
 };
 
+/** Editor test-submit context — when present a form in the editor preview
+ *  shows a "Test submit" affordance that creates a real lead. */
+export type FormTestSubmitContext = {
+  /** The client UUID the test lead is created against. */
+  clientId: string;
+  /** Human label of the form's origin, e.g. "Form · Hero". */
+  sourceLabel: string;
+};
+
 /** A single field's submitted value — assembled by FormBlock on submit and
  *  handed to the lead-creation layer. For an `image` field `value` is the
  *  file name and `imagePath` is the uploaded `lead-attachments` storage
