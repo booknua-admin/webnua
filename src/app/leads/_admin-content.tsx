@@ -2,23 +2,21 @@
 
 import { useMemo, useState } from 'react';
 
-import { FilterChips } from '@/components/shared/FilterChips';
+import { ClientMultiSelect } from '@/components/shared/ClientMultiSelect';
 import { LeadRow } from '@/components/shared/leads/LeadRow';
 import { LeadTabsBar } from '@/components/shared/leads/LeadTabsBar';
 import { LeadsHero } from '@/components/shared/leads/LeadsHero';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
+import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { normalizeError } from '@/lib/errors';
-import {
-  adminLeadsClientFilters,
-  adminLeadsHero,
-  adminLeadsTabs,
-} from '@/lib/leads/admin-leads';
+import { adminLeadsHero, adminLeadsTabs } from '@/lib/leads/admin-leads';
 import { useAdminLeadsInbox } from '@/lib/leads/queries';
+import { useIsAgencyMode, useWorkspace } from '@/lib/workspace/workspace-stub';
 
 function AdminLeadsContent() {
-  const [activeClient, setActiveClient] = useState('all');
+  const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState('new');
   const { data: leads, isLoading, error } = useAdminLeadsInbox();
 
@@ -27,25 +25,31 @@ function AdminLeadsContent() {
   // filters compose correctly.
   const allLeads = useMemo(() => leads ?? [], [leads]);
 
-  const clientPool = useMemo(
-    () =>
-      activeClient === 'all'
-        ? allLeads
-        : allLeads.filter((lead) => lead.clientTone === activeClient),
-    [allLeads, activeClient],
+  // Workspace context: agency mode → cross-client roster + the multi-select
+  // filter; sub-account mode → the page scopes to the picked client.
+  const isAgency = useIsAgencyMode();
+  const { activeClientId } = useWorkspace();
+  const effectiveClients = useMemo(
+    () => (isAgency || !activeClientId ? selectedClients : [activeClientId]),
+    [isAgency, activeClientId, selectedClients],
   );
 
-  const clientFilters = useMemo(
+  const clientPool = useMemo(
     () =>
-      adminLeadsClientFilters.map((chip) => ({
-        ...chip,
-        count:
-          chip.id === 'all'
-            ? allLeads.length
-            : allLeads.filter((lead) => lead.clientTone === chip.id).length,
-      })),
-    [allLeads],
+      effectiveClients.length === 0
+        ? allLeads
+        : allLeads.filter((lead) => effectiveClients.includes(lead.clientSlug)),
+    [allLeads, effectiveClients],
   );
+
+  // Per-client lead counts, keyed on client slug — shown in the dropdown.
+  const clientCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const lead of allLeads) {
+      counts[lead.clientSlug] = (counts[lead.clientSlug] ?? 0) + 1;
+    }
+    return counts;
+  }, [allLeads]);
 
   // Tab ids map 1:1 to LeadStatus. Counts recomputed from the client pool.
   const tabs = useMemo(
@@ -75,12 +79,16 @@ function AdminLeadsContent() {
           subtitle={adminLeadsHero.subtitle}
         />
 
-        <FilterChips
-          label="// CLIENT"
-          chips={clientFilters}
-          value={activeClient}
-          onChange={setActiveClient}
-        />
+        {isAgency ? (
+          <ClientMultiSelect
+            label="// CLIENT"
+            value={selectedClients}
+            onChange={setSelectedClients}
+            counts={clientCounts}
+          />
+        ) : (
+          <WorkspaceContextBanner />
+        )}
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">

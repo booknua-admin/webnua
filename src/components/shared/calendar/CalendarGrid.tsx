@@ -9,9 +9,11 @@ type CalendarGridProps = {
   className?: string;
 };
 
-const GRID_COLS = 'grid-cols-[70px_repeat(6,1fr)]';
-
 function CalendarGrid({ week, className }: CalendarGridProps) {
+  // Dynamic column count: week = 6 days, day view = 1.
+  const gridCols = {
+    gridTemplateColumns: `70px repeat(${week.days.length}, minmax(0, 1fr))`,
+  };
   return (
     <div
       data-slot="calendar-grid"
@@ -21,10 +23,8 @@ function CalendarGrid({ week, className }: CalendarGridProps) {
       )}
     >
       <div
-        className={cn(
-          'grid border-b border-rule bg-paper-2',
-          GRID_COLS,
-        )}
+        className="grid border-b border-rule bg-paper-2"
+        style={gridCols}
       >
         <div className="flex items-center justify-center border-r border-rule-soft px-2 py-3.5 text-center font-mono text-[9px] font-bold uppercase tracking-[0.1em] text-ink-quiet">
           {week.cornerLabel}
@@ -58,7 +58,7 @@ function CalendarGrid({ week, className }: CalendarGridProps) {
         ))}
       </div>
 
-      <div className={cn('relative grid', GRID_COLS)}>
+      <div className="relative grid" style={gridCols}>
         <div className="border-r border-rule-soft bg-paper">
           {week.timeSlots.map((slot) => (
             <div

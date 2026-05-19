@@ -89,6 +89,62 @@ export async function hydrateClients(): Promise<void> {
   dispatch();
 }
 
+// ---- Writes ----------------------------------------------------------------
+
+/**
+ * Permanently delete a client. Operator-only (enforced by RLS). Cascades to
+ * the client's brand, websites, funnels, leads, bookings, etc. Fails if the
+ * client still has team members (`users.client_id` is ON DELETE RESTRICT).
+ */
+export async function deleteClient(
+  slug: string,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const uuid = slugToUuid.get(slug);
+  if (!uuid) {
+    return { ok: false, message: 'That client no longer exists.' };
+  }
+
+  const { error } = await supabase.from('clients').delete().eq('id', uuid);
+  if (error) {
+    if (error.code === '23503') {
+      return {
+        ok: false,
+        message:
+          'This client still has team members. Remove their accounts before deleting the client.',
+      };
+    }
+    return { ok: false, message: normalizeError(error).message };
+  }
+
+  await hydrateClients();
+  return { ok: true };
+}
+
+/**
+ * Move a client out of onboarding into the active lifecycle. Operator-only
+ * (enforced by RLS — `clients_update` requires `is_operator()`). Used to
+ * dismiss the new-client integration onboarding flow once setup is done.
+ */
+export async function activateClient(
+  slug: string,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const uuid = slugToUuid.get(slug);
+  if (!uuid) {
+    return { ok: false, message: 'That client no longer exists.' };
+  }
+
+  const { error } = await supabase
+    .from('clients')
+    .update({ lifecycle_status: 'live' })
+    .eq('id', uuid);
+  if (error) {
+    return { ok: false, message: normalizeError(error).message };
+  }
+
+  await hydrateClients();
+  return { ok: true };
+}
+
 // ---- Reads -----------------------------------------------------------------
 
 /** All clients as AdminClient objects. Reference-stable. */

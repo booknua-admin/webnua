@@ -25,6 +25,7 @@ export type AdminTicketRow = {
   unread?: boolean;
   client: {
     id: string;
+    slug: string;
     initial: string;
     name: string;
     meta: string;

@@ -106,37 +106,39 @@ function AdminClientPicker({ clients }: AdminClientPickerProps) {
             </div>
           </button>
           <div className="my-0.5 border-t border-paper/[0.06]" />
-          {clients.map((client) => (
-            <button
-              key={client.id}
-              type="button"
-              onClick={() => handleSelectClient(client.id)}
-              data-active={client.id === activeClient?.id || undefined}
-              className="flex items-center gap-3 rounded px-2 py-2 text-left text-paper/80 transition-colors hover:bg-paper/[0.06] data-[active=true]:bg-paper/[0.08] data-[active=true]:text-paper"
-            >
-              <ClientLogo initial={client.initial} small />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-bold text-paper">
-                  {client.name}
+          <div className="flex max-h-[260px] flex-col gap-0.5 overflow-y-auto">
+            {clients.map((client) => (
+              <button
+                key={client.id}
+                type="button"
+                onClick={() => handleSelectClient(client.id)}
+                data-active={client.id === activeClient?.id || undefined}
+                className="flex items-center gap-3 rounded px-2 py-2 text-left text-paper/80 transition-colors hover:bg-paper/[0.06] data-[active=true]:bg-paper/[0.08] data-[active=true]:text-paper"
+              >
+                <ClientLogo initial={client.initial} small />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-bold text-paper">
+                    {client.name}
+                  </div>
+                  <div className="mt-0.5 truncate font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-paper/50">
+                    {client.meta}
+                  </div>
                 </div>
-                <div className="mt-0.5 truncate font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-paper/50">
-                  {client.meta}
-                </div>
-              </div>
-              {client.badge ? (
-                <span
-                  className={cn(
-                    'shrink-0 rounded-full px-2 py-[2px] font-mono text-[10px] font-bold tracking-[0.06em]',
-                    client.badge.tone === 'muted'
-                      ? 'bg-paper/10 text-paper/55'
-                      : 'bg-rust text-paper',
-                  )}
-                >
-                  {client.badge.text}
-                </span>
-              ) : null}
-            </button>
-          ))}
+                {client.badge ? (
+                  <span
+                    className={cn(
+                      'shrink-0 rounded-full px-2 py-[2px] font-mono text-[10px] font-bold tracking-[0.06em]',
+                      client.badge.tone === 'muted'
+                        ? 'bg-paper/10 text-paper/55'
+                        : 'bg-rust text-paper',
+                    )}
+                  >
+                    {client.badge.text}
+                  </span>
+                ) : null}
+              </button>
+            ))}
+          </div>
           <div className="mt-1 border-t border-paper/[0.08]" />
           <Link
             href="/clients/new"

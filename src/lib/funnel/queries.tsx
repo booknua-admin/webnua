@@ -165,6 +165,16 @@ export async function fetchFunnelWithDraft(
   return { funnel, draft };
 }
 
+async function fetchFunnelVersions(funnelId: string): Promise<FunnelVersion[]> {
+  const { data, error } = await supabase
+    .from('funnel_versions')
+    .select('*')
+    .eq('funnel_id', funnelId)
+    .order('created_at', { ascending: false });
+  if (error) throw normalizeError(error);
+  return (data as FunnelVersionRow[]).map(mapFunnelVersion);
+}
+
 // ---- Hooks ------------------------------------------------------------------
 
 /** The active workspace's funnels, by client slug. Idle until a slug is set. */
@@ -182,6 +192,16 @@ export function useAllFunnels() {
   return useQuery({
     queryKey: ['funnels', 'all'],
     queryFn: fetchAllFunnels,
+  });
+}
+
+/** Every version of a funnel, newest first. Backs the detail page's
+ *  build-history card. */
+export function useFunnelVersions(funnelId: string | null) {
+  return useQuery({
+    queryKey: ['funnels', 'versions', funnelId],
+    queryFn: () => fetchFunnelVersions(funnelId as string),
+    enabled: funnelId != null && funnelId.length > 0,
   });
 }
 

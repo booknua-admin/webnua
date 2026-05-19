@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 
 import { WebsiteApprovalRow } from '@/components/admin/tickets/WebsiteApprovalRow';
-import { FilterChips } from '@/components/shared/FilterChips';
+import { ClientMultiSelect } from '@/components/shared/ClientMultiSelect';
 import { TicketRow } from '@/components/shared/tickets/TicketRow';
 import { TicketTabsBar } from '@/components/shared/tickets/TicketTabsBar';
 import {
@@ -52,34 +52,29 @@ function AdminTicketsContent() {
   const { data: tickets, isLoading, error } = useAdminTicketsInbox();
 
   const [activeTabId, setActiveTabId] = useState<string>('all');
-  const [activeClient, setActiveClient] = useState('all');
+  const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const onApprovalsTab = activeTabId === APPROVALS_TAB_ID;
 
   const allTickets = useMemo(() => tickets ?? [], [tickets]);
 
-  // Client filter chips, derived from the tickets' own clients.
-  const clientChips = useMemo(() => {
-    const names = new Map<string, string>();
-    for (const t of allTickets) names.set(t.client.id, t.client.name);
-    return [
-      { id: 'all', label: 'All clients', count: allTickets.length },
-      ...[...names].map(([id, label]) => ({
-        id,
-        label,
-        count: allTickets.filter((t) => t.client.id === id).length,
-      })),
-    ];
+  // Per-client ticket counts, keyed on client slug — shown in the dropdown.
+  const clientCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const t of allTickets) {
+      counts[t.client.slug] = (counts[t.client.slug] ?? 0) + 1;
+    }
+    return counts;
   }, [allTickets]);
 
   // The client filter narrows the pool; tab counts + the visible list are
   // computed against it so the filters compose.
   const clientPool = useMemo(
     () =>
-      activeClient === 'all'
+      selectedClients.length === 0
         ? allTickets
-        : allTickets.filter((t) => t.client.id === activeClient),
-    [allTickets, activeClient],
+        : allTickets.filter((t) => selectedClients.includes(t.client.slug)),
+    [allTickets, selectedClients],
   );
 
   const tabs = useMemo<TicketTab[]>(() => {
@@ -131,11 +126,11 @@ function AdminTicketsContent() {
         />
 
         {onApprovalsTab ? null : (
-          <FilterChips
+          <ClientMultiSelect
             label="// CLIENT"
-            chips={clientChips}
-            value={activeClient}
-            onChange={setActiveClient}
+            value={selectedClients}
+            onChange={setSelectedClients}
+            counts={clientCounts}
           />
         )}
 

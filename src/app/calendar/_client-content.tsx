@@ -1,18 +1,25 @@
 'use client';
 
+import { useState } from 'react';
+
 import { AddBookingButton } from '@/components/shared/bookings/AddBookingButton';
 import { CalendarGrid } from '@/components/shared/calendar/CalendarGrid';
+import { CalendarMonthGrid } from '@/components/shared/calendar/CalendarMonthGrid';
 import { CalendarToolbar } from '@/components/shared/calendar/CalendarToolbar';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
-import { normalizeError } from '@/lib/errors';
 import { useClientCalendar } from '@/lib/bookings/queries';
+import { shiftAnchor, todayIso } from '@/lib/calendar/anchor';
 import { voltlineCalendar } from '@/lib/calendar/client-calendar';
+import type { CalendarView } from '@/lib/calendar/types';
+import { normalizeError } from '@/lib/errors';
 
 function ClientCalendarContent() {
   const { hero } = voltlineCalendar;
-  const { data: week, isLoading, error } = useClientCalendar();
+  const [view, setView] = useState<CalendarView>('week');
+  const [anchorIso, setAnchorIso] = useState(todayIso);
+  const { data, error } = useClientCalendar(view, anchorIso);
 
   return (
     <>
@@ -31,16 +38,37 @@ function ClientCalendarContent() {
           </Button>
           <AddBookingButton />
         </div>
-        {isLoading ? (
-          <CalendarNotice>{'// Loading calendar…'}</CalendarNotice>
-        ) : error || !week ? (
+        {!data ? (
           <CalendarNotice>
-            {`// ${error ? normalizeError(error).message : 'Calendar unavailable'}`}
+            {error
+              ? `// ${normalizeError(error).message}`
+              : '// Loading calendar…'}
           </CalendarNotice>
         ) : (
           <>
-            <CalendarToolbar periodLabel={week.periodLabel} />
-            <CalendarGrid week={week} />
+            <CalendarToolbar
+              periodLabel={
+                data.mode === 'grid'
+                  ? data.week.periodLabel
+                  : data.month.periodLabel
+              }
+              view={view}
+              onViewChange={setView}
+              onPrev={() => setAnchorIso((iso) => shiftAnchor(iso, view, -1))}
+              onNext={() => setAnchorIso((iso) => shiftAnchor(iso, view, 1))}
+              onToday={() => setAnchorIso(todayIso())}
+            />
+            {data.mode === 'grid' ? (
+              <CalendarGrid week={data.week} />
+            ) : (
+              <CalendarMonthGrid
+                month={data.month}
+                onSelectDay={(iso) => {
+                  setView('day');
+                  setAnchorIso(iso);
+                }}
+              />
+            )}
           </>
         )}
       </div>

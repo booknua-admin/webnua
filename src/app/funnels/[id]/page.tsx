@@ -1,29 +1,106 @@
 'use client';
 
 // =============================================================================
-// /funnels/[id] — funnel detail (Session 7 · wired Phase 4).
+// /funnels/[id] — funnel detail. Everything on this page derives from the
+// funnel's live Supabase record (`funnels` + `funnel_versions`) — there is no
+// hardcoded per-client stub anymore.
 //
-// The funnel record + its editable draft resolve live from Supabase
-// (`lib/funnel/queries`); the [id] segment is the funnel UUID. The detail
-// *content* (hero stats / flow / drop-off / insights / history) is still the
-// analytics stub `voltlineFunnel` — funnel analytics has no schema home yet
-// (CLAUDE.md §5 metrics gap), and there is only one funnel in the platform.
-//
-// The operator-facing "Edit funnel →" CTA + per-step deep-links are built
-// from the live draft's steps. Cap gating: the CTA only renders for users
-// with any edit capability (design doc §1 view-only floor).
+// Funnel *analytics* (visit counts, conversion %, drop-off, performance
+// insights) has no Supabase schema home yet — it is integration data that
+// arrives with the GA4 / Meta Ads wiring (Phase 7). Those slots render honest
+// "awaiting analytics" placeholders, exactly as campaigns / automations do.
+// The funnel identity, its steps and its version history ARE real and wired.
 // =============================================================================
 
 import { useParams } from 'next/navigation';
 
-import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { FunnelFlow } from '@/components/client/funnels/FunnelFlow';
 import { FunnelHero } from '@/components/client/funnels/FunnelHero';
 import { FunnelHistoryCard } from '@/components/client/funnels/FunnelHistoryCard';
 import { FunnelInsightsCard } from '@/components/client/funnels/FunnelInsightsCard';
+import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { useCanAny } from '@/lib/auth/user-stub';
-import { useFunnelWithDraft } from '@/lib/funnel/queries';
-import { voltlineFunnel } from '@/lib/funnels/client-detail';
+import { useFunnelVersions, useFunnelWithDraft } from '@/lib/funnel/queries';
+import type {
+  FunnelStep as EditableFunnelStep,
+  Funnel,
+  FunnelVersion as EditableFunnelVersion,
+  FunnelStepType,
+} from '@/lib/funnel/types';
+import type {
+  FunnelArrow,
+  FunnelStep,
+  FunnelVersion,
+} from '@/lib/funnels/types';
+import { relativeTime } from '@/lib/time';
+
+// -- Step-type → presentation maps -------------------------------------------
+
+const STEP_POSITION_LABEL: Record<FunnelStepType, string> = {
+  landing: 'Landing',
+  schedule: 'Schedule',
+  thanks: 'Booked',
+  optin: 'Opt-in',
+  upsell: 'Upsell',
+};
+
+const STEP_THUMB: Record<FunnelStepType, FunnelStep['thumb']> = {
+  landing: 'landing',
+  schedule: 'schedule',
+  thanks: 'thanks',
+  optin: 'landing',
+  upsell: 'schedule',
+};
+
+const VERSION_STATUS_LABEL: Record<EditableFunnelVersion['status'], string> = {
+  draft: 'Working draft',
+  pending_approval: 'Pending review',
+  published: 'Published',
+  archived: 'Archived',
+};
+
+const Dash = () => <span className="text-ink-quiet">—</span>;
+
+// -- Builders (live record → display shape) ----------------------------------
+
+function buildSteps(editorSteps: EditableFunnelStep[], domain: string): FunnelStep[] {
+  return editorSteps.map((step, i) => ({
+    id: step.id,
+    position: i + 1,
+    positionLabel: STEP_POSITION_LABEL[step.type] ?? `Step ${i + 1}`,
+    tone: i === 0 ? 'first' : i === editorSteps.length - 1 ? 'last' : 'middle',
+    thumb: STEP_THUMB[step.type] ?? 'landing',
+    name: step.title,
+    url: `${domain}/${step.slug}`.replace(/\/+$/, ''),
+    metricNum: <Dash />,
+    metricLabel: '// Awaiting analytics',
+    foot: [],
+  }));
+}
+
+function buildArrows(stepCount: number): FunnelArrow[] {
+  return Array.from({ length: Math.max(0, stepCount - 1) }, (_, i) => ({
+    id: `arrow-${i}`,
+    pct: '—',
+    dropLabel: <>Awaiting analytics</>,
+  }));
+}
+
+function buildHistory(
+  versions: EditableFunnelVersion[],
+  publishedVersionId: string | null,
+): FunnelVersion[] {
+  return versions.map((v, i) => ({
+    id: v.id,
+    label: `v${versions.length - i}`,
+    current: v.id === publishedVersionId,
+    body: v.notes ? <>{v.notes}</> : <>{VERSION_STATUS_LABEL[v.status]}</>,
+    meta: `${VERSION_STATUS_LABEL[v.status]} · ${relativeTime(v.createdAt)}`,
+    when: relativeTime(v.createdAt),
+  }));
+}
+
+// -- Page --------------------------------------------------------------------
 
 export default function FunnelDetailPage() {
   const params = useParams<{ id: string }>();
@@ -39,84 +116,122 @@ export default function FunnelDetailPage() {
   );
 
   const { data, isLoading, isError } = useFunnelWithDraft(id);
+  const { data: versions } = useFunnelVersions(id);
 
   if (isLoading) {
-    return <StatusState tone="quiet" message="// Loading funnel…" id={id} />;
+    return <StatusState message="// Loading funnel…" id={id} />;
   }
-
   if (isError || !data) {
     return <NotFoundState id={id} />;
   }
 
-  const { funnel: editableFunnel, draft } = data;
+  const { funnel, draft } = data;
   const editorSteps = draft.snapshot.steps;
   const firstStepId = editorSteps[0]?.id;
+  const domain = funnel.domain.primary;
 
-  // The analytics-detail content is the single Voltline funnel stub.
-  const detail = voltlineFunnel;
+  const steps = buildSteps(editorSteps, domain);
+  const arrows = buildArrows(steps.length);
+  const history = buildHistory(versions ?? [], funnel.publishedVersionId);
 
-  const heroActions = {
-    ...detail.hero.actions,
-    ...(canEdit && firstStepId
-      ? {
-          editFunnelLabel: 'Edit funnel →',
-          editFunnelHref: `/funnels/${editableFunnel.id}/edit/${firstStepId}`,
-        }
-      : {}),
-  };
-
-  // Per-step editor deep-links — aligned to the analytics flow steps by
-  // index. Only handed to FunnelFlow when the viewer can edit, so view-only
-  // users get a static (non-clickable) flow.
-  const stepEditHrefs = canEdit
-    ? detail.steps.map((_, i) => {
-        const editorStep = editorSteps[i];
-        return editorStep
-          ? `/funnels/${editableFunnel.id}/edit/${editorStep.id}`
-          : undefined;
-      })
-    : undefined;
+  const currentVersion = history.find((h) => h.current);
+  const versionLabel = currentVersion
+    ? `${currentVersion.label} · live`
+    : 'Draft only';
 
   return (
     <>
       <Topbar
-        breadcrumb={
-          <TopbarBreadcrumb trail={['Funnels']} current={editableFunnel.name} />
-        }
+        breadcrumb={<TopbarBreadcrumb trail={['Funnels']} current={funnel.name} />}
       />
       <div className="flex flex-col gap-4 px-10 py-7">
         <FunnelHero
-          back={detail.back}
-          tag={detail.hero.tag}
-          title={detail.hero.title}
-          subtitle={detail.hero.subtitle}
-          meta={detail.hero.meta}
-          versionLabel={detail.hero.versionLabel}
-          actions={heroActions}
-          agg={detail.agg}
+          back={{ label: 'Back to funnels', href: '/funnels' }}
+          tag="Webnua-managed funnel"
+          title={funnel.name}
+          subtitle={
+            <>
+              Your booking funnel on <strong>{domain}</strong>. A{' '}
+              {steps.length}-step path from landing to booked — Webnua manages
+              updates, request a change anytime.
+            </>
+          }
+          meta={[
+            { label: 'Built', value: relativeTime(funnel.createdAt) },
+            { label: 'Steps', value: <>{steps.length}</> },
+          ]}
+          versionLabel={versionLabel}
+          actions={buildHeroActions(funnel, canEdit, firstStepId)}
+          agg={{
+            label: '// Funnel performance',
+            live: false,
+            metrics: [
+              { num: <Dash />, label: '// Visits in' },
+              { num: <Dash />, label: '// Booked' },
+            ],
+            bottom: {
+              left: <>Performance tracking</>,
+              right: <>Awaiting analytics</>,
+            },
+          }}
         />
 
         <FunnelFlow
-          title={detail.flow.title}
-          steps={detail.steps}
-          arrows={detail.arrows}
-          periods={detail.flow.periods}
-          defaultPeriod={detail.flow.defaultPeriod}
-          stepEditHrefs={stepEditHrefs}
+          title={
+            <>
+              Step-by-step <em>flow</em>
+            </>
+          }
+          steps={steps}
+          arrows={arrows}
+          periods={['7d', '14d', '30d', '90d']}
+          defaultPeriod="14d"
+          stepEditHrefs={
+            canEdit
+              ? editorSteps.map((s) => `/funnels/${funnel.id}/edit/${s.id}`)
+              : undefined
+          }
         />
 
         <div className="grid grid-cols-2 gap-3.5">
           <FunnelInsightsCard
-            title={detail.insights.title}
-            subtitle={detail.insights.subtitle}
-            items={detail.insights.items}
+            title={
+              <>
+                <em>Insights</em> · what we see
+              </>
+            }
+            subtitle={
+              <>Performance insights appear once your funnel has live traffic.</>
+            }
+            items={[
+              {
+                id: 'awaiting-analytics',
+                tone: 'info',
+                glyph: 'i',
+                body: (
+                  <>
+                    <strong>Analytics aren&apos;t connected yet.</strong> Once
+                    Google Analytics is wired up, Webnua will track visits,
+                    drop-off and conversion here and flag what&apos;s working
+                    or breaking.
+                  </>
+                ),
+                meta: 'Awaiting analytics integration',
+              },
+            ]}
           />
           <FunnelHistoryCard
-            title={detail.history.title}
-            subtitle={detail.history.subtitle}
-            items={detail.history.items}
-            ctaLabel={detail.history.ctaLabel}
-            ctaHref={detail.history.ctaHref}
+            title={
+              <>
+                Build <em>history</em>
+              </>
+            }
+            subtitle={
+              <>Every version of your funnel — Webnua keeps these for rollback.</>
+            }
+            items={history}
+            ctaLabel="+ Request a change"
+            ctaHref="/tickets/new"
           />
         </div>
       </div>
@@ -124,24 +239,31 @@ export default function FunnelDetailPage() {
   );
 }
 
-function StatusState({
-  tone,
-  message,
-  id,
-}: {
-  tone: 'quiet' | 'warn';
-  message: string;
-  id: string;
-}) {
+function buildHeroActions(
+  funnel: Funnel,
+  canEdit: boolean,
+  firstStepId: string | undefined,
+) {
+  return {
+    viewLiveLabel: '⌕ View live',
+    viewLiveHref: `https://${funnel.domain.primary}`,
+    requestChangeLabel: '+ Request a change',
+    requestChangeHref: '/tickets/new',
+    ...(canEdit && firstStepId
+      ? {
+          editFunnelLabel: 'Edit funnel →',
+          editFunnelHref: `/funnels/${funnel.id}/edit/${firstStepId}`,
+        }
+      : {}),
+  };
+}
+
+function StatusState({ message, id }: { message: string; id: string }) {
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb trail={['Funnels']} current={id} />} />
       <div className="px-10 py-10">
-        <p
-          className={`font-mono text-[11px] font-bold uppercase tracking-[0.14em] ${
-            tone === 'warn' ? 'text-warn' : 'text-ink-quiet'
-          }`}
-        >
+        <p className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
           {message}
         </p>
       </div>

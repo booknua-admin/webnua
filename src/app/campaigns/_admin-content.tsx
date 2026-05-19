@@ -4,38 +4,46 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
 import { CampaignClientRow } from '@/components/admin/campaigns/CampaignClientRow';
-import { FilterChips } from '@/components/shared/FilterChips';
+import { ClientMultiSelect } from '@/components/shared/ClientMultiSelect';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { StatCard } from '@/components/shared/StatCard';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
+import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
 import { Button } from '@/components/ui/button';
 import { normalizeError } from '@/lib/errors';
 import { useAdminCampaigns } from '@/lib/campaigns/queries';
+import { useIsAgencyMode, useWorkspace } from '@/lib/workspace/workspace-stub';
 
 function AdminCampaignsContent() {
   const { data: page, isLoading, error } = useAdminCampaigns();
-  const [activeClient, setActiveClient] = useState('all');
+  const [selectedClients, setSelectedClients] = useState<string[]>([]);
 
   const rows = useMemo(() => page?.rows ?? [], [page]);
 
-  const clientFilters = useMemo(
-    () =>
-      (page?.filters ?? []).map((chip) => ({
-        ...chip,
-        count:
-          chip.id === 'all'
-            ? rows.length
-            : rows.filter((row) => row.clientId === chip.id).length,
-      })),
-    [page, rows],
+  // Workspace context: agency mode → cross-client roster + the multi-select
+  // filter; sub-account mode → the page scopes to the picked client.
+  const isAgency = useIsAgencyMode();
+  const { activeClientId } = useWorkspace();
+  const effectiveClients = useMemo(
+    () => (isAgency || !activeClientId ? selectedClients : [activeClientId]),
+    [isAgency, activeClientId, selectedClients],
   );
+
+  // Per-client campaign counts, keyed on client slug — shown in the dropdown.
+  const clientCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const row of rows) {
+      counts[row.clientId] = (counts[row.clientId] ?? 0) + 1;
+    }
+    return counts;
+  }, [rows]);
 
   const visibleRows = useMemo(
     () =>
-      activeClient === 'all'
+      effectiveClients.length === 0
         ? rows
-        : rows.filter((row) => row.clientId === activeClient),
-    [activeClient, rows],
+        : rows.filter((row) => effectiveClients.includes(row.clientId)),
+    [effectiveClients, rows],
   );
 
   return (
@@ -60,12 +68,16 @@ function AdminCampaignsContent() {
               subtitle={page.hero.subtitle}
             />
 
-            <FilterChips
-              label="// CLIENT"
-              chips={clientFilters}
-              value={activeClient}
-              onChange={setActiveClient}
-            />
+            {isAgency ? (
+              <ClientMultiSelect
+                label="// CLIENT"
+                value={selectedClients}
+                onChange={setSelectedClients}
+                counts={clientCounts}
+              />
+            ) : (
+              <WorkspaceContextBanner />
+            )}
 
             <div className="grid grid-cols-4 gap-3.5">
               {page.stats.map((stat) => (

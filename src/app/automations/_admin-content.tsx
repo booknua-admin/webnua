@@ -3,54 +3,59 @@
 import { useMemo, useState } from 'react';
 
 import { AutomationGroup } from '@/components/admin/automations/AutomationGroup';
-import { FilterChips } from '@/components/shared/FilterChips';
+import { ClientMultiSelect } from '@/components/shared/ClientMultiSelect';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { StatCard } from '@/components/shared/StatCard';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
+import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
 import {
   useAdminAutomations,
   useToggleAutomation,
 } from '@/lib/automations/queries';
 import { normalizeError } from '@/lib/errors';
+import { useIsAgencyMode, useWorkspace } from '@/lib/workspace/workspace-stub';
 
 function AdminAutomationsContent() {
   const { data: page, isLoading, error } = useAdminAutomations();
   const toggle = useToggleAutomation();
-  const [activeClient, setActiveClient] = useState('all');
+  const [selectedClients, setSelectedClients] = useState<string[]>([]);
 
   const groups = useMemo(() => page?.groups ?? [], [page]);
 
-  // Client-chip counts = total flows per client across every group.
-  const clientFilters = useMemo(
-    () =>
-      (page?.filters ?? []).map((chip) => ({
-        ...chip,
-        count:
-          chip.id === 'all'
-            ? groups.reduce((n, g) => n + g.flows.length, 0)
-            : groups.reduce(
-                (n, g) =>
-                  n + g.flows.filter((f) => f.clientTone === chip.id).length,
-                0,
-              ),
-      })),
-    [page, groups],
+  // Workspace context: agency mode → cross-client roster + the multi-select
+  // filter; sub-account mode → the page scopes to the picked client.
+  const isAgency = useIsAgencyMode();
+  const { activeClientId } = useWorkspace();
+  const effectiveClients = useMemo(
+    () => (isAgency || !activeClientId ? selectedClients : [activeClientId]),
+    [isAgency, activeClientId, selectedClients],
   );
 
-  // Filtering narrows each group's flows to the active client and drops
+  // Per-client flow counts across every group, keyed on client slug.
+  const clientCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const g of groups) {
+      for (const f of g.flows) {
+        counts[f.clientSlug] = (counts[f.clientSlug] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }, [groups]);
+
+  // Filtering narrows each group's flows to the selected clients and drops
   // groups with nothing left; the count badge is recomputed to match.
   const visibleGroups = useMemo(() => {
-    if (activeClient === 'all') return groups;
+    if (effectiveClients.length === 0) return groups;
     return groups
       .map((group) => {
-        const flows = group.flows.filter(
-          (f) => f.clientTone === activeClient,
+        const flows = group.flows.filter((f) =>
+          effectiveClients.includes(f.clientSlug),
         );
         const enabled = flows.filter((f) => f.enabled).length;
         return { ...group, flows, countBadge: `${enabled} / ${flows.length}` };
       })
       .filter((group) => group.flows.length > 0);
-  }, [activeClient, groups]);
+  }, [effectiveClients, groups]);
 
   return (
     <>
@@ -74,12 +79,16 @@ function AdminAutomationsContent() {
               subtitle={page.hero.subtitle}
             />
 
-            <FilterChips
-              label="// CLIENT"
-              chips={clientFilters}
-              value={activeClient}
-              onChange={setActiveClient}
-            />
+            {isAgency ? (
+              <ClientMultiSelect
+                label="// CLIENT"
+                value={selectedClients}
+                onChange={setSelectedClients}
+                counts={clientCounts}
+              />
+            ) : (
+              <WorkspaceContextBanner />
+            )}
 
             <div className="grid grid-cols-4 gap-3.5">
               {page.stats.map((stat) => (

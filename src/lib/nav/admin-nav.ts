@@ -1,13 +1,9 @@
 import type { NavSection } from './types';
 
-export const adminOverviewNav: NavSection = {
-  label: 'Overview',
-  items: [{ label: 'Dashboard', href: '/dashboard', icon: '⊞' }],
-};
-
 export const adminWorkspaceNav: NavSection = {
   label: 'Workspace',
   items: [
+    { label: 'Dashboard', href: '/dashboard', icon: '⊞' },
     {
       label: 'Leads',
       href: '/leads',
