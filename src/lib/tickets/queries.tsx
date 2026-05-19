@@ -233,6 +233,7 @@ function toAdminTicketRow(record: TicketInboxRecord): AdminTicketRow {
     age: `${relativeTime(record.createdAt)} ago`,
     client: {
       id: record.clientId,
+      slug: record.clientSlug,
       initial: initial(record.clientName),
       name: record.clientName,
       meta: record.creatorName.toUpperCase(),

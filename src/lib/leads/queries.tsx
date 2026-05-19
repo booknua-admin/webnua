@@ -230,6 +230,7 @@ function toAdminLeadRow(record: LeadInboxRecord): AdminLeadRow {
     name: record.name,
     clientName: record.clientName,
     clientService: record.clientIndustry,
+    clientSlug: record.clientSlug,
     clientTone: toClientTone(record.clientSlug),
     preview: record.preview,
     status: record.status,

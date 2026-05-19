@@ -25,6 +25,8 @@ type CalendarBooking = {
   height: number;
   /** Admin variant uses this to tint the pill. Client variant ignores. */
   tone?: CalendarClientTone;
+  /** Real client slug — drives the admin client filter. */
+  clientSlug?: string;
   /** Where clicking the pill should navigate (booking detail) */
   href?: string;
 };
@@ -75,6 +77,8 @@ type CalendarTodayJob = {
   customer: string;
   status: CalendarBookingStatus;
   tone: CalendarClientTone;
+  /** Real client slug — drives the admin client filter. */
+  clientSlug?: string;
   href?: string;
 };
 

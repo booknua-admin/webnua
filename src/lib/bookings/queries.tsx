@@ -264,6 +264,7 @@ function buildWeek(rows: CalendarBookingRow[], cornerLabel: string): CalendarWee
         top: topPx(r.starts_at),
         height: heightPx(r.starts_at, r.ends_at),
         tone: toClientTone(r.client?.slug ?? 'generic'),
+        clientSlug: r.client?.slug ?? 'generic',
         href: `/bookings/${r.id}`,
       }));
 
@@ -367,6 +368,7 @@ function buildAdminCalendar(rows: CalendarBookingRow[]): AdminCalendarData {
           ? 'completed'
           : 'scheduled',
     tone: toClientTone(r.client?.slug ?? 'generic'),
+    clientSlug: r.client?.slug ?? 'generic',
     href: `/bookings/${r.id}`,
   }));
   const doneCount = jobs.filter((j) => j.status === 'completed').length;

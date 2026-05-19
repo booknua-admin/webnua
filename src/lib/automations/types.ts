@@ -48,6 +48,9 @@ export type AutomationFlowMini = {
   clientName: string;
   /** e.g. "3 steps · SMS / email / SMS · click to edit" */
   flowName: string;
+  /** Real client slug — the client-filter identity (clientTone collapses
+   *  many clients to one colour, so it can't filter). */
+  clientSlug: string;
   clientTone?: AutomationClientTone;
   enabled: boolean;
   /** 3 stat tiles. When `enabled === false`, render "—" placeholders so the columns line up. */

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 
-import { FilterChips } from '@/components/shared/FilterChips';
+import { ClientMultiSelect } from '@/components/shared/ClientMultiSelect';
 import { LeadRow } from '@/components/shared/leads/LeadRow';
 import { LeadTabsBar } from '@/components/shared/leads/LeadTabsBar';
 import { LeadsHero } from '@/components/shared/leads/LeadsHero';
@@ -10,15 +10,11 @@ import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { normalizeError } from '@/lib/errors';
-import {
-  adminLeadsClientFilters,
-  adminLeadsHero,
-  adminLeadsTabs,
-} from '@/lib/leads/admin-leads';
+import { adminLeadsHero, adminLeadsTabs } from '@/lib/leads/admin-leads';
 import { useAdminLeadsInbox } from '@/lib/leads/queries';
 
 function AdminLeadsContent() {
-  const [activeClient, setActiveClient] = useState('all');
+  const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState('new');
   const { data: leads, isLoading, error } = useAdminLeadsInbox();
 
@@ -29,23 +25,20 @@ function AdminLeadsContent() {
 
   const clientPool = useMemo(
     () =>
-      activeClient === 'all'
+      selectedClients.length === 0
         ? allLeads
-        : allLeads.filter((lead) => lead.clientTone === activeClient),
-    [allLeads, activeClient],
+        : allLeads.filter((lead) => selectedClients.includes(lead.clientSlug)),
+    [allLeads, selectedClients],
   );
 
-  const clientFilters = useMemo(
-    () =>
-      adminLeadsClientFilters.map((chip) => ({
-        ...chip,
-        count:
-          chip.id === 'all'
-            ? allLeads.length
-            : allLeads.filter((lead) => lead.clientTone === chip.id).length,
-      })),
-    [allLeads],
-  );
+  // Per-client lead counts, keyed on client slug — shown in the dropdown.
+  const clientCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const lead of allLeads) {
+      counts[lead.clientSlug] = (counts[lead.clientSlug] ?? 0) + 1;
+    }
+    return counts;
+  }, [allLeads]);
 
   // Tab ids map 1:1 to LeadStatus. Counts recomputed from the client pool.
   const tabs = useMemo(
@@ -75,11 +68,11 @@ function AdminLeadsContent() {
           subtitle={adminLeadsHero.subtitle}
         />
 
-        <FilterChips
+        <ClientMultiSelect
           label="// CLIENT"
-          chips={clientFilters}
-          value={activeClient}
-          onChange={setActiveClient}
+          value={selectedClients}
+          onChange={setSelectedClients}
+          counts={clientCounts}
         />
 
         <div className="flex flex-wrap items-center justify-between gap-3">

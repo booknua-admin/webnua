@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 
-import { FilterChips } from '@/components/shared/FilterChips';
+import { ClientMultiSelect } from '@/components/shared/ClientMultiSelect';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { ReviewClientCard } from '@/components/shared/reviews/ReviewClientCard';
 import { StatCard } from '@/components/shared/StatCard';
@@ -12,29 +12,17 @@ import { useAdminReviews } from '@/lib/reviews/queries';
 
 function AdminReviewsContent() {
   const { data: page, isLoading, error } = useAdminReviews();
-  const [activeClient, setActiveClient] = useState('all');
+  const [selectedClients, setSelectedClients] = useState<string[]>([]);
 
   const clientCards = useMemo(() => page?.clientCards ?? [], [page]);
 
-  // Each client card's `id` is the client slug — the chip ids match 1:1.
-  const clientFilters = useMemo(
-    () =>
-      (page?.filters ?? []).map((chip) => ({
-        ...chip,
-        count:
-          chip.id === 'all'
-            ? clientCards.length
-            : clientCards.filter((card) => card.id === chip.id).length,
-      })),
-    [page, clientCards],
-  );
-
+  // Each client card's `id` is the client slug.
   const visibleCards = useMemo(
     () =>
-      activeClient === 'all'
+      selectedClients.length === 0
         ? clientCards
-        : clientCards.filter((card) => card.id === activeClient),
-    [activeClient, clientCards],
+        : clientCards.filter((card) => selectedClients.includes(card.id)),
+    [selectedClients, clientCards],
   );
 
   return (
@@ -59,11 +47,10 @@ function AdminReviewsContent() {
               subtitle={page.hero.subtitle}
             />
 
-            <FilterChips
+            <ClientMultiSelect
               label="// CLIENT"
-              chips={clientFilters}
-              value={activeClient}
-              onChange={setActiveClient}
+              value={selectedClients}
+              onChange={setSelectedClients}
             />
 
             <div className="grid grid-cols-4 gap-3.5">

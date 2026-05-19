@@ -65,6 +65,9 @@ export type AdminLeadRow = {
   name: string;
   clientName: string;
   clientService: string;
+  /** Real client slug — the client-filter identity (clientTone collapses
+   *  many clients to one colour, so it can't filter). */
+  clientSlug: string;
   clientTone: LeadClientTone;
   preview: string;
   status: LeadStatus;

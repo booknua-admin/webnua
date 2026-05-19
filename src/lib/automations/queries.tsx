@@ -303,6 +303,7 @@ function toFlowMini(row: AutomationJoinRow): AutomationFlowMini {
     flowName: `${stepCount} ${stepCount === 1 ? 'step' : 'steps'} · ${
       channelSummary(row.automation_steps) || 'no steps'
     }`,
+    clientSlug: row.client?.slug ?? 'generic',
     clientTone: toClientTone(row.client?.slug ?? 'generic'),
     enabled: row.enabled,
     // Performance metrics are integration-blocked — "—" placeholders.
