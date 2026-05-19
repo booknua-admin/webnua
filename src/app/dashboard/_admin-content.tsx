@@ -1,16 +1,16 @@
 'use client';
 
-import Link from 'next/link';
-
-import { ClientListRow } from '@/components/admin/ClientListRow';
-import { ContinueSetupHero } from '@/components/admin/ContinueSetupHero';
+import { AgencyUrgentBanner } from '@/components/admin/dashboard/AgencyUrgentBanner';
+import { AttentionPanelCard } from '@/components/admin/dashboard/AttentionPanelCard';
+import { ClientPerformanceCard } from '@/components/admin/dashboard/ClientPerformanceCard';
+import { ActivityFeed } from '@/components/shared/ActivityFeed';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { StatCard } from '@/components/shared/StatCard';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
-import { Button } from '@/components/ui/button';
 import { Eyebrow } from '@/components/ui/eyebrow';
 import { useAdminDashboard } from '@/lib/dashboard/queries';
 import { normalizeError } from '@/lib/errors';
+import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 function DashboardNotice({ children }: { children: React.ReactNode }) {
   return (
@@ -20,15 +20,34 @@ function DashboardNotice({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Static placeholder — new-client prospecting is the deferred Proof Page
+ *  tool, which has no data layer yet. */
+function AcquisitionPipelinePlaceholder() {
+  return (
+    <div className="rounded-xl border border-rule bg-card px-6 py-5.5">
+      <div className="mb-1.5 text-[16px] font-extrabold tracking-[-0.015em] text-ink">
+        Acquisition pipeline
+      </div>
+      <p className="mb-4 text-[13px] leading-[1.5] text-ink-quiet">
+        New-client prospecting lives in the Proof Page tool.
+      </p>
+      <div className="rounded-lg border border-dashed border-rule bg-paper px-5 py-10 text-center font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
+        {'// Arrives with the prospecting tool'}
+      </div>
+    </div>
+  );
+}
+
 export function AdminDashboardContent() {
   const { data, isLoading, error } = useAdminDashboard();
+  const { setActiveClientId } = useWorkspace();
 
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb current="Dashboard" />} />
       <div className="flex flex-col gap-7 px-10 py-10">
         {isLoading ? (
-          <DashboardNotice>{'// Loading clients…'}</DashboardNotice>
+          <DashboardNotice>{'// Loading agency overview…'}</DashboardNotice>
         ) : error || !data ? (
           <DashboardNotice>
             {`// ${error ? normalizeError(error).message : 'Dashboard unavailable'}`}
@@ -36,24 +55,23 @@ export function AdminDashboardContent() {
         ) : (
           <>
             <PageHeader
-              eyebrow={data.greetingEyebrow}
+              eyebrow={data.greeting.tag}
               title={
                 <>
-                  Your <em>clients</em>.
+                  {data.greeting.word}, {data.greeting.operatorName}{' '}
+                  <span className="text-rust">—</span>
                 </>
               }
-              subtitle={
-                <>
-                  Welcome back.{' '}
-                  <strong>
-                    {data.midSetupClient
-                      ? 'One client mid-setup'
-                      : 'All clients live'}
-                  </strong>{' '}
-                  — {data.liveClients.length} live and shipping leads.
-                </>
-              }
+              subtitle={data.greeting.subtitle}
             />
+
+            {data.urgent ? <AgencyUrgentBanner {...data.urgent} /> : null}
+
+            <div className="grid grid-cols-3 gap-3.5">
+              <AttentionPanelCard panel={data.panels.cashflow} />
+              <AttentionPanelCard panel={data.panels.onboarding} />
+              <AttentionPanelCard panel={data.panels.support} />
+            </div>
 
             <div className="grid grid-cols-4 gap-3.5">
               {data.stats.map((stat) => (
@@ -67,56 +85,34 @@ export function AdminDashboardContent() {
               ))}
             </div>
 
-            {data.midSetupClient ? (
-              <ContinueSetupHero
-                tag={data.midSetupClient.tag}
-                title={
-                  <>
-                    Continue setting up{' '}
-                    <em>{data.midSetupClient.businessName}</em>.
-                  </>
-                }
-                description={data.midSetupClient.description}
-                meta={[
-                  <strong key="step">{data.midSetupClient.stepLabel}</strong>,
-                  <span key="owner">
-                    {data.midSetupClient.ownerName}
-                    {data.midSetupClient.ownerPhone
-                      ? ` · ${data.midSetupClient.ownerPhone}`
-                      : ''}
-                  </span>,
-                  data.midSetupClient.website,
-                ]}
-                ctaLabel="Continue setup →"
-                ctaHref={data.midSetupClient.continueHref}
-              />
-            ) : null}
-
-            <div className="mt-2 flex items-center justify-between">
-              <Eyebrow tone="quiet">{'// Live clients'}</Eyebrow>
-              <Button variant="secondary" asChild>
-                <Link href="/clients/new">+ Add new client</Link>
-              </Button>
-            </div>
-
-            <div className="flex flex-col gap-2.5">
-              {data.liveClients.length === 0 ? (
-                <DashboardNotice>{'// No live clients yet'}</DashboardNotice>
+            <section className="flex flex-col gap-3.5">
+              <div className="flex items-baseline justify-between gap-4">
+                <h2 className="text-[17px] font-extrabold tracking-[-0.02em] text-ink">
+                  Client performance · this week
+                </h2>
+                <Eyebrow tone="quiet">{'// Click a client to drill in'}</Eyebrow>
+              </div>
+              {data.clientPerformance.length === 0 ? (
+                <DashboardNotice>{'// No clients yet'}</DashboardNotice>
               ) : (
-                data.liveClients.map((client) => (
-                  <ClientListRow
-                    key={client.id}
-                    id={client.id}
-                    initial={client.initial}
-                    name={client.name}
-                    meta={client.meta}
-                    status={client.status}
-                    leadsPerWeek={client.leadsPerWeek}
-                    spend={client.spend}
-                    href={client.href}
-                  />
-                ))
+                <div className="-mx-1 flex gap-3.5 overflow-x-auto px-1 pb-2">
+                  {data.clientPerformance.map((card) => (
+                    <ClientPerformanceCard
+                      key={card.slug}
+                      card={card}
+                      onSelect={setActiveClientId}
+                    />
+                  ))}
+                </div>
               )}
+            </section>
+
+            <div className="grid grid-cols-[1.6fr_1fr] items-start gap-3.5">
+              <ActivityFeed
+                title="Recent activity · all clients"
+                items={data.recentActivity}
+              />
+              <AcquisitionPipelinePlaceholder />
             </div>
           </>
         )}

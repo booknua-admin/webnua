@@ -18,7 +18,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 
-import type { ClientStatus } from '@/components/admin/ClientListRow';
+import type { ActivityRowData } from '@/components/shared/ActivityRow';
 import {
   fetchSurfaceFunnelTotals,
   fetchSurfacePageTotals,
@@ -32,9 +32,11 @@ import { supabase } from '@/lib/supabase/client';
 import { relativeTime } from '@/lib/time';
 
 import type {
+  AgencyTone,
+  AgencyUrgent,
+  AttentionPanelData,
+  ClientPerformanceCardData,
   DashboardStat,
-  LiveClient,
-  MidSetupClient,
 } from './admin-dashboard-types';
 import type {
   ClientDashboard,
@@ -129,6 +131,12 @@ function greetingTag(now: Date): string {
     minute: '2-digit',
   });
   return `// ${WEEKDAY[now.getDay()]} · ${time}`;
+}
+
+/** "Morning" / "Afternoon" / "Evening" — the greeting word. */
+function greetingWord(now: Date): string {
+  const h = now.getHours();
+  return h < 12 ? 'Morning' : h < 18 ? 'Afternoon' : 'Evening';
 }
 
 /** "MAY 7–13" — the last seven days ending today. */
@@ -1131,15 +1139,32 @@ export function useClientHub(clientSlug: string | null) {
 }
 
 // =============================================================================
-// Admin dashboard — agency-mode cross-client roster. RLS bounds the operator
-// to their accessible clients.
+// Agency dashboard — operator agency-mode central overview. A triage surface:
+// the most pressing cross-client signals first (urgent banner + attention
+// panels), then per-client performance. RLS bounds every read to the
+// operator's accessible clients.
+//
+// SCHEMA GAP — billing. MRR, churn, and cashflow (failed payments) have no
+// table (no Stripe integration yet); they render honest "Awaiting billing
+// integration" placeholders, the same pattern ROAS / page-speed use.
 // =============================================================================
 
 export type AdminDashboardData = {
-  greetingEyebrow: string;
+  greeting: {
+    tag: string;
+    word: string;
+    operatorName: string;
+    subtitle: string;
+  };
+  urgent: AgencyUrgent | null;
+  panels: {
+    cashflow: AttentionPanelData;
+    onboarding: AttentionPanelData;
+    support: AttentionPanelData;
+  };
   stats: DashboardStat[];
-  midSetupClient: MidSetupClient | null;
-  liveClients: LiveClient[];
+  clientPerformance: ClientPerformanceCardData[];
+  recentActivity: ActivityRowData[];
 };
 
 type AdminClientRow = {
@@ -1149,9 +1174,45 @@ type AdminClientRow = {
   industry: string | null;
   service_area: string | null;
   lifecycle_status: string;
-  primary_contact_name: string | null;
-  primary_contact_phone: string | null;
   created_at: string;
+};
+
+type AdminLeadRow = {
+  id: string;
+  client_id: string;
+  created_at: string;
+  customer_name_snapshot: string;
+  customer: { suburb: string | null } | null;
+};
+
+type AdminBookingRow = { client_id: string; status: string; created_at: string };
+
+type AdminReviewRow = {
+  id: string;
+  client_id: string;
+  author_name: string;
+  stars: number;
+  reviewed_at: string;
+};
+
+type AdminTicketRow = {
+  id: string;
+  reference: string;
+  client_id: string;
+  title: string;
+  status: string;
+  urgency: string;
+  created_at: string;
+};
+
+type AdminJoin = {
+  operatorName: string;
+  clients: AdminClientRow[];
+  leads: AdminLeadRow[];
+  bookings: AdminBookingRow[];
+  campaigns: { client_id: string; budget: number | null }[];
+  reviews: AdminReviewRow[];
+  tickets: AdminTicketRow[];
 };
 
 async function fetchAdminDashboard(): Promise<AdminDashboardData> {
@@ -1160,91 +1221,186 @@ async function fetchAdminDashboard(): Promise<AdminDashboardData> {
   } = await supabase.auth.getUser();
   if (!user) throw AppError.auth();
 
-  const [clientsResult, leadsResult, bookingsResult, campaignsResult] =
-    await Promise.all([
-      supabase
-        .from('clients')
-        .select(
-          'id, name, slug, industry, service_area, lifecycle_status, ' +
-            'primary_contact_name, primary_contact_phone, created_at',
-        )
-        .order('name'),
-      supabase.from('leads').select('client_id, created_at'),
-      supabase.from('bookings').select('client_id, status, created_at'),
-      supabase.from('campaigns').select('client_id, budget'),
-    ]);
+  const [
+    userResult,
+    clientsResult,
+    leadsResult,
+    bookingsResult,
+    campaignsResult,
+    reviewsResult,
+    ticketsResult,
+  ] = await Promise.all([
+    supabase.from('users').select('display_name').eq('id', user.id).single(),
+    supabase
+      .from('clients')
+      .select(
+        'id, name, slug, industry, service_area, lifecycle_status, created_at',
+      )
+      .order('name'),
+    supabase
+      .from('leads')
+      .select(
+        'id, client_id, created_at, customer_name_snapshot, ' +
+          'customer:customers(suburb)',
+      ),
+    supabase.from('bookings').select('client_id, status, created_at'),
+    supabase.from('campaigns').select('client_id, budget'),
+    supabase
+      .from('reviews')
+      .select('id, client_id, author_name, stars, reviewed_at'),
+    supabase
+      .from('tickets')
+      .select('id, reference, client_id, title, status, urgency, created_at'),
+  ]);
 
-  for (const r of [clientsResult, leadsResult, bookingsResult, campaignsResult]) {
+  for (const r of [
+    clientsResult,
+    leadsResult,
+    bookingsResult,
+    campaignsResult,
+    reviewsResult,
+    ticketsResult,
+  ]) {
     if (r.error) throw normalizeError(r.error);
   }
 
-  const clients = (clientsResult.data ?? []) as unknown as AdminClientRow[];
-  const leads = (leadsResult.data ?? []) as {
-    client_id: string;
-    created_at: string;
-  }[];
-  const bookings = (bookingsResult.data ?? []) as {
-    client_id: string;
-    status: string;
-    created_at: string;
-  }[];
-  const campaigns = (campaignsResult.data ?? []) as {
-    client_id: string;
-    budget: number | null;
-  }[];
+  return composeAdminDashboard({
+    operatorName: userResult.data?.display_name ?? 'there',
+    clients: (clientsResult.data ?? []) as unknown as AdminClientRow[],
+    leads: (leadsResult.data ?? []) as unknown as AdminLeadRow[],
+    bookings: (bookingsResult.data ?? []) as unknown as AdminBookingRow[],
+    campaigns: (campaignsResult.data ?? []) as {
+      client_id: string;
+      budget: number | null;
+    }[],
+    reviews: (reviewsResult.data ?? []) as unknown as AdminReviewRow[],
+    tickets: (ticketsResult.data ?? []) as unknown as AdminTicketRow[],
+  });
+}
 
+function composeAdminDashboard(join: AdminJoin): AdminDashboardData {
   const now = new Date();
   const nowMs = now.getTime();
-  const leadsThisWeek = (id: string): number =>
-    countInWeek(
-      leads.filter((l) => l.client_id === id).map((l) => ms(l.created_at)),
-      0,
-      nowMs,
-    );
-  const budgetFor = (id: string): number =>
-    campaigns
-      .filter((c) => c.client_id === id)
-      .reduce((s, c) => s + (c.budget ?? 0), 0);
+  const { clients, leads, bookings, campaigns, reviews, tickets } = join;
 
-  const liveClientRows = clients.filter(
-    (c) => c.lifecycle_status === 'live',
-  );
-  const setupClient = clients.find(
+  const nameOf = (id: string): string =>
+    clients.find((c) => c.id === id)?.name ?? 'A client';
+  const initialOf = (id: string): string => (nameOf(id)[0] ?? '?').toUpperCase();
+
+  const liveClients = clients.filter((c) => c.lifecycle_status === 'live');
+  const onboardingClients = clients.filter(
     (c) => c.lifecycle_status === 'onboarding',
   );
 
-  // Workspace stat row.
-  const totalLeadsWk = countInWeek(
-    leads.map((l) => ms(l.created_at)),
-    0,
-    nowMs,
-  );
-  const bookingsWk = bookings.filter(
-    (b) => ms(b.created_at) >= nowMs - WEEK && b.status !== 'cancelled',
-  ).length;
-  const totalBudget = campaigns.reduce((s, c) => s + (c.budget ?? 0), 0);
+  // --- Open tickets + low reviews — the cross-client risk signals. ---------
+  const openTickets = tickets
+    .filter((t) => t.status === 'open' || t.status === 'in_progress')
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const lowReviews = reviews
+    .filter((r) => r.stars <= 2 && ms(r.reviewed_at) >= nowMs - 14 * DAY)
+    .sort((a, b) => b.reviewed_at.localeCompare(a.reviewed_at));
 
+  // --- Urgent banner — the single most pressing signal. --------------------
+  let urgent: AgencyUrgent | null = null;
+  const topLowReview = lowReviews[0];
+  const rushTicket = openTickets
+    .filter((t) => t.urgency === 'rush')
+    .sort((a, b) => a.created_at.localeCompare(b.created_at))[0];
+  if (topLowReview) {
+    const clientName = nameOf(topLowReview.client_id);
+    urgent = {
+      tag: '// 1 urgent · needs you now',
+      title: (
+        <>
+          {clientName} · <em>{topLowReview.stars}★ review</em> needs a reply
+        </>
+      ),
+      description: (
+        <>
+          <strong>{topLowReview.author_name}</strong> left a{' '}
+          {topLowReview.stars}-star review {relativeTime(topLowReview.reviewed_at)}.
+          A fast, considered reply limits the hit to {clientName}&rsquo;s rating.
+        </>
+      ),
+      cta: { label: 'Open reviews →', href: '/reviews' },
+    };
+  } else if (rushTicket) {
+    const clientName = nameOf(rushTicket.client_id);
+    urgent = {
+      tag: '// 1 urgent · needs you now',
+      title: (
+        <>
+          {clientName} · <em>{rushTicket.title}</em>
+        </>
+      ),
+      description: (
+        <>
+          A rush-priority ticket has been open since{' '}
+          {relativeTime(rushTicket.created_at)}. <strong>{clientName}</strong> is
+          waiting on your response.
+        </>
+      ),
+      cta: { label: 'Open ticket →', href: `/tickets/${rushTicket.reference}` },
+    };
+  }
+
+  // --- Attention panels ----------------------------------------------------
+  const cashflow: AttentionPanelData = {
+    heading: 'Cashflow attention',
+    count: null,
+    rows: [],
+    placeholder: '// Awaiting billing integration',
+  };
+
+  const onboarding: AttentionPanelData = {
+    heading: 'Onboarding tasks',
+    count: onboardingClients.length,
+    rows: onboardingClients.map((c) => ({
+      id: c.id,
+      initial: (c.name[0] ?? '?').toUpperCase(),
+      title: c.name,
+      meta: `Setup started ${relativeTime(c.created_at)}`,
+      metaTone: 'rust' as const,
+    })),
+  };
+
+  const support: AttentionPanelData = {
+    heading: 'Client support',
+    count: openTickets.length,
+    link: { label: 'All →', href: '/tickets' },
+    rows: openTickets.slice(0, 5).map((t) => ({
+      id: t.id,
+      initial: initialOf(t.client_id),
+      title: t.title,
+      meta: `${nameOf(t.client_id)} · ${relativeTime(t.created_at)}`,
+      metaTone: t.urgency === 'rush' ? ('rust' as const) : ('quiet' as const),
+      href: `/tickets/${t.reference}`,
+    })),
+  };
+
+  // --- Stat row. MRR + churn are billing-integration placeholders. ---------
+  const totalBudget = campaigns.reduce((s, c) => s + (c.budget ?? 0), 0);
   const stats: DashboardStat[] = [
     {
-      label: '// Live clients',
-      value: String(liveClientRows.length),
-      trend: setupClient ? '+ 1 in setup' : 'all live',
+      label: '// MRR',
+      value: '—',
+      trend: 'Awaiting billing integration',
       trendTone: 'quiet',
     },
     {
-      label: '// Leads this week',
-      value: <em>{totalLeadsWk}</em>,
-      trend: 'across the workspace',
+      label: '// Active clients',
+      value: <em>{liveClients.length}</em>,
+      trend: `${liveClients.length} live · ${onboardingClients.length} onboarding`,
       trendTone: 'good',
     },
     {
-      label: '// Booked this week',
-      value: String(bookingsWk),
-      trend: 'jobs created',
-      trendTone: 'good',
+      label: '// Churn · 90d',
+      value: '—',
+      trend: 'Awaiting billing integration',
+      trendTone: 'quiet',
     },
     {
-      label: '// Ad budget',
+      label: '// Client ad spend',
       value: money(totalBudget),
       trend: `across ${campaigns.length} ${
         campaigns.length === 1 ? 'campaign' : 'campaigns'
@@ -1253,50 +1409,154 @@ async function fetchAdminDashboard(): Promise<AdminDashboardData> {
     },
   ];
 
-  const liveClients: LiveClient[] = liveClientRows.map((c) => ({
-    id: c.slug,
-    initial: (c.name[0] ?? '?').toUpperCase(),
-    name: c.name,
-    meta: [
-      c.industry,
-      c.service_area,
-      `Live ${Math.max(0, Math.floor((nowMs - ms(c.created_at)) / DAY))}d`,
-    ]
-      .filter(Boolean)
-      .join(' · '),
-    status: 'live' as ClientStatus,
-    leadsPerWeek: leadsThisWeek(c.id),
-    spend: budgetFor(c.id) > 0 ? money(budgetFor(c.id)) : '—',
-    href: '#',
-  }));
+  // --- Per-client performance cards. ---------------------------------------
+  const leads7dFor = (id: string): number =>
+    countInWeek(
+      leads.filter((l) => l.client_id === id).map((l) => ms(l.created_at)),
+      0,
+      nowMs,
+    );
+  const booked7dFor = (id: string): number =>
+    bookings.filter(
+      (b) =>
+        b.client_id === id &&
+        b.status !== 'cancelled' &&
+        ms(b.created_at) >= nowMs - WEEK,
+    ).length;
+  const budgetFor = (id: string): number =>
+    campaigns
+      .filter((c) => c.client_id === id)
+      .reduce((s, c) => s + (c.budget ?? 0), 0);
 
-  const midSetupClient: MidSetupClient | null = setupClient
-    ? {
-        id: setupClient.slug,
-        tag: `// Mid-setup · started ${relativeTime(setupClient.created_at)}`,
-        businessName: setupClient.name,
-        description: [
-          setupClient.industry,
-          setupClient.service_area,
-          'Onboarding in progress — continue the funnel build.',
-        ]
-          .filter(Boolean)
-          .join(' · '),
-        stepLabel: 'Setup in progress',
-        ownerName: setupClient.primary_contact_name ?? 'Contact not set',
-        ownerPhone: setupClient.primary_contact_phone ?? '',
-        website: `${setupClient.slug}.com.au`,
-        continueHref: '/clients/new',
-      }
-    : null;
+  const clientPerformance: ClientPerformanceCardData[] = clients.map((c) => {
+    const liveDays = Math.max(0, Math.floor((nowMs - ms(c.created_at)) / DAY));
+    const isOnboarding = c.lifecycle_status === 'onboarding';
+    const leads7d = leads7dFor(c.id);
+    const booked7d = booked7dFor(c.id);
+    const budget = budgetFor(c.id);
+    const openTk = openTickets.filter((t) => t.client_id === c.id).length;
+    const lowRev = lowReviews.filter(
+      (r) => r.client_id === c.id && ms(r.reviewed_at) >= nowMs - WEEK,
+    ).length;
+    const atRisk = !isOnboarding && (openTk > 0 || lowRev > 0);
+
+    let rank: number;
+    let statusLabel: string;
+    let statusTone: AgencyTone;
+    let note: string;
+    if (isOnboarding) {
+      rank = 2;
+      statusLabel = 'Onboarding';
+      statusTone = 'quiet';
+      note = 'In setup — not launched yet';
+    } else if (atRisk) {
+      rank = 0;
+      statusLabel = 'At risk';
+      statusTone = 'rust';
+      const reasons: string[] = [];
+      if (lowRev > 0)
+        reasons.push(`${lowRev} low review${lowRev === 1 ? '' : 's'} this week`);
+      if (openTk > 0)
+        reasons.push(`${openTk} open ticket${openTk === 1 ? '' : 's'}`);
+      note = reasons.join(' · ');
+    } else {
+      rank = 1;
+      statusLabel = 'Healthy';
+      statusTone = 'good';
+      note =
+        leads7d > 0
+          ? `${leads7d} new lead${leads7d === 1 ? '' : 's'} this week`
+          : 'Quiet week — no new leads';
+    }
+
+    return {
+      slug: c.slug,
+      initial: (c.name[0] ?? '?').toUpperCase(),
+      name: c.name,
+      meta: [isOnboarding ? 'In setup' : `Day ${liveDays}`, c.industry]
+        .filter(Boolean)
+        .join(' · '),
+      leads7d: isOnboarding ? null : leads7d,
+      booked7d: isOnboarding ? null : booked7d,
+      spend: budget > 0 ? money(budget) : '—',
+      statusLabel,
+      statusTone,
+      note,
+      rank,
+    };
+  });
+  clientPerformance.sort(
+    (a, b) => a.rank - b.rank || (b.leads7d ?? -1) - (a.leads7d ?? -1),
+  );
+
+  // --- Recent activity — cross-client leads + reviews, newest first. -------
+  const activityEvents: { at: number; row: ActivityRowData }[] = [];
+  for (const r of reviews) {
+    activityEvents.push({
+      at: ms(r.reviewed_at),
+      row: {
+        id: `act-review-${r.id}`,
+        icon: '★',
+        tone: 'amber',
+        actor: nameOf(r.client_id),
+        body: `· ${r.author_name} left a ${r.stars}★ review`,
+        time: relativeTime(r.reviewed_at),
+        href: '/reviews',
+      },
+    });
+  }
+  for (const l of leads) {
+    activityEvents.push({
+      at: ms(l.created_at),
+      row: {
+        id: `act-lead-${l.id}`,
+        icon: '✉',
+        tone: 'info',
+        actor: nameOf(l.client_id),
+        body: `· new lead — ${l.customer_name_snapshot}${
+          l.customer?.suburb ? ` · ${l.customer.suburb}` : ''
+        }`,
+        time: relativeTime(l.created_at),
+        href: `/leads/${l.id}`,
+      },
+    });
+  }
+  const recentActivity = activityEvents
+    .sort((a, b) => b.at - a.at)
+    .slice(0, 8)
+    .map((e) => e.row);
+
+  // --- Greeting ------------------------------------------------------------
+  const leadsThisWeek = countInWeek(
+    leads.map((l) => ms(l.created_at)),
+    0,
+    nowMs,
+  );
+  const subtitle =
+    onboardingClients.length > 0
+      ? `${liveClients.length} client${
+          liveClients.length === 1 ? '' : 's'
+        } live, ${onboardingClients.length} mid-setup — ${leadsThisWeek} new lead${
+          leadsThisWeek === 1 ? '' : 's'
+        } this week.`
+      : `All ${liveClients.length} client${
+          liveClients.length === 1 ? '' : 's'
+        } live — ${leadsThisWeek} new lead${
+          leadsThisWeek === 1 ? '' : 's'
+        } this week.`;
 
   return {
-    greetingEyebrow: `// Webnua · ${clients.length} ${
-      clients.length === 1 ? 'client' : 'clients'
-    }`,
+    greeting: {
+      tag: greetingTag(now),
+      word: greetingWord(now),
+      operatorName: firstName(join.operatorName),
+      subtitle,
+    },
+    urgent,
+    panels: { cashflow, onboarding, support },
     stats,
-    midSetupClient,
-    liveClients,
+    clientPerformance,
+    recentActivity,
   };
 }
 
