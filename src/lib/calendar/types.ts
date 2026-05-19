@@ -55,6 +55,34 @@ type CalendarWeek = {
   days: CalendarDay[];
 };
 
+type CalendarView = 'day' | 'week' | 'month';
+
+type CalendarMonthBooking = {
+  id: string;
+  clientSlug: string;
+  tone: CalendarClientTone;
+};
+
+type CalendarMonthDay = {
+  /** YYYY-MM-DD */
+  iso: string;
+  /** Day-of-month, e.g. "14". */
+  num: string;
+  /** False for the leading/trailing days borrowed from the adjacent month. */
+  inMonth: boolean;
+  isToday: boolean;
+  bookings: CalendarMonthBooking[];
+};
+
+type CalendarMonth = {
+  /** "May 2026" */
+  periodLabel: React.ReactNode;
+  /** ['MON','TUE',…] */
+  weekdayLabels: string[];
+  /** 5–6 rows of 7 days. */
+  weeks: CalendarMonthDay[][];
+};
+
 type CalendarClientFilter = {
   id: string;
   label: string;
@@ -121,8 +149,12 @@ export type {
   CalendarDay,
   CalendarHero,
   CalendarLegendItem,
+  CalendarMonth,
+  CalendarMonthBooking,
+  CalendarMonthDay,
   CalendarTodayJob,
   CalendarTodayPanel,
+  CalendarView,
   CalendarWeek,
   ClientCalendar,
 };

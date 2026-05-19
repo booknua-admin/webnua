@@ -17,7 +17,12 @@
 
 import type { ReactNode } from 'react';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 
 import { AppError, normalizeError } from '@/lib/errors';
 import { supabase } from '@/lib/supabase/client';
@@ -34,12 +39,14 @@ import type {
 } from './types';
 import type {
   CalendarBooking,
-  CalendarClientFilter,
   CalendarClientTone,
   CalendarDay,
   CalendarLegendItem,
+  CalendarMonth,
+  CalendarMonthDay,
   CalendarTodayJob,
   CalendarTodayPanel,
+  CalendarView,
   CalendarWeek,
 } from '@/lib/calendar/types';
 
@@ -211,21 +218,47 @@ const CALENDAR_SELECT =
   'id, title, starts_at, ends_at, status, customer_name_snapshot, ' +
   'client:clients(name, slug), customer:customers(suburb)';
 
-async function fetchWeekBookings(): Promise<CalendarBookingRow[]> {
+/** The [start, end) booking-fetch window for a view anchored on a date. */
+function calendarRange(
+  view: CalendarView,
+  anchorIso: string,
+): { start: Date; end: Date } {
+  const anchor = new Date(`${anchorIso}T00:00:00.000Z`);
+  if (view === 'day') {
+    const end = new Date(anchor);
+    end.setUTCDate(end.getUTCDate() + 1);
+    return { start: anchor, end };
+  }
+  if (view === 'week') {
+    const start = weekStart(anchor);
+    const end = new Date(start);
+    end.setUTCDate(end.getUTCDate() + 7);
+    return { start, end };
+  }
+  // month — the grid spans full Mon-started weeks covering the month.
+  const monthFirst = new Date(
+    Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), 1),
+  );
+  const start = weekStart(monthFirst);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 42);
+  return { start, end };
+}
+
+async function fetchBookingsInRange(
+  startIso: string,
+  endIso: string,
+): Promise<CalendarBookingRow[]> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) throw AppError.auth();
 
-  const start = weekStart(new Date());
-  const end = new Date(start);
-  end.setUTCDate(end.getUTCDate() + 7);
-
   const { data, error } = await supabase
     .from('bookings')
     .select(CALENDAR_SELECT)
-    .gte('starts_at', start.toISOString())
-    .lt('starts_at', end.toISOString())
+    .gte('starts_at', startIso)
+    .lt('starts_at', endIso)
     .neq('status', 'cancelled')
     .order('starts_at', { ascending: true });
 
@@ -239,17 +272,22 @@ function customerCell(row: CalendarBookingRow): string {
   return suburb ? `${name} · ${suburb}` : name;
 }
 
-/** Build the Mon–Sat week grid from the fetched rows. */
-function buildWeek(rows: CalendarBookingRow[], cornerLabel: string): CalendarWeek {
+/** Build a day-column grid of `dayCount` days starting at `gridStart`.
+ *  Week view = 6 days; day view = 1. */
+function buildGrid(
+  rows: CalendarBookingRow[],
+  gridStart: Date,
+  dayCount: number,
+  cornerLabel: string,
+): CalendarWeek {
   const now = new Date();
-  const start = weekStart(now);
   const todayKey = utcDateKey(
     new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())),
   );
 
   const days: CalendarDay[] = [];
-  for (let i = 0; i < 6; i += 1) {
-    const date = new Date(start);
+  for (let i = 0; i < dayCount; i += 1) {
+    const date = new Date(gridStart);
     date.setUTCDate(date.getUTCDate() + i);
     const key = utcDateKey(date);
     const isToday = key === todayKey;
@@ -269,7 +307,7 @@ function buildWeek(rows: CalendarBookingRow[], cornerLabel: string): CalendarWee
       }));
 
     const day: CalendarDay = {
-      id: WEEKDAY[date.getUTCDay()]!.toLowerCase(),
+      id: `d${i}-${WEEKDAY[date.getUTCDay()]!.toLowerCase()}`,
       name: isToday
         ? `${WEEKDAY[date.getUTCDay()]!.toUpperCase()} · TODAY`
         : WEEKDAY[date.getUTCDay()]!.toUpperCase(),
@@ -290,46 +328,133 @@ function buildWeek(rows: CalendarBookingRow[], cornerLabel: string): CalendarWee
     days.push(day);
   }
 
-  const end = new Date(start);
-  end.setUTCDate(end.getUTCDate() + 5);
-  return {
-    cornerLabel,
-    periodLabel: (
+  const last = new Date(gridStart);
+  last.setUTCDate(last.getUTCDate() + dayCount - 1);
+  const periodLabel =
+    dayCount === 1 ? (
+      <>
+        <em>
+          {WEEKDAY[gridStart.getUTCDay()]} {MONTH[gridStart.getUTCMonth()]}{' '}
+          {gridStart.getUTCDate()}
+        </em>
+        , {gridStart.getUTCFullYear()}
+      </>
+    ) : (
       <>
         Week of{' '}
         <em>
-          {MONTH[start.getUTCMonth()]} {start.getUTCDate()}
+          {MONTH[gridStart.getUTCMonth()]} {gridStart.getUTCDate()}
         </em>{' '}
-        — {MONTH[end.getUTCMonth()]} {end.getUTCDate()},{' '}
-        {end.getUTCFullYear()}
+        — {MONTH[last.getUTCMonth()]} {last.getUTCDate()},{' '}
+        {last.getUTCFullYear()}
+      </>
+    );
+
+  return { cornerLabel, periodLabel, timeSlots: TIME_SLOTS, days };
+}
+
+/** Build the month-overview grid (full Mon-started weeks covering the month). */
+function buildMonth(
+  rows: CalendarBookingRow[],
+  anchorIso: string,
+): CalendarMonth {
+  const anchor = new Date(`${anchorIso}T00:00:00.000Z`);
+  const monthIndex = anchor.getUTCMonth();
+  const year = anchor.getUTCFullYear();
+  const gridStart = weekStart(new Date(Date.UTC(year, monthIndex, 1)));
+  const now = new Date();
+  const todayKey = utcDateKey(
+    new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())),
+  );
+
+  const weeks: CalendarMonthDay[][] = [];
+  for (let w = 0; w < 6; w += 1) {
+    const week: CalendarMonthDay[] = [];
+    for (let d = 0; d < 7; d += 1) {
+      const date = new Date(gridStart);
+      date.setUTCDate(date.getUTCDate() + w * 7 + d);
+      const key = utcDateKey(date);
+      week.push({
+        iso: key,
+        num: String(date.getUTCDate()),
+        inMonth: date.getUTCMonth() === monthIndex,
+        isToday: key === todayKey,
+        bookings: rows
+          .filter((r) => r.starts_at.slice(0, 10) === key)
+          .map((r) => ({
+            id: r.id,
+            clientSlug: r.client?.slug ?? 'generic',
+            tone: toClientTone(r.client?.slug ?? 'generic'),
+          })),
+      });
+    }
+    weeks.push(week);
+  }
+  // Drop a trailing 6th week entirely borrowed from the next month.
+  while (weeks.length > 4 && weeks[weeks.length - 1]!.every((d) => !d.inMonth)) {
+    weeks.pop();
+  }
+
+  return {
+    periodLabel: (
+      <>
+        <em>{MONTH_LONG[monthIndex]}</em> {year}
       </>
     ),
-    timeSlots: TIME_SLOTS,
-    days,
+    weekdayLabels: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'],
+    weeks,
   };
 }
 
-/** The client week calendar — RLS bounds rows to the signed-in client. */
-export function useClientCalendar() {
+/** Day/week → a column grid; month → the month overview. */
+export type CalendarViewData =
+  | { mode: 'grid'; week: CalendarWeek }
+  | { mode: 'month'; month: CalendarMonth };
+
+function buildCalendarView(
+  rows: CalendarBookingRow[],
+  view: CalendarView,
+  anchorIso: string,
+  cornerLabel: string,
+): CalendarViewData {
+  if (view === 'month') {
+    return { mode: 'month', month: buildMonth(rows, anchorIso) };
+  }
+  const { start } = calendarRange(view, anchorIso);
+  return {
+    mode: 'grid',
+    week: buildGrid(rows, start, view === 'day' ? 1 : 6, cornerLabel),
+  };
+}
+
+/** The client calendar — RLS bounds rows to the signed-in client. */
+export function useClientCalendar(view: CalendarView, anchorIso: string) {
   return useQuery({
-    queryKey: ['bookings', 'calendar'],
-    queryFn: fetchWeekBookings,
-    select: (rows) => buildWeek(rows, '// PERTH'),
+    queryKey: ['bookings', 'calendar', 'client', view, anchorIso],
+    queryFn: async (): Promise<CalendarViewData> => {
+      const { start, end } = calendarRange(view, anchorIso);
+      const rows = await fetchBookingsInRange(
+        start.toISOString(),
+        end.toISOString(),
+      );
+      return buildCalendarView(rows, view, anchorIso, '// PERTH');
+    },
+    placeholderData: keepPreviousData,
   });
 }
 
-export type AdminCalendarData = {
-  week: CalendarWeek;
-  filters: CalendarClientFilter[];
+export type AdminCalendarData = CalendarViewData & {
   legend: CalendarLegendItem[];
   legendMeta: ReactNode;
   today: CalendarTodayPanel;
 };
 
-function buildAdminCalendar(rows: CalendarBookingRow[]): AdminCalendarData {
-  const week = buildWeek(rows, '// LOCAL');
-
-  // Client filter chips + legend, derived from the clients with bookings.
+/** Legend + today panel, derived from the rows in the fetched range. */
+function buildAdminExtras(rows: CalendarBookingRow[]): {
+  legend: CalendarLegendItem[];
+  legendMeta: ReactNode;
+  today: CalendarTodayPanel;
+} {
   const clients = new Map<string, { name: string; tone: CalendarClientTone }>();
   for (const r of rows) {
     const slug = r.client?.slug ?? 'generic';
@@ -340,16 +465,11 @@ function buildAdminCalendar(rows: CalendarBookingRow[]): AdminCalendarData {
       });
     }
   }
-  const filters: CalendarClientFilter[] = [
-    { id: 'all', label: 'All clients', count: clients.size },
-    ...[...clients].map(([slug, c]) => ({ id: slug, label: c.name })),
-  ];
   const legend: CalendarLegendItem[] = [...clients.values()].map((c) => ({
     label: c.name,
     tone: c.tone,
   }));
 
-  // Today panel.
   const now = new Date();
   const todayKey = utcDateKey(
     new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())),
@@ -387,12 +507,10 @@ function buildAdminCalendar(rows: CalendarBookingRow[]): AdminCalendarData {
   };
 
   return {
-    week,
-    filters,
     legend,
     legendMeta: (
       <>
-        {rows.length} {rows.length === 1 ? 'booking' : 'bookings'} this week ·{' '}
+        {rows.length} {rows.length === 1 ? 'booking' : 'bookings'} in view ·{' '}
         {todayRows.length} today
       </>
     ),
@@ -400,13 +518,23 @@ function buildAdminCalendar(rows: CalendarBookingRow[]): AdminCalendarData {
   };
 }
 
-/** The operator cross-client week calendar — RLS bounds rows to the
- *  operator's accessible clients. */
-export function useAdminCalendar() {
+/** The operator cross-client calendar — RLS bounds rows to the operator's
+ *  accessible clients. */
+export function useAdminCalendar(view: CalendarView, anchorIso: string) {
   return useQuery({
-    queryKey: ['bookings', 'calendar'],
-    queryFn: fetchWeekBookings,
-    select: buildAdminCalendar,
+    queryKey: ['bookings', 'calendar', 'admin', view, anchorIso],
+    queryFn: async (): Promise<AdminCalendarData> => {
+      const { start, end } = calendarRange(view, anchorIso);
+      const rows = await fetchBookingsInRange(
+        start.toISOString(),
+        end.toISOString(),
+      );
+      return {
+        ...buildCalendarView(rows, view, anchorIso, '// LOCAL'),
+        ...buildAdminExtras(rows),
+      };
+    },
+    placeholderData: keepPreviousData,
   });
 }
 

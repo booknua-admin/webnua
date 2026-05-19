@@ -2,11 +2,12 @@
 
 import { useState } from 'react';
 
+import type { CalendarView } from '@/lib/calendar/types';
 import { cn } from '@/lib/utils';
 
-type CalendarView = 'day' | 'week' | 'month';
-
 type CalendarViewTabsProps = {
+  /** Controlled value. When provided, the tabs are fully controlled. */
+  value?: CalendarView;
   defaultView?: CalendarView;
   onChange?: (view: CalendarView) => void;
   className?: string;
@@ -19,11 +20,13 @@ const VIEWS: { id: CalendarView; label: string }[] = [
 ];
 
 function CalendarViewTabs({
+  value,
   defaultView = 'week',
   onChange,
   className,
 }: CalendarViewTabsProps) {
-  const [view, setView] = useState<CalendarView>(defaultView);
+  const [internal, setInternal] = useState<CalendarView>(defaultView);
+  const view = value ?? internal;
   return (
     <div
       data-slot="calendar-view-tabs"
@@ -39,7 +42,7 @@ function CalendarViewTabs({
             key={v.id}
             type="button"
             onClick={() => {
-              setView(v.id);
+              if (value === undefined) setInternal(v.id);
               onChange?.(v.id);
             }}
             data-state={isActive ? 'active' : 'inactive'}

@@ -6,50 +6,50 @@ import { CalendarLegend } from '@/components/admin/calendar/CalendarLegend';
 import { CalendarTodayPanel } from '@/components/admin/calendar/CalendarTodayPanel';
 import { AddBookingButton } from '@/components/shared/bookings/AddBookingButton';
 import { CalendarGrid } from '@/components/shared/calendar/CalendarGrid';
+import { CalendarMonthGrid } from '@/components/shared/calendar/CalendarMonthGrid';
 import { CalendarToolbar } from '@/components/shared/calendar/CalendarToolbar';
 import { ClientMultiSelect } from '@/components/shared/ClientMultiSelect';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
-import { normalizeError } from '@/lib/errors';
 import { useAdminCalendar } from '@/lib/bookings/queries';
+import { shiftAnchor, todayIso } from '@/lib/calendar/anchor';
 import { adminCalendar } from '@/lib/calendar/admin-calendar';
+import type { CalendarView } from '@/lib/calendar/types';
+import { normalizeError } from '@/lib/errors';
 
 function AdminCalendarContent() {
   const { hero } = adminCalendar;
-  const { data, isLoading, error } = useAdminCalendar();
+  const [view, setView] = useState<CalendarView>('week');
+  const [anchorIso, setAnchorIso] = useState(todayIso);
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
+  const { data, error } = useAdminCalendar(view, anchorIso);
 
-  // Per-client booking counts across the visible week — shown in the dropdown.
+  const inFilter = (slug?: string) =>
+    selectedClients.length === 0 ||
+    (slug != null && selectedClients.includes(slug));
+
+  // Per-client booking counts across the current view — shown in the dropdown.
   const clientCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const day of data?.week.days ?? []) {
-      for (const b of day.bookings) {
-        if (b.clientSlug) counts[b.clientSlug] = (counts[b.clientSlug] ?? 0) + 1;
+    if (data?.mode === 'grid') {
+      for (const day of data.week.days) {
+        for (const b of day.bookings) {
+          if (b.clientSlug) {
+            counts[b.clientSlug] = (counts[b.clientSlug] ?? 0) + 1;
+          }
+        }
+      }
+    } else if (data?.mode === 'month') {
+      for (const wk of data.month.weeks) {
+        for (const day of wk) {
+          for (const b of day.bookings) {
+            counts[b.clientSlug] = (counts[b.clientSlug] ?? 0) + 1;
+          }
+        }
       }
     }
     return counts;
   }, [data]);
-
-  // The client filter narrows the grid bookings + the today panel jobs.
-  const filtered = useMemo(() => {
-    if (!data || selectedClients.length === 0) return data;
-    const inFilter = (slug?: string) =>
-      slug != null && selectedClients.includes(slug);
-    return {
-      ...data,
-      week: {
-        ...data.week,
-        days: data.week.days.map((day) => ({
-          ...day,
-          bookings: day.bookings.filter((b) => inFilter(b.clientSlug)),
-        })),
-      },
-      today: {
-        ...data.today,
-        jobs: data.today.jobs.filter((j) => inFilter(j.clientSlug)),
-      },
-    };
-  }, [data, selectedClients]);
 
   return (
     <>
@@ -64,11 +64,9 @@ function AdminCalendarContent() {
           title={hero.title}
           subtitle={hero.subtitle}
         />
-        {isLoading ? (
-          <CalendarNotice>{'// Loading calendar…'}</CalendarNotice>
-        ) : error || !filtered ? (
+        {!data ? (
           <CalendarNotice>
-            {`// ${error ? normalizeError(error).message : 'Calendar unavailable'}`}
+            {error ? `// ${normalizeError(error).message}` : '// Loading calendar…'}
           </CalendarNotice>
         ) : (
           <>
@@ -81,10 +79,54 @@ function AdminCalendarContent() {
               />
               <AddBookingButton />
             </div>
-            <CalendarToolbar periodLabel={filtered.week.periodLabel} />
-            <CalendarLegend items={filtered.legend} meta={filtered.legendMeta} />
-            <CalendarGrid week={filtered.week} />
-            <CalendarTodayPanel panel={filtered.today} />
+            <CalendarToolbar
+              periodLabel={
+                data.mode === 'grid'
+                  ? data.week.periodLabel
+                  : data.month.periodLabel
+              }
+              view={view}
+              onViewChange={setView}
+              onPrev={() => setAnchorIso((iso) => shiftAnchor(iso, view, -1))}
+              onNext={() => setAnchorIso((iso) => shiftAnchor(iso, view, 1))}
+              onToday={() => setAnchorIso(todayIso())}
+            />
+            <CalendarLegend items={data.legend} meta={data.legendMeta} />
+            {data.mode === 'grid' ? (
+              <CalendarGrid
+                week={{
+                  ...data.week,
+                  days: data.week.days.map((d) => ({
+                    ...d,
+                    bookings: d.bookings.filter((b) => inFilter(b.clientSlug)),
+                  })),
+                }}
+              />
+            ) : (
+              <CalendarMonthGrid
+                month={{
+                  ...data.month,
+                  weeks: data.month.weeks.map((wk) =>
+                    wk.map((d) => ({
+                      ...d,
+                      bookings: d.bookings.filter((b) =>
+                        inFilter(b.clientSlug),
+                      ),
+                    })),
+                  ),
+                }}
+                onSelectDay={(iso) => {
+                  setView('day');
+                  setAnchorIso(iso);
+                }}
+              />
+            )}
+            <CalendarTodayPanel
+              panel={{
+                ...data.today,
+                jobs: data.today.jobs.filter((j) => inFilter(j.clientSlug)),
+              }}
+            />
           </>
         )}
       </div>
