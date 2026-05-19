@@ -15,12 +15,22 @@ type DangerRowProps = {
     /** Neutral = ink-bordered (e.g. export, transfer); destructive = warn-bordered. */
     tone?: 'neutral' | 'destructive';
   };
+  /** Real handler fired on confirm. Omitted = stub (dialog just dismisses). */
+  onConfirm?: () => void;
+  /** Disables the action button (e.g. no client selected). */
+  disabled?: boolean;
   className?: string;
 };
 
-function DangerRow({ heading, description, action, className }: DangerRowProps) {
+function DangerRow({
+  heading,
+  description,
+  action,
+  onConfirm,
+  disabled,
+  className,
+}: DangerRowProps) {
   const tone = action.tone ?? 'destructive';
-  // STUB: no backend — confirming just dismisses the dialog.
   const [confirmOpen, setConfirmOpen] = useState(false);
   return (
     <div
@@ -38,13 +48,19 @@ function DangerRow({ heading, description, action, className }: DangerRowProps) 
         </div>
       </div>
       {action.solid ? (
-        <Button variant="destructive" size="sm" onClick={() => setConfirmOpen(true)}>
+        <Button
+          variant="destructive"
+          size="sm"
+          disabled={disabled}
+          onClick={() => setConfirmOpen(true)}
+        >
           {action.label}
         </Button>
       ) : (
         <Button
           variant="outline"
           size="sm"
+          disabled={disabled}
           className={cn(
             tone === 'destructive'
               ? 'border-warn text-warn hover:bg-warn hover:text-paper'
@@ -63,7 +79,7 @@ function DangerRow({ heading, description, action, className }: DangerRowProps) 
         confirmLabel={action.label}
         cancelLabel="Cancel"
         tone={tone === 'destructive' ? 'destructive' : 'default'}
-        onConfirm={() => {}}
+        onConfirm={onConfirm ?? (() => {})}
       />
     </div>
   );

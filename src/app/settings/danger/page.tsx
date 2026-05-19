@@ -1,4 +1,5 @@
 import { DangerRow } from '@/components/shared/settings/DangerRow';
+import { DeleteClientRow } from '@/components/shared/settings/DeleteClientRow';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
@@ -58,6 +59,7 @@ export default function AdminSettingsDangerPage() {
                 action={entry.action}
               />
             ))}
+            <DeleteClientRow />
           </SettingsSection>
         </SettingsPanel>
       </SettingsShell>
