@@ -56,6 +56,17 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json(result);
   } catch (error) {
     console.error('[generate-site] generation failed', error);
-    return NextResponse.json({ error: 'generation-failed' }, { status: 500 });
+    // Surface the real error so it is visible in the Network tab without
+    // digging through host function logs.
+    const detail = error instanceof Error ? error.message : String(error);
+    const name = error instanceof Error ? error.name : 'Error';
+    const status =
+      typeof (error as { status?: unknown })?.status === 'number'
+        ? (error as { status: number }).status
+        : undefined;
+    return NextResponse.json(
+      { error: 'generation-failed', name, status, detail },
+      { status: 500 },
+    );
   }
 }

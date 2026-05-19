@@ -85,7 +85,7 @@ export async function generatePageLive(
 
   const stream = client.messages.stream({
     model: MODEL,
-    max_tokens: 32000,
+    max_tokens: 64000,
     thinking: { type: 'adaptive' },
     // The methodology + contract is stable — cache it across the four
     // per-page calls of a generation (and across generations).
