@@ -38,6 +38,9 @@ export type PagePreviewPaneProps = {
   selectedSectionId?: string | null;
   selectedElementId?: string | null;
   onSelectElement?: (id: string | null) => void;
+  /** The client UUID a form test-submit creates a lead against. When set,
+   *  forms in the preview show the "Test submit" affordance. */
+  testClientId?: string | null;
   // Section management — when provided, the hover toolbar + add button show.
   onToggleSectionEnabled?: (id: string, enabled: boolean) => void;
   onRemoveSection?: (id: string) => void;
@@ -54,6 +57,7 @@ export function PagePreviewPane({
   selectedSectionId,
   selectedElementId,
   onSelectElement,
+  testClientId,
   onToggleSectionEnabled,
   onRemoveSection,
   onMoveSection,
@@ -119,6 +123,14 @@ export function PagePreviewPane({
                       brand={brand}
                       selectedElement={isSelected ? selectedElementId : undefined}
                       onSelectElement={isSelected ? onSelectElement : undefined}
+                      testSubmitCtx={
+                        testClientId
+                          ? {
+                              clientId: testClientId,
+                              sourceLabel: `Form · ${def.label.replace(/^\/\/\s*/, '')}`,
+                            }
+                          : undefined
+                      }
                     />
                   ) : null}
                 </div>

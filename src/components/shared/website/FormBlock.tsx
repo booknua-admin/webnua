@@ -4,22 +4,24 @@
 // FormBlock — the generic renderer for a lead-capture form (FormConfig).
 //
 // One component renders every form on the platform: the dedicated `form`
-// section, and any section that has a `section.form` attached. It is mounted
-// by PagePreviewPane beneath a section's own Preview whenever `section.form`
-// is set.
+// section, and any section that has a `section.form` attached. PagePreviewPane
+// mounts it beneath a section's own Preview whenever `section.form` is set.
 //
-// It is a REAL form — it holds local field state and validates on submit.
-// The actual lead-creating submit is wired in a later phase via the optional
-// `onSubmit` prop; without it the submit button is an inert preview.
+// It is a REAL form — local field state, required + email/phone validation.
+// In the editor a `testSubmitCtx` enables an explicit "Test submit" affordance
+// that creates a genuine lead (via useCreateLead) so the operator can verify
+// the form end-to-end. The form's own styled submit button is NOT a live
+// submit in the editor — it is a SelectableElement for styling; the future
+// public renderer is what wires that button to a real submission.
 //
-// In the editor each field / the title / the submit button is a
-// SelectableElement so clicking it opens that element's inspector. Outside
-// the editor (no `onSelectElement`) it renders as a plain working form — the
-// shape the future public renderer reuses verbatim.
+// Each field / the title / the submit button is a SelectableElement so
+// clicking it in the editor opens that element's inspector.
 // =============================================================================
 
 import { useState } from 'react';
 
+import { useCreateLead } from '@/lib/leads/queries';
+import { uploadLeadAttachment } from '@/lib/leads/upload-attachment';
 import type {
   FormConfig,
   FormField,
@@ -36,14 +38,21 @@ export const FORM_SETTINGS_ELEMENT = '__formSettings';
 
 export type { SubmittedFormField };
 
+/** Editor test-submit context — when present a "Test submit" affordance is
+ *  shown that creates a real lead for the given client. */
+export type FormTestSubmitContext = {
+  clientId: string;
+  sourceLabel: string;
+};
+
 export type FormBlockProps = {
   form: FormConfig;
   brand: BrandObject;
   /** Editor element-inspector wiring — omit for a non-editor render. */
   selectedElement?: string | null;
   onSelectElement?: (id: string) => void;
-  /** When provided the form submits for real; absent = inert preview. */
-  onSubmit?: (fields: SubmittedFormField[]) => Promise<void> | void;
+  /** When set, the editor "Test submit" affordance creates a real lead. */
+  testSubmitCtx?: FormTestSubmitContext;
 };
 
 type ResolvedFormColors = {
@@ -73,19 +82,33 @@ export function FormBlock({
   brand,
   selectedElement,
   onSelectElement,
-  onSubmit,
+  testSubmitCtx,
 }: FormBlockProps) {
   const colors = resolveFormColors(form, brand);
-  const editing = !!onSelectElement;
+  const createLead = useCreateLead();
 
   const [values, setValues] = useState<Record<string, string>>({});
+  const [files, setFiles] = useState<Record<string, File>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [submitting, setSubmitting] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+  const [notice, setNotice] = useState<{ tone: 'good' | 'warn'; text: string } | null>(
+    null,
+  );
 
   const setValue = (id: string, value: string) => {
     setValues((v) => ({ ...v, [id]: value }));
     if (errors[id]) setErrors((e) => ({ ...e, [id]: '' }));
+  };
+
+  const setFile = (id: string, file: File | null) => {
+    setFiles((f) => {
+      const next = { ...f };
+      if (file) next[id] = file;
+      else delete next[id];
+      return next;
+    });
+    setValue(id, file ? file.name : '');
   };
 
   const validate = (): boolean => {
@@ -107,22 +130,62 @@ export function FormBlock({
     return Object.keys(next).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!onSubmit || submitting) return;
+  const handleTestSubmit = async () => {
+    if (!testSubmitCtx || busy) return;
+    setNotice(null);
     if (!validate()) return;
-    const assembled: SubmittedFormField[] = form.fields.map((field) => ({
-      fieldId: field.id,
-      label: field.label,
-      type: field.type,
-      value: values[field.id] ?? '',
-    }));
-    setSubmitting(true);
+    setBusy(true);
     try {
-      await onSubmit(assembled);
-      setDone(true);
+      // Upload any image fields to the private lead-attachments bucket.
+      const assembled: SubmittedFormField[] = [];
+      for (const field of form.fields) {
+        const submitted: SubmittedFormField = {
+          fieldId: field.id,
+          label: field.label,
+          type: field.type,
+          value: values[field.id] ?? '',
+          leadRole: field.leadRole,
+        };
+        const file = files[field.id];
+        if (field.type === 'image' && file) {
+          const result = await uploadLeadAttachment(file, testSubmitCtx.clientId);
+          if (!result.ok) {
+            setNotice({ tone: 'warn', text: result.error.message });
+            setBusy(false);
+            return;
+          }
+          submitted.imagePath = result.data.path;
+        }
+        assembled.push(submitted);
+      }
+
+      await createLead.mutateAsync({
+        clientId: testSubmitCtx.clientId,
+        source: testSubmitCtx.sourceLabel,
+        fields: assembled,
+      });
+
+      // Run the after-submit action in a preview-safe way.
+      if (form.afterSubmit.kind === 'message') {
+        setDone(true);
+      } else if (form.afterSubmit.kind === 'url') {
+        setNotice({
+          tone: 'good',
+          text: `Lead created. A live form would redirect to ${form.afterSubmit.url || '(no link set)'}.`,
+        });
+      } else {
+        setNotice({
+          tone: 'good',
+          text: 'Lead created. A live form would advance to the next funnel step.',
+        });
+      }
+    } catch (e) {
+      setNotice({
+        tone: 'warn',
+        text: e instanceof Error ? e.message : 'Could not create the lead.',
+      });
     } finally {
-      setSubmitting(false);
+      setBusy(false);
     }
   };
 
@@ -150,7 +213,7 @@ export function FormBlock({
       style={{ backgroundColor: colors.background }}
     >
       <form
-        onSubmit={handleSubmit}
+        onSubmit={(e) => e.preventDefault()}
         className="mx-auto flex w-full max-w-[520px] flex-col gap-4"
         noValidate
       >
@@ -186,7 +249,9 @@ export function FormBlock({
                 value={values[field.id] ?? ''}
                 error={errors[field.id]}
                 colors={colors}
+                uploadEnabled={!!testSubmitCtx}
                 onChange={(v) => setValue(field.id, v)}
+                onFile={(f) => setFile(field.id, f)}
               />
             </SelectableElement>
           ))
@@ -197,19 +262,44 @@ export function FormBlock({
           selected={selectedElement === FORM_SUBMIT_ELEMENT}
           onSelect={onSelectElement}
         >
-          <button
-            type="submit"
-            disabled={submitting || (!onSubmit && !editing)}
-            className="w-full rounded-lg py-3 text-[14px] font-bold transition-opacity hover:opacity-90 disabled:opacity-60"
+          <span
+            className="block w-full rounded-lg py-3 text-center text-[14px] font-bold"
             style={{
               backgroundColor: colors.buttonBackground,
               color: colors.buttonText,
             }}
           >
-            {submitting ? 'Sending…' : form.submitLabel}
-          </button>
+            {form.submitLabel}
+          </span>
         </SelectableElement>
       </form>
+
+      {testSubmitCtx ? (
+        <div className="mx-auto mt-4 max-w-[520px] rounded-md border border-dashed border-rust/40 bg-rust-soft/40 px-3.5 py-3">
+          <p className="mb-2 text-[12px] leading-[1.5] text-ink-mid">
+            <strong className="font-semibold text-ink">Preview</strong> — a test
+            submit creates a real lead in the inbox.
+          </p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={handleTestSubmit}
+            className="rounded-md bg-rust px-3.5 py-2 text-[13px] font-bold text-paper transition-opacity hover:opacity-90 disabled:opacity-60"
+          >
+            {busy ? 'Submitting…' : 'Test submit →'}
+          </button>
+          {notice ? (
+            <p
+              className={
+                'mt-2 text-[12px] leading-[1.5] ' +
+                (notice.tone === 'good' ? 'text-good' : 'text-warn')
+              }
+            >
+              {notice.text}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -221,13 +311,17 @@ function FieldInput({
   value,
   error,
   colors,
+  uploadEnabled,
   onChange,
+  onFile,
 }: {
   field: FormField;
   value: string;
   error?: string;
   colors: ResolvedFormColors;
+  uploadEnabled: boolean;
   onChange: (value: string) => void;
+  onFile: (file: File | null) => void;
 }) {
   const inputStyle = {
     backgroundColor: colors.fieldBackground,
@@ -293,10 +387,10 @@ function FieldInput({
         <input
           type="file"
           accept="image/*"
+          disabled={!uploadEnabled}
+          onChange={(e) => onFile(e.target.files?.[0] ?? null)}
           className={inputClass}
           style={inputStyle}
-          // Upload wiring lands in the test-submit phase.
-          disabled
         />
       ) : (
         <input

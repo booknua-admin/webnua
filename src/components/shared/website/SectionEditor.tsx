@@ -33,6 +33,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { useCan, useUser } from '@/lib/auth/user-stub';
+import { useClientId } from '@/lib/clients/queries';
 import { publishFunnelDraft } from '@/lib/funnel/mutations';
 import type { Funnel, FunnelStep } from '@/lib/funnel/types';
 import type { DraftSlot } from '@/lib/website/content-drafts';
@@ -145,6 +146,9 @@ export function SectionEditor({ mode }: SectionEditorProps) {
     [brandQuery.data, brandStyleOverride],
   );
   const slot = useMemo(() => slotForMode(mode), [mode]);
+  // The mode carries a client SLUG; a form test-submit writes a lead against
+  // the client UUID, so resolve it.
+  const clientUuidQuery = useClientId(clientId);
   const user = useUser();
   const router = useRouter();
   const canPublish = useCan('publish');
@@ -408,6 +412,7 @@ export function SectionEditor({ mode }: SectionEditorProps) {
           onSelectSection={handleSelectSection}
           selectedElementId={selectedElementId}
           onSelectElement={setSelectedElementId}
+          testClientId={clientUuidQuery.data ?? null}
           onToggleSectionEnabled={isSingleton ? undefined : handleToggleSectionEnabled}
           onRemoveSection={isSingleton ? undefined : handleRemoveSection}
           onMoveSection={isSingleton ? undefined : handleMoveSection}
