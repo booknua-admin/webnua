@@ -19,6 +19,7 @@
 import Link from 'next/link';
 
 import { CapabilityGate } from '@/components/shared/CapabilityGate';
+import { ConnectDomainButton } from '@/components/shared/website/ConnectDomainButton';
 import { DomainStatusIndicator } from '@/components/shared/website/DomainStatusIndicator';
 import { NewPageEntry } from '@/components/shared/website/NewPageEntry';
 import { PageGridCard } from '@/components/shared/website/PageGridCard';
@@ -28,11 +29,7 @@ import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/lib/auth/user-stub';
 import { useAdminClients } from '@/lib/clients/clients-store';
-import {
-  useEffectiveDraft,
-  useWebsiteForClient,
-  useWebsiteVersions,
-} from '@/lib/website/queries';
+import { useEffectiveDraft, useWebsiteForClient, useWebsiteVersions } from '@/lib/website/queries';
 import {
   MAX_NAV_LINKS,
   type NavLink as NavLinkType,
@@ -100,6 +97,7 @@ export default function WebsiteHubPage() {
 // -- Connected website hub (the happy path) --------------------------------
 
 function WebsiteHub({ website }: { website: Website }) {
+  const user = useUser();
   const draftQuery = useEffectiveDraft(website.id);
   const versionsQuery = useWebsiteVersions(website.id);
 
@@ -134,13 +132,9 @@ function WebsiteHub({ website }: { website: Website }) {
   // overlays into the snapshot pages.
   const pages = snapshot.pages;
   const publishedVersion =
-    (versionsQuery.data ?? []).find(
-      (v) => v.id === website.publishedVersionId,
-    ) ?? null;
+    (versionsQuery.data ?? []).find((v) => v.id === website.publishedVersionId) ?? null;
 
-  const history: Version[] = (versionsQuery.data ?? [])
-    .slice()
-    .sort((a, b) => {
+  const history: Version[] = (versionsQuery.data ?? []).slice().sort((a, b) => {
     const order: Record<Version['status'], number> = {
       published: 0,
       pending_approval: 1,
@@ -150,9 +144,7 @@ function WebsiteHub({ website }: { website: Website }) {
     if (order[a.status] !== order[b.status]) {
       return order[a.status] - order[b.status];
     }
-    return (b.publishedAt ?? b.createdAt).localeCompare(
-      a.publishedAt ?? a.createdAt,
-    );
+    return (b.publishedAt ?? b.createdAt).localeCompare(a.publishedAt ?? a.createdAt);
   });
 
   return (
@@ -165,12 +157,12 @@ function WebsiteHub({ website }: { website: Website }) {
               {`// ${website.domain.primary}`}
             </p>
             <h1 className="text-[36px] font-extrabold leading-[1.05] tracking-[-0.02em] text-ink">
-              {website.name}&rsquo;s <em className="font-extrabold not-italic text-rust">website</em>.
+              {website.name}&rsquo;s{' '}
+              <em className="font-extrabold not-italic text-rust">website</em>.
             </h1>
             <p className="mt-2 max-w-[600px] text-[14px] leading-[1.55] text-ink-mid">
-              The current draft of every page on this website, plus the
-              header / footer / nav that wraps them. <strong>Funnels are a
-              separate surface</strong> — find them at{' '}
+              The current draft of every page on this website, plus the header / footer / nav that
+              wraps them. <strong>Funnels are a separate surface</strong> — find them at{' '}
               <Link href="/funnels" className="text-rust hover:text-rust-deep">
                 /funnels
               </Link>
@@ -182,7 +174,10 @@ function WebsiteHub({ website }: { website: Website }) {
 
         {/* Domain status + live link + review entry point */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <DomainStatusIndicator domain={website.domain} />
+          <div className="flex items-center gap-2">
+            <DomainStatusIndicator domain={website.domain} />
+            {user?.role === 'admin' ? <ConnectDomainButton website={website} /> : null}
+          </div>
           <div className="flex items-center gap-3">
             {website.publishedVersionId ? (
               <a
@@ -256,9 +251,8 @@ function WebsiteHub({ website }: { website: Website }) {
             }
             subtitle={
               <>
-                <strong>{history.length}</strong>{' '}
-                {history.length === 1 ? 'version' : 'versions'}. Restore any
-                published version as a new draft.
+                <strong>{history.length}</strong> {history.length === 1 ? 'version' : 'versions'}.
+                Restore any published version as a new draft.
               </>
             }
             versions={history}
@@ -308,13 +302,7 @@ function SingletonCard({
   );
 }
 
-function NavSummaryCard({
-  nav,
-  pages,
-}: {
-  nav: NavLinkType[];
-  pages: Page[];
-}) {
+function NavSummaryCard({ nav, pages }: { nav: NavLinkType[]; pages: Page[] }) {
   const pageById = new Map(pages.map((p) => [p.id, p]));
   return (
     <div className="overflow-hidden rounded-lg border border-rule bg-card">
@@ -326,8 +314,8 @@ function NavSummaryCard({
       <div className="px-4 py-4">
         <p className="mb-1 text-[15px] font-bold text-ink">Top navigation</p>
         <p className="mb-3 text-[12.5px] leading-[1.5] text-ink-quiet">
-          Up to <strong>{MAX_NAV_LINKS}</strong> top-level links. Edit the
-          full nav in the Header editor.
+          Up to <strong>{MAX_NAV_LINKS}</strong> top-level links. Edit the full nav in the Header
+          editor.
         </p>
         <ul className="space-y-1">
           {nav.length === 0 ? (
@@ -370,13 +358,13 @@ function AgencyEmptyState() {
             {'// AGENCY MODE'}
           </p>
           <h1 className="text-[34px] font-extrabold leading-[1.05] tracking-[-0.02em] text-ink">
-            Pick a client to view their <em className="font-extrabold not-italic text-rust">website</em>.
+            Pick a client to view their{' '}
+            <em className="font-extrabold not-italic text-rust">website</em>.
           </h1>
           <p className="mt-2 max-w-[560px] text-[14px] leading-[1.55] text-ink-mid">
-            You&rsquo;re in agency birds-eye. <strong>Website management
-            happens inside a sub-account</strong> — switch from the client
-            picker in the sidebar, or jump straight to the cross-client
-            matrix.
+            You&rsquo;re in agency birds-eye.{' '}
+            <strong>Website management happens inside a sub-account</strong> — switch from the
+            client picker in the sidebar, or jump straight to the cross-client matrix.
           </p>
         </div>
         <div className="mb-6">
@@ -451,8 +439,7 @@ function NoWebsiteState({
 }) {
   const workspace = useWorkspace();
   const adminClients = useAdminClients();
-  const clientName =
-    clientId ? adminClients.find((c) => c.id === clientId)?.name : undefined;
+  const clientName = clientId ? adminClients.find((c) => c.id === clientId)?.name : undefined;
 
   return (
     <>
@@ -460,15 +447,11 @@ function NoWebsiteState({
       <div className="px-10 py-10">
         <div className="mb-6">
           <p className="mb-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-rust">
-            {reason === 'no-website-yet'
-              ? '// NO WEBSITE YET'
-              : '// NO WORKSPACE'}
+            {reason === 'no-website-yet' ? '// NO WEBSITE YET' : '// NO WORKSPACE'}
           </p>
           <h1 className="text-[32px] font-extrabold leading-[1.05] tracking-[-0.02em] text-ink">
             {reason === 'no-website-yet' ? (
-              <>
-                {clientName ?? 'This client'} doesn&rsquo;t have a website yet.
-              </>
+              <>{clientName ?? 'This client'} doesn&rsquo;t have a website yet.</>
             ) : (
               <>You aren&rsquo;t a member of any workspace.</>
             )}
@@ -476,9 +459,9 @@ function NoWebsiteState({
           <p className="mt-2 max-w-[560px] text-[14px] leading-[1.55] text-ink-mid">
             {reason === 'no-website-yet' ? (
               <>
-                Every new client gets a Home / About / Services / Contact
-                scaffold at signup. <strong>This client doesn&rsquo;t
-                have one</strong> — operator can spin one up below.
+                Every new client gets a Home / About / Services / Contact scaffold at signup.{' '}
+                <strong>This client doesn&rsquo;t have one</strong> — operator can spin one up
+                below.
               </>
             ) : (
               <>Ask your operator to invite you to a workspace.</>
@@ -490,10 +473,7 @@ function NoWebsiteState({
             <CapabilityGate capability="editPages" mode="hide">
               <Button>Scaffold a new website</Button>
             </CapabilityGate>
-            <Button
-              variant="secondary"
-              onClick={() => workspace.clearActiveClient()}
-            >
+            <Button variant="secondary" onClick={() => workspace.clearActiveClient()}>
               ← Back to agency
             </Button>
           </div>
