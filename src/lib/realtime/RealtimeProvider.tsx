@@ -10,7 +10,9 @@
 //
 // Covered: notifications (the bell feed), tickets + ticket_messages (both
 // inboxes + every detail thread). Website-approval realtime is deferred — the
-// approval store is still localStorage (see CLAUDE.md remaining-phases).
+// approval store is the `website_approval_submissions` table, but that table
+// is not in the `supabase_realtime` publication, so the approvals tab
+// refetches via React Query instead (see CLAUDE.md remaining-phases).
 //
 // The provider holds no context — it only runs the subscription effect and
 // passes children straight through.

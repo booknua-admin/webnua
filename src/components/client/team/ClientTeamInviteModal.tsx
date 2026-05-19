@@ -32,6 +32,7 @@ import {
   InviteSection,
 } from '@/components/shared/invite/InviteModalChrome';
 import { SeatUsageMeter } from '@/components/client/team/SeatUsageMeter';
+import { sendInviteEmail } from '@/lib/email/send-invite-email';
 import { useUser } from '@/lib/auth/user-stub';
 import { useAdminClients } from '@/lib/clients/clients-store';
 import { addClientInvite } from '@/lib/invites/client-invite-stub';
@@ -91,8 +92,8 @@ function ClientTeamInviteModal({
 
   // Builds the one discrete, attributable invite record (vision §7). The send
   // is guarded again here — the seat count could have moved while the modal
-  // was open. Backend pass replaces the body with a real INSERT + email send;
-  // the ClientUserInvite shape stays the contract.
+  // was open. Persists the invite, then sends the invite email through Resend
+  // (fire-and-forget — a failed/unconfigured send must not block the UI).
   function handleSend() {
     if (!canInviteToClient(clientId).allowed) return;
     const now = new Date();
@@ -114,7 +115,16 @@ function ClientTeamInviteModal({
       personalNote: note.length > 0 ? note : null,
     };
     addClientInvite(invite);
-    console.log('[stub] client teammate invite issued', invite);
+    void sendInviteEmail({
+      kind: 'client',
+      to: invite.email,
+      recipientName: invite.fullName,
+      inviterName: user?.displayName ?? 'Your team',
+      workspaceName: clientName,
+      magicLink: invite.magicLink,
+      personalNote: invite.personalNote ?? '',
+      expiresAt: invite.expiresAt,
+    });
     setSentInvite(invite);
     setStep(2);
   }

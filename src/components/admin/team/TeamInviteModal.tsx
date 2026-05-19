@@ -16,6 +16,7 @@ import {
   inviteInitials,
 } from '@/components/shared/invite/InviteModalChrome';
 import { cn } from '@/lib/utils';
+import { sendInviteEmail } from '@/lib/email/send-invite-email';
 import { useUser } from '@/lib/auth/user-stub';
 import { useAdminClients, type AdminClient } from '@/lib/clients/clients-store';
 import { INVITE_TTL_DAYS } from '@/lib/invites/shared-types';
@@ -80,9 +81,10 @@ function TeamInviteModal({ open, onOpenChange }: TeamInviteModalProps) {
     }));
   }
 
-  // Builds the one discrete, attributable invite record (vision §7) and
-  // advances to the confirmation step. Backend pass replaces the body with a
-  // real INSERT + email send; the TeamInvite shape stays the contract.
+  // Builds the one discrete, attributable invite record (vision §7), persists
+  // it, sends the invite email through Resend, and advances to confirmation.
+  // The email send is fire-and-forget — the invite is already persisted and
+  // the magic link is copyable, so a failed/unconfigured send must not block.
   function handleSend() {
     const now = new Date();
     const expires = new Date(now.getTime() + INVITE_TTL_DAYS * 86_400_000);
@@ -102,6 +104,17 @@ function TeamInviteModal({ open, onOpenChange }: TeamInviteModalProps) {
       status: 'pending',
     };
     addTeamInvite(invite);
+    void sendInviteEmail({
+      kind: 'team',
+      to: invite.email,
+      recipientName: invite.fullName,
+      inviterName: user?.displayName ?? 'Your team',
+      workspaceName: 'Webnua Perth',
+      roleName: getTeamRoleDef(invite.role).name,
+      magicLink: invite.magicLink,
+      personalNote: invite.personalNote,
+      expiresAt: invite.expiresAt,
+    });
     setSentInvite(invite);
     setStep(3);
   }
