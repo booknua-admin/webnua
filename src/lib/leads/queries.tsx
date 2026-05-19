@@ -349,7 +349,49 @@ function eventMetaLabel(e: LeadDetailEventRow): string {
   }
 }
 
-function mapTimelineEvent(e: LeadDetailEventRow): LeadTimelineEvent {
+// ---- Lead-attachment signed URLs --------------------------------------------
+//
+// Form image uploads land in the PRIVATE `lead-attachments` bucket; the
+// lead_events payload stores the storage path. The inbox resolves a
+// short-lived signed URL per path at fetch time (a stored URL would expire).
+
+type FormAttachment = { fieldId?: string; label?: string; path?: string };
+
+function eventAttachments(payload: Record<string, unknown>): FormAttachment[] {
+  return Array.isArray(payload.attachments)
+    ? (payload.attachments as FormAttachment[])
+    : [];
+}
+
+function collectAttachmentPaths(events: LeadDetailEventRow[]): string[] {
+  const paths = new Set<string>();
+  for (const e of events) {
+    if (e.kind !== 'form_submitted') continue;
+    for (const a of eventAttachments(payloadObject(e.payload))) {
+      if (a.path) paths.add(a.path);
+    }
+  }
+  return [...paths];
+}
+
+async function signAttachmentUrls(
+  paths: string[],
+): Promise<Record<string, string>> {
+  if (paths.length === 0) return {};
+  const { data } = await supabase.storage
+    .from('lead-attachments')
+    .createSignedUrls(paths, 3600);
+  const map: Record<string, string> = {};
+  for (const item of data ?? []) {
+    if (item.path && item.signedUrl) map[item.path] = item.signedUrl;
+  }
+  return map;
+}
+
+function mapTimelineEvent(
+  e: LeadDetailEventRow,
+  attachmentUrls: Record<string, string>,
+): LeadTimelineEvent {
   const payload = payloadObject(e.payload);
   const when = isFuture(e.scheduled_for) ? e.scheduled_for! : e.occurred_at;
 
@@ -377,7 +419,13 @@ function mapTimelineEvent(e: LeadDetailEventRow): LeadTimelineEvent {
     const fields = Array.isArray(payload.fields)
       ? (payload.fields as { label?: string; value?: string }[])
       : [];
-    if (fields.length > 0) {
+    const images = eventAttachments(payload)
+      .map((a) => ({
+        label: a.label,
+        url: a.path ? attachmentUrls[a.path] : undefined,
+      }))
+      .filter((a): a is { label: string | undefined; url: string } => !!a.url);
+    if (fields.length > 0 || images.length > 0) {
       event.snippet = (
         <>
           {fields.map((f, i) => (
@@ -385,7 +433,7 @@ function mapTimelineEvent(e: LeadDetailEventRow): LeadTimelineEvent {
               <strong>{f.label}</strong>
               <br />
               {f.value}
-              {i < fields.length - 1 ? (
+              {i < fields.length - 1 || images.length > 0 ? (
                 <>
                   <br />
                   <br />
@@ -393,6 +441,26 @@ function mapTimelineEvent(e: LeadDetailEventRow): LeadTimelineEvent {
               ) : null}
             </span>
           ))}
+          {images.length > 0 ? (
+            <span className="flex flex-wrap gap-2">
+              {images.map((img, i) => (
+                <a
+                  key={i}
+                  href={img.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={img.label ?? 'Attachment'}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={img.url}
+                    alt={img.label ?? 'Attachment'}
+                    className="h-20 w-20 rounded-md border border-rule object-cover"
+                  />
+                </a>
+              ))}
+            </span>
+          ) : null}
         </>
       );
     }
@@ -410,7 +478,10 @@ function mapTimelineEvent(e: LeadDetailEventRow): LeadTimelineEvent {
   return event;
 }
 
-function buildLeadDetail(row: LeadDetailJoinRow): LeadDetail {
+function buildLeadDetail(
+  row: LeadDetailJoinRow,
+  attachmentUrls: Record<string, string>,
+): LeadDetail {
   const events = [...row.lead_events].sort((a, b) =>
     b.occurred_at.localeCompare(a.occurred_at),
   );
@@ -484,7 +555,10 @@ function buildLeadDetail(row: LeadDetailJoinRow): LeadDetail {
     name: row.customer_name_snapshot,
     metaParts,
     status: row.status,
-    timeline: { eventCount: events.length, events: events.map(mapTimelineEvent) },
+    timeline: {
+      eventCount: events.length,
+      events: events.map((e) => mapTimelineEvent(e, attachmentUrls)),
+    },
     quickActions,
     rail,
     conversationHref,
@@ -504,7 +578,11 @@ async function fetchLeadDetail(id: string): Promise<LeadDetail> {
   // deliberately indistinguishable (errors.ts / design §8).
   if (error) throw normalizeError(error);
 
-  return buildLeadDetail(data as unknown as LeadDetailJoinRow);
+  const row = data as unknown as LeadDetailJoinRow;
+  const attachmentUrls = await signAttachmentUrls(
+    collectAttachmentPaths(row.lead_events),
+  );
+  return buildLeadDetail(row, attachmentUrls);
 }
 
 /** One lead + its timeline. RLS scopes the by-id fetch to the caller's
