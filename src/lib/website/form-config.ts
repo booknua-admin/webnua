@@ -83,6 +83,10 @@ export type FormTestSubmitContext = {
   sourceLabel: string;
 };
 
+/** A page the after-submit redirect can target — fed to the form-settings
+ *  inspector so the redirect is picked from the site's pages, not typed. */
+export type FormPageLink = { label: string; href: string };
+
 /** A single field's submitted value — assembled by FormBlock on submit and
  *  handed to the lead-creation layer. For an `image` field `value` is the
  *  file name and `imagePath` is the uploaded `lead-attachments` storage

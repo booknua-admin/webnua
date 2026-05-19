@@ -122,16 +122,11 @@ function HeaderFields({
   const set = <K extends keyof HeaderData>(key: K, value: HeaderData[K]) =>
     onChange({ ...d, [key]: value });
 
-  const resolved = resolveTheme(
-    d.theme,
-    brandThemeDefaults(brand),
-    HEADER_HARDCODED_THEME,
-  );
+  const resolved = resolveTheme(d.theme, brandThemeDefaults(brand), HEADER_HARDCODED_THEME);
 
   const setColor = (key: keyof SectionTheme, value: string) =>
     set('theme', { ...d.theme, [key]: value });
-  const clearColor = (key: keyof SectionTheme) =>
-    set('theme', omitThemeKey(d.theme, key));
+  const clearColor = (key: keyof SectionTheme) => set('theme', omitThemeKey(d.theme, key));
   const applyColorEverywhere = (color: string) => {
     if (clientId) setBrandStyleValue(clientId, 'headingColor', color);
     set('theme', omitThemeKey(d.theme, 'heading'));
@@ -173,11 +168,7 @@ function HeaderFields({
   if (selectedElement === 'cta') {
     return (
       <BuilderFormSection>
-        <ToggleField
-          label="Show CTA"
-          value={d.showCta}
-          onChange={(v) => set('showCta', v)}
-        />
+        <ToggleField label="Show CTA" value={d.showCta} onChange={(v) => set('showCta', v)} />
         <BuilderFormRow>
           <CopyField
             label="Label"
@@ -223,8 +214,7 @@ function HeaderFields({
           onChange={(v) => set('layout', v)}
         />
         <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
-          Nav links are set on the website (capped at 6). The preview shows
-          representative links.
+          Nav links are set on the website (capped at 6). The preview shows representative links.
         </p>
       </BuilderFormSection>
     </>
@@ -240,17 +230,12 @@ function HeaderPreview({
   onSelectElement,
 }: SectionPreviewProps<HeaderData>) {
   const d = withDefaults(data);
-  const resolved = resolveTheme(
-    d.theme,
-    brandThemeDefaults(brand),
-    HEADER_HARDCODED_THEME,
-  );
+  const resolved = resolveTheme(d.theme, brandThemeDefaults(brand), HEADER_HARDCODED_THEME);
 
   // The live site provides the real Website.nav through the slot; the editor
   // (no provider) falls back to the representative sample links.
   const realNav = useWebsiteNav();
-  const navItems: readonly HeaderNavItem[] =
-    realNav && realNav.length > 0 ? realNav : SAMPLE_NAV;
+  const navItems: readonly HeaderNavItem[] = realNav && realNav.length > 0 ? realNav : SAMPLE_NAV;
   // null only in the editor (no provider) — drives whether the mobile-menu
   // CTA navigates (live) or stays decorative (editor preview).
   const live = realNav != null;
@@ -274,7 +259,13 @@ function HeaderPreview({
         const cta =
           d.showCta && d.ctaLabel ? (
             <SelectableElement {...sel('cta')} display="inline-block">
-              <CtaButton label={d.ctaLabel} style={d.ctaStyle} accent={accent} theme={theme} />
+              <CtaButton
+                label={d.ctaLabel}
+                style={d.ctaStyle}
+                accent={accent}
+                theme={theme}
+                href={live ? d.ctaHref || undefined : undefined}
+              />
             </SelectableElement>
           ) : null;
 
@@ -466,10 +457,7 @@ function NavLinks({
   className?: string;
 }) {
   return (
-    <nav
-      className={`flex items-center gap-7 ${className ?? ''}`}
-      aria-label="Site navigation"
-    >
+    <nav className={`flex items-center gap-7 ${className ?? ''}`} aria-label="Site navigation">
       {items.map((item, i) => {
         const color = i === 0 ? accent : theme.body;
         return item.href ? (
@@ -482,11 +470,7 @@ function NavLinks({
             {item.label}
           </a>
         ) : (
-          <span
-            key={`${item.label}-${i}`}
-            className="text-[14px] font-medium"
-            style={{ color }}
-          >
+          <span key={`${item.label}-${i}`} className="text-[14px] font-medium" style={{ color }}>
             {item.label}
           </span>
         );
@@ -495,32 +479,35 @@ function NavLinks({
   );
 }
 
+/** The header CTA. `href` set (live site) → a navigable `<a>`; absent
+ *  (editor preview) → an inert `<span>` so the SelectableElement owns the
+ *  click for element selection. */
 function CtaButton({
   label,
   style,
   accent,
   theme,
+  href,
 }: {
   label: string;
   style: HeaderCtaStyle;
   accent: string;
   theme: ResolvedTheme;
+  href?: string;
 }) {
-  if (style === 'outline') {
-    return (
-      <span
-        className="inline-flex items-center rounded-lg border-2 px-4 py-2 text-[13px] font-semibold"
-        style={{ borderColor: theme.heading, color: theme.heading }}
-      >
-        {label}
-      </span>
-    );
-  }
-  return (
-    <span
-      className="inline-flex items-center rounded-lg px-4 py-2 text-[13px] font-semibold"
-      style={{ backgroundColor: accent, color: '#ffffff' }}
-    >
+  const className = `inline-flex items-center rounded-lg px-4 py-2 text-[13px] font-semibold${
+    style === 'outline' ? ' border-2' : ''
+  }`;
+  const style2 =
+    style === 'outline'
+      ? { borderColor: theme.heading, color: theme.heading }
+      : { backgroundColor: accent, color: '#ffffff' };
+  return href ? (
+    <a href={href} className={`${className} no-underline`} style={style2}>
+      {label}
+    </a>
+  ) : (
+    <span className={className} style={style2}>
       {label}
     </span>
   );
