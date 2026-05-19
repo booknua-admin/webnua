@@ -8,8 +8,8 @@
 // platform `AppError` — data-access `queryFn`s throw it; React Query catches
 // it into a typed `error` (see `src/lib/errors.ts`).
 //
-// Realtime is added selectively, per-surface, in later Phase 3 sessions —
-// not here.
+// Realtime lives in `RealtimeProvider` (Phase 9) — one RLS-scoped channel
+// that invalidates query keys on postgres_changes; not here.
 // =============================================================================
 
 import { useState } from 'react';

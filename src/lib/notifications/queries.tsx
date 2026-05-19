@@ -49,9 +49,11 @@ function openAction(
   entityId: string | null,
 ): NotificationAction | null {
   if (!entityId) {
-    return entityType === 'review'
-      ? { label: 'View review', href: '/reviews' }
-      : null;
+    // Ticket notifications carry no entity id — the ticket detail route keys
+    // on the display reference, not the uuid — so they link to the inbox.
+    if (entityType === 'review') return { label: 'View review', href: '/reviews' };
+    if (entityType === 'ticket') return { label: 'Open ticket', href: '/tickets' };
+    return null;
   }
   switch (entityType) {
     case 'lead':
