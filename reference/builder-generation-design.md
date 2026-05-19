@@ -394,14 +394,19 @@ break-glass discipline; nothing about generation needs special treatment).
 
 ## 6. The stub generation handler (Session 6 only)
 
-> **Note — the stub has since evolved.** `generation-stub.ts` gained a
-> **design-variety layer** (recipe choice, light/dark band rhythm, per-section
-> theme variation) and is now **brief-aware** — output varies with the brief,
-> not only the `(pageType, intent, audience)` triple. It is still deterministic
-> *on the brief*. A sibling `site-generation-stub.ts` backs the
-> `CreateClientModal` flow. None of this changes the contract or the prompt
-> layer — it is the stub getting closer to real-model output. The "deterministic
-> on three keys" wording below describes the original Session-6 stub.
+> **Note — real generation is now wired (create-client flow).** The
+> create-client site generation calls a **real Claude API** path:
+> `/api/generate-site` → `lib/website/generate-live.ts` → `composePrompt(ctx)`
+> → `claude-opus-4-7` → the §4.4 validation pipeline (`assembleResult`). The
+> deterministic `generation-stub.ts` remains as the **fallback** when
+> `ANTHROPIC_API_KEY` is unset, and as the dev/test path; it gained a
+> design-variety layer and is brief-aware. The prompt layer (`generation-prompt.ts`)
+> and the §4.4 pipeline are unchanged — the real path only swaps the section
+> source from "recipe" to "model". Still on the deterministic stub: the
+> `/website/new` single-page Q&A flow (`generatePageStub`) and funnel
+> generation (`generateFunnelStub`) — the next AI-generation increments. The
+> "deterministic on three keys" wording below describes the original
+> Session-6 stub.
 
 Implementation lives in `src/lib/website/generation-stub.ts`. Shape:
 

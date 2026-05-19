@@ -263,14 +263,29 @@ export function generateSync(ctx: GenerationContext): GenerationResult {
     return populateSection(type, ctx, voice, design);
   });
 
+  return assembleResult(ctx, rawSections, generationId);
+}
+
+// -- Result assembly --------------------------------------------------------
+
+/** Turn raw GeneratedSections — from the deterministic recipe OR a real LLM
+ *  response — into a validated GenerationResult. Runs the design-doc §4.4
+ *  validation pipeline, then assembles the Page. `overrides` lets the live
+ *  generator (generate-live.ts) supply the model's own title / slug / seo. */
+export function assembleResult(
+  ctx: GenerationContext,
+  rawSections: GeneratedSection[],
+  generationId: string,
+  overrides?: { title?: string; slug?: string; seo?: PageSEO },
+): GenerationResult {
   const { sections, fallbackLog, droppedSections } = runValidationPipeline(
     rawSections,
     ctx,
     generationId,
   );
 
-  const title = inferPageTitle(ctx);
-  const slug = inferSlug(title);
+  const title = overrides?.title?.trim() || inferPageTitle(ctx);
+  const slug = overrides?.slug?.trim() || inferSlug(title);
   const page: Page = {
     id: generationId,
     websiteId: '__pending__',
@@ -278,7 +293,7 @@ export function generateSync(ctx: GenerationContext): GenerationResult {
     title,
     type: ctx.pageType,
     sections: sections.map(toSection),
-    seo: defaultSeo(title, ctx),
+    seo: overrides?.seo ?? defaultSeo(title, ctx),
     createdAt: nowIso(),
     updatedAt: nowIso(),
   };
