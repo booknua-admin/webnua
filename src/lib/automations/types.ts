@@ -105,9 +105,7 @@ export type AdminAutomations = {
 };
 
 /**
- * The editor step's channel — same vocabulary as the onboarding card, kept
- * here so the editor types can stand alone without depending on
- * lib/onboarding/types.
+ * The editor step's channel — SMS or email.
  */
 export type AutomationEditorChannel = 'sms' | 'email';
 

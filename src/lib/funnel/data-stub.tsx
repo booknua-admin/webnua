@@ -80,9 +80,7 @@ function mkStep(args: {
 
 // ---- Voltline funnel ------------------------------------------------------
 // Three-step "$99 emergency call-out" funnel — landing → schedule → thanks.
-// Section content sourced from the onboarding wizard's stubbed answers
-// (lib/onboarding/voltline-build.tsx) so the wizard's published output and
-// the funnel editor's seed agree.
+// Seed content for the funnel editor + the funnel queries' stub fallback.
 
 const VOLTLINE_FUNNEL_ID = 'emergency-call-out';
 const VOLTLINE_CREATED_AT = '2026-05-01T09:30:00+08:00';

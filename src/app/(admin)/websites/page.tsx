@@ -254,7 +254,7 @@ function MatrixRow({
       <div className="text-right">
         {isEmpty ? (
           <Button asChild size="sm" variant="ghost">
-            <Link href="/clients/new/basics">Build →</Link>
+            <Link href="/clients/new">Build →</Link>
           </Button>
         ) : (
           <Button size="sm" variant="secondary" onClick={onDrillIn}>
