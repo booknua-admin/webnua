@@ -16,6 +16,7 @@ import { notifyBuilder } from '@/lib/website/builder-events';
 import { clearDraftsForFunnel } from '@/lib/website/content-drafts';
 
 import { fetchFunnelWithDraft } from './queries';
+import type { FunnelStepSEO, FunnelVersionSnapshot } from './types';
 
 export type FunnelPublishActor = { id: string; displayName: string };
 export type FunnelPublishResult = { newVersionId: string };
@@ -118,4 +119,49 @@ export async function updateFunnelSlug(
   }
   notifyBuilder();
   return { ok: true, slug };
+}
+
+// ---- SEO --------------------------------------------------------------------
+
+/** Persist per-step SEO (title / description) onto the funnel's draft
+ *  version snapshot. Same approach as the website `saveSeoForPages` —
+ *  step-level SEO is not part of the content_drafts section buffer, so it
+ *  writes straight to the draft baseline; buffered section edits still
+ *  overlay on top. */
+export async function saveSeoForSteps(
+  funnelId: string,
+  seoByStepId: Record<string, FunnelStepSEO>,
+): Promise<boolean> {
+  const { data: funnelRow, error: funnelError } = await supabase
+    .from('funnels')
+    .select('draft_version_id')
+    .eq('id', funnelId)
+    .maybeSingle();
+  if (funnelError || !funnelRow?.draft_version_id) return false;
+  const draftVersionId = funnelRow.draft_version_id;
+
+  const { data, error } = await supabase
+    .from('funnel_versions')
+    .select('snapshot')
+    .eq('id', draftVersionId)
+    .maybeSingle();
+  if (error || !data) return false;
+
+  const snapshot = data.snapshot as FunnelVersionSnapshot;
+  const next: FunnelVersionSnapshot = {
+    ...snapshot,
+    steps: snapshot.steps.map((step) => {
+      const seo = seoByStepId[step.id];
+      return seo ? { ...step, seo: { ...step.seo, ...seo } } : step;
+    }),
+  };
+
+  const { error: writeError } = await supabase
+    .from('funnel_versions')
+    .update({ snapshot: next as unknown as Json })
+    .eq('id', draftVersionId);
+  if (writeError) return false;
+
+  notifyBuilder();
+  return true;
 }

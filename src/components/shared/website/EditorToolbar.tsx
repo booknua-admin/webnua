@@ -99,6 +99,9 @@ export type EditorToolbarProps = {
   /** Site-level style control (the brand font menu). Rendered in the right
    *  cluster; omit to hide. */
   siteStyles?: React.ReactNode;
+  /** Site-wide SEO control (the SEO panel trigger). Rendered in the right
+   *  cluster; omit to hide. */
+  seo?: React.ReactNode;
   /** Undo / redo controls. Omit to hide. */
   history?: {
     onUndo: () => void;
@@ -124,6 +127,7 @@ export function EditorToolbar({
   onSubmitForReview,
   publishMenu,
   siteStyles,
+  seo,
   history,
   device,
 }: EditorToolbarProps) {
@@ -231,6 +235,7 @@ export function EditorToolbar({
             ))}
           </div>
         ) : null}
+        {seo}
         {siteStyles}
         <a
           href={`https://${domain}`}

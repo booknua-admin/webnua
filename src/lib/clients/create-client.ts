@@ -115,7 +115,7 @@ export async function createClientWithGeneration(
       .insert({
         client_id: client.id,
         name: `${brief.business.name} website`,
-        domain_primary: `${client.slug}.webnua.site`,
+        domain_primary: `${client.slug}.webnua.dev`,
       })
       .select('id')
       .single();

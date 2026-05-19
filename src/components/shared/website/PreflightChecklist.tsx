@@ -19,27 +19,44 @@ import type {
   PreflightStatus,
 } from '@/lib/website/preflight';
 
+// Blockers (`fail`) and warnings (`warn`) get genuinely distinct colour
+// vocabularies — red for what stops publish, amber for what doesn't — so
+// the one row that matters is unmistakable in a long list.
 const STATUS_META: Record<
   PreflightStatus,
-  { glyph: string; dot: string; text: string; chipBg: string }
+  {
+    glyph: string;
+    tag: string;
+    dot: string;
+    text: string;
+    chipBg: string;
+    /** Row framing — left border + tinted surface. */
+    row: string;
+  }
 > = {
   pass: {
     glyph: '✓',
+    tag: 'PASS',
     dot: 'bg-good',
     text: 'text-good',
     chipBg: 'bg-good-soft',
+    row: 'border-rule bg-paper',
   },
   warn: {
     glyph: '!',
-    dot: 'bg-warn',
-    text: 'text-warn',
-    chipBg: 'bg-warn/15',
+    tag: 'WARNING',
+    dot: 'bg-amber',
+    text: 'text-amber',
+    chipBg: 'bg-amber/15',
+    row: 'border-l-[3px] border-l-amber border-amber/25 bg-amber/[0.06]',
   },
   fail: {
     glyph: '✕',
+    tag: 'BLOCKER',
     dot: 'bg-warn',
     text: 'text-warn',
     chipBg: 'bg-warn/20',
+    row: 'border-l-[3px] border-l-warn border-warn/35 bg-warn/[0.07]',
   },
 };
 
@@ -135,7 +152,12 @@ function CountChip({
 function PreflightRow({ result }: { result: PreflightResult }) {
   const meta = STATUS_META[result.status];
   return (
-    <li className="flex items-start gap-3 rounded-lg border border-rule bg-paper px-3.5 py-3">
+    <li
+      className={cn(
+        'flex items-start gap-3 rounded-lg border px-3.5 py-3',
+        meta.row,
+      )}
+    >
       <span
         className={cn(
           'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-paper',
@@ -145,8 +167,19 @@ function PreflightRow({ result }: { result: PreflightResult }) {
         {meta.glyph}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-[13px] font-bold text-ink">{result.title}</p>
-        <p className="mt-0.5 text-[12.5px] leading-[1.5] text-ink-mid">
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              'rounded-pill px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em]',
+              meta.chipBg,
+              meta.text,
+            )}
+          >
+            {meta.tag}
+          </span>
+          <p className="text-[13px] font-bold text-ink">{result.title}</p>
+        </div>
+        <p className="mt-1 text-[12.5px] leading-[1.5] text-ink-mid">
           {result.message}
         </p>
       </div>

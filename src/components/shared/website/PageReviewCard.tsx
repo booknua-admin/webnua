@@ -30,7 +30,7 @@ const STATUS_META: Record<
   { label: string; dot: string; text: string }
 > = {
   pass: { label: 'Clear', dot: 'bg-good', text: 'text-good' },
-  warn: { label: 'Warnings', dot: 'bg-warn', text: 'text-warn' },
+  warn: { label: 'Warnings', dot: 'bg-amber', text: 'text-amber' },
   fail: { label: 'Blockers', dot: 'bg-warn', text: 'text-warn' },
 };
 

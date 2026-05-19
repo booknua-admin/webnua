@@ -18,7 +18,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { DomainStatusIndicator } from '@/components/shared/website/DomainStatusIndicator';
+import { ForcePublishMenu } from '@/components/shared/website/ForcePublishMenu';
 import { PageReviewCard } from '@/components/shared/website/PageReviewCard';
 import { PreflightChecklist } from '@/components/shared/website/PreflightChecklist';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
@@ -102,6 +104,7 @@ function ReviewSurface({ website }: { website: Website }) {
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const draftQuery = useEffectiveDraft(website.id);
   const snapshot = draftQuery.data?.snapshot ?? null;
@@ -132,18 +135,19 @@ function ReviewSurface({ website }: { website: Website }) {
   const grouped = groupResultsByPage(report.results);
   const siteResults = grouped['__site'] ?? [];
 
-  const handlePublish = async () => {
+  // Warnings don't block publish but warrant a branded confirm step — the
+  // native window.confirm is replaced by an in-app ConfirmDialog.
+  const handlePublish = () => {
     if (!user || !report.canPublish) return;
-    if (
-      report.counts.warn > 0 &&
-      !window.confirm(
-        `There ${report.counts.warn === 1 ? 'is' : 'are'} ${report.counts.warn} warning${
-          report.counts.warn === 1 ? '' : 's'
-        }. Publish anyway?`,
-      )
-    ) {
+    if (report.counts.warn > 0) {
+      setConfirmOpen(true);
       return;
     }
+    void runPublish();
+  };
+
+  const runPublish = async () => {
+    if (!user || !report.canPublish) return;
     setBusy(true);
     setError(null);
     const result = await publishDraft(website.id, {
@@ -206,7 +210,20 @@ function ReviewSurface({ website }: { website: Website }) {
                 key={`${r.ruleId}-${i}`}
                 className="flex items-center gap-2 text-[12.5px] text-ink-mid"
               >
-                <span className="size-1.5 shrink-0 rounded-full bg-warn" />
+                <span
+                  className={`size-1.5 shrink-0 rounded-full ${
+                    r.status === 'fail' ? 'bg-warn' : 'bg-amber'
+                  }`}
+                />
+                <span
+                  className={`rounded-pill px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em] ${
+                    r.status === 'fail'
+                      ? 'bg-warn/20 text-warn'
+                      : 'bg-amber/15 text-amber'
+                  }`}
+                >
+                  {r.status === 'fail' ? 'BLOCKER' : 'WARNING'}
+                </span>
                 <span className="font-semibold text-ink">{r.title}</span>
                 <span className="text-ink-quiet">— {r.message}</span>
                 {r.fixHref ? (
@@ -248,7 +265,9 @@ function ReviewSurface({ website }: { website: Website }) {
           </p>
           <p className="mt-0.5 text-[12.5px] text-ink-quiet">
             {canPublish
-              ? 'Publishing replaces the live version immediately.'
+              ? report.canPublish
+                ? 'Publishing replaces the live version immediately.'
+                : 'Clear the blockers, or force publish to skip preflight — every force publish is audit-logged.'
               : canEditAnything
                 ? 'Your changes go to an operator for review before going live.'
                 : 'You don’t have permission to publish or submit changes.'}
@@ -264,9 +283,17 @@ function ReviewSurface({ website }: { website: Website }) {
             <Link href="/website">← Back to hub</Link>
           </Button>
           {canPublish ? (
-            <Button onClick={handlePublish} disabled={busy || !report.canPublish}>
-              {busy ? 'Publishing…' : 'Publish →'}
-            </Button>
+            <span className="inline-flex items-center gap-1.5">
+              <Button
+                onClick={handlePublish}
+                disabled={busy || !report.canPublish}
+              >
+                {busy ? 'Publishing…' : 'Publish →'}
+              </Button>
+              {/* Admin break-glass — force past blockers, audit-logged.
+                  Internally gated to `role === 'admin'`. */}
+              <ForcePublishMenu websiteId={website.id} />
+            </span>
           ) : canEditAnything ? (
             <Button onClick={handleSubmitForReview} disabled={busy}>
               {busy ? 'Submitting…' : 'Submit for review →'}
@@ -274,6 +301,27 @@ function ReviewSurface({ website }: { website: Website }) {
           ) : null}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Publish with warnings?"
+        description={
+          <>
+            There {report.counts.warn === 1 ? 'is' : 'are'}{' '}
+            <strong>{report.counts.warn}</strong>{' '}
+            {report.counts.warn === 1 ? 'warning' : 'warnings'} on this draft.
+            Warnings don’t block publishing — you can ship now and fix them
+            later.
+          </>
+        }
+        confirmLabel="Publish anyway"
+        cancelLabel="Keep editing"
+        onConfirm={() => {
+          setConfirmOpen(false);
+          void runPublish();
+        }}
+      />
     </ReviewShell>
   );
 }
