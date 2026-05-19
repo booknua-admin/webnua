@@ -7,8 +7,10 @@ import { PageHeader } from '@/components/shared/PageHeader';
 import { ReviewClientCard } from '@/components/shared/reviews/ReviewClientCard';
 import { StatCard } from '@/components/shared/StatCard';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
+import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
 import { normalizeError } from '@/lib/errors';
 import { useAdminReviews } from '@/lib/reviews/queries';
+import { useIsAgencyMode, useWorkspace } from '@/lib/workspace/workspace-stub';
 
 function AdminReviewsContent() {
   const { data: page, isLoading, error } = useAdminReviews();
@@ -16,13 +18,22 @@ function AdminReviewsContent() {
 
   const clientCards = useMemo(() => page?.clientCards ?? [], [page]);
 
+  // Workspace context: agency mode → cross-client roster + the multi-select
+  // filter; sub-account mode → the page scopes to the picked client.
+  const isAgency = useIsAgencyMode();
+  const { activeClientId } = useWorkspace();
+  const effectiveClients = useMemo(
+    () => (isAgency || !activeClientId ? selectedClients : [activeClientId]),
+    [isAgency, activeClientId, selectedClients],
+  );
+
   // Each client card's `id` is the client slug.
   const visibleCards = useMemo(
     () =>
-      selectedClients.length === 0
+      effectiveClients.length === 0
         ? clientCards
-        : clientCards.filter((card) => selectedClients.includes(card.id)),
-    [selectedClients, clientCards],
+        : clientCards.filter((card) => effectiveClients.includes(card.id)),
+    [effectiveClients, clientCards],
   );
 
   return (
@@ -47,11 +58,15 @@ function AdminReviewsContent() {
               subtitle={page.hero.subtitle}
             />
 
-            <ClientMultiSelect
-              label="// CLIENT"
-              value={selectedClients}
-              onChange={setSelectedClients}
-            />
+            {isAgency ? (
+              <ClientMultiSelect
+                label="// CLIENT"
+                value={selectedClients}
+                onChange={setSelectedClients}
+              />
+            ) : (
+              <WorkspaceContextBanner />
+            )}
 
             <div className="grid grid-cols-4 gap-3.5">
               {page.stats.map((stat) => (

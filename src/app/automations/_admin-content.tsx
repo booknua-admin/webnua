@@ -7,11 +7,13 @@ import { ClientMultiSelect } from '@/components/shared/ClientMultiSelect';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { StatCard } from '@/components/shared/StatCard';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
+import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
 import {
   useAdminAutomations,
   useToggleAutomation,
 } from '@/lib/automations/queries';
 import { normalizeError } from '@/lib/errors';
+import { useIsAgencyMode, useWorkspace } from '@/lib/workspace/workspace-stub';
 
 function AdminAutomationsContent() {
   const { data: page, isLoading, error } = useAdminAutomations();
@@ -19,6 +21,15 @@ function AdminAutomationsContent() {
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
 
   const groups = useMemo(() => page?.groups ?? [], [page]);
+
+  // Workspace context: agency mode → cross-client roster + the multi-select
+  // filter; sub-account mode → the page scopes to the picked client.
+  const isAgency = useIsAgencyMode();
+  const { activeClientId } = useWorkspace();
+  const effectiveClients = useMemo(
+    () => (isAgency || !activeClientId ? selectedClients : [activeClientId]),
+    [isAgency, activeClientId, selectedClients],
+  );
 
   // Per-client flow counts across every group, keyed on client slug.
   const clientCounts = useMemo(() => {
@@ -34,17 +45,17 @@ function AdminAutomationsContent() {
   // Filtering narrows each group's flows to the selected clients and drops
   // groups with nothing left; the count badge is recomputed to match.
   const visibleGroups = useMemo(() => {
-    if (selectedClients.length === 0) return groups;
+    if (effectiveClients.length === 0) return groups;
     return groups
       .map((group) => {
         const flows = group.flows.filter((f) =>
-          selectedClients.includes(f.clientSlug),
+          effectiveClients.includes(f.clientSlug),
         );
         const enabled = flows.filter((f) => f.enabled).length;
         return { ...group, flows, countBadge: `${enabled} / ${flows.length}` };
       })
       .filter((group) => group.flows.length > 0);
-  }, [selectedClients, groups]);
+  }, [effectiveClients, groups]);
 
   return (
     <>
@@ -68,12 +79,16 @@ function AdminAutomationsContent() {
               subtitle={page.hero.subtitle}
             />
 
-            <ClientMultiSelect
-              label="// CLIENT"
-              value={selectedClients}
-              onChange={setSelectedClients}
-              counts={clientCounts}
-            />
+            {isAgency ? (
+              <ClientMultiSelect
+                label="// CLIENT"
+                value={selectedClients}
+                onChange={setSelectedClients}
+                counts={clientCounts}
+              />
+            ) : (
+              <WorkspaceContextBanner />
+            )}
 
             <div className="grid grid-cols-4 gap-3.5">
               {page.stats.map((stat) => (

@@ -7,11 +7,13 @@ import { LeadRow } from '@/components/shared/leads/LeadRow';
 import { LeadTabsBar } from '@/components/shared/leads/LeadTabsBar';
 import { LeadsHero } from '@/components/shared/leads/LeadsHero';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
+import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { normalizeError } from '@/lib/errors';
 import { adminLeadsHero, adminLeadsTabs } from '@/lib/leads/admin-leads';
 import { useAdminLeadsInbox } from '@/lib/leads/queries';
+import { useIsAgencyMode, useWorkspace } from '@/lib/workspace/workspace-stub';
 
 function AdminLeadsContent() {
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
@@ -23,12 +25,21 @@ function AdminLeadsContent() {
   // filters compose correctly.
   const allLeads = useMemo(() => leads ?? [], [leads]);
 
+  // Workspace context: agency mode → cross-client roster + the multi-select
+  // filter; sub-account mode → the page scopes to the picked client.
+  const isAgency = useIsAgencyMode();
+  const { activeClientId } = useWorkspace();
+  const effectiveClients = useMemo(
+    () => (isAgency || !activeClientId ? selectedClients : [activeClientId]),
+    [isAgency, activeClientId, selectedClients],
+  );
+
   const clientPool = useMemo(
     () =>
-      selectedClients.length === 0
+      effectiveClients.length === 0
         ? allLeads
-        : allLeads.filter((lead) => selectedClients.includes(lead.clientSlug)),
-    [allLeads, selectedClients],
+        : allLeads.filter((lead) => effectiveClients.includes(lead.clientSlug)),
+    [allLeads, effectiveClients],
   );
 
   // Per-client lead counts, keyed on client slug — shown in the dropdown.
@@ -68,12 +79,16 @@ function AdminLeadsContent() {
           subtitle={adminLeadsHero.subtitle}
         />
 
-        <ClientMultiSelect
-          label="// CLIENT"
-          value={selectedClients}
-          onChange={setSelectedClients}
-          counts={clientCounts}
-        />
+        {isAgency ? (
+          <ClientMultiSelect
+            label="// CLIENT"
+            value={selectedClients}
+            onChange={setSelectedClients}
+            counts={clientCounts}
+          />
+        ) : (
+          <WorkspaceContextBanner />
+        )}
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">

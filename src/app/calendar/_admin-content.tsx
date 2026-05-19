@@ -11,11 +11,13 @@ import { CalendarToolbar } from '@/components/shared/calendar/CalendarToolbar';
 import { ClientMultiSelect } from '@/components/shared/ClientMultiSelect';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
+import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
 import { useAdminCalendar } from '@/lib/bookings/queries';
 import { shiftAnchor, todayIso } from '@/lib/calendar/anchor';
 import { adminCalendar } from '@/lib/calendar/admin-calendar';
 import type { CalendarView } from '@/lib/calendar/types';
 import { normalizeError } from '@/lib/errors';
+import { useIsAgencyMode, useWorkspace } from '@/lib/workspace/workspace-stub';
 
 function AdminCalendarContent() {
   const { hero } = adminCalendar;
@@ -24,9 +26,18 @@ function AdminCalendarContent() {
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const { data, error } = useAdminCalendar(view, anchorIso);
 
+  // Workspace context: agency mode → cross-client grid + the multi-select
+  // filter; sub-account mode → the calendar scopes to the picked client.
+  const isAgency = useIsAgencyMode();
+  const { activeClientId } = useWorkspace();
+  const effectiveClients = useMemo(
+    () => (isAgency || !activeClientId ? selectedClients : [activeClientId]),
+    [isAgency, activeClientId, selectedClients],
+  );
+
   const inFilter = (slug?: string) =>
-    selectedClients.length === 0 ||
-    (slug != null && selectedClients.includes(slug));
+    effectiveClients.length === 0 ||
+    (slug != null && effectiveClients.includes(slug));
 
   // Per-client booking counts across the current view — shown in the dropdown.
   const clientCounts = useMemo(() => {
@@ -71,12 +82,16 @@ function AdminCalendarContent() {
         ) : (
           <>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <ClientMultiSelect
-                label="// CLIENT"
-                value={selectedClients}
-                onChange={setSelectedClients}
-                counts={clientCounts}
-              />
+              {isAgency ? (
+                <ClientMultiSelect
+                  label="// CLIENT"
+                  value={selectedClients}
+                  onChange={setSelectedClients}
+                  counts={clientCounts}
+                />
+              ) : (
+                <WorkspaceContextBanner />
+              )}
               <AddBookingButton />
             </div>
             <CalendarToolbar

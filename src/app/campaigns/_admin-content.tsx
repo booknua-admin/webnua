@@ -8,15 +8,26 @@ import { ClientMultiSelect } from '@/components/shared/ClientMultiSelect';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { StatCard } from '@/components/shared/StatCard';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
+import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
 import { Button } from '@/components/ui/button';
 import { normalizeError } from '@/lib/errors';
 import { useAdminCampaigns } from '@/lib/campaigns/queries';
+import { useIsAgencyMode, useWorkspace } from '@/lib/workspace/workspace-stub';
 
 function AdminCampaignsContent() {
   const { data: page, isLoading, error } = useAdminCampaigns();
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
 
   const rows = useMemo(() => page?.rows ?? [], [page]);
+
+  // Workspace context: agency mode → cross-client roster + the multi-select
+  // filter; sub-account mode → the page scopes to the picked client.
+  const isAgency = useIsAgencyMode();
+  const { activeClientId } = useWorkspace();
+  const effectiveClients = useMemo(
+    () => (isAgency || !activeClientId ? selectedClients : [activeClientId]),
+    [isAgency, activeClientId, selectedClients],
+  );
 
   // Per-client campaign counts, keyed on client slug — shown in the dropdown.
   const clientCounts = useMemo(() => {
@@ -29,10 +40,10 @@ function AdminCampaignsContent() {
 
   const visibleRows = useMemo(
     () =>
-      selectedClients.length === 0
+      effectiveClients.length === 0
         ? rows
-        : rows.filter((row) => selectedClients.includes(row.clientId)),
-    [selectedClients, rows],
+        : rows.filter((row) => effectiveClients.includes(row.clientId)),
+    [effectiveClients, rows],
   );
 
   return (
@@ -57,12 +68,16 @@ function AdminCampaignsContent() {
               subtitle={page.hero.subtitle}
             />
 
-            <ClientMultiSelect
-              label="// CLIENT"
-              value={selectedClients}
-              onChange={setSelectedClients}
-              counts={clientCounts}
-            />
+            {isAgency ? (
+              <ClientMultiSelect
+                label="// CLIENT"
+                value={selectedClients}
+                onChange={setSelectedClients}
+                counts={clientCounts}
+              />
+            ) : (
+              <WorkspaceContextBanner />
+            )}
 
             <div className="grid grid-cols-4 gap-3.5">
               {page.stats.map((stat) => (
