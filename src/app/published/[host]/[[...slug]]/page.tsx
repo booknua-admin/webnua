@@ -3,55 +3,24 @@
 //
 // Reached ONLY via the middleware rewrite (middleware.ts) — a visitor on a
 // published client host ({slug}.webnua.dev or a custom domain) has their
-// request rewritten here, the URL bar still shows the real host. The `host`
+// request rewritten here; the URL bar still shows the real host. The `host`
 // segment carries that host; the optional `slug` catch-all is the path.
 //
-// `revalidate = 60` — published pages are cached and regenerated at most
-// once a minute. A publish-triggered revalidation is a later refinement.
+// resolveSite() does all the work — host + path → a published website page
+// or funnel step. `revalidate = 60` caches rendered pages for a minute.
 // =============================================================================
 
 import type { Metadata } from 'next';
 
 import { PublicSiteRenderer } from '@/components/public-site/PublicSiteRenderer';
-import type { FunnelStep, FunnelVersionSnapshot } from '@/lib/funnel/types';
-import { resolveSite, type ResolvedSite } from '@/lib/public-site/resolve';
-import type { Page, VersionSnapshot } from '@/lib/website/types';
+import { resolveSite, type ResolvedTarget } from '@/lib/public-site/resolve';
 
 export const revalidate = 60;
 
 type RouteParams = { host: string; slug?: string[] };
 
-// ---- Page / step selection ------------------------------------------------
-
-function pickPage(snapshot: VersionSnapshot, slug?: string[]): Page | null {
-  const target = (slug ?? []).join('/');
-  if (!target || target === 'home') {
-    const home = snapshot.pages.find((p) => p.slug === 'home');
-    if (home) return home;
-    const firstId = snapshot.pageOrder[0];
-    return (
-      snapshot.pages.find((p) => p.id === firstId) ??
-      snapshot.pages[0] ??
-      null
-    );
-  }
-  return snapshot.pages.find((p) => p.slug === target) ?? null;
-}
-
-function pickStep(
-  snapshot: FunnelVersionSnapshot,
-  slug?: string[],
-): FunnelStep | null {
-  const target = (slug ?? []).join('/');
-  if (!target) {
-    const firstId = snapshot.stepOrder[0];
-    return (
-      snapshot.steps.find((s) => s.id === firstId) ??
-      snapshot.steps[0] ??
-      null
-    );
-  }
-  return snapshot.steps.find((s) => s.slug === target) ?? null;
+function pathOf(slug?: string[]): string {
+  return (slug ?? []).join('/');
 }
 
 // ---- Metadata -------------------------------------------------------------
@@ -62,33 +31,33 @@ export async function generateMetadata({
   params: Promise<RouteParams>;
 }): Promise<Metadata> {
   const { host, slug } = await params;
-  const site = await resolveSite(decodeURIComponent(host));
+  const target = await resolveSite(decodeURIComponent(host), pathOf(slug));
 
-  if (site.status === 'website') {
-    const page = pickPage(site.snapshot, slug);
-    const title = page?.seo.title || page?.title || site.name;
+  if (target.status === 'website') {
+    const title = target.page.seo.title || target.page.title || target.siteName;
     return {
       title,
-      description: page?.seo.description,
-      icons: site.faviconUrl ? { icon: site.faviconUrl } : undefined,
+      description: target.page.seo.description,
+      icons: target.faviconUrl ? { icon: target.faviconUrl } : undefined,
       openGraph: {
         title,
-        description: page?.seo.description,
-        images: page?.seo.ogImageUrl ? [page.seo.ogImageUrl] : undefined,
+        description: target.page.seo.description,
+        images: target.page.seo.ogImageUrl
+          ? [target.page.seo.ogImageUrl]
+          : undefined,
       },
     };
   }
-  if (site.status === 'funnel') {
-    const step = pickStep(site.snapshot, slug);
-    const title = step?.seo.title || step?.title || site.name;
+  if (target.status === 'funnel') {
+    const title = target.step.seo.title || target.step.title || target.siteName;
     return {
       title,
-      description: step?.seo.description,
-      icons: site.faviconUrl ? { icon: site.faviconUrl } : undefined,
+      description: target.step.seo.description,
+      icons: target.faviconUrl ? { icon: target.faviconUrl } : undefined,
     };
   }
   return {
-    title: site.status === 'unpublished' ? site.name : 'Site not found',
+    title: target.status === 'unpublished' ? target.name : 'Site not found',
   };
 }
 
@@ -133,9 +102,12 @@ export default async function PublishedPage({
   params: Promise<RouteParams>;
 }) {
   const { host, slug } = await params;
-  const site: ResolvedSite = await resolveSite(decodeURIComponent(host));
+  const target: ResolvedTarget = await resolveSite(
+    decodeURIComponent(host),
+    pathOf(slug),
+  );
 
-  if (site.status === 'not_found') {
+  if (target.status === 'not_found') {
     return (
       <SiteMessage
         heading="Site not found"
@@ -143,47 +115,26 @@ export default async function PublishedPage({
       />
     );
   }
-  if (site.status === 'unpublished') {
+  if (target.status === 'unpublished') {
     return (
       <SiteMessage
-        heading={site.name}
+        heading={target.name}
         body="This site hasn’t been published yet. Check back soon."
       />
     );
   }
-
-  if (site.status === 'website') {
-    const page = pickPage(site.snapshot, slug);
-    if (!page) {
-      return (
-        <SiteMessage
-          heading="Page not found"
-          body="This page doesn’t exist on this site."
-        />
-      );
-    }
+  if (target.status === 'website') {
     return (
       <PublicSiteRenderer
         kind="website"
-        brand={site.brand}
-        header={site.snapshot.header}
-        footer={site.snapshot.footer}
-        nav={site.snapshot.nav}
-        pages={site.snapshot.pages}
-        page={page}
+        brand={target.brand}
+        header={target.header}
+        footer={target.footer}
+        nav={target.nav}
+        pages={target.pages}
+        page={target.page}
       />
     );
   }
-
-  // funnel
-  const step = pickStep(site.snapshot, slug);
-  if (!step) {
-    return (
-      <SiteMessage
-        heading="Step not found"
-        body="This funnel step doesn’t exist."
-      />
-    );
-  }
-  return <PublicSiteRenderer kind="funnel" brand={site.brand} step={step} />;
+  return <PublicSiteRenderer kind="funnel" brand={target.brand} step={target.step} />;
 }

@@ -1,29 +1,34 @@
 // =============================================================================
 // Public-site resolution — server-only.
 //
-// Maps an incoming Host header to a *published* website or funnel snapshot.
-// Read with the service-role client (RLS-bypassing); the "published only"
-// filtering is enforced here in code.
+// Maps an incoming Host + path to a *published* render target. Read with the
+// service-role client (RLS-bypassing); the "published only" filtering is
+// enforced here in code.
 //
-// Resolution order for a host:
-//   1. a website whose domain_primary / domain_aliases matches exactly
-//      (covers custom domains, e.g. voltline.com.au);
-//   2. a funnel matched the same way;
-//   3. a website found by treating the host's first label as a client slug
-//      ({slug}.webnua.dev → the client's website). This is the zero-config
-//      path — every client website is reachable at {slug}.<PUBLIC_SITE_DOMAIN>
-//      with no per-site setup.
+// Routing model:
+//   • A website lives on the client's host — {slug}.webnua.dev (or a custom
+//     domain). Pages render at /, /about, …
+//   • A funnel lives at a PATH on that same host — {host}/{funnelSlug}. There
+//     is no funnel subdomain (a `*.webnua.dev` wildcard cert covers only one
+//     label, so book.{client}.webnua.dev could never get a cert).
 //
-// `resolveSite` is wrapped in React `cache()` so a route's generateMetadata
-// and its component share a single resolution per request.
+// Resolution is page-first: a path segment that matches a published website
+// page renders that page; otherwise the first segment is tried as a funnel
+// slug. So a website's own pages are never shadowed by a funnel.
+//
+// `resolveSite(host, path)` takes primitive args so React `cache()` dedupes
+// the call between a route's generateMetadata and its component.
 // =============================================================================
 
 import { cache } from 'react';
 
-import type { FunnelVersionSnapshot } from '@/lib/funnel/types';
+import type { FunnelStep, FunnelVersionSnapshot } from '@/lib/funnel/types';
 import { getServiceClient } from '@/lib/supabase/server';
 import type {
   BrandObject,
+  NavLink,
+  Page,
+  Section,
   VersionSnapshot,
   VoiceToneAxis,
 } from '@/lib/website/types';
@@ -32,20 +37,24 @@ const PUBLIC_SITE_DOMAIN = (
   process.env.PUBLIC_SITE_DOMAIN ?? 'webnua.dev'
 ).toLowerCase();
 
-export type ResolvedSite =
+export type ResolvedTarget =
   | {
       status: 'website';
-      name: string;
+      siteName: string;
       brand: BrandObject;
-      snapshot: VersionSnapshot;
       faviconUrl: string | null;
+      header: Section;
+      footer: Section;
+      nav: NavLink[];
+      pages: Page[];
+      page: Page;
     }
   | {
       status: 'funnel';
-      name: string;
+      siteName: string;
       brand: BrandObject;
-      snapshot: FunnelVersionSnapshot;
       faviconUrl: string | null;
+      step: FunnelStep;
     }
   | { status: 'unpublished'; name: string }
   | { status: 'not_found' };
@@ -62,13 +71,19 @@ const FALLBACK_BRAND: BrandObject = {
   topJobsToBeBooked: [],
 };
 
-type SiteRow = {
+type WebsiteRow = {
   id: string;
   name: string;
   client_id: string;
   published_version_id: string | null;
-  domain_primary: string;
-  domain_aliases: string[];
+};
+
+type FunnelRow = {
+  id: string;
+  name: string;
+  client_id: string;
+  slug: string;
+  published_version_id: string | null;
 };
 
 function normalizeHost(raw: string): string {
@@ -110,53 +125,54 @@ async function brandForClient(clientId: string): Promise<BrandObject> {
   };
 }
 
-async function findWebsiteByDomain(host: string): Promise<SiteRow | null> {
+async function findWebsiteByDomain(host: string): Promise<WebsiteRow | null> {
   const svc = getServiceClient();
   const byPrimary = await svc
     .from('websites')
     .select('*')
     .eq('domain_primary', host)
     .limit(1);
-  if (byPrimary.data?.[0]) return byPrimary.data[0] as unknown as SiteRow;
+  if (byPrimary.data?.[0]) return byPrimary.data[0] as unknown as WebsiteRow;
   const byAlias = await svc
     .from('websites')
     .select('*')
     .contains('domain_aliases', [host])
     .limit(1);
-  return (byAlias.data?.[0] as unknown as SiteRow) ?? null;
+  return (byAlias.data?.[0] as unknown as WebsiteRow) ?? null;
 }
 
-async function findFunnelByDomain(host: string): Promise<SiteRow | null> {
+async function findWebsiteByClient(clientId: string): Promise<WebsiteRow | null> {
   const svc = getServiceClient();
-  const byPrimary = await svc
-    .from('funnels')
-    .select('*')
-    .eq('domain_primary', host)
-    .limit(1);
-  if (byPrimary.data?.[0]) return byPrimary.data[0] as unknown as SiteRow;
-  const byAlias = await svc
-    .from('funnels')
-    .select('*')
-    .contains('domain_aliases', [host])
-    .limit(1);
-  return (byAlias.data?.[0] as unknown as SiteRow) ?? null;
-}
-
-async function websiteForClientSlug(slug: string): Promise<SiteRow | null> {
-  const svc = getServiceClient();
-  const client = await svc
-    .from('clients')
-    .select('id')
-    .eq('slug', slug)
-    .maybeSingle();
-  if (!client.data) return null;
-  const clientId = (client.data as unknown as { id: string }).id;
-  const site = await svc
+  const { data } = await svc
     .from('websites')
     .select('*')
     .eq('client_id', clientId)
     .limit(1);
-  return (site.data?.[0] as unknown as SiteRow) ?? null;
+  return (data?.[0] as unknown as WebsiteRow) ?? null;
+}
+
+async function clientIdBySlug(slug: string): Promise<string | null> {
+  const svc = getServiceClient();
+  const { data } = await svc
+    .from('clients')
+    .select('id')
+    .eq('slug', slug)
+    .maybeSingle();
+  return data ? (data as unknown as { id: string }).id : null;
+}
+
+async function findFunnelBySlug(
+  clientId: string,
+  slug: string,
+): Promise<FunnelRow | null> {
+  const svc = getServiceClient();
+  const { data } = await svc
+    .from('funnels')
+    .select('*')
+    .eq('client_id', clientId)
+    .eq('slug', slug)
+    .maybeSingle();
+  return data ? (data as unknown as FunnelRow) : null;
 }
 
 async function snapshotById(
@@ -180,66 +196,117 @@ async function snapshotById(
   return data ? (data as unknown as { snapshot: unknown }).snapshot : null;
 }
 
+function pickPage(snapshot: VersionSnapshot, segments: string[]): Page | null {
+  const target = segments.join('/');
+  if (!target || target === 'home') {
+    const home = snapshot.pages.find((p) => p.slug === 'home');
+    if (home) return home;
+    const firstId = snapshot.pageOrder[0];
+    return (
+      snapshot.pages.find((p) => p.id === firstId) ??
+      snapshot.pages[0] ??
+      null
+    );
+  }
+  return snapshot.pages.find((p) => p.slug === target) ?? null;
+}
+
+function pickStep(
+  snapshot: FunnelVersionSnapshot,
+  stepSegments: string[],
+): FunnelStep | null {
+  const target = stepSegments.join('/');
+  if (!target) {
+    const firstId = snapshot.stepOrder[0];
+    return (
+      snapshot.steps.find((s) => s.id === firstId) ??
+      snapshot.steps[0] ??
+      null
+    );
+  }
+  return snapshot.steps.find((s) => s.slug === target) ?? null;
+}
+
 export const resolveSite = cache(
-  async (rawHost: string): Promise<ResolvedSite> => {
+  async (rawHost: string, rawPath: string): Promise<ResolvedTarget> => {
     const host = normalizeHost(rawHost);
     if (!host) return { status: 'not_found' };
+    const segments = rawPath.split('/').filter(Boolean);
+    const first = segments[0] ?? null;
 
-    // 1. Website by exact domain (custom domains + explicit aliases).
+    // ---- Determine the client (+ optional website) from the host. ----
     let website = await findWebsiteByDomain(host);
-
-    // 2. Funnel by exact domain — only if no website claimed the host.
-    const funnel = website ? null : await findFunnelByDomain(host);
-
-    // 3. Website by subdomain label → client slug (the zero-config path).
-    if (!website && !funnel && host.endsWith(`.${PUBLIC_SITE_DOMAIN}`)) {
-      const label = host.slice(
-        0,
-        host.length - PUBLIC_SITE_DOMAIN.length - 1,
-      );
+    let clientId: string | null = website?.client_id ?? null;
+    if (!clientId && host.endsWith(`.${PUBLIC_SITE_DOMAIN}`)) {
+      const label = host.slice(0, host.length - PUBLIC_SITE_DOMAIN.length - 1);
       if (label && !label.includes('.')) {
-        website = await websiteForClientSlug(label);
+        clientId = await clientIdBySlug(label);
       }
     }
+    if (!clientId) return { status: 'not_found' };
+    if (!website) website = await findWebsiteByClient(clientId);
 
-    if (website) {
-      if (!website.published_version_id) {
-        return { status: 'unpublished', name: website.name };
-      }
-      const snapshot = await snapshotById(
+    // ---- Load the website's published snapshot (if any). ----
+    let websiteSnapshot: VersionSnapshot | null = null;
+    if (website?.published_version_id) {
+      const snap = await snapshotById(
         'website_versions',
         website.published_version_id,
       );
-      if (!snapshot) return { status: 'unpublished', name: website.name };
-      const brand = await brandForClient(website.client_id);
-      return {
-        status: 'website',
-        name: website.name,
-        brand,
-        snapshot: snapshot as VersionSnapshot,
-        faviconUrl: brand.faviconUrl,
-      };
+      if (snap) websiteSnapshot = snap as VersionSnapshot;
     }
 
-    if (funnel) {
-      if (!funnel.published_version_id) {
-        return { status: 'unpublished', name: funnel.name };
+    // ---- Page-first: a path that matches a website page wins. ----
+    if (websiteSnapshot) {
+      const page = pickPage(websiteSnapshot, segments);
+      if (page) {
+        const brand = await brandForClient(clientId);
+        return {
+          status: 'website',
+          siteName: website?.name ?? page.title,
+          brand,
+          faviconUrl: brand.faviconUrl,
+          header: websiteSnapshot.header,
+          footer: websiteSnapshot.footer,
+          nav: websiteSnapshot.nav,
+          pages: websiteSnapshot.pages,
+          page,
+        };
       }
-      const snapshot = await snapshotById(
-        'funnel_versions',
-        funnel.published_version_id,
-      );
-      if (!snapshot) return { status: 'unpublished', name: funnel.name };
-      const brand = await brandForClient(funnel.client_id);
-      return {
-        status: 'funnel',
-        name: funnel.name,
-        brand,
-        snapshot: snapshot as FunnelVersionSnapshot,
-        faviconUrl: brand.faviconUrl,
-      };
     }
 
+    // ---- Funnel: the first path segment as a funnel slug. ----
+    if (first) {
+      const funnel = await findFunnelBySlug(clientId, first);
+      if (funnel) {
+        if (!funnel.published_version_id) {
+          return { status: 'unpublished', name: funnel.name };
+        }
+        const snap = await snapshotById(
+          'funnel_versions',
+          funnel.published_version_id,
+        );
+        if (!snap) return { status: 'unpublished', name: funnel.name };
+        const step = pickStep(
+          snap as FunnelVersionSnapshot,
+          segments.slice(1),
+        );
+        if (!step) return { status: 'not_found' };
+        const brand = await brandForClient(clientId);
+        return {
+          status: 'funnel',
+          siteName: funnel.name,
+          brand,
+          faviconUrl: brand.faviconUrl,
+          step,
+        };
+      }
+    }
+
+    // ---- Nothing matched. ----
+    if (website && !website.published_version_id && !first) {
+      return { status: 'unpublished', name: website.name };
+    }
     return { status: 'not_found' };
   },
 );
