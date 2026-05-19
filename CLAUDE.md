@@ -883,6 +883,15 @@ The Q&A-to-Page pipeline that backs `/website/new`. Spec lives in `reference/bui
 
 > Note: `AdminClient` (`lib/nav/admin-clients.ts`) carried a `seatLimit` field through Cluster 6; **Cluster 8 · Session 4b retired it** — the per-client seed values moved into `SUB_ACCOUNT_OVERRIDE_SEED` (`lib/agency/override-stub.ts`) and the seat limit now resolves through the `defaultSeatLimit` policy key.
 
+### `auth/signup/` + `lib/signup/` — cold-traffic signup flow
+
+> **Architectural note — `/signup` is a public, pre-role route.** Lives in the `(auth)` group (no app shell, no sidebar, no session). It is a **lead-capture** flow, not self-serve account creation: a cold prospect answers a short brief, watches an escalating leads guarantee, sees a themed preview of their own lead system, and submits contact details. A real Supabase Auth account is **not** created — the prospect lands as a `signup_submissions` row an operator converts via `CreateClientModal`.
+
+- **`SignupFlow`** (`auth/signup/SignupFlow.tsx`) — `'use client'` orchestrator. A linear step machine in React state (`hook → splash1 → guarantee → brief → splash2 → gate → reveal → offer → done`); no URL persistence (short conversion flow). Contact PII stays in component state until posted. The lead is captured at the contact gate; the final CTA marks it `signed_up_at`.
+- Step components (`auth/signup/`): **`SignupHookStep`** (trade chips + area), **`AnalysisSplash`** (paced "analysing…" screen, used for both splash beats), **`GuaranteeRevealCard`** (the "N leads or we work free" card — `tease`/`final` variants, min-ad-spend condition shown openly), **`BusinessBriefStep`** (name / service / brand colours), **`ContactGateStep`** (name/email/phone + exit-intent email catch + honeypot), **`PreviewReveal`** (purpose-built browser-frame mockup of the prospect's lead system, themed by brand colours — deliberately NOT the editor's section previews), **`OfferStep`** (offer stack + session-honest countdown; on expiry lapses to "claim anyway"), **`SignupConfirmation`** (follow-up expectations).
+- **`lib/signup/`** — `guarantee.ts` (`TRADE_BENCHMARKS` + `estimateGuarantee` — base vs optimised pass, optimised always ≥ base; ad spend = leads × €15–25), `offer.ts` (€347/mo, €997 setup, 180s countdown — tune freely), `splash-copy.ts`, `submit.ts` (posts to the `submit-signup` edge function), `use-countdown.ts` (sessionStorage-honest timer), `types.ts`.
+- **Backend** — table `public.signup_submissions` (operator-only RLS via `private.is_operator()`; no anon access). Cold traffic writes through the **`submit-signup` edge function** (`verify_jwt=false`, service-role insert, honeypot + per-IP rate limit) — the browser never touches the table. **Not yet built:** an operator inbox surface for prospects, and per-step analytics events.
+
 ---
 
 ## Remaining build phases
