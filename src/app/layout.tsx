@@ -5,6 +5,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { UserProvider } from '@/lib/auth/user-stub';
 import { DataHydrationProvider } from '@/lib/data/DataHydrationProvider';
 import { QueryProvider } from '@/lib/query/QueryProvider';
+import { RealtimeProvider } from '@/lib/realtime/RealtimeProvider';
 import { WorkspaceProvider } from '@/lib/workspace/workspace-stub';
 
 import './globals.css';
@@ -43,7 +44,9 @@ export default function RootLayout({
           <UserProvider>
             <DataHydrationProvider>
               <WorkspaceProvider>
-                <TooltipProvider>{children}</TooltipProvider>
+                <RealtimeProvider>
+                  <TooltipProvider>{children}</TooltipProvider>
+                </RealtimeProvider>
               </WorkspaceProvider>
             </DataHydrationProvider>
           </UserProvider>
