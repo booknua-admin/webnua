@@ -37,9 +37,10 @@ import { useClientId } from '@/lib/clients/queries';
 import { publishFunnelDraft, saveSeoForSteps } from '@/lib/funnel/mutations';
 import type { Funnel, FunnelStep } from '@/lib/funnel/types';
 import type { DraftSlot } from '@/lib/website/content-drafts';
-import { defaultFormConfig, type FormConfig } from '@/lib/website/form-config';
+import { defaultFormConfig, type FormConfig, type FormPageLink } from '@/lib/website/form-config';
 import { saveSeoForPages } from '@/lib/website/mutations';
 import { useBrandForClient, useWebsiteForClient } from '@/lib/website/queries';
+import { applyCtaDefaults } from '@/lib/website/cta-defaults';
 import { getSectionDefinition } from '@/lib/website/sections';
 import type {
   ContainerKind,
@@ -57,10 +58,7 @@ import { useUserPendingSubmission } from '@/lib/website/use-publish-state';
 import { AddSectionDialog } from './AddSectionDialog';
 import { WebsiteEditorPendingBanner } from './WebsiteEditorPendingBanner';
 
-import {
-  EditorToolbar,
-  type EditorToolbarTab,
-} from './EditorToolbar';
+import { EditorToolbar, type EditorToolbarTab } from './EditorToolbar';
 import { ForcePublishMenu } from './ForcePublishMenu';
 import { PagePreviewPane, type DevicePreview } from './PagePreviewPane';
 import { SectionFieldsPanel } from './SectionFieldsPanel';
@@ -126,10 +124,7 @@ function clientIdForMode(mode: SectionEditorMode): string {
 /** The host the surface is served on. A funnel has no host of its own — it
  *  lives at a path on the website host (`websiteHost` is resolved from the
  *  client); funnel `domain.primary` is vestigial (migration 0034). */
-function domainForMode(
-  mode: SectionEditorMode,
-  websiteHost: string | null,
-): string {
+function domainForMode(mode: SectionEditorMode, websiteHost: string | null): string {
   if (mode.kind !== 'funnelStep') return mode.website.domain.primary;
   const host = websiteHost ?? mode.funnel.domain.primary;
   return `${host}/${mode.funnel.slug}`;
@@ -149,14 +144,9 @@ export function SectionEditor({ mode }: SectionEditorProps) {
   const brandStyleOverride = useBrandStyle(clientId);
   // A funnel is served on the website's host — resolve it so the toolbar's
   // "View live" link points where the funnel actually lives.
-  const websiteForHost = useWebsiteForClient(
-    mode.kind === 'funnelStep' ? clientId : null,
-  );
+  const websiteForHost = useWebsiteForClient(mode.kind === 'funnelStep' ? clientId : null);
   const brand = useMemo(
-    () =>
-      brandQuery.data
-        ? { ...brandQuery.data, ...brandStyleOverride }
-        : null,
+    () => (brandQuery.data ? { ...brandQuery.data, ...brandStyleOverride } : null),
     [brandQuery.data, brandStyleOverride],
   );
   const slot = useMemo(() => slotForMode(mode), [mode]);
@@ -172,10 +162,7 @@ export function SectionEditor({ mode }: SectionEditorProps) {
   // Lane B lock applies only to websites. Funnel-step editing has no
   // approval queue yet (Session 7 is the shell; mechanics later).
   const websiteIdForLock = mode.kind === 'funnelStep' ? null : mode.website.id;
-  const pendingForUser = useUserPendingSubmission(
-    websiteIdForLock,
-    user?.id ?? null,
-  );
+  const pendingForUser = useUserPendingSubmission(websiteIdForLock, user?.id ?? null);
   const locked = pendingForUser != null;
 
   // Seed from the mode's sections. The page-level query already merges the
@@ -193,16 +180,14 @@ export function SectionEditor({ mode }: SectionEditorProps) {
 
   // In singleton mode the only section is auto-selected. In page / funnel
   // step modes the user picks (rail click or preview click).
-  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(
-    () => (mode.kind === 'singleton' ? mode.section.id : null),
+  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(() =>
+    mode.kind === 'singleton' ? mode.section.id : null,
   );
 
   const [addOpen, setAddOpen] = useState(false);
 
   // Element-inspector model: the element selected within the current section.
-  const [selectedElementId, setSelectedElementId] = useState<string | null>(
-    null,
-  );
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [device, setDevice] = useState<DevicePreview>('desktop');
 
   // Reset local state when the source content changes (e.g. tab swap).
@@ -230,9 +215,7 @@ export function SectionEditor({ mode }: SectionEditorProps) {
   );
 
   const handleToggleSectionEnabled = (id: string, enabled: boolean) => {
-    setSections((current) =>
-      current.map((s) => (s.id === id ? { ...s, enabled } : s)),
-    );
+    setSections((current) => current.map((s) => (s.id === id ? { ...s, enabled } : s)));
   };
 
   const handleSetSectionForm = (id: string, form: FormConfig | undefined) => {
@@ -247,19 +230,14 @@ export function SectionEditor({ mode }: SectionEditorProps) {
     );
   };
 
-  const handleSectionDataChange = (
-    id: string,
-    nextData: Record<string, unknown>,
-  ) => {
-    setSections((current) =>
-      current.map((s) => (s.id === id ? { ...s, data: nextData } : s)),
-    );
+  const handleSectionDataChange = (id: string, nextData: Record<string, unknown>) => {
+    setSections((current) => current.map((s) => (s.id === id ? { ...s, data: nextData } : s)));
   };
 
   const handleAddSection = (type: SectionType) => {
     const definition = getSectionDefinition(type);
     if (!definition) return;
-    const newSection: Section = {
+    let newSection: Section = {
       id: `sec-${Math.random().toString(36).slice(2, 9)}`,
       type,
       enabled: true,
@@ -269,6 +247,10 @@ export function SectionEditor({ mode }: SectionEditorProps) {
     // on the envelope. Every other section starts form-less; the operator
     // attaches a form via the fields panel.
     if (type === 'form') newSection.form = defaultFormConfig();
+    // Point the new section's CTA at a real page (website page mode only).
+    if (mode.kind === 'page') {
+      newSection = applyCtaDefaults(newSection, mode.pages);
+    }
     setSections((current) => [...current, newSection]);
     setSelectedSectionId(newSection.id);
   };
@@ -352,12 +334,9 @@ export function SectionEditor({ mode }: SectionEditorProps) {
     [mode, brand],
   );
 
-  const handleSaveSeo = async (
-    seoById: Record<string, PageSEO>,
-  ): Promise<boolean> => {
+  const handleSaveSeo = async (seoById: Record<string, PageSEO>): Promise<boolean> => {
     if (mode.kind === 'page') return saveSeoForPages(mode.website.id, seoById);
-    if (mode.kind === 'funnelStep')
-      return saveSeoForSteps(mode.funnel.id, seoById);
+    if (mode.kind === 'funnelStep') return saveSeoForSteps(mode.funnel.id, seoById);
     return false;
   };
 
@@ -423,14 +402,20 @@ export function SectionEditor({ mode }: SectionEditorProps) {
   const isSingleton = mode.kind === 'singleton';
   const isFunnelStep = mode.kind === 'funnelStep';
   const showFields = !locked && selectedSection != null;
+  // The site's pages — fed to a form section's after-submit redirect picker.
+  const formPageLinks: FormPageLink[] =
+    mode.kind === 'page'
+      ? mode.pages.map((p) => ({
+          label: p.title || p.slug,
+          href: p.slug === 'home' ? '/' : `/${p.slug}`,
+        }))
+      : [];
   // No left rail — section management is the per-section hover toolbar.
   const gridCols = showFields ? 'grid-cols-[1fr_400px]' : 'grid-cols-[1fr]';
 
   return (
     <div className="flex h-svh flex-col bg-paper">
-      {pendingForUser ? (
-        <WebsiteEditorPendingBanner submission={pendingForUser} />
-      ) : null}
+      {pendingForUser ? <WebsiteEditorPendingBanner submission={pendingForUser} /> : null}
       <EditorToolbar
         domain={domainForMode(mode, websiteForHost.data?.domain.primary ?? null)}
         mode={toolbarMode}
@@ -498,15 +483,14 @@ export function SectionEditor({ mode }: SectionEditorProps) {
             // variant index).
             key={selectedSection.id}
             section={selectedSection}
-            onChange={(nextData) =>
-              handleSectionDataChange(selectedSection.id, nextData)
-            }
+            onChange={(nextData) => handleSectionDataChange(selectedSection.id, nextData)}
             onSetForm={(form) => handleSetSectionForm(selectedSection.id, form)}
             onClose={() => handleSelectSection(null)}
             hideClose={isSingleton}
             selectedElement={selectedElementId}
             onSelectElement={setSelectedElementId}
             isFunnel={isFunnelStep}
+            pageLinks={formPageLinks}
             clientId={clientId}
             brand={brand}
           />

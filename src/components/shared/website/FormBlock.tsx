@@ -30,6 +30,8 @@ import { SelectableElement } from '@/lib/website/sections/_shared/SelectableElem
 import { useSectionFormSlot } from '@/lib/website/sections/_shared/section-form-slot';
 
 /** Reserved selectable-element ids for the non-field parts of a form. */
+/** The whole form card — selecting it opens the form manager. */
+export const FORM_CONTAINER_ELEMENT = '__formContainer';
 export const FORM_TITLE_ELEMENT = '__formTitle';
 export const FORM_SUBMIT_ELEMENT = '__formSubmit';
 export const FORM_SETTINGS_ELEMENT = '__formSettings';
@@ -89,9 +91,7 @@ export function FormBlock({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
-  const [notice, setNotice] = useState<{ tone: 'good' | 'warn'; text: string } | null>(
-    null,
-  );
+  const [notice, setNotice] = useState<{ tone: 'good' | 'warn'; text: string } | null>(null);
   // Lead-correlation id (visitor-tracking-design §8). Generated after mount
   // and written imperatively to the <form> as `data-webnua-submission` — never
   // rendered as JSX, so the server HTML and the client agree (no hydration
@@ -268,8 +268,7 @@ export function FormBlock({
   };
 
   if (done) {
-    const heading =
-      form.afterSubmit.kind === 'message' ? form.afterSubmit.heading : 'Thanks!';
+    const heading = form.afterSubmit.kind === 'message' ? form.afterSubmit.heading : 'Thanks!';
     const bodyText =
       form.afterSubmit.kind === 'message'
         ? form.afterSubmit.body
@@ -286,95 +285,96 @@ export function FormBlock({
 
   return (
     <div className="w-full">
-      <div className="w-full rounded-xl border p-6" style={cardStyle}>
-        <form
-          ref={formRef}
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (isPublic) void handlePublicSubmit();
-          }}
-          className="flex w-full flex-col gap-4"
-          noValidate
-        >
-          {form.showTitle ? (
-            <SelectableElement
-              id={FORM_TITLE_ELEMENT}
-              selected={selectedElement === FORM_TITLE_ELEMENT}
-              onSelect={onSelectElement}
-            >
-              <p
-                className="text-[18px] font-bold tracking-[-0.01em]"
-                style={{ color: colors.label }}
-              >
-                {form.title}
-              </p>
-            </SelectableElement>
-          ) : null}
-
-          {form.fields.length === 0 ? (
-            <p className="rounded-md border border-dashed border-rule px-3 py-6 text-center text-[13px] text-ink-quiet">
-              No fields yet — add one in the form editor.
-            </p>
-          ) : (
-            form.fields.map((field) => (
+      <SelectableElement
+        id={FORM_CONTAINER_ELEMENT}
+        selected={selectedElement === FORM_CONTAINER_ELEMENT}
+        onSelect={onSelectElement}
+      >
+        <div className="w-full rounded-xl border p-6" style={cardStyle}>
+          <form
+            ref={formRef}
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (isPublic) void handlePublicSubmit();
+            }}
+            className="flex w-full flex-col gap-4"
+            noValidate
+          >
+            {form.showTitle ? (
               <SelectableElement
-                key={field.id}
-                id={field.id}
-                selected={selectedElement === field.id}
+                id={FORM_TITLE_ELEMENT}
+                selected={selectedElement === FORM_TITLE_ELEMENT}
                 onSelect={onSelectElement}
               >
-                <FieldInput
-                  field={field}
-                  value={values[field.id] ?? ''}
-                  error={errors[field.id]}
-                  colors={colors}
-                  uploadEnabled={!!testSubmitCtx || isPublic}
-                  onChange={(v) => setValue(field.id, v)}
-                  onFile={(f) => setFile(field.id, f)}
-                />
+                <p
+                  className="text-[18px] font-bold tracking-[-0.01em]"
+                  style={{ color: colors.label }}
+                >
+                  {form.title}
+                </p>
               </SelectableElement>
-            ))
-          )}
+            ) : null}
 
-          {isPublic ? (
-            <button
-              type="submit"
-              disabled={busy}
-              className="block w-full rounded-lg py-3 text-center text-[14px] font-bold transition-opacity hover:opacity-90 disabled:opacity-60"
-              style={{
-                backgroundColor: colors.buttonBackground,
-                color: colors.buttonText,
-              }}
-            >
-              {busy ? 'Sending…' : form.submitLabel}
-            </button>
-          ) : (
-            <SelectableElement
-              id={FORM_SUBMIT_ELEMENT}
-              selected={selectedElement === FORM_SUBMIT_ELEMENT}
-              onSelect={onSelectElement}
-            >
-              <span
-                className="block w-full rounded-lg py-3 text-center text-[14px] font-bold"
+            {form.fields.length === 0 ? (
+              <p className="rounded-md border border-dashed border-rule px-3 py-6 text-center text-[13px] text-ink-quiet">
+                No fields yet — add one in the form editor.
+              </p>
+            ) : (
+              form.fields.map((field) => (
+                <SelectableElement
+                  key={field.id}
+                  id={field.id}
+                  selected={selectedElement === field.id}
+                  onSelect={onSelectElement}
+                >
+                  <FieldInput
+                    field={field}
+                    value={values[field.id] ?? ''}
+                    error={errors[field.id]}
+                    colors={colors}
+                    uploadEnabled={!!testSubmitCtx || isPublic}
+                    onChange={(v) => setValue(field.id, v)}
+                    onFile={(f) => setFile(field.id, f)}
+                  />
+                </SelectableElement>
+              ))
+            )}
+
+            {isPublic ? (
+              <button
+                type="submit"
+                disabled={busy}
+                className="block w-full rounded-lg py-3 text-center text-[14px] font-bold transition-opacity hover:opacity-90 disabled:opacity-60"
                 style={{
                   backgroundColor: colors.buttonBackground,
                   color: colors.buttonText,
                 }}
               >
-                {form.submitLabel}
-              </span>
-            </SelectableElement>
-          )}
-        </form>
-      </div>
+                {busy ? 'Sending…' : form.submitLabel}
+              </button>
+            ) : (
+              <SelectableElement
+                id={FORM_SUBMIT_ELEMENT}
+                selected={selectedElement === FORM_SUBMIT_ELEMENT}
+                onSelect={onSelectElement}
+              >
+                <span
+                  className="block w-full rounded-lg py-3 text-center text-[14px] font-bold"
+                  style={{
+                    backgroundColor: colors.buttonBackground,
+                    color: colors.buttonText,
+                  }}
+                >
+                  {form.submitLabel}
+                </span>
+              </SelectableElement>
+            )}
+          </form>
+        </div>
+      </SelectableElement>
 
       {isPublic && notice ? (
-        <p
-          className={
-            'mt-2 text-[13px] ' +
-            (notice.tone === 'good' ? 'text-good' : 'text-warn')
-          }
-        >
+        <p className={'mt-2 text-[13px] ' + (notice.tone === 'good' ? 'text-good' : 'text-warn')}>
           {notice.text}
         </p>
       ) : null}
@@ -382,8 +382,8 @@ export function FormBlock({
       {testSubmitCtx ? (
         <div className="mt-3 rounded-md border border-dashed border-rust/40 bg-rust-soft/40 px-3.5 py-3">
           <p className="mb-2 text-[12px] leading-[1.5] text-ink-mid">
-            <strong className="font-semibold text-ink">Preview</strong> — a test
-            submit creates a real lead in the inbox.
+            <strong className="font-semibold text-ink">Preview</strong> — a test submit creates a
+            real lead in the inbox.
           </p>
           <button
             type="button"

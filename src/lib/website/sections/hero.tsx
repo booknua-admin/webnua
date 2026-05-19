@@ -5,12 +5,9 @@ import { FormBlock } from '@/components/shared/website/FormBlock';
 
 import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
-import {
-  brandThemeDefaults,
-  resolveTheme,
-  type SectionTheme,
-} from '../section-theme';
+import { brandThemeDefaults, resolveTheme, type SectionTheme } from '../section-theme';
 import { CopyField } from './_shared/CopyField';
+import { LinkField } from './_shared/LinkField';
 import { MediaField } from './_shared/MediaField';
 import { RangeField } from './_shared/RangeField';
 import { SectionShell } from './_shared/SectionShell';
@@ -177,6 +174,7 @@ function HeroFields({
   data,
   onChange,
   selectedElement,
+  pageLinks,
   clientId,
   brand,
 }: SectionFieldsProps<HeroData>) {
@@ -184,16 +182,11 @@ function HeroFields({
   const set = <K extends keyof HeroData>(key: K, value: HeroData[K]) =>
     onChange({ ...d, [key]: value });
 
-  const resolved = resolveTheme(
-    d.theme,
-    brandThemeDefaults(brand),
-    HERO_HARDCODED_THEME,
-  );
+  const resolved = resolveTheme(d.theme, brandThemeDefaults(brand), HERO_HARDCODED_THEME);
 
   const setColor = (key: keyof SectionTheme, value: string) =>
     set('theme', { ...d.theme, [key]: value });
-  const clearColor = (key: keyof SectionTheme) =>
-    set('theme', omitThemeKey(d.theme, key));
+  const clearColor = (key: keyof SectionTheme) => set('theme', omitThemeKey(d.theme, key));
   const applyColorEverywhere = (
     brandKey: 'headingColor' | 'bodyColor',
     themeKey: keyof SectionTheme,
@@ -300,21 +293,17 @@ function HeroFields({
     const visibleKey = isPrimary ? 'ctaPrimaryVisible' : 'ctaSecondaryVisible';
     return (
       <BuilderFormSection>
-        <ToggleField
-          label="Visible"
-          value={d[visibleKey]}
-          onChange={(v) => set(visibleKey, v)}
-        />
+        <ToggleField label="Visible" value={d[visibleKey]} onChange={(v) => set(visibleKey, v)} />
         <CopyField
           label={isPrimary ? 'Primary button · label' : 'Secondary button · label'}
           value={d[labelKey]}
           originalValue={DEFAULTS[labelKey]}
           onChange={(v) => set(labelKey, v)}
         />
-        <CopyField
+        <LinkField
           label="Link"
           value={d[hrefKey]}
-          originalValue={DEFAULTS[hrefKey]}
+          pageLinks={pageLinks}
           onChange={(v) => set(hrefKey, v)}
         />
       </BuilderFormSection>
@@ -387,11 +376,7 @@ function HeroPreview({
 }: SectionPreviewProps<HeroData>) {
   const d = withDefaults(data);
   const overlay = d.layout === 'overlay';
-  const resolved = resolveTheme(
-    d.theme,
-    brandThemeDefaults(brand),
-    HERO_HARDCODED_THEME,
-  );
+  const resolved = resolveTheme(d.theme, brandThemeDefaults(brand), HERO_HARDCODED_THEME);
   // The hero places its attached form in its own column — so it tells
   // SectionShell `formSlot="self"` and renders the form itself.
   const slot = useSectionFormSlot();
@@ -435,8 +420,7 @@ function HeroPreview({
         const primaryShown = d.ctaPrimaryVisible && !!d.ctaPrimaryLabel;
         const secondaryShown = d.ctaSecondaryVisible && !!d.ctaSecondaryLabel;
         const renderPrimary = primaryShown || (editing && !!d.ctaPrimaryLabel);
-        const renderSecondary =
-          secondaryShown || (editing && !!d.ctaSecondaryLabel);
+        const renderSecondary = secondaryShown || (editing && !!d.ctaSecondaryLabel);
 
         const content = (
           <div className={`flex flex-col ${ALIGN_CLASS[d.contentAlign]}`}>
@@ -521,9 +505,7 @@ function HeroPreview({
                   {formColumn}
                 </div>
               ) : (
-                <div
-                  className={`w-full max-w-[600px] ${ALIGN_SELF[d.contentAlign]}`}
-                >
+                <div className={`w-full max-w-[600px] ${ALIGN_SELF[d.contentAlign]}`}>
                   {content}
                 </div>
               )}
@@ -536,17 +518,12 @@ function HeroPreview({
             key="content"
             className="flex flex-col justify-center px-8 py-14 @2xl:px-12 @2xl:py-16"
           >
-            <div className={`w-full max-w-[520px] ${ALIGN_SELF[d.contentAlign]}`}>
-              {content}
-            </div>
+            <div className={`w-full max-w-[520px] ${ALIGN_SELF[d.contentAlign]}`}>{content}</div>
           </div>
         );
         // The second column is the form (when toggled on) or the image.
         const sideCell = hasForm ? (
-          <div
-            key="side"
-            className="flex items-center justify-center px-8 py-14 @2xl:px-12"
-          >
+          <div key="side" className="flex items-center justify-center px-8 py-14 @2xl:px-12">
             {formColumn}
           </div>
         ) : (
@@ -555,9 +532,7 @@ function HeroPreview({
 
         return (
           <div className="grid min-h-[460px] @2xl:grid-cols-2">
-            {d.imageSide === 'left'
-              ? [sideCell, contentCell]
-              : [contentCell, sideCell]}
+            {d.imageSide === 'left' ? [sideCell, contentCell] : [contentCell, sideCell]}
           </div>
         );
       }}
@@ -565,13 +540,7 @@ function HeroPreview({
   );
 }
 
-function HeroImage({
-  url,
-  theme,
-}: {
-  url: string;
-  theme: { card: string; muted: string };
-}) {
+function HeroImage({ url, theme }: { url: string; theme: { card: string; muted: string } }) {
   return (
     <div
       className="relative min-h-[280px] w-full overflow-hidden @2xl:min-h-full"
@@ -594,15 +563,7 @@ function HeroImage({
   );
 }
 
-function HeroBackground({
-  url,
-  scrim,
-  opacity,
-}: {
-  url: string;
-  scrim: string;
-  opacity: number;
-}) {
+function HeroBackground({ url, scrim, opacity }: { url: string; scrim: string; opacity: number }) {
   const a = (multiplier: number) => {
     const v = Math.round(Math.max(0, Math.min(1, opacity * multiplier)) * 255);
     return v.toString(16).padStart(2, '0');

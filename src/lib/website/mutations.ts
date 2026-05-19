@@ -100,9 +100,7 @@ export async function publishDraft(
       created_at: now,
       published_at: now,
       published_by: actor.id,
-      notes: options.force
-        ? `Force publish · ${options.force.reason}`
-        : 'Published from draft.',
+      notes: options.force ? `Force publish · ${options.force.reason}` : 'Published from draft.',
       parent_version_id: pointers.publishedVersionId,
     })
     .select('id')
@@ -187,13 +185,8 @@ export async function submitForApproval(
     .single();
   if (versionError || !pendingVersion) return null;
 
-  const publishedSnapshot = await getPublishedSnapshot(
-    pointers.publishedVersionId,
-  );
-  const diff: WebsiteApprovalDiff = diffSnapshots(
-    eff.snapshot,
-    publishedSnapshot,
-  );
+  const publishedSnapshot = await getPublishedSnapshot(pointers.publishedVersionId);
+  const diff: WebsiteApprovalDiff = diffSnapshots(eff.snapshot, publishedSnapshot);
 
   const { data: submission, error: submissionError } = await supabase
     .from('website_approval_submissions')
@@ -223,9 +216,7 @@ type SubmissionRow = {
   status: string;
 };
 
-async function fetchPendingSubmission(
-  submissionId: string,
-): Promise<SubmissionRow | null> {
+async function fetchPendingSubmission(submissionId: string): Promise<SubmissionRow | null> {
   const { data, error } = await supabase
     .from('website_approval_submissions')
     .select('id, website_id, pending_version_id, status')
@@ -323,9 +314,7 @@ export async function rejectSubmission(
   return true;
 }
 
-export async function recallSubmission(
-  submissionId: string,
-): Promise<boolean> {
+export async function recallSubmission(submissionId: string): Promise<boolean> {
   const submission = await fetchPendingSubmission(submissionId);
   if (!submission) return false;
 
@@ -419,6 +408,78 @@ export async function saveSeoForPages(
     .update({ snapshot: next as unknown as Json })
     .eq('id', pointers.draftVersionId);
   if (writeError) return false;
+
+  notifyBuilder();
+  return true;
+}
+
+// -- custom domain ------------------------------------------------------------
+// Connecting a custom domain makes it the website's `domain_primary`; the
+// previous primary (the `{slug}.webnua.dev` host) is kept as an alias so the
+// old URL still resolves. The `websites` UPDATE RLS is operator-only, so
+// these run from an operator session. SSL goes `pending` until Vercel issues
+// the cert; the webnua.dev wildcard is always `live`.
+
+/** True when a host is the platform's own wildcard, not a real custom domain. */
+function isPlatformHost(host: string): boolean {
+  return host.endsWith('.webnua.dev');
+}
+
+/** Point the website at a custom domain. Returns false on RLS rejection or a
+ *  missing website. */
+export async function setCustomDomain(websiteId: string, domain: string): Promise<boolean> {
+  const { data: site, error: readError } = await supabase
+    .from('websites')
+    .select('domain_primary, domain_aliases')
+    .eq('id', websiteId)
+    .single();
+  if (readError || !site) return false;
+
+  const aliases = new Set(site.domain_aliases ?? []);
+  // Keep the old primary reachable (unless it was already this domain).
+  if (site.domain_primary && site.domain_primary !== domain) {
+    aliases.add(site.domain_primary);
+  }
+  aliases.delete(domain);
+
+  const { error } = await supabase
+    .from('websites')
+    .update({
+      domain_primary: domain,
+      domain_aliases: [...aliases],
+      domain_ssl_status: 'pending',
+    })
+    .eq('id', websiteId);
+  if (error) return false;
+
+  notifyBuilder();
+  return true;
+}
+
+/** Disconnect the custom domain — fall back to the `{slug}.webnua.dev` host
+ *  (promoted from the aliases). Returns false when there is no platform host
+ *  to fall back to. */
+export async function clearCustomDomain(websiteId: string): Promise<boolean> {
+  const { data: site, error: readError } = await supabase
+    .from('websites')
+    .select('domain_primary, domain_aliases')
+    .eq('id', websiteId)
+    .single();
+  if (readError || !site) return false;
+
+  const aliases = site.domain_aliases ?? [];
+  const fallback = aliases.find(isPlatformHost) ?? aliases[0] ?? site.domain_primary;
+  if (!fallback) return false;
+
+  const { error } = await supabase
+    .from('websites')
+    .update({
+      domain_primary: fallback,
+      domain_aliases: aliases.filter((a) => a !== fallback),
+      domain_ssl_status: isPlatformHost(fallback) ? 'live' : 'pending',
+    })
+    .eq('id', websiteId);
+  if (error) return false;
 
   notifyBuilder();
   return true;

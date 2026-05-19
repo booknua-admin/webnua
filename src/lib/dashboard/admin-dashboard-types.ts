@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 
-import type { ClientStatus } from '@/components/admin/ClientListRow';
-
+/** A single stat tile on the agency dashboard. */
 export type DashboardStat = {
   label: string;
   value: ReactNode;
@@ -9,25 +8,50 @@ export type DashboardStat = {
   trendTone?: 'good' | 'quiet';
 };
 
-export type MidSetupClient = {
-  id: string;
+/** Colour-keyed tone for attention rows + client status. */
+export type AgencyTone = 'rust' | 'good' | 'quiet';
+
+/** The single most pressing cross-client signal — rendered as the ink banner
+ *  atop the agency dashboard. Null when nothing needs the operator now. */
+export type AgencyUrgent = {
   tag: string;
-  businessName: string;
-  description: string;
-  stepLabel: string;
-  ownerName: string;
-  ownerPhone: string;
-  website: string;
-  continueHref: string;
+  title: ReactNode;
+  description: ReactNode;
+  cta: { label: string; href: string };
 };
 
-export type LiveClient = {
+/** One row inside an attention panel. */
+export type AttentionRow = {
   id: string;
+  initial: string;
+  title: string;
+  meta: string;
+  metaTone?: AgencyTone;
+  href?: string;
+};
+
+/** One of the three triage panels. When `placeholder` is set the panel shows
+ *  an honest "awaiting integration" notice in place of rows. */
+export type AttentionPanelData = {
+  heading: string;
+  count: number | null;
+  link?: { label: string; href: string };
+  rows: AttentionRow[];
+  placeholder?: string;
+};
+
+/** A horizontally-scrolling client-performance card. */
+export type ClientPerformanceCardData = {
+  slug: string;
   initial: string;
   name: string;
   meta: string;
-  status: ClientStatus;
-  leadsPerWeek: number;
+  leads7d: number | null;
+  booked7d: number | null;
   spend: string;
-  href: string;
+  statusLabel: string;
+  statusTone: AgencyTone;
+  note: string;
+  /** Sort rank — 0 at-risk live, 1 healthy live, 2 onboarding. */
+  rank: number;
 };

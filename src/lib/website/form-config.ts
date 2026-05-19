@@ -21,6 +21,8 @@
 // (see CreateLeadInput.existingLeadId in lib/leads/queries.tsx).
 // =============================================================================
 
+import type { PageLink } from './types';
+
 export type FormFieldType =
   | 'text'
   | 'email'
@@ -82,6 +84,11 @@ export type FormTestSubmitContext = {
   /** Human label of the form's origin, e.g. "Form · Hero". */
   sourceLabel: string;
 };
+
+/** A page the after-submit redirect can target — fed to the form-settings
+ *  inspector so the redirect is picked from the site's pages, not typed.
+ *  Alias of the shared {@link PageLink} (the CTA pickers use the same shape). */
+export type FormPageLink = PageLink;
 
 /** A single field's submitted value — assembled by FormBlock on submit and
  *  handed to the lead-creation layer. For an `image` field `value` is the

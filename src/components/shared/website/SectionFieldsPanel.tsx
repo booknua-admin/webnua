@@ -12,16 +12,12 @@
 // Per-field capability gating happens INSIDE the Fields component.
 // =============================================================================
 
-import type { FormConfig } from '@/lib/website/form-config';
+import type { FormConfig, FormPageLink } from '@/lib/website/form-config';
 import type { BrandObject, Section } from '@/lib/website/types';
 import { getSectionDefinition } from '@/lib/website/sections';
 import { SectionFieldContextProvider } from '@/lib/website/sections/_shared/field-context';
 
-import {
-  SectionFormControls,
-  formElementLabel,
-  isFormElement,
-} from './SectionFormControls';
+import { SectionFormControls, formElementLabel, isFormElement } from './SectionFormControls';
 
 export type SectionFieldsPanelProps = {
   section: Section;
@@ -39,6 +35,8 @@ export type SectionFieldsPanelProps = {
   onSelectElement: (id: string | null) => void;
   /** True in funnel-step mode — enables form "next step" actions. */
   isFunnel?: boolean;
+  /** The site's pages — fed to the form's after-submit redirect picker. */
+  pageLinks?: FormPageLink[];
   /** The client + resolved brand — threaded to the Fields component for the
    *  brand-style-defaults ("apply to all") path. */
   clientId?: string;
@@ -54,6 +52,7 @@ export function SectionFieldsPanel({
   selectedElement,
   onSelectElement,
   isFunnel = false,
+  pageLinks = [],
   clientId,
   brand,
 }: SectionFieldsPanelProps) {
@@ -129,6 +128,7 @@ export function SectionFieldsPanel({
               selectedElement={selectedElement}
               onSelectElement={onSelectElement}
               isFunnel={isFunnel}
+              pageLinks={pageLinks}
             />
           ) : (
             <>
@@ -136,6 +136,7 @@ export function SectionFieldsPanel({
                 data={section.data as never}
                 onChange={onChange as never}
                 selectedElement={selectedElement}
+                pageLinks={pageLinks}
                 clientId={clientId}
                 brand={brand}
               />
@@ -148,6 +149,7 @@ export function SectionFieldsPanel({
                   selectedElement={null}
                   onSelectElement={onSelectElement}
                   isFunnel={isFunnel}
+                  pageLinks={pageLinks}
                 />
               ) : null}
             </>

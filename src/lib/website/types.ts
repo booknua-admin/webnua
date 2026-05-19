@@ -28,8 +28,8 @@ export type SectionType =
   | 'contact'
   | 'cta'
   | 'form'
-  | 'schedulePicker'      // funnel-only
-  | 'thanksConfirmation'  // funnel-only
+  | 'schedulePicker' // funnel-only
+  | 'thanksConfirmation' // funnel-only
   // Website-level singletons — never in a page's sections[]
   | 'header'
   | 'footer';
@@ -37,10 +37,10 @@ export type SectionType =
 /** Where a section type can be placed. The registry constraint that
  *  enforces singletons vs stackables — see design doc §2.2. */
 export type ContainerKind =
-  | 'page'              // Section is added to a Page.sections[]
-  | 'funnelStep'        // Section is added to a FunnelStep.sections[]
-  | 'websiteHeader'     // Section IS Website.header (singleton)
-  | 'websiteFooter';    // Section IS Website.footer (singleton)
+  | 'page' // Section is added to a Page.sections[]
+  | 'funnelStep' // Section is added to a FunnelStep.sections[]
+  | 'websiteHeader' // Section IS Website.header (singleton)
+  | 'websiteFooter'; // Section IS Website.footer (singleton)
 
 export type SectionAIMeta = {
   draftedFields: string[];
@@ -65,6 +65,10 @@ export type Section = {
 /** Website page types (NOT funnel step types — those live in lib/funnel). */
 export type PageType = 'home' | 'about' | 'services' | 'contact' | 'generic';
 
+/** A navigable destination on the site — a `{ label, href }` pair. Fed to the
+ *  CTA / redirect pickers so a link is chosen from real pages, not typed. */
+export type PageLink = { label: string; href: string };
+
 export type PageSEO = {
   title?: string;
   description?: string;
@@ -74,7 +78,7 @@ export type PageSEO = {
 export type Page = {
   id: string;
   websiteId: string;
-  slug: string;            // 'home' | 'about' | 'services' | 'contact'
+  slug: string; // 'home' | 'about' | 'services' | 'contact'
   title: string;
   type: PageType;
   sections: Section[];
@@ -86,9 +90,7 @@ export type Page = {
 // ---- Navigation -----------------------------------------------------------
 
 /** Internal page link OR external href. */
-export type NavLinkTarget =
-  | { kind: 'page'; pageId: string }
-  | { kind: 'href'; href: string };
+export type NavLinkTarget = { kind: 'page'; pageId: string } | { kind: 'href'; href: string };
 
 export type NavLink = {
   label: string;
@@ -149,11 +151,7 @@ export type BrandObject = {
 
 // ---- Versions -------------------------------------------------------------
 
-export type VersionStatus =
-  | 'draft'
-  | 'pending_approval'
-  | 'published'
-  | 'archived';
+export type VersionStatus = 'draft' | 'pending_approval' | 'published' | 'archived';
 
 /** Snapshot of a website's editable content at a point in time. */
 export type VersionSnapshot = {

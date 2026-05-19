@@ -3,10 +3,13 @@
 // =============================================================================
 // SectionFormControls — the form editor inside the section fields panel.
 //
-// Two jobs, dispatched on the selected element:
-//   - section level (no form element selected): the form manager — attach /
-//     remove a form, the field list (reorder / select / add), quick links to
-//     the title / submit / settings inspectors.
+// Dispatched on the selected element:
+//   - section level (no form element selected): no form → the attach button;
+//     a form exists → a pointer that opens the manager (the form itself is
+//     clickable in the preview, the same as a field).
+//   - the form container selected: the form manager — remove the form, the
+//     field list (reorder / select / add), quick links to the title / submit
+//     / settings inspectors.
 //   - a form element selected: that element's inspector — a field, the title,
 //     the submit button, or the form settings (after-submit + colours).
 //
@@ -29,12 +32,14 @@ import {
   type FormConfig,
   type FormField,
   type FormFieldType,
+  type FormPageLink,
 } from '@/lib/website/form-config';
 import { ColorField } from '@/lib/website/sections/_shared/ThemeField';
 import { ToggleField } from '@/lib/website/sections/_shared/ToggleField';
 import { VariantField } from '@/lib/website/sections/_shared/VariantField';
 
 import {
+  FORM_CONTAINER_ELEMENT,
   FORM_SETTINGS_ELEMENT,
   FORM_SUBMIT_ELEMENT,
   FORM_TITLE_ELEMENT,
@@ -48,6 +53,8 @@ export type SectionFormControlsProps = {
   onSelectElement: (id: string | null) => void;
   /** True in funnel-step mode — enables the "next step" after-submit action. */
   isFunnel: boolean;
+  /** The site's pages — the after-submit redirect picks from these. */
+  pageLinks: FormPageLink[];
 };
 
 /** True when the selected element belongs to the form (not the section). */
@@ -57,6 +64,7 @@ export function isFormElement(
 ): boolean {
   if (!form || !selectedElement) return false;
   return (
+    selectedElement === FORM_CONTAINER_ELEMENT ||
     selectedElement === FORM_TITLE_ELEMENT ||
     selectedElement === FORM_SUBMIT_ELEMENT ||
     selectedElement === FORM_SETTINGS_ELEMENT ||
@@ -65,10 +73,8 @@ export function isFormElement(
 }
 
 /** Human label for a form element id — feeds the fields-panel header. */
-export function formElementLabel(
-  form: FormConfig | undefined,
-  selectedElement: string,
-): string {
+export function formElementLabel(form: FormConfig | undefined, selectedElement: string): string {
+  if (selectedElement === FORM_CONTAINER_ELEMENT) return 'Lead form';
   if (selectedElement === FORM_TITLE_ELEMENT) return 'Form title';
   if (selectedElement === FORM_SUBMIT_ELEMENT) return 'Submit button';
   if (selectedElement === FORM_SETTINGS_ELEMENT) return 'Form settings';
@@ -92,7 +98,7 @@ function retypeField(field: FormField, type: FormFieldType): FormField {
   }
   if (type === 'email') next.leadRole = 'email';
   else if (type === 'phone') next.leadRole = 'phone';
-  else if (field.leadRole && (type === 'text')) next.leadRole = field.leadRole;
+  else if (field.leadRole && type === 'text') next.leadRole = field.leadRole;
   return next;
 }
 
@@ -113,11 +119,24 @@ export function SectionFormControls({
   selectedElement,
   onSelectElement,
   isFunnel,
+  pageLinks,
 }: SectionFormControlsProps) {
   const canEdit = useCan('editForms');
 
-  // -- a form element is selected → its inspector --
+  // -- a form element is selected --
   if (form && selectedElement && isFormElement(form, selectedElement)) {
+    // The form container → the manager (field list, quick links, remove).
+    if (selectedElement === FORM_CONTAINER_ELEMENT) {
+      return (
+        <FormManager
+          form={form}
+          onSetForm={onSetForm}
+          onSelectElement={onSelectElement}
+          canEdit={canEdit}
+        />
+      );
+    }
+    // A specific form element → its inspector.
     return (
       <FormElementInspector
         form={form}
@@ -126,6 +145,7 @@ export function SectionFormControls({
         element={selectedElement}
         isFunnel={isFunnel}
         canEdit={canEdit}
+        pageLinks={pageLinks}
       />
     );
   }
@@ -138,13 +158,15 @@ export function SectionFormControls({
           {'// Lead form'}
         </p>
         <p className="mb-3 text-[13px] leading-[1.5] text-ink-mid">
-          Add a form to capture enquiries from this section straight into the
-          leads inbox.
+          Add a form to capture enquiries from this section straight into the leads inbox.
         </p>
         <button
           type="button"
           disabled={!canEdit}
-          onClick={() => onSetForm(defaultFormConfig())}
+          onClick={() => {
+            onSetForm(defaultFormConfig());
+            onSelectElement(FORM_CONTAINER_ELEMENT);
+          }}
           className="w-full rounded-md border border-dashed border-rule bg-card py-2.5 text-[13px] font-bold text-ink-mid transition-colors hover:border-rust hover:text-rust disabled:cursor-not-allowed disabled:opacity-55"
         >
           + Add a form to this section
@@ -154,14 +176,26 @@ export function SectionFormControls({
     );
   }
 
-  // -- section level: a form exists → the manager --
+  // -- section level: a form exists → a pointer into the manager. The full
+  //    manager opens by selecting the form itself (in the preview, or here).
   return (
-    <FormManager
-      form={form}
-      onSetForm={onSetForm}
-      onSelectElement={onSelectElement}
-      canEdit={canEdit}
-    />
+    <div className="mt-1 border-t border-paper-2 pt-4">
+      <p className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+        {'// Lead form'}
+      </p>
+      <p className="mb-3 text-[13px] leading-[1.5] text-ink-mid">
+        This section has a lead form ({form.fields.length}{' '}
+        {form.fields.length === 1 ? 'field' : 'fields'}). Click the form in the preview — or the
+        button below — to edit its fields, submit button, and after-submit settings.
+      </p>
+      <button
+        type="button"
+        onClick={() => onSelectElement(FORM_CONTAINER_ELEMENT)}
+        className="w-full rounded-md border border-rust bg-rust-soft/50 py-2.5 text-[13px] font-bold text-rust transition-colors hover:bg-rust-soft"
+      >
+        Manage form →
+      </button>
+    </div>
   );
 }
 
@@ -196,7 +230,7 @@ function FormManager({
   };
 
   return (
-    <div className="mt-1 border-t border-paper-2 pt-4">
+    <div>
       <div className="mb-3 flex items-center justify-between">
         <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
           {'// Lead form'}
@@ -204,7 +238,10 @@ function FormManager({
         {canEdit ? (
           <button
             type="button"
-            onClick={() => onSetForm(undefined)}
+            onClick={() => {
+              onSetForm(undefined);
+              onSelectElement(null);
+            }}
             className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-rust transition-colors hover:text-rust-deep"
           >
             Remove form
@@ -266,8 +303,7 @@ function FormManager({
         picking ? (
           <div className="rounded-md border border-rule bg-paper p-2.5">
             <p className="mb-2 text-[12px] leading-[1.5] text-ink-quiet">
-              Pick a type to add a field — add as many as you need, they stack
-              in the list above.
+              Pick a type to add a field — add as many as you need, they stack in the list above.
             </p>
             <FormFieldTypePicker onPick={addField} />
             <button
@@ -340,6 +376,7 @@ function FormElementInspector({
   element,
   isFunnel,
   canEdit,
+  pageLinks,
 }: {
   form: FormConfig;
   onSetForm: (form: FormConfig | undefined) => void;
@@ -347,6 +384,7 @@ function FormElementInspector({
   element: string;
   isFunnel: boolean;
   canEdit: boolean;
+  pageLinks: FormPageLink[];
 }) {
   if (element === FORM_TITLE_ELEMENT) {
     return (
@@ -406,6 +444,7 @@ function FormElementInspector({
         onSetForm={onSetForm}
         isFunnel={isFunnel}
         canEdit={canEdit}
+        pageLinks={pageLinks}
       />
     );
   }
@@ -429,16 +468,18 @@ function FormSettingsInspector({
   onSetForm,
   isFunnel,
   canEdit,
+  pageLinks,
 }: {
   form: FormConfig;
   onSetForm: (form: FormConfig | undefined) => void;
   isFunnel: boolean;
   canEdit: boolean;
+  pageLinks: FormPageLink[];
 }) {
   const after = form.afterSubmit;
   const kindOptions = [
-    { id: 'message' as const, label: 'Thank-you message' },
-    { id: 'url' as const, label: 'Redirect to a link' },
+    { id: 'message' as const, label: 'Show a message' },
+    { id: 'url' as const, label: 'Redirect to a page' },
     ...(isFunnel ? [{ id: 'nextStep' as const, label: 'Next funnel step' }] : []),
   ];
 
@@ -447,7 +488,7 @@ function FormSettingsInspector({
     if (kind === after.kind) return;
     if (kind === 'message')
       setAfter({ kind: 'message', heading: 'Thanks!', body: "We'll be in touch shortly." });
-    else if (kind === 'url') setAfter({ kind: 'url', url: '' });
+    else if (kind === 'url') setAfter({ kind: 'url', url: pageLinks[0]?.href ?? '' });
     else setAfter({ kind: 'nextStep' });
   };
 
@@ -482,23 +523,24 @@ function FormSettingsInspector({
           </BuilderField>
         </>
       ) : null}
+      {after.kind === 'message' ? (
+        <p className="mb-3.5 -mt-1 text-[12px] leading-[1.5] text-ink-quiet">
+          The visitor stays on the page and sees this message — the recommended option, since it
+          lets a thank-you / conversion event fire for tracking.
+        </p>
+      ) : null}
       {after.kind === 'url' ? (
-        <BuilderField
-          label="Redirect link"
-          helper={<>Where the visitor goes after submitting — a full URL.</>}
-        >
-          <BuilderInput
-            value={after.url}
-            placeholder="https://…"
-            disabled={!canEdit}
-            onChange={(e) => setAfter({ ...after, url: e.target.value })}
-          />
-        </BuilderField>
+        <UrlRedirectField
+          url={after.url}
+          pageLinks={pageLinks}
+          canEdit={canEdit}
+          onChange={(url) => setAfter({ kind: 'url', url })}
+        />
       ) : null}
       {after.kind === 'nextStep' ? (
         <p className="mb-3.5 text-[13px] leading-[1.5] text-ink-quiet">
-          The visitor advances to the next step of this funnel. If this is the
-          last step, the thank-you message shows instead.
+          The visitor advances to the next step of this funnel. If this is the last step, the
+          thank-you message shows instead.
         </p>
       ) : null}
 
@@ -534,6 +576,59 @@ function FormSettingsInspector({
         onReset={() => clearColor(form, onSetForm, 'label')}
       />
     </div>
+  );
+}
+
+/** The after-submit redirect target — a pick from the site's pages, with a
+ *  "custom URL" escape hatch. Falls back to a plain URL input when the editor
+ *  has no page list (e.g. a funnel step). */
+function UrlRedirectField({
+  url,
+  pageLinks,
+  canEdit,
+  onChange,
+}: {
+  url: string;
+  pageLinks: FormPageLink[];
+  canEdit: boolean;
+  onChange: (url: string) => void;
+}) {
+  const CUSTOM = '__custom';
+  const selectedPage = pageLinks.find((p) => p.href === url);
+  const isCustom = !selectedPage;
+  const selectClass =
+    'block w-full rounded-[7px] border border-rule bg-card px-3.5 py-[11px] ' +
+    'font-sans text-[14px] text-ink transition-colors focus:border-rust ' +
+    'focus:outline-none focus:ring-[3px] focus:ring-rust/12 ' +
+    'disabled:cursor-not-allowed disabled:opacity-55';
+
+  return (
+    <BuilderField label="Redirect to" helper={<>Where the visitor goes after submitting.</>}>
+      {pageLinks.length > 0 ? (
+        <select
+          value={selectedPage ? selectedPage.href : CUSTOM}
+          disabled={!canEdit}
+          onChange={(e) => onChange(e.target.value === CUSTOM ? '' : e.target.value)}
+          className={selectClass}
+        >
+          {pageLinks.map((p) => (
+            <option key={p.href} value={p.href}>
+              {p.label} ({p.href})
+            </option>
+          ))}
+          <option value={CUSTOM}>Custom URL…</option>
+        </select>
+      ) : null}
+      {isCustom || pageLinks.length === 0 ? (
+        <BuilderInput
+          className={pageLinks.length > 0 ? 'mt-2' : undefined}
+          value={url}
+          placeholder="https://… or /path"
+          disabled={!canEdit}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      ) : null}
+    </BuilderField>
   );
 }
 
@@ -614,9 +709,7 @@ function FieldInspector({
           ]}
           capability="editForms"
           helper={<>Maps this answer onto the lead record.</>}
-          onChange={(v) =>
-            update({ leadRole: v === 'none' ? undefined : v })
-          }
+          onChange={(v) => update({ leadRole: v === 'none' ? undefined : v })}
         />
       ) : null}
 
@@ -658,9 +751,7 @@ function OptionsEditor({
             <BuilderInput
               value={opt}
               disabled={!canEdit}
-              onChange={(e) =>
-                onChange(options.map((o, idx) => (idx === i ? e.target.value : o)))
-              }
+              onChange={(e) => onChange(options.map((o, idx) => (idx === i ? e.target.value : o)))}
             />
             {canEdit ? (
               <button
