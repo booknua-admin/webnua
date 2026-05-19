@@ -11,7 +11,6 @@ import {
   TicketsHeroStat,
 } from '@/components/shared/tickets/TicketsHero';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
-import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
 import { Input } from '@/components/ui/input';
 import { normalizeError } from '@/lib/errors';
 import {
@@ -22,7 +21,6 @@ import {
 import { useAdminTicketsInbox } from '@/lib/tickets/queries';
 import type { TicketStatus, TicketTab } from '@/lib/tickets/types';
 import { useAllPendingApprovals } from '@/lib/website/use-publish-state';
-import { useIsAgencyMode, useWorkspace } from '@/lib/workspace/workspace-stub';
 
 const APPROVALS_TAB_ID = 'website-approvals';
 
@@ -58,15 +56,6 @@ function AdminTicketsContent() {
   const [search, setSearch] = useState('');
   const onApprovalsTab = activeTabId === APPROVALS_TAB_ID;
 
-  // Workspace context: agency mode → cross-client roster + the multi-select
-  // filter; sub-account mode → the page scopes to the picked client.
-  const isAgency = useIsAgencyMode();
-  const { activeClientId } = useWorkspace();
-  const effectiveClients = useMemo(
-    () => (isAgency || !activeClientId ? selectedClients : [activeClientId]),
-    [isAgency, activeClientId, selectedClients],
-  );
-
   const allTickets = useMemo(() => tickets ?? [], [tickets]);
 
   // Per-client ticket counts, keyed on client slug — shown in the dropdown.
@@ -82,10 +71,10 @@ function AdminTicketsContent() {
   // computed against it so the filters compose.
   const clientPool = useMemo(
     () =>
-      effectiveClients.length === 0
+      selectedClients.length === 0
         ? allTickets
-        : allTickets.filter((t) => effectiveClients.includes(t.client.slug)),
-    [allTickets, effectiveClients],
+        : allTickets.filter((t) => selectedClients.includes(t.client.slug)),
+    [allTickets, selectedClients],
   );
 
   const tabs = useMemo<TicketTab[]>(() => {
@@ -136,15 +125,13 @@ function AdminTicketsContent() {
           }
         />
 
-        {onApprovalsTab ? null : isAgency ? (
+        {onApprovalsTab ? null : (
           <ClientMultiSelect
             label="// CLIENT"
             value={selectedClients}
             onChange={setSelectedClients}
             counts={clientCounts}
           />
-        ) : (
-          <WorkspaceContextBanner />
         )}
 
         <div className="flex items-center justify-between gap-4">
