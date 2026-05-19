@@ -61,6 +61,7 @@ operator to reason about who can do what.
 | `editSEO` | Page title, meta description, OG image, slug | ✓ | — |
 | `editLayout` | Reorder sections, toggle sections on/off | ✓ | — |
 | `editSections` | Add new sections from registry, remove existing | ✓ | — |
+| `editForms` | Edit lead-capture forms — fields, validation, post-submit (see `reference/form-builder-design.md`) | ✓ | — |
 | `editTheme` | Brand tokens (accent, fonts, voice) — site-wide effect | ✓ | — |
 | `editPages` | Create / rename / delete pages, change page type | ✓ | — |
 | `useAI` | Invoke AI draft / regenerate / "show me 3 alternatives" | ✓ | — (gated under copy) |
@@ -69,9 +70,14 @@ operator to reason about who can do what.
 | `rollback` | Restore a prior published version as the new draft | ✓ | — |
 | `manageDomain` | Point custom domain, SSL, DNS verify | ✓ | — |
 
-13 capabilities total. Force-publish is **not** its own capability — see §2.4
-for why (it's a UI affordance + audit log on top of `publish`, gated at the
-call site by `role === 'admin'`).
+14 capabilities total. `editForms` was added after this design (see
+`reference/form-builder-design.md`) — it crosses the original 13's "bias toward
+fewer" bar deliberately: a lead-capture form is a distinct editable artefact
+with its own data shape and its own lead-pipeline consequence, and folding it
+under `editCopy` would let a copy-only editor silently rewire where leads go.
+Force-publish is **not** its own capability — see §2.4 for why (it's a UI
+affordance + audit log on top of `publish`, gated at the call site by
+`role === 'admin'`).
 
 **Two intentional omissions:**
 - No separate `commentOnPage` capability. Threaded comments aren't planned for
@@ -692,6 +698,19 @@ managed-tier clients the entire generation flow is operator-only.
 ---
 
 ## 5. The wizard as constrained wrapper
+
+> **SUPERSEDED — the 8-step onboarding wizard was sunset.** The wizard
+> described in this section (and its Session-7 refactor) was removed — see the
+> commit "Sunset the 8-step onboarding wizard". Client creation + first-funnel
+> generation is now the **`CreateClientModal` quick-create flow**
+> (`components/admin/CreateClientModal.tsx`): a five-step modal — business →
+> offer → brief → design → build — that captures one brief, runs the website /
+> funnel generators, persists the client to Supabase, and lands the operator
+> in the real editor via `/clients/new/result`. There is **no** wizard-frame
+> editor mode (`WizardSectionEditor` was deleted); the generated draft is
+> edited in the normal `SectionEditor`. §5.6's self-serve forward note still
+> holds — the modal is the low-friction entry a self-serve tier would reuse.
+> The sections below are kept as the reasoning trail only.
 
 > **Revised — wizard-refactor reconciliation pass.** The §5.1 / §5.2 / §9
 > inconsistency flagged before Session 7 completion is resolved here. The

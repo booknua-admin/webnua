@@ -6,8 +6,8 @@
 // The brief is captured once; the website / funnel checkboxes decide which
 // generators run, so the same answers are never asked twice.
 //
-// Output is persisted to the created-clients overlay (STUB) and the flow
-// routes to the result viewer.
+// The client + website + funnel are persisted to Supabase (see
+// lib/clients/create-client.ts); the flow routes to the result viewer.
 // =============================================================================
 
 import { useRouter } from 'next/navigation';

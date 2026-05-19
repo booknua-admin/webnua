@@ -186,6 +186,15 @@ risk.
 
 ## 3. The first-page-of-website flavour
 
+> **SUPERSEDED — the onboarding wizard was sunset.** This section described the
+> first-page flavour as the 8-step `/clients/new/<step>` wizard. That wizard
+> was removed (see `builder-design.md` §5's SUPERSEDED banner). The
+> first-funnel / first-page generation for a new client is now the
+> **`CreateClientModal` quick-create flow** — a five-step modal that builds the
+> same brief and runs the website / funnel generators. The Q1–Q5 question set
+> in §2 still stands as the new-page-on-existing-website flow; the modal is its
+> client-creation sibling. The mapping below is kept as the reasoning trail.
+
 **Does NOT live at `/website/new`.** The onboarding wizard at
 `/clients/new/<step>` IS this questionnaire — Session 7 refactors the
 wizard so steps 2–4 emit the same prompt-context object as the
@@ -384,6 +393,15 @@ break-glass discipline; nothing about generation needs special treatment).
 ---
 
 ## 6. The stub generation handler (Session 6 only)
+
+> **Note — the stub has since evolved.** `generation-stub.ts` gained a
+> **design-variety layer** (recipe choice, light/dark band rhythm, per-section
+> theme variation) and is now **brief-aware** — output varies with the brief,
+> not only the `(pageType, intent, audience)` triple. It is still deterministic
+> *on the brief*. A sibling `site-generation-stub.ts` backs the
+> `CreateClientModal` flow. None of this changes the contract or the prompt
+> layer — it is the stub getting closer to real-model output. The "deterministic
+> on three keys" wording below describes the original Session-6 stub.
 
 Implementation lives in `src/lib/website/generation-stub.ts`. Shape:
 
