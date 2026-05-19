@@ -877,6 +877,45 @@ The Q&A-to-Page pipeline that backs `/website/new`. Spec lives in `reference/bui
 
 ---
 
+## Remaining build phases
+
+> The roadmap to a finished platform. The frontend + the wired-data backend
+> (Phases 1–6 / Clusters 1–9 + the form builder) are done. What is left:
+
+- **Phase 7 — Integrations.** OAuth + API for GBP, Meta Ads, GA4, Google Ads
+  (business) and Stripe, Resend, Twilio (platform). Makes the
+  `/settings/integrations` connect flows real; unlocks review auto-pull,
+  campaign metrics, email/SMS sending, real billing. **Owned by the human
+  developer — done on a local machine with real credentials, not in a
+  sandbox session.** No `integration_connections` / OAuth-token tables exist
+  yet; `ConnectIntegrationModal` is a stub.
+- **Phase 8 — Automation / messaging execution engine.** Automations are
+  definitions only — nothing sends. Needs a scheduler (edge function + cron),
+  a `messaging_events` send-log table, and the suppression / anti-spam rules
+  (see the parked decision). Closes the campaign + automation metrics gap.
+  **Depends on Phase 7** (needs a working sender).
+- **Phase 9 — Realtime + notification writes.** Supabase Realtime on
+  tickets / approvals / notifications. A notification write path — the feed
+  reads the `notifications` table but nothing inserts rows yet.
+- **Phase 10 — Production hardening.** Domain management (V2), deploy config,
+  env/secrets, error monitoring, security review + Supabase advisors, live
+  browser E2E.
+- **Phase 11 — Proof Page prospecting tool.** The deferred admin feature
+  (audit → proof-page → outreach) — see the section below. Build last.
+
+**Additional gaps found in the May 2026 audit (not in the original 7–11 list):**
+- **Public site rendering.** Generated websites / funnels / lead-capture forms
+  have no public render or hosting pipeline — the editor builds them, nothing
+  serves them. Its own workstream; Phase 10's domain management implies it but
+  does not cover rendering.
+- **Editor publish/approval layer still on localStorage.** `publish-stub.ts`,
+  `draft-stub.ts`, `audit-stub.ts`, `website-approval-stub.ts`,
+  `use-autosave.ts` are not yet on their Supabase tables (`website_versions`,
+  `*_approval_submissions`, `force_publish_audit_log`).
+- **Funnel publish / preflight unbuilt** — see the parked decision.
+
+---
+
 ## Deferred / out of scope until end
 
 The admin **Proof Page / prospecting tool** (the audit → proof-page → outreach
