@@ -1,0 +1,151 @@
+// =============================================================================
+// Public form submission — POST /api/forms/submit.
+//
+// A lead-capture form on a published website / funnel posts here. The route
+// is PUBLIC (anonymous visitors) — the one place, alongside the renderer,
+// that anon traffic reaches. It writes with the service-role client (RLS
+// bypassing); all validation is done here in code.
+//
+// A submission becomes a real lead: a `customers` row + a `leads` row + the
+// opening `form_submitted` `lead_events` entry. This mirrors the editor
+// test-submit path (lib/leads/queries.tsx submitLead) so a public lead is
+// indistinguishable from a test one — and the leads inbox, the dashboard
+// funnel, and the new-lead notification trigger all light up with no extra
+// wiring.
+//
+// V1 limitations: image-field uploads are not handled here (the private
+// lead-attachments bucket needs an authenticated upload) — an image field's
+// filename is recorded, the file is not stored. Abuse (a script posting fake
+// leads) is possible; clientId is verified to exist but there is no rate
+// limit yet.
+// =============================================================================
+
+import { NextResponse } from 'next/server';
+
+import { getServiceClient } from '@/lib/supabase/server';
+
+type IncomingField = {
+  fieldId?: unknown;
+  label?: unknown;
+  type?: unknown;
+  value?: unknown;
+  leadRole?: unknown;
+};
+
+type CleanField = {
+  label: string;
+  type: string;
+  value: string;
+  leadRole?: 'name' | 'email' | 'phone';
+};
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function bad(message: string, status = 400) {
+  return NextResponse.json({ ok: false, message }, { status });
+}
+
+function cleanField(raw: IncomingField): CleanField | null {
+  if (typeof raw.label !== 'string' || typeof raw.type !== 'string') return null;
+  const value = typeof raw.value === 'string' ? raw.value.slice(0, 5000) : '';
+  const role =
+    raw.leadRole === 'name' || raw.leadRole === 'email' || raw.leadRole === 'phone'
+      ? raw.leadRole
+      : undefined;
+  return { label: raw.label.slice(0, 200), type: raw.type, value, leadRole: role };
+}
+
+export async function POST(req: Request) {
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return bad('Invalid request body.');
+  }
+
+  const { clientId, source, fields } = (body ?? {}) as {
+    clientId?: unknown;
+    source?: unknown;
+    fields?: unknown;
+  };
+
+  if (typeof clientId !== 'string' || !UUID_RE.test(clientId)) {
+    return bad('Missing or invalid client.');
+  }
+  if (!Array.isArray(fields) || fields.length === 0) {
+    return bad('No form fields submitted.');
+  }
+  const cleanFields = (fields as IncomingField[])
+    .map(cleanField)
+    .filter((f): f is CleanField => f !== null);
+  if (cleanFields.length === 0) return bad('No valid form fields.');
+
+  const sourceLabel =
+    typeof source === 'string' && source.trim()
+      ? source.trim().slice(0, 120)
+      : 'Website form';
+
+  const svc = getServiceClient();
+
+  // Verify the client exists — a fabricated clientId is rejected.
+  const { data: client } = await svc
+    .from('clients')
+    .select('id')
+    .eq('id', clientId)
+    .maybeSingle();
+  if (!client) return bad('Unknown client.', 404);
+
+  // Resolve the lead identity from the leadRole-tagged fields.
+  const roleValue = (role: 'name' | 'email' | 'phone') =>
+    cleanFields.find((f) => f.leadRole === role)?.value.trim() || '';
+  const name = roleValue('name') || 'Website enquiry';
+  const email = roleValue('email') || null;
+  const phone = roleValue('phone') || null;
+
+  const { data: customer, error: customerError } = await svc
+    .from('customers')
+    .insert({ client_id: clientId, name, email, phone })
+    .select('id')
+    .single();
+  if (customerError || !customer) {
+    return bad('Could not record the submission.', 500);
+  }
+
+  const { data: lead, error: leadError } = await svc
+    .from('leads')
+    .insert({
+      client_id: clientId,
+      customer_id: customer.id,
+      customer_name_snapshot: name,
+      customer_phone_snapshot: phone,
+      status: 'new',
+      urgency: 'none',
+      source: sourceLabel,
+    })
+    .select('id')
+    .single();
+  if (leadError || !lead) {
+    return bad('Could not record the submission.', 500);
+  }
+
+  const { error: eventError } = await svc.from('lead_events').insert({
+    lead_id: lead.id,
+    kind: 'form_submitted',
+    occurred_at: new Date().toISOString(),
+    actor_user_id: null,
+    payload: {
+      source: sourceLabel,
+      fields: cleanFields.map((f) => ({
+        label: f.label,
+        value: f.value,
+        type: f.type,
+      })),
+      attachments: [],
+    },
+  });
+  if (eventError) {
+    return bad('Could not record the submission.', 500);
+  }
+
+  return NextResponse.json({ ok: true, leadId: lead.id });
+}

@@ -127,6 +127,7 @@ export default async function PublishedPage({
     return (
       <PublicSiteRenderer
         kind="website"
+        clientId={target.clientId}
         brand={target.brand}
         header={target.header}
         footer={target.footer}
@@ -136,5 +137,13 @@ export default async function PublishedPage({
       />
     );
   }
-  return <PublicSiteRenderer kind="funnel" brand={target.brand} step={target.step} />;
+  return (
+    <PublicSiteRenderer
+      kind="funnel"
+      clientId={target.clientId}
+      brand={target.brand}
+      step={target.step}
+      nextStepHref={target.nextStepHref}
+    />
+  );
 }

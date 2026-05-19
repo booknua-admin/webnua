@@ -27,6 +27,7 @@ import type {
 import type { BrandObject } from '@/lib/website/types';
 
 import { SelectableElement } from '@/lib/website/sections/_shared/SelectableElement';
+import { useSectionFormSlot } from '@/lib/website/sections/_shared/section-form-slot';
 
 /** Reserved selectable-element ids for the non-field parts of a form. */
 export const FORM_TITLE_ELEMENT = '__formTitle';
@@ -76,6 +77,12 @@ export function FormBlock({
 }: FormBlockProps) {
   const colors = resolveFormColors(form, brand);
   const createLead = useCreateLead();
+  // On a published site the slot carries a publicSubmit context — the form
+  // then submits for real against /api/forms/submit. The editor test-submit
+  // path (testSubmitCtx) takes precedence when both are somehow present.
+  const slot = useSectionFormSlot();
+  const publicSubmit = slot?.publicSubmit ?? null;
+  const isPublic = !!publicSubmit && !testSubmitCtx;
 
   const [values, setValues] = useState<Record<string, string>>({});
   const [files, setFiles] = useState<Record<string, File>>({});
@@ -177,20 +184,66 @@ export function FormBlock({
     }
   };
 
+  const handlePublicSubmit = async () => {
+    if (!publicSubmit || busy) return;
+    setNotice(null);
+    if (!validate()) return;
+    setBusy(true);
+    try {
+      const assembled: SubmittedFormField[] = form.fields.map((field) => ({
+        fieldId: field.id,
+        label: field.label,
+        type: field.type,
+        value: values[field.id] ?? '',
+        leadRole: field.leadRole,
+      }));
+      const res = await fetch('/api/forms/submit', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          clientId: publicSubmit.clientId,
+          source: publicSubmit.sourceLabel,
+          fields: assembled,
+        }),
+      });
+      if (!res.ok) throw new Error('submit failed');
+
+      if (form.afterSubmit.kind === 'url') {
+        window.location.href = form.afterSubmit.url || '/';
+        return;
+      }
+      if (form.afterSubmit.kind === 'nextStep' && publicSubmit.nextStepHref) {
+        window.location.href = publicSubmit.nextStepHref;
+        return;
+      }
+      setDone(true);
+    } catch {
+      setNotice({
+        tone: 'warn',
+        text: 'Something went wrong — please try again.',
+      });
+      setBusy(false);
+    }
+  };
+
   const cardStyle = {
     backgroundColor: colors.background,
     borderColor: colors.fieldBorder,
   };
 
-  if (done && form.afterSubmit.kind === 'message') {
+  if (done) {
+    const heading =
+      form.afterSubmit.kind === 'message' ? form.afterSubmit.heading : 'Thanks!';
+    const bodyText =
+      form.afterSubmit.kind === 'message'
+        ? form.afterSubmit.body
+        : "We've received your details and will be in touch shortly.";
     return (
       <div className="w-full rounded-xl border p-7 text-center" style={cardStyle}>
         <p className="text-[20px] font-bold tracking-[-0.01em]" style={{ color: colors.label }}>
-          {form.afterSubmit.heading}
+          {heading}
         </p>
-        <p className="mt-2 text-[14px] leading-[1.6] text-ink-mid">
-          {form.afterSubmit.body}
-        </p>
+        <p className="mt-2 text-[14px] leading-[1.6] text-ink-mid">{bodyText}</p>
       </div>
     );
   }
@@ -199,7 +252,10 @@ export function FormBlock({
     <div className="w-full">
       <div className="w-full rounded-xl border p-6" style={cardStyle}>
         <form
-          onSubmit={(e) => e.preventDefault()}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (isPublic) void handlePublicSubmit();
+          }}
           className="flex w-full flex-col gap-4"
           noValidate
         >
@@ -243,23 +299,48 @@ export function FormBlock({
             ))
           )}
 
-          <SelectableElement
-            id={FORM_SUBMIT_ELEMENT}
-            selected={selectedElement === FORM_SUBMIT_ELEMENT}
-            onSelect={onSelectElement}
-          >
-            <span
-              className="block w-full rounded-lg py-3 text-center text-[14px] font-bold"
+          {isPublic ? (
+            <button
+              type="submit"
+              disabled={busy}
+              className="block w-full rounded-lg py-3 text-center text-[14px] font-bold transition-opacity hover:opacity-90 disabled:opacity-60"
               style={{
                 backgroundColor: colors.buttonBackground,
                 color: colors.buttonText,
               }}
             >
-              {form.submitLabel}
-            </span>
-          </SelectableElement>
+              {busy ? 'Sending…' : form.submitLabel}
+            </button>
+          ) : (
+            <SelectableElement
+              id={FORM_SUBMIT_ELEMENT}
+              selected={selectedElement === FORM_SUBMIT_ELEMENT}
+              onSelect={onSelectElement}
+            >
+              <span
+                className="block w-full rounded-lg py-3 text-center text-[14px] font-bold"
+                style={{
+                  backgroundColor: colors.buttonBackground,
+                  color: colors.buttonText,
+                }}
+              >
+                {form.submitLabel}
+              </span>
+            </SelectableElement>
+          )}
         </form>
       </div>
+
+      {isPublic && notice ? (
+        <p
+          className={
+            'mt-2 text-[13px] ' +
+            (notice.tone === 'good' ? 'text-good' : 'text-warn')
+          }
+        >
+          {notice.text}
+        </p>
+      ) : null}
 
       {testSubmitCtx ? (
         <div className="mt-3 rounded-md border border-dashed border-rust/40 bg-rust-soft/40 px-3.5 py-3">

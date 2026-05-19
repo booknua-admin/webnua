@@ -40,6 +40,7 @@ const PUBLIC_SITE_DOMAIN = (
 export type ResolvedTarget =
   | {
       status: 'website';
+      clientId: string;
       siteName: string;
       brand: BrandObject;
       faviconUrl: string | null;
@@ -51,10 +52,14 @@ export type ResolvedTarget =
     }
   | {
       status: 'funnel';
+      clientId: string;
       siteName: string;
       brand: BrandObject;
       faviconUrl: string | null;
       step: FunnelStep;
+      /** Path to the next funnel step (for `afterSubmit: nextStep`), or null
+       *  on the last step. */
+      nextStepHref: string | null;
     }
   | { status: 'unpublished'; name: string }
   | { status: 'not_found' };
@@ -263,6 +268,7 @@ export const resolveSite = cache(
         const brand = await brandForClient(clientId);
         return {
           status: 'website',
+          clientId,
           siteName: website?.name ?? page.title,
           brand,
           faviconUrl: brand.faviconUrl,
@@ -287,18 +293,29 @@ export const resolveSite = cache(
           funnel.published_version_id,
         );
         if (!snap) return { status: 'unpublished', name: funnel.name };
-        const step = pickStep(
-          snap as FunnelVersionSnapshot,
-          segments.slice(1),
-        );
+        const funnelSnapshot = snap as FunnelVersionSnapshot;
+        const step = pickStep(funnelSnapshot, segments.slice(1));
         if (!step) return { status: 'not_found' };
         const brand = await brandForClient(clientId);
+        // Where an `afterSubmit: nextStep` form on this step advances to.
+        const order =
+          funnelSnapshot.stepOrder.length > 0
+            ? funnelSnapshot.stepOrder
+            : funnelSnapshot.steps.map((s) => s.id);
+        const idx = order.indexOf(step.id);
+        let nextStepHref: string | null = null;
+        if (idx >= 0 && idx < order.length - 1) {
+          const next = funnelSnapshot.steps.find((s) => s.id === order[idx + 1]);
+          if (next) nextStepHref = `/${first}/${next.slug}`;
+        }
         return {
           status: 'funnel',
+          clientId,
           siteName: funnel.name,
           brand,
           faviconUrl: brand.faviconUrl,
           step,
+          nextStepHref,
         };
       }
     }
