@@ -18,6 +18,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { DomainStatusIndicator } from '@/components/shared/website/DomainStatusIndicator';
 import { ForcePublishMenu } from '@/components/shared/website/ForcePublishMenu';
 import { PageReviewCard } from '@/components/shared/website/PageReviewCard';
@@ -103,6 +104,7 @@ function ReviewSurface({ website }: { website: Website }) {
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const draftQuery = useEffectiveDraft(website.id);
   const snapshot = draftQuery.data?.snapshot ?? null;
@@ -133,18 +135,19 @@ function ReviewSurface({ website }: { website: Website }) {
   const grouped = groupResultsByPage(report.results);
   const siteResults = grouped['__site'] ?? [];
 
-  const handlePublish = async () => {
+  // Warnings don't block publish but warrant a branded confirm step — the
+  // native window.confirm is replaced by an in-app ConfirmDialog.
+  const handlePublish = () => {
     if (!user || !report.canPublish) return;
-    if (
-      report.counts.warn > 0 &&
-      !window.confirm(
-        `There ${report.counts.warn === 1 ? 'is' : 'are'} ${report.counts.warn} warning${
-          report.counts.warn === 1 ? '' : 's'
-        }. Publish anyway?`,
-      )
-    ) {
+    if (report.counts.warn > 0) {
+      setConfirmOpen(true);
       return;
     }
+    void runPublish();
+  };
+
+  const runPublish = async () => {
+    if (!user || !report.canPublish) return;
     setBusy(true);
     setError(null);
     const result = await publishDraft(website.id, {
@@ -298,6 +301,27 @@ function ReviewSurface({ website }: { website: Website }) {
           ) : null}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Publish with warnings?"
+        description={
+          <>
+            There {report.counts.warn === 1 ? 'is' : 'are'}{' '}
+            <strong>{report.counts.warn}</strong>{' '}
+            {report.counts.warn === 1 ? 'warning' : 'warnings'} on this draft.
+            Warnings don’t block publishing — you can ship now and fix them
+            later.
+          </>
+        }
+        confirmLabel="Publish anyway"
+        cancelLabel="Keep editing"
+        onConfirm={() => {
+          setConfirmOpen(false);
+          void runPublish();
+        }}
+      />
     </ReviewShell>
   );
 }

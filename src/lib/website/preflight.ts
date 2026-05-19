@@ -147,13 +147,20 @@ const heroContentRule: PreflightRule = {
 
 const heroCtaRule: PreflightRule = {
   id: 'hero-cta',
-  title: 'Hero sections have a primary CTA',
+  title: 'Hero sections on conversion pages have a primary CTA',
   run(snapshot, { websiteId }) {
     const results: PreflightResult[] = [];
     for (const page of snapshot.pages) {
+      // A hero CTA earns its keep on the pages built to convert — home and
+      // services. An About / Contact / generic hero is informational; a
+      // missing CTA there is a deliberate choice, not a defect to flag.
+      if (page.type !== 'home' && page.type !== 'services') continue;
       for (const section of enabledSectionsByType(page, 'hero')) {
         const data = section.data as Partial<HeroData>;
-        const hasCta = nonEmpty(data.ctaPrimaryLabel) && nonEmpty(data.ctaPrimaryHref);
+        // An operator who hid the primary CTA made a call — respect it.
+        if (data.ctaPrimaryVisible === false) continue;
+        const hasCta =
+          nonEmpty(data.ctaPrimaryLabel) && nonEmpty(data.ctaPrimaryHref);
         if (!hasCta) {
           results.push({
             ruleId: 'hero-cta',
@@ -245,10 +252,17 @@ const trustEvidenceRule: PreflightRule = {
     for (const page of snapshot.pages) {
       for (const section of enabledSectionsByType(page, 'trust')) {
         const data = section.data as Partial<TrustData>;
-        const signals = (data.items ?? []).filter(
-          (it) => nonEmpty(it.value) || nonEmpty(it.label),
+        // A trust section carries evidence in any of three slots — stat
+        // items, logo items (imageUrl), or the badge row. Count all of them
+        // so a section that uses logos or badges isn't wrongly "empty".
+        const hasItem = (data.items ?? []).some(
+          (it) =>
+            nonEmpty(it.value) || nonEmpty(it.label) || nonEmpty(it.imageUrl),
         );
-        if (signals.length === 0) {
+        const hasBadge =
+          data.showBadges !== false &&
+          (data.badges ?? []).some((b) => nonEmpty(b.label));
+        if (!hasItem && !hasBadge) {
           results.push({
             ruleId: 'trust-evidence',
             status: 'warn',

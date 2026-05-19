@@ -18,6 +18,7 @@ import { SelectableElement } from './_shared/SelectableElement';
 import { ColorField, ThemePresetField } from './_shared/ThemeField';
 import { ToggleField } from './_shared/ToggleField';
 import { VariantField, type VariantOption } from './_shared/VariantField';
+import { useWebsiteNav } from './_shared/website-nav-slot';
 
 // =============================================================================
 // Header — website-level singleton. Logo + navigation + an optional global
@@ -56,8 +57,18 @@ const HEADER_HARDCODED_THEME: SectionTheme = {
   body: '#5b6270',
 };
 
-/** Representative nav links — the live site substitutes Website.nav. */
-const SAMPLE_NAV = ['Home', 'Services', 'About', 'Contact'] as const;
+/** A nav entry — `href` null means decorative (the editor's representative
+ *  links); a real href renders a navigable `<a>` (the live site). */
+type HeaderNavItem = { label: string; href: string | null };
+
+/** Representative nav links — shown in the editor; the live site substitutes
+ *  the real `Website.nav` via the website-nav slot. */
+const SAMPLE_NAV: readonly HeaderNavItem[] = [
+  { label: 'Home', href: null },
+  { label: 'Services', href: null },
+  { label: 'About', href: null },
+  { label: 'Contact', href: null },
+];
 
 const DEFAULTS: HeaderData = {
   theme: {},
@@ -233,6 +244,12 @@ function HeaderPreview({
     HEADER_HARDCODED_THEME,
   );
 
+  // The live site provides the real Website.nav through the slot; the editor
+  // (no provider) falls back to the representative sample links.
+  const realNav = useWebsiteNav();
+  const navItems: readonly HeaderNavItem[] =
+    realNav && realNav.length > 0 ? realNav : SAMPLE_NAV;
+
   return (
     <SectionShell theme={resolved} brand={brand} inset="flush" pad="none">
       {({ theme, headingFont, accent }) => {
@@ -269,7 +286,7 @@ function HeaderPreview({
             {d.layout === 'logo-center' ? (
               <>
                 <NavLinks
-                  items={SAMPLE_NAV.slice(0, 2)}
+                  items={navItems.slice(0, 2)}
                   theme={theme}
                   accent={accent}
                   className="hidden flex-1 @2xl:flex"
@@ -277,7 +294,7 @@ function HeaderPreview({
                 {logo}
                 <div className="flex flex-1 items-center justify-end gap-6">
                   <NavLinks
-                    items={SAMPLE_NAV.slice(2)}
+                    items={navItems.slice(2)}
                     theme={theme}
                     accent={accent}
                     className="hidden @2xl:flex"
@@ -291,7 +308,7 @@ function HeaderPreview({
                 {logo}
                 <div className="flex flex-1 items-center justify-end gap-7">
                   <NavLinks
-                    items={SAMPLE_NAV}
+                    items={navItems}
                     theme={theme}
                     accent={accent}
                     className="hidden @2xl:flex"
@@ -304,7 +321,7 @@ function HeaderPreview({
               <>
                 {logo}
                 <NavLinks
-                  items={SAMPLE_NAV}
+                  items={navItems}
                   theme={theme}
                   accent={accent}
                   className="hidden flex-1 justify-center @2xl:flex"
@@ -363,22 +380,34 @@ function NavLinks({
   accent,
   className,
 }: {
-  items: readonly string[];
+  items: readonly HeaderNavItem[];
   theme: ResolvedTheme;
   accent: string;
   className?: string;
 }) {
   return (
     <nav className={`items-center gap-7 ${className ?? ''}`} aria-label="Site navigation">
-      {items.map((item, i) => (
-        <span
-          key={item}
-          className="text-[14px] font-medium"
-          style={{ color: i === 0 ? accent : theme.body }}
-        >
-          {item}
-        </span>
-      ))}
+      {items.map((item, i) => {
+        const color = i === 0 ? accent : theme.body;
+        return item.href ? (
+          <a
+            key={`${item.label}-${i}`}
+            href={item.href}
+            className="text-[14px] font-medium no-underline"
+            style={{ color }}
+          >
+            {item.label}
+          </a>
+        ) : (
+          <span
+            key={`${item.label}-${i}`}
+            className="text-[14px] font-medium"
+            style={{ color }}
+          >
+            {item.label}
+          </span>
+        );
+      })}
     </nav>
   );
 }

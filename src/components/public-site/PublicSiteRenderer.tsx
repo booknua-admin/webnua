@@ -19,6 +19,10 @@
 import type { FunnelStep } from '@/lib/funnel/types';
 import { getSectionDefinition } from '@/lib/website/sections';
 import { SectionFormSlotProvider } from '@/lib/website/sections/_shared/section-form-slot';
+import {
+  WebsiteNavProvider,
+  type ResolvedNavLink,
+} from '@/lib/website/sections/_shared/website-nav-slot';
 import type {
   BrandObject,
   NavLink,
@@ -93,44 +97,6 @@ function navHref(target: NavLinkTarget, pages: Page[]): string {
   return page.slug === 'home' ? '/' : `/${page.slug}`;
 }
 
-/** Minimal cross-page nav. Rendered only for multi-page sites — the header
- *  section carries the brand chrome; this is just the page links. */
-function PublicNav({
-  nav,
-  pages,
-  brand,
-}: {
-  nav: NavLink[];
-  pages: Page[];
-  brand: BrandObject;
-}) {
-  return (
-    <nav
-      style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        justifyContent: 'center',
-        gap: 24,
-        padding: '12px 24px',
-        background: '#ffffff',
-        borderBottom: '1px solid #e4ded0',
-        fontSize: 13,
-        fontWeight: 600,
-      }}
-    >
-      {nav.map((link, i) => (
-        <a
-          key={`${link.label}-${i}`}
-          href={navHref(link.target, pages)}
-          style={{ color: brand.accentColor, textDecoration: 'none' }}
-        >
-          {link.label}
-        </a>
-      ))}
-    </nav>
-  );
-}
-
 export function PublicSiteRenderer(props: Props) {
   if (props.kind === 'funnel') {
     return (
@@ -149,11 +115,14 @@ export function PublicSiteRenderer(props: Props) {
   }
 
   const { brand, clientId, header, footer, nav, pages, page } = props;
+  // Resolve Website.nav into real links and hand them to the header section
+  // through the nav slot — the header renders the site's one navigation bar.
+  const navLinks: ResolvedNavLink[] = nav.map((link) => ({
+    label: link.label,
+    href: navHref(link.target, pages),
+  }));
   return (
-    <>
-      {nav.length > 1 ? (
-        <PublicNav nav={nav} pages={pages} brand={brand} />
-      ) : null}
+    <WebsiteNavProvider links={navLinks}>
       <RenderedSection section={header} brand={brand} clientId={clientId} />
       <main>
         {page.sections.map((section) => (
@@ -166,6 +135,6 @@ export function PublicSiteRenderer(props: Props) {
         ))}
       </main>
       <RenderedSection section={footer} brand={brand} clientId={clientId} />
-    </>
+    </WebsiteNavProvider>
   );
 }
