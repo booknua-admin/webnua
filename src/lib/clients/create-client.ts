@@ -11,7 +11,7 @@
 import { AppError, normalizeError } from '@/lib/errors';
 import { generateFunnelSync } from '@/lib/funnel/generation-stub';
 import { supabase } from '@/lib/supabase/client';
-import { generateSiteSync, type ClientBrief } from '@/lib/website/site-generation-stub';
+import { generateSiteStub, type ClientBrief } from '@/lib/website/site-generation-stub';
 import { MAX_NAV_LINKS } from '@/lib/website/types';
 
 import { hydrateClients } from './clients-store';
@@ -107,7 +107,9 @@ export async function createClientWithGeneration(
 
   // -- 3. website + draft version --
   if (input.wantWebsite) {
-    const site = generateSiteSync(brief);
+    // Real Claude generation via /api/generate-site; falls back to the
+    // deterministic generator if ANTHROPIC_API_KEY is unset or the call fails.
+    const site = await generateSiteStub(brief);
     const { data: web, error: webErr } = await supabase
       .from('websites')
       .insert({
