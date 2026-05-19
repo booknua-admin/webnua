@@ -34,15 +34,17 @@ import { useRouter } from 'next/navigation';
 
 import { useCan, useUser } from '@/lib/auth/user-stub';
 import { useClientId } from '@/lib/clients/queries';
-import { publishFunnelDraft } from '@/lib/funnel/mutations';
+import { publishFunnelDraft, saveSeoForSteps } from '@/lib/funnel/mutations';
 import type { Funnel, FunnelStep } from '@/lib/funnel/types';
 import type { DraftSlot } from '@/lib/website/content-drafts';
 import { defaultFormConfig, type FormConfig } from '@/lib/website/form-config';
+import { saveSeoForPages } from '@/lib/website/mutations';
 import { useBrandForClient } from '@/lib/website/queries';
 import { getSectionDefinition } from '@/lib/website/sections';
 import type {
   ContainerKind,
   Page,
+  PageSEO,
   Section,
   SectionType,
   Website,
@@ -62,6 +64,7 @@ import {
 import { ForcePublishMenu } from './ForcePublishMenu';
 import { PagePreviewPane, type DevicePreview } from './PagePreviewPane';
 import { SectionFieldsPanel } from './SectionFieldsPanel';
+import { SeoPanel, type SeoPanelTarget } from './SeoPanel';
 import { SiteFontsMenu } from './SiteFontsMenu';
 
 export type SectionEditorMode =
@@ -152,6 +155,8 @@ export function SectionEditor({ mode }: SectionEditorProps) {
   const user = useUser();
   const router = useRouter();
   const canPublish = useCan('publish');
+  const canEditSeo = useCan('editSEO');
+  const [seoOpen, setSeoOpen] = useState(false);
 
   // Lane B lock applies only to websites. Funnel-step editing has no
   // approval queue yet (Session 7 is the shell; mechanics later).
@@ -300,6 +305,51 @@ export function SectionEditor({ mode }: SectionEditorProps) {
     if (result) router.push(`/funnels/${mode.funnel.id}`);
   };
 
+  // ---- SEO — every page (website mode) / every step (funnel mode) --------
+  // The currently-edited page/step uses the live section state so the AI
+  // auto-fill reads unsaved copy; the rest use their snapshot sections.
+  const seoTargets = useMemo<SeoPanelTarget[]>(() => {
+    if (mode.kind === 'page') {
+      return mode.pages.map((p) => ({
+        id: p.id,
+        label: p.title || p.slug,
+        kindLabel: pageLabel(p),
+        kind: p.type,
+        sections: p.id === mode.page.id ? sections : p.sections,
+        seo: p.seo,
+      }));
+    }
+    if (mode.kind === 'funnelStep') {
+      return mode.steps.map((s, i) => ({
+        id: s.id,
+        label: s.title || `Step ${i + 1}`,
+        kindLabel: s.type,
+        kind: s.type,
+        sections: s.id === mode.step.id ? sections : s.sections,
+        seo: s.seo,
+      }));
+    }
+    return [];
+  }, [mode, sections]);
+
+  const seoBusiness = useMemo(
+    () => ({
+      name: mode.kind === 'funnelStep' ? mode.funnel.name : mode.website.name,
+      industry: brand?.industryCategory,
+      audience: brand?.audienceLine,
+    }),
+    [mode, brand],
+  );
+
+  const handleSaveSeo = async (
+    seoById: Record<string, PageSEO>,
+  ): Promise<boolean> => {
+    if (mode.kind === 'page') return saveSeoForPages(mode.website.id, seoById);
+    if (mode.kind === 'funnelStep')
+      return saveSeoForSteps(mode.funnel.id, seoById);
+    return false;
+  };
+
   if (brandQuery.isLoading) {
     return (
       <div className="flex h-svh items-center justify-center bg-paper px-6">
@@ -396,6 +446,17 @@ export function SectionEditor({ mode }: SectionEditorProps) {
             bodyFont={brand.bodyFont}
           />
         }
+        seo={
+          canEditSeo && !isSingleton && !locked ? (
+            <button
+              type="button"
+              onClick={() => setSeoOpen(true)}
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-rule bg-card px-3 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-mid transition-colors hover:border-rust hover:text-rust"
+            >
+              ✦ SEO
+            </button>
+          ) : undefined
+        }
         history={{ onUndo: undo, onRedo: redo, canUndo, canRedo }}
         device={{ value: device, onChange: setDevice }}
       />
@@ -446,6 +507,16 @@ export function SectionEditor({ mode }: SectionEditorProps) {
         container={containerForMode(mode)}
         onAdd={handleAddSection}
       />
+      {seoTargets.length > 0 ? (
+        <SeoPanel
+          open={seoOpen}
+          onOpenChange={setSeoOpen}
+          targets={seoTargets}
+          business={seoBusiness}
+          scopeLabel={mode.kind === 'funnelStep' ? 'funnel' : 'website'}
+          onSave={handleSaveSeo}
+        />
+      ) : null}
     </div>
   );
 }

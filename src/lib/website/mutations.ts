@@ -29,7 +29,7 @@ import { notifyBuilder } from './builder-events';
 import { clearDraftsForWebsite } from './content-drafts';
 import { fetchEffectiveDraft } from './queries';
 import { diffSnapshots } from './snapshot';
-import type { VersionSnapshot } from './types';
+import type { PageSEO, VersionSnapshot } from './types';
 
 export type PublishActor = {
   id: string;
@@ -382,4 +382,44 @@ export async function restoreVersionAsDraft(
 
   notifyBuilder();
   return { newDraftId: pointers.draftVersionId };
+}
+
+// ---- SEO --------------------------------------------------------------------
+
+/** Persist per-page SEO (title / description) onto the draft version's
+ *  snapshot. SEO is a Page-level field — not part of the content_drafts
+ *  section buffer — so it writes straight to the draft baseline.
+ *  `mergeDraftsIntoSnapshot` only overlays `sections`, leaving `page.seo`
+ *  intact, so buffered section edits are safe across this write. */
+export async function saveSeoForPages(
+  websiteId: string,
+  seoByPageId: Record<string, PageSEO>,
+): Promise<boolean> {
+  const pointers = await getWebsitePointers(websiteId);
+  if (!pointers?.draftVersionId) return false;
+
+  const { data, error } = await supabase
+    .from('website_versions')
+    .select('snapshot')
+    .eq('id', pointers.draftVersionId)
+    .maybeSingle();
+  if (error || !data) return false;
+
+  const snapshot = data.snapshot as VersionSnapshot;
+  const next: VersionSnapshot = {
+    ...snapshot,
+    pages: snapshot.pages.map((page) => {
+      const seo = seoByPageId[page.id];
+      return seo ? { ...page, seo: { ...page.seo, ...seo } } : page;
+    }),
+  };
+
+  const { error: writeError } = await supabase
+    .from('website_versions')
+    .update({ snapshot: next as unknown as Json })
+    .eq('id', pointers.draftVersionId);
+  if (writeError) return false;
+
+  notifyBuilder();
+  return true;
 }
