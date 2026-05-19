@@ -7,7 +7,7 @@
 // in the /dev/generation-preview surface (design doc §6a).
 // =============================================================================
 
-import type { BrandObject, VoiceTone } from './types';
+import type { BrandObject, PageType, VoiceTone } from './types';
 import type { GenerationContext, PrimaryIntent } from './generation-context';
 import { describeAudience, describeIntent, describePageType } from './generation-context';
 import { SECTION_REGISTRY } from './sections';
@@ -90,10 +90,14 @@ function buildBrandBlock(brand: BrandObject): string {
     brand.topJobsToBeBooked.length > 0
       ? brand.topJobsToBeBooked.map((j) => `  - ${j}`).join('\n')
       : '  (none provided)';
+  const palette =
+    brand.brandColors && brand.brandColors.length > 0
+      ? brand.brandColors
+      : [brand.accentColor];
   return [
     `Industry: ${brand.industryCategory}`,
     `Audience line: ${brand.audienceLine}`,
-    `Accent colour: ${brand.accentColor}`,
+    `Brand colours: ${palette.join(', ')}  (the first is the primary brand colour — theme section backgrounds, accents, and buttons from this palette so the page looks on-brand)`,
     '',
     `Voice tone (formality ${brand.voice.formality}/5 · urgency ${brand.voice.urgency}/5 · technicality ${brand.voice.technicality}/5):`,
     `  → ${voiceProse}`,
@@ -103,11 +107,27 @@ function buildBrandBlock(brand: BrandObject): string {
   ].join('\n');
 }
 
+/** The conversion job each page type has to do — appended to the questions
+ *  block so the model treats the page type as a goal, not just a label. */
+const PAGE_CONVERSION_PRIORITY: Record<PageType, string> = {
+  home: 'Establish trust fast, state the core offer, and route the visitor to book or call. Broad page — carry several proof points.',
+  services:
+    'Go deep on the service: what is included, the pricing posture, why this business over others, and an FAQ that kills objections before a strong closing CTA.',
+  about:
+    'Humanise the business — the people, the story, the years of work, why they can be trusted — then convert on that earned trust.',
+  contact:
+    'Make getting in touch frictionless: phone prominent, hours, service area, and a clear note on what happens after the visitor reaches out.',
+  generic:
+    'A focused landing page — one offer, one CTA, no distractions. Heavy, specific proof and honest urgency.',
+};
+
 function buildQuestionsBlock(ctx: GenerationContext): string {
   const lines: string[] = [
     `Page type: ${describePageType(ctx.pageType)}`,
     `Primary intent: ${describeIntent(ctx.primaryIntent)}`,
     `Audience: ${describeAudience(ctx.audience)}`,
+    '',
+    `Conversion priority for this page: ${PAGE_CONVERSION_PRIORITY[ctx.pageType]}`,
   ];
   if (ctx.specifics && ctx.specifics.trim().length > 0) {
     lines.push('', 'Specifics from the user (treat as authoritative content):');

@@ -7,8 +7,11 @@
 // carries the design-variety layer, so a generated site has a coherent but
 // non-repetitive set of pages.
 //
-// Replace with a real backend call when the LLM lands; the ClientBrief →
-// SiteGenerationResult contract stays identical.
+// `generateSiteStub` calls the real Claude-backed /api/generate-site route
+// and falls back to the deterministic `generateSiteSync` when that route is
+// unconfigured (no ANTHROPIC_API_KEY) or fails — so the flow works with or
+// without an API key. The ClientBrief → SiteGenerationResult contract is the
+// same either way.
 // =============================================================================
 
 import type {
@@ -75,24 +78,52 @@ export function generateSiteSync(brief: ClientBrief): SiteGenerationResult {
   };
 }
 
-/** The stub site generator. Async (synthetic delay) so the call site can
- *  show a progress card; the real backend implements the same shape. */
+/** The site generator. Calls the real Claude-backed /api/generate-site route;
+ *  falls back to the deterministic generator if that route is unconfigured
+ *  (no ANTHROPIC_API_KEY) or fails. Async so the call site can show a progress
+ *  card. `instantForDev` skips straight to the deterministic path. */
 export async function generateSiteStub(
   brief: ClientBrief,
   options?: { signal?: AbortSignal; instantForDev?: boolean },
 ): Promise<SiteGenerationResult> {
-  if (!options?.instantForDev) {
-    await new Promise<void>((resolve, reject) => {
-      if (options?.signal?.aborted) {
-        reject(new DOMException('Aborted', 'AbortError'));
-        return;
-      }
-      const t = setTimeout(resolve, randomDelayMs());
-      options?.signal?.addEventListener('abort', () => {
-        clearTimeout(t);
-        reject(new DOMException('Aborted', 'AbortError'));
-      });
-    });
+  if (options?.instantForDev) {
+    return generateSiteSync(brief);
   }
+
+  // Try the real Claude-backed generator first.
+  try {
+    const response = await fetch('/api/generate-site', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(brief),
+      signal: options?.signal,
+    });
+    if (response.ok) {
+      return (await response.json()) as SiteGenerationResult;
+    }
+    // 503 (not configured) / 500 (failed) → fall through to the stub.
+  } catch (error) {
+    // A user-initiated abort must propagate; anything else → fall back.
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error;
+    }
+  }
+
+  // Fallback — keep the synthetic delay so the progress card still shows.
+  await delayWithAbort(randomDelayMs(), options?.signal);
   return generateSiteSync(brief);
+}
+
+function delayWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => {
+      clearTimeout(timer);
+      reject(new DOMException('Aborted', 'AbortError'));
+    });
+  });
 }

@@ -1124,7 +1124,7 @@ async function fetchAdminDashboard(): Promise<AdminDashboardData> {
         ownerName: setupClient.primary_contact_name ?? 'Contact not set',
         ownerPhone: setupClient.primary_contact_phone ?? '',
         website: `${setupClient.slug}.com.au`,
-        continueHref: '/clients/new/basics',
+        continueHref: '/clients/new',
       }
     : null;
 

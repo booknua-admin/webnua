@@ -119,6 +119,12 @@ export const VOICE_TONE_PRESETS = {
 
 export type BrandObject = {
   accentColor: string;
+  /** The business's brand palette — 1–3 hex colours captured in the
+   *  create-client flow. `accentColor` is always `brandColors[0]`; colours 2–3
+   *  are supporting brand colours. The generator themes sections from this
+   *  palette so a generated site looks on-brand. Absent on older brand data —
+   *  readers fall back to `[accentColor]`. */
+  brandColors?: string[];
   logoUrl: string | null;
   faviconUrl: string | null;
   voice: VoiceTone;

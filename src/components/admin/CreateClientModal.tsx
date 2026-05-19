@@ -6,8 +6,8 @@
 // The brief is captured once; the website / funnel checkboxes decide which
 // generators run, so the same answers are never asked twice.
 //
-// Output is persisted to the created-clients overlay (STUB) and the flow
-// routes to the result viewer.
+// The client + website + funnel are persisted to Supabase (see
+// lib/clients/create-client.ts); the flow routes to the result viewer.
 // =============================================================================
 
 import { useRouter } from 'next/navigation';
@@ -41,16 +41,8 @@ const STEPS: Step[] = ['business', 'offer', 'brief', 'design', 'build'];
 type Phase = Step | 'generating';
 type IntentKind = Exclude<PrimaryIntent['kind'], 'other'>;
 
-const ACCENT_SWATCHES = [
-  '#d24317',
-  '#2563eb',
-  '#16a34a',
-  '#0d1f3a',
-  '#6b4ea6',
-  '#c8941e',
-  '#0e7490',
-  '#be123c',
-] as const;
+const DEFAULT_BRAND_COLOR = '#d24317';
+const MAX_BRAND_COLORS = 3;
 
 const INTENT_OPTIONS = PRIMARY_INTENT_CHIPS.filter((c) => c.id !== 'other') as {
   id: IntentKind;
@@ -102,7 +94,7 @@ export function CreateClientModal({
   const [audience, setAudience] = useState<Audience>('cold-ad');
 
   // design
-  const [accent, setAccent] = useState<string>(ACCENT_SWATCHES[0]);
+  const [brandColors, setBrandColors] = useState<string[]>([DEFAULT_BRAND_COLOR]);
   const [headingFont, setHeadingFont] = useState('inter-tight');
   const [bodyFont, setBodyFont] = useState('inter-tight');
   const [logoUrl, setLogoUrl] = useState('');
@@ -119,7 +111,7 @@ export function CreateClientModal({
     setName(''); setIndustry(''); setOwnerName(''); setPhone(''); setEmail(''); setArea('');
     setOffer(''); setServices(['', '', '']); setEnhancing(false);
     setIntent('book'); setAudience('cold-ad');
-    setAccent(ACCENT_SWATCHES[0]); setHeadingFont('inter-tight'); setBodyFont('inter-tight');
+    setBrandColors([DEFAULT_BRAND_COLOR]); setHeadingFont('inter-tight'); setBodyFont('inter-tight');
     setLogoUrl(''); setLogoUploading(false);
     setWantWebsite(true); setWantFunnel(true); setError(null);
   };
@@ -157,7 +149,8 @@ export function CreateClientModal({
       services: cleanServices,
     };
     const brand: BrandObject = {
-      accentColor: accent,
+      accentColor: brandColors[0],
+      brandColors,
       logoUrl: logoUrl || null,
       faviconUrl: null,
       voice: VOICE_TONE_PRESETS.friendlyLocal,
@@ -343,32 +336,54 @@ export function CreateClientModal({
 
           {phase === 'design' ? (
             <div className="flex flex-col gap-5">
-              <Field label="Brand accent colour">
-                <div className="flex flex-wrap items-center gap-2">
-                  {ACCENT_SWATCHES.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      aria-label={`Accent ${c}`}
-                      onClick={() => setAccent(c)}
-                      className={cn(
-                        'h-9 w-9 rounded-full border-2 transition-transform hover:scale-105',
-                        accent === c ? 'border-ink' : 'border-rule',
-                      )}
-                      style={{ backgroundColor: c }}
-                    />
-                  ))}
-                  <label className="ml-1 flex cursor-pointer items-center gap-2 rounded-md border border-rule bg-card px-2.5 py-1.5">
-                    <input
-                      type="color"
-                      value={accent}
-                      onChange={(e) => setAccent(e.target.value)}
-                      className="h-6 w-6 cursor-pointer rounded border-0 bg-transparent p-0"
-                    />
-                    <span className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-ink">
-                      Custom
-                    </span>
-                  </label>
+              <Field label="Brand colours">
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    {brandColors.map((c, i) => (
+                      <div key={i} className="relative">
+                        <input
+                          type="color"
+                          value={c}
+                          aria-label={
+                            i === 0 ? 'Primary brand colour' : `Brand colour ${i + 1}`
+                          }
+                          onChange={(e) =>
+                            setBrandColors((arr) =>
+                              arr.map((x, idx) => (idx === i ? e.target.value : x)),
+                            )
+                          }
+                          className="h-11 w-11 cursor-pointer rounded-full border-2 border-rule bg-transparent p-0"
+                        />
+                        {i > 0 ? (
+                          <button
+                            type="button"
+                            aria-label={`Remove brand colour ${i + 1}`}
+                            onClick={() =>
+                              setBrandColors((arr) => arr.filter((_, idx) => idx !== i))
+                            }
+                            className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-ink text-[9px] font-bold text-paper"
+                          >
+                            ×
+                          </button>
+                        ) : null}
+                      </div>
+                    ))}
+                    {brandColors.length < MAX_BRAND_COLORS ? (
+                      <button
+                        type="button"
+                        aria-label="Add brand colour"
+                        onClick={() => setBrandColors((arr) => [...arr, DEFAULT_BRAND_COLOR])}
+                        className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-dashed border-rule text-[18px] leading-none text-ink-quiet transition-colors hover:border-rust hover:text-rust"
+                      >
+                        +
+                      </button>
+                    ) : null}
+                  </div>
+                  <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-ink-quiet">
+                    {brandColors.length === 1
+                      ? 'Primary brand colour — add up to two more'
+                      : 'The first colour is the primary — click any swatch to change it'}
+                  </p>
                 </div>
               </Field>
               <div className="grid grid-cols-2 gap-3">

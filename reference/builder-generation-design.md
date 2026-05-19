@@ -186,6 +186,15 @@ risk.
 
 ## 3. The first-page-of-website flavour
 
+> **SUPERSEDED — the onboarding wizard was sunset.** This section described the
+> first-page flavour as the 8-step `/clients/new/<step>` wizard. That wizard
+> was removed (see `builder-design.md` §5's SUPERSEDED banner). The
+> first-funnel / first-page generation for a new client is now the
+> **`CreateClientModal` quick-create flow** — a five-step modal that builds the
+> same brief and runs the website / funnel generators. The Q1–Q5 question set
+> in §2 still stands as the new-page-on-existing-website flow; the modal is its
+> client-creation sibling. The mapping below is kept as the reasoning trail.
+
 **Does NOT live at `/website/new`.** The onboarding wizard at
 `/clients/new/<step>` IS this questionnaire — Session 7 refactors the
 wizard so steps 2–4 emit the same prompt-context object as the
@@ -384,6 +393,20 @@ break-glass discipline; nothing about generation needs special treatment).
 ---
 
 ## 6. The stub generation handler (Session 6 only)
+
+> **Note — real generation is now wired (create-client flow).** The
+> create-client site generation calls a **real Claude API** path:
+> `/api/generate-site` → `lib/website/generate-live.ts` → `composePrompt(ctx)`
+> → `claude-opus-4-7` → the §4.4 validation pipeline (`assembleResult`). The
+> deterministic `generation-stub.ts` remains as the **fallback** when
+> `ANTHROPIC_API_KEY` is unset, and as the dev/test path; it gained a
+> design-variety layer and is brief-aware. The prompt layer (`generation-prompt.ts`)
+> and the §4.4 pipeline are unchanged — the real path only swaps the section
+> source from "recipe" to "model". Still on the deterministic stub: the
+> `/website/new` single-page Q&A flow (`generatePageStub`) and funnel
+> generation (`generateFunnelStub`) — the next AI-generation increments. The
+> "deterministic on three keys" wording below describes the original
+> Session-6 stub.
 
 Implementation lives in `src/lib/website/generation-stub.ts`. Shape:
 
