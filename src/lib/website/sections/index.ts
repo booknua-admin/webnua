@@ -14,6 +14,7 @@ import { ctaSection } from './cta';
 import { faqSection } from './faq';
 import { featuresSection } from './features';
 import { footerSection } from './footer';
+import { formSection } from './form';
 import { gallerySection } from './gallery';
 import { headerSection } from './header';
 import { heroSection } from './hero';
@@ -37,6 +38,7 @@ export const SECTION_REGISTRY: readonly SectionTypeDefinition[] = [
   faqSection,
   ctaSection,
   contactSection,
+  formSection,
   // Funnel-only stackable
   schedulePickerSection,
   thanksConfirmationSection,
@@ -76,6 +78,7 @@ export type { FAQData, FAQItem } from './faq';
 export type { FeatureItem, FeaturesData } from './features';
 export type { GalleryData, GalleryItem } from './gallery';
 export type { FooterData } from './footer';
+export type { FormSectionData } from './form';
 export type { HeaderData } from './header';
 export type { HeroData } from './hero';
 export type { OfferData } from './offer';

@@ -52,6 +52,15 @@ export async function createClientWithGeneration(
 
   const { brief } = input;
 
+  // The two NOT NULL client columns with no default. The modal gates these,
+  // but guard at the data layer too so an empty string can never be written.
+  const fields: Record<string, string> = {};
+  if (!brief.business.name.trim()) fields.name = 'Business name is required.';
+  if (!brief.industry.trim()) fields.industry = 'Trade / industry is required.';
+  if (Object.keys(fields).length > 0) {
+    throw AppError.validation(fields, 'Complete the required business details.');
+  }
+
   // -- 1. client row (retry the slug on a unique clash) --
   const base = slugify(brief.business.name);
   let client: { id: string; slug: string } | null = null;

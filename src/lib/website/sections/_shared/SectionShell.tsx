@@ -18,11 +18,13 @@
 
 import type { ReactNode } from 'react';
 
+import { FormBlock } from '@/components/shared/website/FormBlock';
 import { getFont } from '@/lib/website/google-fonts';
 import type { ResolvedTheme } from '@/lib/website/section-theme';
 import type { BrandObject } from '@/lib/website/types';
 
 import { GoogleFontLoader } from './GoogleFontLoader';
+import { useSectionFormSlot } from './section-form-slot';
 
 export type SectionShellRenderProps = {
   /** Resolved colour tokens for the section's theme. */
@@ -53,6 +55,11 @@ type SectionShellProps = {
   /** Rendered absolutely behind the content — an image + scrim for overlay
    *  heroes, image-backed CTAs, etc. Makes the section `overflow-hidden`. */
   backgroundLayer?: ReactNode;
+  /** Form slot placement. `auto` (default) — when the section has an
+   *  attached form, SectionShell renders it within the band. `self` — the
+   *  section places the form itself (the hero's column); SectionShell skips
+   *  it so it is not rendered twice. */
+  formSlot?: 'auto' | 'self';
   className?: string;
   children: (props: SectionShellRenderProps) => ReactNode;
 };
@@ -73,6 +80,7 @@ export function SectionShell({
   inset = 'band',
   maxWidth = 1180,
   backgroundLayer,
+  formSlot = 'auto',
   className,
   children,
 }: SectionShellProps) {
@@ -80,6 +88,10 @@ export function SectionShell({
   const headingFont = getFont(brand.headingFont);
   const bodyFont = getFont(brand.bodyFont);
   const banded = inset === 'band';
+  // When the section has an attached form and isn't placing it itself,
+  // render it within this band so it reads as part of the section.
+  const slot = useSectionFormSlot();
+  const renderForm = formSlot === 'auto' && slot != null;
 
   const sectionClass = [
     // `@container` makes the section a container-query context, so its
@@ -118,6 +130,17 @@ export function SectionShell({
           bodyFont: bodyFont.stack,
           accent: brand.accentColor,
         })}
+        {renderForm && slot ? (
+          <div className={banded ? 'mx-auto mt-10 w-full max-w-[480px]' : 'mt-10 w-full'}>
+            <FormBlock
+              form={slot.form}
+              brand={slot.brand}
+              selectedElement={slot.selectedElement}
+              onSelectElement={slot.onSelectElement}
+              testSubmitCtx={slot.testSubmitCtx}
+            />
+          </div>
+        ) : null}
       </div>
     </section>
   );

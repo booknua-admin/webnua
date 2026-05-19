@@ -33,9 +33,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { useCan, useUser } from '@/lib/auth/user-stub';
+import { useClientId } from '@/lib/clients/queries';
 import { publishFunnelDraft } from '@/lib/funnel/mutations';
 import type { Funnel, FunnelStep } from '@/lib/funnel/types';
 import type { DraftSlot } from '@/lib/website/content-drafts';
+import { defaultFormConfig, type FormConfig } from '@/lib/website/form-config';
 import { useBrandForClient } from '@/lib/website/queries';
 import { getSectionDefinition } from '@/lib/website/sections';
 import type {
@@ -144,6 +146,9 @@ export function SectionEditor({ mode }: SectionEditorProps) {
     [brandQuery.data, brandStyleOverride],
   );
   const slot = useMemo(() => slotForMode(mode), [mode]);
+  // The mode carries a client SLUG; a form test-submit writes a lead against
+  // the client UUID, so resolve it.
+  const clientUuidQuery = useClientId(clientId);
   const user = useUser();
   const router = useRouter();
   const canPublish = useCan('publish');
@@ -214,6 +219,18 @@ export function SectionEditor({ mode }: SectionEditorProps) {
     );
   };
 
+  const handleSetSectionForm = (id: string, form: FormConfig | undefined) => {
+    setSections((current) =>
+      current.map((s) => {
+        if (s.id !== id) return s;
+        const next = { ...s };
+        if (form) next.form = form;
+        else delete next.form;
+        return next;
+      }),
+    );
+  };
+
   const handleSectionDataChange = (
     id: string,
     nextData: Record<string, unknown>,
@@ -232,6 +249,10 @@ export function SectionEditor({ mode }: SectionEditorProps) {
       enabled: true,
       data: definition.defaultData() as Record<string, unknown>,
     };
+    // The `form` section IS a form — it is born with a default form config
+    // on the envelope. Every other section starts form-less; the operator
+    // attaches a form via the fields panel.
+    if (type === 'form') newSection.form = defaultFormConfig();
     setSections((current) => [...current, newSection]);
     setSelectedSectionId(newSection.id);
   };
@@ -391,6 +412,7 @@ export function SectionEditor({ mode }: SectionEditorProps) {
           onSelectSection={handleSelectSection}
           selectedElementId={selectedElementId}
           onSelectElement={setSelectedElementId}
+          testClientId={clientUuidQuery.data ?? null}
           onToggleSectionEnabled={isSingleton ? undefined : handleToggleSectionEnabled}
           onRemoveSection={isSingleton ? undefined : handleRemoveSection}
           onMoveSection={isSingleton ? undefined : handleMoveSection}
@@ -407,10 +429,12 @@ export function SectionEditor({ mode }: SectionEditorProps) {
             onChange={(nextData) =>
               handleSectionDataChange(selectedSection.id, nextData)
             }
+            onSetForm={(form) => handleSetSectionForm(selectedSection.id, form)}
             onClose={() => handleSelectSection(null)}
             hideClose={isSingleton}
             selectedElement={selectedElementId}
             onSelectElement={setSelectedElementId}
+            isFunnel={isFunnelStep}
             clientId={clientId}
             brand={brand}
           />

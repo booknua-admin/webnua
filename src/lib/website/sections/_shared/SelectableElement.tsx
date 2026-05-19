@@ -47,6 +47,9 @@ export function SelectableElement({
         onSelect(id);
       }}
       onKeyDown={(e) => {
+        // Only activate when the wrapper itself is focused — never swallow
+        // keys (notably Space) typed into a nested input / textarea / select.
+        if (e.target !== e.currentTarget) return;
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           e.stopPropagation();

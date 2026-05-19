@@ -17,6 +17,7 @@ export type Capability =
   | 'editSections'
   | 'editTheme'
   | 'editPages'
+  | 'editForms'
   | 'useAI'
   | 'publish'
   | 'approve'
@@ -32,6 +33,7 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   'editSections',
   'editTheme',
   'editPages',
+  'editForms',
   'useAI',
   'publish',
   'approve',
@@ -53,6 +55,7 @@ export const CAPABILITY_LABEL: Record<Capability, string> = {
   editSections: 'Add + remove sections',
   editTheme: 'Edit brand + theme',
   editPages: 'Create + manage pages',
+  editForms: 'Edit lead-capture forms',
   useAI: 'Use AI drafting tools',
   publish: 'Publish changes live',
   approve: 'Approve submitted changes',

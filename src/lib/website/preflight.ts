@@ -397,6 +397,113 @@ const navTargetsRule: PreflightRule = {
   },
 };
 
+// ---- Form rules -----------------------------------------------------------
+//
+// A form lives on the Section envelope (`section.form`) and can attach to any
+// section type, so these rules iterate every page section rather than a type.
+
+type FormSite = { page: Page; section: Section };
+
+function formSections(snapshot: VersionSnapshot): FormSite[] {
+  const out: FormSite[] = [];
+  for (const page of snapshot.pages) {
+    for (const section of page.sections) {
+      if (section.enabled && section.form) out.push({ page, section });
+    }
+  }
+  return out;
+}
+
+const formNoFieldsRule: PreflightRule = {
+  id: 'form-no-fields',
+  title: 'Forms have at least one field',
+  run(snapshot, { websiteId }) {
+    return formSections(snapshot).flatMap(({ page, section }): PreflightResult[] => {
+      if ((section.form?.fields.length ?? 0) > 0) return [];
+      return [
+        {
+          ruleId: 'form-no-fields',
+          status: 'fail',
+          title: 'Form has no fields',
+          message: `A form on ${page.title || page.slug} has no fields — it captures nothing. Add a field or remove the form.`,
+          pageId: page.id,
+          sectionId: section.id,
+          fixHref: pageEditorHref(websiteId, page.id),
+        },
+      ];
+    });
+  },
+};
+
+const formNextStepOnPageRule: PreflightRule = {
+  id: 'form-nextstep-on-page',
+  title: 'Forms do not use a funnel action on a website page',
+  run(snapshot, { websiteId }) {
+    return formSections(snapshot).flatMap(({ page, section }): PreflightResult[] => {
+      if (section.form?.afterSubmit.kind !== 'nextStep') return [];
+      return [
+        {
+          ruleId: 'form-nextstep-on-page',
+          status: 'fail',
+          title: 'Form uses a funnel-only action',
+          message: `A form on ${page.title || page.slug} is set to advance to the "next funnel step", but this is a website page — there is no next step. Pick a thank-you message or a redirect link.`,
+          pageId: page.id,
+          sectionId: section.id,
+          fixHref: pageEditorHref(websiteId, page.id),
+        },
+      ];
+    });
+  },
+};
+
+const formUrlActionRule: PreflightRule = {
+  id: 'form-url-action-empty',
+  title: 'Form redirect actions have a link',
+  run(snapshot, { websiteId }) {
+    return formSections(snapshot).flatMap(({ page, section }): PreflightResult[] => {
+      const after = section.form?.afterSubmit;
+      if (after?.kind !== 'url' || nonEmpty(after.url)) return [];
+      return [
+        {
+          ruleId: 'form-url-action-empty',
+          status: 'warn',
+          title: 'Form redirect has no link',
+          message: `A form on ${page.title || page.slug} redirects after submit but no link is set — submitters go nowhere.`,
+          pageId: page.id,
+          sectionId: section.id,
+          fixHref: pageEditorHref(websiteId, page.id),
+        },
+      ];
+    });
+  },
+};
+
+const formContactFieldRule: PreflightRule = {
+  id: 'form-no-contact-field',
+  title: 'Forms collect a way to reply',
+  run(snapshot, { websiteId }) {
+    return formSections(snapshot).flatMap(({ page, section }): PreflightResult[] => {
+      const fields = section.form?.fields ?? [];
+      if (fields.length === 0) return [];
+      const hasContact = fields.some(
+        (f) => f.leadRole === 'email' || f.leadRole === 'phone',
+      );
+      if (hasContact) return [];
+      return [
+        {
+          ruleId: 'form-no-contact-field',
+          status: 'warn',
+          title: 'Form collects no contact detail',
+          message: `A form on ${page.title || page.slug} has no email or phone field — leads from it can't be replied to. Mark a field as the customer's email or phone.`,
+          pageId: page.id,
+          sectionId: section.id,
+          fixHref: pageEditorHref(websiteId, page.id),
+        },
+      ];
+    });
+  },
+};
+
 // ---- Runner ---------------------------------------------------------------
 
 export const PREFLIGHT_RULES: readonly PreflightRule[] = [
@@ -410,6 +517,10 @@ export const PREFLIGHT_RULES: readonly PreflightRule[] = [
   trustEvidenceRule,
   reviewsPopulatedRule,
   faqPopulatedRule,
+  formNoFieldsRule,
+  formNextStepOnPageRule,
+  formUrlActionRule,
+  formContactFieldRule,
   headerLogoRule,
   footerContactRule,
   navTargetsRule,
