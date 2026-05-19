@@ -1,7 +1,9 @@
 'use client';
 
+import { Menu, X } from 'lucide-react';
+import { useState } from 'react';
+
 import { BuilderFormRow, BuilderFormSection } from '@/components/shared/builder/BuilderField';
-import { Menu } from 'lucide-react';
 
 import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
@@ -249,6 +251,10 @@ function HeaderPreview({
   const realNav = useWebsiteNav();
   const navItems: readonly HeaderNavItem[] =
     realNav && realNav.length > 0 ? realNav : SAMPLE_NAV;
+  // null only in the editor (no provider) — drives whether the mobile-menu
+  // CTA navigates (live) or stays decorative (editor preview).
+  const live = realNav != null;
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <SectionShell theme={resolved} brand={brand} inset="flush" pad="none">
@@ -272,68 +278,142 @@ function HeaderPreview({
             </SelectableElement>
           ) : null;
 
+        // `ml-auto` keeps the toggle pinned to the right edge on mobile in
+        // every layout (the desktop layouts hide it via `@2xl:hidden`).
         const hamburger = (
-          <span
-            className="flex h-9 w-9 items-center justify-center rounded-md @2xl:hidden"
-            style={{ border: `1px solid ${theme.border}` }}
+          <button
+            type="button"
+            onClick={() => setMenuOpen((open) => !open)}
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={menuOpen}
+            className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-md @2xl:hidden"
+            style={{ border: `1px solid ${theme.border}`, color: theme.heading }}
           >
-            <Menu size={18} color={theme.heading} aria-hidden />
-          </span>
+            {menuOpen ? <X size={18} aria-hidden /> : <Menu size={18} aria-hidden />}
+          </button>
         );
 
         return (
-          <div className="flex items-center gap-6 px-8 py-4 @2xl:px-12">
-            {d.layout === 'logo-center' ? (
-              <>
-                <NavLinks
-                  items={navItems.slice(0, 2)}
-                  theme={theme}
-                  accent={accent}
-                  className="hidden flex-1 @2xl:flex"
-                />
-                {logo}
-                <div className="flex flex-1 items-center justify-end gap-6">
+          <div>
+            <div className="flex items-center gap-6 px-8 py-4 @2xl:px-12">
+              {d.layout === 'logo-center' ? (
+                <>
                   <NavLinks
-                    items={navItems.slice(2)}
+                    items={navItems.slice(0, 2)}
                     theme={theme}
                     accent={accent}
-                    className="hidden @2xl:flex"
+                    className="hidden flex-1 @2xl:flex"
                   />
-                  <span className="hidden @2xl:inline-block">{cta}</span>
-                </div>
-                {hamburger}
-              </>
-            ) : d.layout === 'menu-right' ? (
-              <>
-                {logo}
-                <div className="flex flex-1 items-center justify-end gap-7">
+                  {logo}
+                  <div className="hidden flex-1 items-center justify-end gap-6 @2xl:flex">
+                    <NavLinks items={navItems.slice(2)} theme={theme} accent={accent} />
+                    {cta}
+                  </div>
+                  {hamburger}
+                </>
+              ) : d.layout === 'menu-right' ? (
+                <>
+                  {logo}
+                  <div className="hidden flex-1 items-center justify-end gap-7 @2xl:flex">
+                    <NavLinks items={navItems} theme={theme} accent={accent} />
+                    {cta}
+                  </div>
+                  {hamburger}
+                </>
+              ) : (
+                <>
+                  {logo}
                   <NavLinks
                     items={navItems}
                     theme={theme}
                     accent={accent}
-                    className="hidden @2xl:flex"
+                    className="hidden flex-1 justify-center @2xl:flex"
                   />
                   <span className="hidden @2xl:inline-block">{cta}</span>
-                </div>
-                {hamburger}
-              </>
-            ) : (
-              <>
-                {logo}
-                <NavLinks
-                  items={navItems}
-                  theme={theme}
-                  accent={accent}
-                  className="hidden flex-1 justify-center @2xl:flex"
-                />
-                <span className="hidden @2xl:inline-block">{cta}</span>
-                {hamburger}
-              </>
-            )}
+                  {hamburger}
+                </>
+              )}
+            </div>
+            {menuOpen ? (
+              <MobileMenu
+                items={navItems}
+                theme={theme}
+                accent={accent}
+                cta={
+                  d.showCta && d.ctaLabel
+                    ? { label: d.ctaLabel, href: d.ctaHref, style: d.ctaStyle }
+                    : null
+                }
+                live={live}
+              />
+            ) : null}
           </div>
         );
       }}
     </SectionShell>
+  );
+}
+
+/** The mobile nav panel — drops below the header bar when the toggle is open.
+ *  Hidden at `@2xl` and up, where the inline nav takes over. */
+function MobileMenu({
+  items,
+  theme,
+  accent,
+  cta,
+  live,
+}: {
+  items: readonly HeaderNavItem[];
+  theme: ResolvedTheme;
+  accent: string;
+  cta: { label: string; href: string; style: HeaderCtaStyle } | null;
+  live: boolean;
+}) {
+  return (
+    <div
+      className="flex flex-col gap-1 border-t px-8 py-3 @2xl:hidden"
+      style={{ borderColor: theme.border, backgroundColor: theme.background }}
+    >
+      {items.map((item, i) =>
+        item.href ? (
+          <a
+            key={`${item.label}-${i}`}
+            href={item.href}
+            className="py-2 text-[15px] font-medium no-underline"
+            style={{ color: theme.heading }}
+          >
+            {item.label}
+          </a>
+        ) : (
+          <span
+            key={`${item.label}-${i}`}
+            className="py-2 text-[15px] font-medium"
+            style={{ color: theme.heading }}
+          >
+            {item.label}
+          </span>
+        ),
+      )}
+      {cta ? (
+        live ? (
+          <a
+            href={cta.href || '#'}
+            className="mt-2 inline-flex items-center justify-center rounded-lg px-4 py-2.5 text-[14px] font-semibold no-underline"
+            style={
+              cta.style === 'outline'
+                ? { border: `2px solid ${theme.heading}`, color: theme.heading }
+                : { backgroundColor: accent, color: '#ffffff' }
+            }
+          >
+            {cta.label}
+          </a>
+        ) : (
+          <span className="mt-2 inline-block">
+            <CtaButton label={cta.label} style={cta.style} accent={accent} theme={theme} />
+          </span>
+        )
+      ) : null}
+    </div>
   );
 }
 
@@ -386,7 +466,10 @@ function NavLinks({
   className?: string;
 }) {
   return (
-    <nav className={`items-center gap-7 ${className ?? ''}`} aria-label="Site navigation">
+    <nav
+      className={`flex items-center gap-7 ${className ?? ''}`}
+      aria-label="Site navigation"
+    >
       {items.map((item, i) => {
         const color = i === 0 ? accent : theme.body;
         return item.href ? (
