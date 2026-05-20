@@ -961,6 +961,7 @@ export type Database = {
           draft_version_id: string | null
           funnel_customer_pain: string | null
           funnel_guarantee: string | null
+          funnel_offer: Json | null
           funnel_service: string | null
           funnel_testimonials: Json
           id: string
@@ -979,6 +980,7 @@ export type Database = {
           draft_version_id?: string | null
           funnel_customer_pain?: string | null
           funnel_guarantee?: string | null
+          funnel_offer?: Json | null
           funnel_service?: string | null
           funnel_testimonials?: Json
           id?: string
@@ -997,6 +999,7 @@ export type Database = {
           draft_version_id?: string | null
           funnel_customer_pain?: string | null
           funnel_guarantee?: string | null
+          funnel_offer?: Json | null
           funnel_service?: string | null
           funnel_testimonials?: Json
           id?: string

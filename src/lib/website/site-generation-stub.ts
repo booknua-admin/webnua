@@ -19,6 +19,7 @@
 
 import { AppError } from '@/lib/errors';
 
+import type { FunnelOffer } from './offer-generate';
 import type {
   Audience,
   BusinessDetails,
@@ -55,6 +56,9 @@ export type FunnelBrief = {
   guarantee: string;
   /** 0–3 entries. Empty = placeholder social proof in the funnel. */
   testimonials: FunnelTestimonial[];
+  /** AI-generated, operator-edited four-field offer. NULL when the wizard
+   *  did not run the offer generator (e.g. key unset, user skipped). */
+  offer: FunnelOffer | null;
 };
 
 /** The brief captured by the create-client modal. */

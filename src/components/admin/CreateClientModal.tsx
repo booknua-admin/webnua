@@ -31,12 +31,13 @@ import {
   type PrimaryIntent,
 } from '@/lib/website/generation-context';
 import { CURATED_FONTS } from '@/lib/website/google-fonts';
+import { generateFunnelOffer, type FunnelOffer } from '@/lib/website/offer-generate';
 import type { ClientBrief, FunnelTestimonial } from '@/lib/website/site-generation-stub';
 import { uploadSectionImage } from '@/lib/website/upload-image';
 import { VOICE_TONE_PRESETS, type BrandObject } from '@/lib/website/types';
 
-type Step = 'business' | 'offer' | 'brief' | 'design' | 'build';
-const STEPS: Step[] = ['business', 'offer', 'brief', 'design', 'build'];
+type Step = 'business' | 'offer' | 'brief' | 'funnel-offer' | 'design' | 'build';
+const STEPS: Step[] = ['business', 'offer', 'brief', 'funnel-offer', 'design', 'build'];
 
 type Phase = Step | 'generating';
 type IntentKind = Exclude<PrimaryIntent['kind'], 'other'>;
@@ -100,6 +101,11 @@ export function CreateClientModal({
     { quote: '', author: '', context: '' },
   ]);
 
+  // funnel-offer
+  const [funnelOffer, setFunnelOffer] = useState<FunnelOffer | null>(null);
+  const [offerGenerating, setOfferGenerating] = useState(false);
+  const [offerError, setOfferError] = useState<string | null>(null);
+
   // design
   const [brandColors, setBrandColors] = useState<string[]>([DEFAULT_BRAND_COLOR]);
   const [headingFont, setHeadingFont] = useState('inter-tight');
@@ -120,6 +126,7 @@ export function CreateClientModal({
     setIntent('book'); setAudience('cold-ad');
     setFunnelService(''); setFunnelCustomerPain(''); setFunnelGuarantee('');
     setFunnelTestimonials([{ quote: '', author: '', context: '' }]);
+    setFunnelOffer(null); setOfferGenerating(false); setOfferError(null);
     setBrandColors([DEFAULT_BRAND_COLOR]); setHeadingFont('inter-tight'); setBodyFont('inter-tight');
     setLogoUrl(''); setLogoUploading(false);
     setWantWebsite(true); setWantFunnel(true); setError(null);
@@ -143,6 +150,32 @@ export function CreateClientModal({
 
   const setService = (i: number, v: string) =>
     setServices((s) => s.map((x, idx) => (idx === i ? v : x)));
+
+  const runOfferGeneration = async () => {
+    setOfferGenerating(true);
+    setOfferError(null);
+    try {
+      const offer = await generateFunnelOffer({
+        industry: industry.trim(),
+        serviceArea: area.trim(),
+        funnelService: funnelService.trim(),
+        funnelCustomerPain: funnelCustomerPain.trim(),
+        funnelGuarantee: funnelGuarantee.trim(),
+      });
+      setFunnelOffer(offer);
+    } catch (e) {
+      setOfferError(
+        e instanceof AppError
+          ? e.message
+          : 'Offer generation failed — try again, or continue and write the offer yourself.',
+      );
+    } finally {
+      setOfferGenerating(false);
+    }
+  };
+
+  const updateOfferField = (key: keyof FunnelOffer, value: string) =>
+    setFunnelOffer((o) => (o ? { ...o, [key]: value } : o));
 
   const runGeneration = async () => {
     setPhase('generating');
@@ -185,6 +218,7 @@ export function CreateClientModal({
         customerPain: funnelCustomerPain.trim(),
         guarantee: funnelGuarantee.trim(),
         testimonials: cleanTestimonials,
+        offer: funnelOffer,
       },
     };
     try {
@@ -462,6 +496,74 @@ export function CreateClientModal({
             </div>
           ) : null}
 
+          {phase === 'funnel-offer' ? (
+            <div className="flex flex-col gap-4">
+              <p className="text-[13px] text-ink-mid">
+                We&apos;ll draft a four-field offer from your brief — the headline, promise,
+                risk reversal, and CTA that sits at the top of your funnel. Edit anything
+                that doesn&apos;t sound like you.
+              </p>
+              {!funnelOffer && !offerGenerating ? (
+                <Button onClick={runOfferGeneration} className="w-fit">
+                  ✦ Generate my offer →
+                </Button>
+              ) : null}
+              {offerGenerating ? (
+                <div className="flex items-center gap-3 rounded-md border border-rule bg-paper px-4 py-3">
+                  <span className="h-5 w-5 animate-spin rounded-full border-2 border-rule border-t-rust" />
+                  <p className="text-[13px] text-ink">Drafting your offer with Sonnet…</p>
+                </div>
+              ) : null}
+              {offerError ? (
+                <div className="rounded-md border border-warn/40 border-l-4 border-l-warn bg-warn/[0.06] px-3 py-2 text-[12px] text-warn">
+                  <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em]">
+                    Offer generation error
+                  </p>
+                  <p className="mt-1 whitespace-pre-wrap break-words">{offerError}</p>
+                </div>
+              ) : null}
+              {funnelOffer ? (
+                <div className="flex flex-col gap-4">
+                  <Field label="Headline">
+                    <Input
+                      value={funnelOffer.headline}
+                      onChange={(e) => updateOfferField('headline', e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Promise">
+                    <textarea
+                      value={funnelOffer.promise}
+                      onChange={(e) => updateOfferField('promise', e.target.value)}
+                      rows={2}
+                      className="w-full rounded-md border border-rule bg-card px-3 py-2.5 text-[13px] text-ink outline-none focus:border-rust"
+                    />
+                  </Field>
+                  <Field label="Risk reversal">
+                    <Input
+                      value={funnelOffer.riskReversal}
+                      onChange={(e) => updateOfferField('riskReversal', e.target.value)}
+                    />
+                  </Field>
+                  <Field label="CTA text">
+                    <Input
+                      value={funnelOffer.ctaText}
+                      onChange={(e) => updateOfferField('ctaText', e.target.value)}
+                    />
+                  </Field>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={runOfferGeneration}
+                    disabled={offerGenerating}
+                    className="w-fit"
+                  >
+                    ✦ Regenerate
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           {phase === 'design' ? (
             <div className="flex flex-col gap-5">
               <Field label="Brand colours">
@@ -628,6 +730,8 @@ function phaseTitle(phase: Phase): string {
       return 'Your offer';
     case 'brief':
       return 'The brief';
+    case 'funnel-offer':
+      return 'Your funnel offer';
     case 'design':
       return 'Brand & design';
     case 'build':

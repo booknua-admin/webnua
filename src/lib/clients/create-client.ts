@@ -11,6 +11,7 @@
 import { AppError, normalizeError } from '@/lib/errors';
 import { generateFunnelSync } from '@/lib/funnel/generation-stub';
 import { supabase } from '@/lib/supabase/client';
+import { offerToRow } from '@/lib/website/offer-generate';
 import { generateSiteStub, type ClientBrief } from '@/lib/website/site-generation-stub';
 import { MAX_NAV_LINKS } from '@/lib/website/types';
 
@@ -179,6 +180,7 @@ export async function createClientWithGeneration(
         funnel_customer_pain: brief.funnel.customerPain || null,
         funnel_guarantee: brief.funnel.guarantee || null,
         funnel_testimonials: brief.funnel.testimonials,
+        funnel_offer: brief.funnel.offer ? offerToRow(brief.funnel.offer) : null,
       })
       .select('id')
       .single();
