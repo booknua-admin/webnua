@@ -187,7 +187,10 @@ export async function createClientWithGeneration(
       })
       .select('id')
       .single();
-    if (fnErr || !fn) throw normalizeError(fnErr ?? new Error('funnel insert failed'));
+    if (fnErr || !fn) {
+      console.error('[create-client] funnels insert failed', fnErr);
+      throw normalizeError(fnErr ?? new Error('funnel insert failed'));
+    }
     funnelId = fn.id;
 
     const steps = fr.steps.map((s) => ({ ...s, funnelId: fn.id }));
@@ -202,13 +205,19 @@ export async function createClientWithGeneration(
       })
       .select('id')
       .single();
-    if (fvErr || !fv) throw normalizeError(fvErr ?? new Error('funnel version insert failed'));
+    if (fvErr || !fv) {
+      console.error('[create-client] funnel_versions insert failed', fvErr);
+      throw normalizeError(fvErr ?? new Error('funnel version insert failed'));
+    }
 
     const { error: fnUpdErr } = await supabase
       .from('funnels')
       .update({ draft_version_id: fv.id })
       .eq('id', fn.id);
-    if (fnUpdErr) throw normalizeError(fnUpdErr);
+    if (fnUpdErr) {
+      console.error('[create-client] funnels draft pointer update failed', fnUpdErr);
+      throw normalizeError(fnUpdErr);
+    }
   }
 
   // Refresh the in-memory client cache so the new client appears in the

@@ -146,7 +146,34 @@ export function normalizeError(value: unknown): AppError {
     }
   }
 
-  return AppError.unexpected(value);
+  return AppError.unexpected(value, extractErrorMessage(value));
+}
+
+/** Best-effort: surface a real diagnostic message from an unknown value
+ *  instead of falling through to "Something went wrong." Walks the common
+ *  shapes (Supabase `{ message, details, hint, code }`, fetch response
+ *  envelope, plain Error). Returns the default sentinel if nothing useful
+ *  is found, so AppError.unexpected's own default kicks in. */
+function extractErrorMessage(value: unknown): string | undefined {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value === 'string') return value || undefined;
+  if (typeof value !== 'object') return undefined;
+  const e = value as {
+    message?: unknown;
+    error?: unknown;
+    details?: unknown;
+    hint?: unknown;
+    code?: unknown;
+  };
+  const parts: string[] = [];
+  if (typeof e.message === 'string' && e.message.trim()) parts.push(e.message.trim());
+  else if (typeof e.error === 'string' && e.error.trim()) parts.push(e.error.trim());
+  if (typeof e.details === 'string' && e.details.trim()) parts.push(e.details.trim());
+  if (typeof e.hint === 'string' && e.hint.trim()) parts.push(`(${e.hint.trim()})`);
+  if (typeof e.code === 'string' && e.code.trim() && parts.length > 0) {
+    parts.push(`[${e.code.trim()}]`);
+  }
+  return parts.length > 0 ? parts.join(' — ') : undefined;
 }
 
 // --- Result --------------------------------------------------------------------
