@@ -90,14 +90,21 @@ export async function POST(req: Request) {
     return bad('Invalid request body.');
   }
 
-  const { clientId, source, fields, submissionId, existingLeadId } =
-    (body ?? {}) as {
-      clientId?: unknown;
-      source?: unknown;
-      fields?: unknown;
-      submissionId?: unknown;
-      existingLeadId?: unknown;
-    };
+  const {
+    clientId,
+    surfaceKind,
+    source,
+    fields,
+    submissionId,
+    existingLeadId,
+  } = (body ?? {}) as {
+    clientId?: unknown;
+    surfaceKind?: unknown;
+    source?: unknown;
+    fields?: unknown;
+    submissionId?: unknown;
+    existingLeadId?: unknown;
+  };
 
   if (typeof clientId !== 'string' || !UUID_RE.test(clientId)) {
     return bad('Missing or invalid client.');
@@ -135,6 +142,11 @@ export async function POST(req: Request) {
     typeof source === 'string' && source.trim()
       ? source.trim().slice(0, 120)
       : 'Website form';
+  // Surface attribution — written to `leads.source_kind`. The constraint on
+  // the column rejects anything else; default 'website' when the caller
+  // omits the field (older clients).
+  const cleanSourceKind: 'website' | 'funnel' =
+    surfaceKind === 'funnel' ? 'funnel' : 'website';
 
   const svc = getServiceClient();
 
@@ -205,6 +217,8 @@ export async function POST(req: Request) {
 
   const { data: lead, error: leadError } = await svc
     .from('leads')
+    // `source_kind` was added by migration 0043 and won't appear in the
+    // generated DB types until type-gen is re-run.
     .insert({
       client_id: clientId,
       customer_id: customer.id,
@@ -213,8 +227,9 @@ export async function POST(req: Request) {
       status: 'new',
       urgency: 'none',
       source: sourceLabel,
+      source_kind: cleanSourceKind,
       submission_id: cleanSubmissionId,
-    })
+    } as unknown as never)
     .select('id')
     .single();
   if (leadError || !lead) {

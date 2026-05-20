@@ -82,6 +82,9 @@ export type FormConfig = {
 export type FormTestSubmitContext = {
   /** The client UUID the test lead is created against. */
   clientId: string;
+  /** Categorical surface attribution — written to `leads.source_kind` and
+   *  surfaced on the inbox row's Source column. */
+  surfaceKind: 'website' | 'funnel';
   /** Human label of the form's origin, e.g. "Form · Hero". */
   sourceLabel: string;
 };

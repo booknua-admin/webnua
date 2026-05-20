@@ -85,6 +85,7 @@ function ClientLeadsContent() {
                 age={lead.age}
                 unread={lead.unread}
                 href={lead.href}
+                sourceKind={lead.sourceKind}
               />
             ))
           )}

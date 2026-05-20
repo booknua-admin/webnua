@@ -44,6 +44,21 @@ export type LeadFilterChip = {
   count?: number;
 };
 
+/** Derived funnel-run completion state — see `LeadCompletion` in queries.tsx
+ *  for the spec. Lifted onto the row so any consumer (automation engine,
+ *  future filters) can read it without re-querying lead_events. */
+export type LeadCompletion = 'in_progress' | 'completed';
+
+/** Categorical surface attribution. Mirrors `leads.source_kind`. `meta` is
+ *  reserved for the Meta lead-ads integration (later session). */
+export type LeadSourceKind = 'website' | 'funnel' | 'meta';
+
+export const LEAD_SOURCE_KIND_LABEL: Record<LeadSourceKind, string> = {
+  website: 'Website',
+  funnel: 'Funnel',
+  meta: 'Meta',
+};
+
 // Inbox rows
 export type ClientLeadRow = {
   id: string;
@@ -57,6 +72,8 @@ export type ClientLeadRow = {
   age: string;
   unread: boolean;
   href: string;
+  completion: LeadCompletion;
+  sourceKind: LeadSourceKind;
 };
 
 export type AdminLeadRow = {
@@ -77,6 +94,8 @@ export type AdminLeadRow = {
   metaTone: 'good' | 'rust' | 'quiet';
   unread: boolean;
   href: string;
+  completion: LeadCompletion;
+  sourceKind: LeadSourceKind;
 };
 
 // Timeline event

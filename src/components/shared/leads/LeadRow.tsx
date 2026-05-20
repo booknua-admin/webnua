@@ -3,11 +3,13 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import {
   LeadClientPill,
+  LeadSourcePill,
   LeadStatusPill,
   LeadUrgencyPill,
 } from '@/components/shared/leads/pills';
 import type {
   LeadClientTone,
+  LeadSourceKind,
   LeadStatus,
   LeadUrgency,
 } from '@/lib/leads/types';
@@ -24,6 +26,7 @@ type ClientLeadRowProps = {
   age: string;
   unread: boolean;
   href: string;
+  sourceKind: LeadSourceKind;
 };
 
 type AdminLeadRowProps = {
@@ -41,6 +44,7 @@ type AdminLeadRowProps = {
   metaTone: 'good' | 'rust' | 'quiet';
   unread: boolean;
   href: string;
+  sourceKind: LeadSourceKind;
 };
 
 type LeadRowProps = ClientLeadRowProps | AdminLeadRowProps;
@@ -69,7 +73,7 @@ function LeadRow(props: LeadRowProps) {
         data-variant="client"
         data-attention={props.unread || undefined}
         className={cn(
-          'group grid grid-cols-[44px_1fr_auto_auto_70px] items-center gap-4 border-b border-ink/6 px-[22px] py-[18px] transition-colors last:border-b-0',
+          'group grid grid-cols-[44px_1fr_auto_auto_auto_70px] items-center gap-4 border-b border-ink/6 px-[22px] py-[18px] transition-colors last:border-b-0',
           props.unread
             ? 'border-l-[3px] border-l-rust bg-rust/[0.04] pl-[19px] hover:bg-rust/[0.07]'
             : 'hover:bg-paper-2',
@@ -91,6 +95,7 @@ function LeadRow(props: LeadRowProps) {
         </div>
         <LeadStatusPill status={props.status} label={props.statusLabel} />
         {props.urgency ? <LeadUrgencyPill urgency={props.urgency} /> : <div />}
+        <LeadSourcePill source={props.sourceKind} />
         <div className="text-right font-mono text-[11px] uppercase tracking-[0.06em] text-ink/45">
           {props.age}
         </div>
@@ -105,7 +110,7 @@ function LeadRow(props: LeadRowProps) {
       data-variant="admin"
       data-attention={props.unread || undefined}
       className={cn(
-        'group grid grid-cols-[36px_180px_1fr_110px_90px_100px] items-center gap-3 border-b border-ink/6 px-[18px] py-4 transition-colors last:border-b-0',
+        'group grid grid-cols-[36px_180px_1fr_110px_80px_80px_100px] items-center gap-3 border-b border-ink/6 px-[18px] py-4 transition-colors last:border-b-0',
         props.unread
           ? 'border-l-[3px] border-l-rust bg-rust/[0.04] pl-[15px] hover:bg-rust/[0.07]'
           : 'hover:bg-paper-2',
@@ -133,6 +138,7 @@ function LeadRow(props: LeadRowProps) {
         {props.preview}
       </div>
       <LeadStatusPill status={props.status} label={props.statusLabel} />
+      <LeadSourcePill source={props.sourceKind} />
       <div className="font-mono text-[11px] uppercase tracking-[0.06em] text-ink/45">
         {props.age}
       </div>

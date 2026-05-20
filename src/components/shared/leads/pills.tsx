@@ -1,9 +1,14 @@
 import { cn } from '@/lib/utils';
 import {
+  LEAD_SOURCE_KIND_LABEL,
   LEAD_STATUS_LABEL,
   LEAD_URGENCY_LABEL,
 } from '@/lib/leads/types';
-import type { LeadStatus, LeadUrgency } from '@/lib/leads/types';
+import type {
+  LeadSourceKind,
+  LeadStatus,
+  LeadUrgency,
+} from '@/lib/leads/types';
 
 const STATUS_STYLES: Record<LeadStatus, string> = {
   new: 'border-rust/40 bg-rust/[0.12] text-rust',
@@ -108,5 +113,41 @@ function LeadClientPill({
   );
 }
 
-export { LeadStatusPill, LeadUrgencyPill, LeadClientPill };
-export type { LeadStatusPillProps, LeadUrgencyPillProps, LeadClientPillProps };
+/** Source attribution pill — surfaces `leads.source_kind` on the inbox row.
+ *  Distinct from `LeadClientPill` (which carries the client identity) — this
+ *  carries the SURFACE the lead came in through (website / funnel / meta).
+ *  Meta is reserved for the future Meta lead-ad integration. */
+type LeadSourcePillProps = {
+  source: LeadSourceKind;
+  className?: string;
+};
+
+const SOURCE_STYLES: Record<LeadSourceKind, string> = {
+  website: 'border-ink/15 bg-paper-2 text-ink-quiet',
+  funnel: 'border-rust/30 bg-rust/[0.10] text-rust',
+  meta: 'border-info/30 bg-info/[0.10] text-info',
+};
+
+function LeadSourcePill({ source, className }: LeadSourcePillProps) {
+  return (
+    <span
+      data-slot="lead-source-pill"
+      data-source={source}
+      className={cn(
+        'inline-flex items-center rounded-full border px-2 py-[2px] font-mono text-[10px] font-bold uppercase tracking-[0.08em]',
+        SOURCE_STYLES[source],
+        className,
+      )}
+    >
+      {LEAD_SOURCE_KIND_LABEL[source]}
+    </span>
+  );
+}
+
+export { LeadStatusPill, LeadUrgencyPill, LeadClientPill, LeadSourcePill };
+export type {
+  LeadStatusPillProps,
+  LeadUrgencyPillProps,
+  LeadClientPillProps,
+  LeadSourcePillProps,
+};

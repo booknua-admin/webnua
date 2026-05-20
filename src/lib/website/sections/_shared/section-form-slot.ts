@@ -22,6 +22,10 @@ import type { BrandObject } from '@/lib/website/types';
 export type PublicFormSubmit = {
   /** The client UUID the lead is created against. */
   clientId: string;
+  /** Categorical surface attribution — written to `leads.source_kind` and
+   *  surfaced on the inbox row's Source column. `'meta'` is reserved for the
+   *  later Meta lead-ad integration. */
+  surfaceKind: 'website' | 'funnel';
   /** Human label of the form's origin, e.g. "Form · hero". */
   sourceLabel: string;
   /** Funnel-only — where an `afterSubmit: nextStep` form advances to. */

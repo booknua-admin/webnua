@@ -41,6 +41,10 @@ export type PagePreviewPaneProps = {
   /** The client UUID a form test-submit creates a lead against. When set,
    *  forms in the preview show the "Test submit" affordance. */
   testClientId?: string | null;
+  /** Surface kind for any test-submitted lead — propagated to
+   *  `leads.source_kind`. Default 'website' (the editor is opened against a
+   *  website page far more often than a funnel step). */
+  testSurfaceKind?: 'website' | 'funnel';
   // Section management — when provided, the hover toolbar + add button show.
   onToggleSectionEnabled?: (id: string, enabled: boolean) => void;
   onRemoveSection?: (id: string) => void;
@@ -58,6 +62,7 @@ export function PagePreviewPane({
   selectedElementId,
   onSelectElement,
   testClientId,
+  testSurfaceKind = 'website',
   onToggleSectionEnabled,
   onRemoveSection,
   onMoveSection,
@@ -125,6 +130,7 @@ export function PagePreviewPane({
                             testSubmitCtx: testClientId
                               ? {
                                   clientId: testClientId,
+                                  surfaceKind: testSurfaceKind,
                                   sourceLabel: `Form · ${def.label.replace(/^\/\/\s*/, '')}`,
                                 }
                               : undefined,

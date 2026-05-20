@@ -199,11 +199,27 @@ When a real client site goes live on a public host, the script will fire, events
 > mount and appends `?lead=<id>` to the `nextStepHref` redirect after
 > step 1's submission. So step 1 + step 2 from one visitor now land
 > as a single lead with two timeline events. Events 4 + 6 in §2.1
-> and §2.5 question 1 are resolved. **The other gaps in §2 remain
-> open** — step-1-vs-step-2 ambiguity in the rollup, drop-off
-> detection, partial-vs-qualified status, operator inbox filtering by
-> completion. Tracked in CLAUDE.md "Funnel analytics gaps that
-> remain after lead threading".
+> and §2.5 question 1 are resolved.
+>
+> **UPDATE 2026-05-20 (Session B — funnel step-granularity).**
+> §2.2 (step-1-vs-step-2 ambiguity in the rollup) is now closed:
+> migration 0042 extends `analytics_funnel_daily`'s PK with `page_ref`
+> and the aggregator's GROUP BY to match — step-1 and step-2 events
+> roll up as distinct rows. `fetchFunnelStepBreakdown(surfaceId,
+> pageRefs)` exposes the per-step axis; surfaced on `/funnels/[id]`
+> per prototype Screen 23. §2.6 inbox completion filtering is also
+> closed: completion is derived at read time from `lead_events`
+> (count of `form_submitted` events), surfaced as `LeadCompletion`
+> on the row records, consumed by the new `LeadCompletionFilter` on
+> both inbox bodies. Drop-off detection has a derived read-time
+> signal (`isLeadDroppedOff` + the `LEAD_DROP_OFF_HOURS = 24`
+> threshold) — the actual scheduled worker calling it is Phase 8
+> (automation execution engine). Funnel-to-lead attribution
+> (`leads.source_funnel_id`) is the immediate follow-up session;
+> the hero "booked from this funnel" tile renders `—` via the
+> shape-stable `getBookedFromFunnelCount` until then. See CLAUDE.md
+> "Funnel analytics gaps that remain after lead threading" for the
+> resolved-vs-deferred split.
 >
 > **TL;DR:** the funnel is structurally **two disconnected forms**, not
 > a linked two-step lead-capture. Step 1 creates lead A. Step 2 creates
@@ -683,11 +699,21 @@ Hypothetical visitor session against a published website:
 > side-channel step. Gap #3 (funnel surfaces never read) shipped via
 > the dashboard composers — `composeClientDashboard` and `composeHub`
 > now prefer the client's funnel surface for tracked totals, falling
-> back to the website when no funnel exists. Step-1-vs-step-2
-> granularity in the rollup remains lost to the surface_id × stage
-> PK (audit §2.2) — accepted for V1 per the parked CLAUDE.md item
-> "Funnel analytics gaps that remain after lead threading". The
-> ranked list below is preserved as the original audit record.
+> back to the website when no funnel exists.
+>
+> **UPDATE 2026-05-20 (Session B — funnel step-granularity).**
+> §2.2 step-1-vs-step-2 ambiguity is also closed: migration 0042
+> extends the rollup PK with `page_ref`. The dashboard composers'
+> per-client aggregate keeps reading via `fetchSurfaceFunnelTotals`
+> (which sums across `page_ref` rows — same numeric result as
+> pre-migration); per-step rendering moves to `/funnels/[id]` via
+> the new `fetchFunnelStepBreakdown`. Operator inbox now carries
+> `LeadCompletionFilter` (in-progress vs completed, derived from
+> `form_submitted` event count on each lead). The funnel-to-lead
+> attribution piece (`leads.source_funnel_id` for the hero "booked"
+> tile) ships in the next session — see the parked CLAUDE.md
+> "Funnel-to-lead attribution" item.
+> The ranked list below is preserved as the original audit record.
 
 Ranked by severity × surface area × closeability — same lens as §1 / §2.
 

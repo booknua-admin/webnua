@@ -30,10 +30,12 @@ import {
   type ConversationDay,
   type ConversationMessage,
   type LeadClientTone,
+  type LeadCompletion,
   type LeadConversation,
   type LeadDetail,
   type LeadQuickAction,
   type LeadRailCard,
+  type LeadSourceKind,
   type LeadStatus,
   type LeadTimelineDot,
   type LeadTimelineEvent,
@@ -60,6 +62,8 @@ export type LeadInboxRecord = {
   preview: string;
   activity: LeadActivity;
   unread: boolean;
+  completion: LeadCompletion;
+  sourceKind: LeadSourceKind;
 };
 
 // ---- The Supabase row shapes the select returns ----
@@ -77,13 +81,14 @@ type LeadJoinRow = {
   urgency: LeadUrgency;
   customer_name_snapshot: string;
   created_at: string;
+  source_kind: 'website' | 'funnel' | 'meta' | null;
   customer: { suburb: string | null } | null;
   client: { name: string; industry: string; slug: string } | null;
   lead_events: LeadEventRow[];
 };
 
 const LEAD_SELECT =
-  'id, status, urgency, customer_name_snapshot, created_at, ' +
+  'id, status, urgency, customer_name_snapshot, created_at, source_kind, ' +
   'customer:customers(suburb), ' +
   'client:clients(name, industry, slug), ' +
   'lead_events(kind, occurred_at, automation_id, payload)';
@@ -91,6 +96,47 @@ const LEAD_SELECT =
 // ---- Derivations (design doc §5 — stub fields the schema does not store) ----
 
 const MESSAGE_KINDS = new Set(['sms_in', 'sms_out', 'email_in', 'email_out']);
+
+/** Hours from a lead's first `form_submitted` event before a step-1-only
+ *  lead is considered "dropped" by internal automation logic. V1 choice —
+ *  documented in CLAUDE.md "Funnel lead completion state" with the revisit
+ *  trigger (operators report leads marked dropped too soon, or sit
+ *  in-progress forever). */
+export const LEAD_DROP_OFF_HOURS = 24;
+
+/** Count of `form_submitted` events on a lead — the spine of `LeadCompletion`.
+ *  A step-1-only visitor lands as one `form_submitted`; the threading from
+ *  PR #73 stitches their step-2 submit onto the same lead, so a completed
+ *  funnel run reads as 2. */
+function countFormSubmits(events: LeadEventRow[]): number {
+  let n = 0;
+  for (const e of events) if (e.kind === 'form_submitted') n += 1;
+  return n;
+}
+
+/** Derive the completion state. Two-state for V1: `in_progress` (1 submit)
+ *  or `completed` (≥2 submits). The 24-hour drop-off threshold is read by
+ *  `isLeadDroppedOff` for automation logic — the inbox filter does NOT need
+ *  the third state because the operator is filtering by action, not by
+ *  lead quality. */
+function deriveCompletion(events: LeadEventRow[]): LeadCompletion {
+  return countFormSubmits(events) >= 2 ? 'completed' : 'in_progress';
+}
+
+/** True when a lead has only a step-1 submit AND its first submit is
+ *  older than `LEAD_DROP_OFF_HOURS`. Used by internal automation logic
+ *  (the "send a follow-up nudge" decision); NOT surfaced as a lead label
+ *  on the inbox row. Exported so automation read paths can call it. */
+export function isLeadDroppedOff(
+  events: LeadEventRow[],
+  now: Date = new Date(),
+): boolean {
+  const submits = events.filter((e) => e.kind === 'form_submitted');
+  if (submits.length !== 1) return false;
+  const firstAt = Date.parse(submits[0].occurred_at);
+  if (!Number.isFinite(firstAt)) return false;
+  return now.getTime() - firstAt >= LEAD_DROP_OFF_HOURS * 3600 * 1000;
+}
 
 function payloadObject(payload: unknown): Record<string, unknown> {
   return payload !== null && typeof payload === 'object'
@@ -203,6 +249,8 @@ async function fetchLeadInbox(): Promise<LeadInboxRecord[]> {
     preview: derivePreview(row.lead_events),
     activity: deriveActivity(row.lead_events),
     unread: !readLeadIds.has(row.id),
+    completion: deriveCompletion(row.lead_events),
+    sourceKind: row.source_kind ?? 'website',
   }));
 }
 
@@ -220,6 +268,8 @@ function toClientLeadRow(record: LeadInboxRecord): ClientLeadRow {
     age: relativeTime(record.createdAt),
     unread: record.unread,
     href: `/leads/${record.id}`,
+    completion: record.completion,
+    sourceKind: record.sourceKind,
   };
 }
 
@@ -239,6 +289,8 @@ function toAdminLeadRow(record: LeadInboxRecord): AdminLeadRow {
     metaTone: record.activity.metaTone,
     unread: record.unread,
     href: `/leads/${record.id}`,
+    completion: record.completion,
+    sourceKind: record.sourceKind,
   };
 }
 
@@ -853,14 +905,20 @@ async function updateLeadStatus(input: {
   if (eventError) throw normalizeError(eventError);
 }
 
-/** Change a lead's status. On success every leads query is invalidated so the
- *  inbox, detail header and timeline reflect the move. */
+/** Change a lead's status. On success every leads query AND the dashboard
+ *  / hub queries are invalidated so the inbox, the lead detail header +
+ *  timeline, and the dashboard / hub stat tiles (urgent hero, leads-by-
+ *  status counts, conversion funnel) all reflect the move. Without the
+ *  `['dashboard']` invalidation a "→ booked" status change correctly
+ *  updated the inbox row but left the dashboard counts stale until a
+ *  hard refresh. */
 export function useUpdateLeadStatus() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: updateLeadStatus,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['leads'] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
   });
 }
@@ -875,6 +933,9 @@ export function useUpdateLeadStatus() {
 export type CreateLeadInput = {
   /** The client (UUID) the website / funnel belongs to. */
   clientId: string;
+  /** Categorical surface attribution — written to `leads.source_kind` and
+   *  surfaced on the inbox row's Source column. */
+  surfaceKind: 'website' | 'funnel';
   /** Human label of the form's origin, e.g. "Form · Hero". */
   source: string;
   fields: SubmittedFormField[];
@@ -946,6 +1007,9 @@ async function submitLead(input: CreateLeadInput): Promise<{ leadId: string }> {
 
   const { data: lead, error: leadError } = await supabase
     .from('leads')
+    // `source_kind` was added by migration 0043 and won't appear in the
+    // generated DB types until type-gen is re-run; cast through unknown so
+    // the insert accepts the column. Same pattern as the analytics queries.
     .insert({
       client_id: input.clientId,
       customer_id: customer.id,
@@ -954,7 +1018,8 @@ async function submitLead(input: CreateLeadInput): Promise<{ leadId: string }> {
       status: 'new',
       urgency: 'none',
       source: input.source,
-    })
+      source_kind: input.surfaceKind,
+    } as unknown as never)
     .select('id')
     .single();
   if (leadError) throw normalizeError(leadError);

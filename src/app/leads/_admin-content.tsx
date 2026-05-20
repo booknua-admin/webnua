@@ -110,11 +110,12 @@ function AdminLeadsContent() {
         <LeadTabsBar tabs={tabs} value={activeTab} onChange={setActiveTab} />
 
         <div className="overflow-hidden rounded-2xl border border-ink/8 bg-card">
-          <div className="grid grid-cols-[36px_180px_1fr_110px_90px_100px] items-center gap-3 border-b border-ink/8 bg-paper-2/40 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
+          <div className="grid grid-cols-[36px_180px_1fr_110px_80px_80px_100px] items-center gap-3 border-b border-ink/8 bg-paper-2/40 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
             <div />
             <div>{'// Lead'}</div>
             <div>{'// Preview'}</div>
             <div>{'// Status'}</div>
+            <div>{'// Source'}</div>
             <div>{'// Age'}</div>
             <div className="text-right">{'// Activity'}</div>
           </div>
@@ -142,6 +143,7 @@ function AdminLeadsContent() {
                 metaTone={lead.metaTone}
                 unread={lead.unread}
                 href={lead.href}
+                sourceKind={lead.sourceKind}
               />
             ))
           )}

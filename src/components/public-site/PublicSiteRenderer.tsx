@@ -54,11 +54,13 @@ function RenderedSection({
   section,
   brand,
   clientId,
+  surfaceKind,
   nextStepHref,
 }: {
   section: Section;
   brand: BrandObject;
   clientId: string;
+  surfaceKind: 'website' | 'funnel';
   nextStepHref?: string | null;
 }) {
   if (section.enabled === false) return null;
@@ -80,6 +82,7 @@ function RenderedSection({
         brand,
         publicSubmit: {
           clientId,
+          surfaceKind,
           sourceLabel: `Form · ${label}`,
           nextStepHref,
         },
@@ -107,6 +110,7 @@ export function PublicSiteRenderer(props: Props) {
             section={section}
             brand={props.brand}
             clientId={props.clientId}
+            surfaceKind="funnel"
             nextStepHref={props.nextStepHref}
           />
         ))}
@@ -123,7 +127,12 @@ export function PublicSiteRenderer(props: Props) {
   }));
   return (
     <WebsiteNavProvider links={navLinks}>
-      <RenderedSection section={header} brand={brand} clientId={clientId} />
+      <RenderedSection
+        section={header}
+        brand={brand}
+        clientId={clientId}
+        surfaceKind="website"
+      />
       <main>
         {page.sections.map((section) => (
           <RenderedSection
@@ -131,10 +140,16 @@ export function PublicSiteRenderer(props: Props) {
             section={section}
             brand={brand}
             clientId={clientId}
+            surfaceKind="website"
           />
         ))}
       </main>
-      <RenderedSection section={footer} brand={brand} clientId={clientId} />
+      <RenderedSection
+        section={footer}
+        brand={brand}
+        clientId={clientId}
+        surfaceKind="website"
+      />
     </WebsiteNavProvider>
   );
 }
