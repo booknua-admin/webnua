@@ -13,6 +13,13 @@
 // funnel, and the new-lead notification trigger all light up with no extra
 // wiring.
 //
+// Funnel cross-step linking: when an `existingLeadId` is supplied, the route
+// APPENDS a second `form_submitted` event to that lead rather than creating a
+// new one (closes analytics-audit §2 / the duplicate-lead bug). Cross-tenant
+// guard — the referenced lead must belong to the same `clientId` posted in
+// the body, otherwise the request is rejected. Mirrors the editor-side
+// `submitLead(existingLeadId)` branch in `lib/leads/queries.tsx`.
+//
 // V1 limitations: image-field uploads are not handled here (the private
 // lead-attachments bucket needs an authenticated upload) — an image field's
 // filename is recorded, the file is not stored. Abuse (a script posting fake
@@ -83,12 +90,14 @@ export async function POST(req: Request) {
     return bad('Invalid request body.');
   }
 
-  const { clientId, source, fields, submissionId } = (body ?? {}) as {
-    clientId?: unknown;
-    source?: unknown;
-    fields?: unknown;
-    submissionId?: unknown;
-  };
+  const { clientId, source, fields, submissionId, existingLeadId } =
+    (body ?? {}) as {
+      clientId?: unknown;
+      source?: unknown;
+      fields?: unknown;
+      submissionId?: unknown;
+      existingLeadId?: unknown;
+    };
 
   if (typeof clientId !== 'string' || !UUID_RE.test(clientId)) {
     return bad('Missing or invalid client.');
@@ -100,6 +109,17 @@ export async function POST(req: Request) {
     typeof submissionId === 'string' && UUID_RE.test(submissionId)
       ? submissionId
       : null;
+  // Cross-step funnel linking — optional. When set, the route appends to the
+  // referenced lead instead of inserting a new one. A malformed value rejects
+  // explicitly (a caller who tried to link should know they failed, not get a
+  // silent orphan lead).
+  let cleanExistingLeadId: string | null = null;
+  if (existingLeadId !== undefined && existingLeadId !== null) {
+    if (typeof existingLeadId !== 'string' || !UUID_RE.test(existingLeadId)) {
+      return bad('Invalid lead reference.');
+    }
+    cleanExistingLeadId = existingLeadId;
+  }
   if (!Array.isArray(fields) || fields.length === 0) {
     return bad('No form fields submitted.');
   }
@@ -125,6 +145,47 @@ export async function POST(req: Request) {
     .eq('id', clientId)
     .maybeSingle();
   if (!client) return bad('Unknown client.', 404);
+
+  // Cross-step path: append to an existing lead. Cross-tenant guard — the
+  // lead must belong to the same client (a malicious caller can't update an
+  // unrelated tenant's lead by injecting a guessed UUID). Lead-not-found and
+  // wrong-client both surface as a generic 400 so neither leaks lead existence.
+  // Per-funnel scoping is the strongest check the current schema supports —
+  // `leads` carries no `funnel_id` column today; when it does, tighten here.
+  if (cleanExistingLeadId) {
+    const { data: existing } = await svc
+      .from('leads')
+      .select('id, client_id')
+      .eq('id', cleanExistingLeadId)
+      .maybeSingle();
+    if (!existing || existing.client_id !== clientId) {
+      return bad('Unknown lead reference.', 400);
+    }
+    const { error: eventError } = await svc.from('lead_events').insert({
+      lead_id: existing.id,
+      kind: 'form_submitted',
+      occurred_at: new Date().toISOString(),
+      actor_user_id: null,
+      payload: {
+        source: sourceLabel,
+        submissionId: cleanSubmissionId,
+        fields: cleanFields.map((f) => ({
+          label: f.label,
+          value: f.value,
+          type: f.type,
+        })),
+        attachments: cleanFields
+          .filter((f) => !!f.imagePath)
+          .map((f) => ({
+            fieldId: f.fieldId,
+            label: f.label,
+            path: f.imagePath,
+          })),
+      },
+    });
+    if (eventError) return bad('Could not record the submission.', 500);
+    return NextResponse.json({ ok: true, leadId: existing.id });
+  }
 
   // Resolve the lead identity from the leadRole-tagged fields.
   const roleValue = (role: 'name' | 'email' | 'phone') =>
