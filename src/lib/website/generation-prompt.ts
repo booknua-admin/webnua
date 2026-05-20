@@ -7,7 +7,7 @@
 // in the /dev/generation-preview surface (design doc §6a).
 // =============================================================================
 
-import type { BrandObject, PageType, VoiceTone } from './types';
+import type { BrandObject, PageType, SectionType, VoiceTone } from './types';
 import type { GenerationContext, PrimaryIntent } from './generation-context';
 import { describeAudience, describeIntent, describePageType } from './generation-context';
 import { SECTION_REGISTRY_META, type SectionMeta } from './sections/registry-meta';
@@ -77,6 +77,9 @@ function buildSystemPreamble(): string {
     'Constraints:',
     '- Use only section types listed in "Available section types" below.',
     '- For each section you include, set `enabled: true` and populate all required fields.',
+    '- For variant keys (layout, theme, iconStyle, contentAlign, headerAlign, columns, headlineSize, …) the catalog enumerates the allowed values — pick exactly one of those values. Variant keys are closed enums, not free text.',
+    '- Item-array fields (`items`, `inclusions`, `signals`, `features`, `stats`, `badges`) are arrays of OBJECTS matching the per-section shape in the catalog. Every item needs a short unique `id`. Do not emit items as bare strings.',
+    '- `headlineAccent` / `titleAccent` is an optional SECOND LINE rendered in the brand accent colour beneath the main heading. It is not a substring of the headline and not a duplicate of it. Leave empty when no second-line emphasis adds value.',
     '- Headlines: ≤72 chars. Subheadings: ≤140 chars. Bodies: ≤400 chars unless the field is explicitly a paragraph.',
     '- Match the brand voice exactly as described.',
     '- For every text field you populate, the system will tag it as AI-drafted.',
@@ -154,7 +157,10 @@ function buildExistingPagesBlock(ctx: GenerationContext): string {
 
 function buildRegistryBlock(ctx: GenerationContext): string {
   const eligible = SECTION_REGISTRY_META.filter((def) => isEligible(def, ctx));
-  return eligible.map(formatRegistryEntry).join('\n\n');
+  return [
+    SHARED_FIELD_NOTES,
+    ...eligible.map(formatRegistryEntry),
+  ].join('\n\n');
 }
 
 function isEligible(def: SectionMeta, ctx: GenerationContext): boolean {
@@ -166,13 +172,358 @@ function isEligible(def: SectionMeta, ctx: GenerationContext): boolean {
 }
 
 function formatRegistryEntry(def: SectionMeta): string {
-  const fields = def.defaultDataKeys;
-  return [
+  return formatSectionEntry(def);
+}
+
+/** Shared per-section formatter — used by the website registry block AND by
+ *  the funnel prompt's field-keys block via `formatSectionShape`. */
+export function formatSectionEntry(def: SectionMeta): string {
+  const lines = [
     `### ${def.type}`,
     `Label: ${def.label}`,
     `Description: ${def.description}`,
-    `Field keys: ${fields.join(', ') || '(none)'}`,
-  ].join('\n');
+    `Field keys: ${def.defaultDataKeys.join(', ') || '(none)'}`,
+  ];
+  const shape = SECTION_SHAPE_CATALOG[def.type];
+  if (shape) {
+    if (shape.variants.length > 0) {
+      lines.push('Variant enums (use exactly these values for each key):');
+      for (const v of shape.variants) {
+        const values = v.values.map(formatEnumValue).join(' | ');
+        const guidance = v.guidance ? `  — ${v.guidance}` : '';
+        lines.push(`  ${v.key}: ${values}${guidance}`);
+      }
+    }
+    if (shape.arrays.length > 0) {
+      lines.push(
+        'Array fields (each element MUST be an object matching the shape; every item needs a short unique `id`):',
+      );
+      for (const a of shape.arrays) {
+        lines.push(`  ${a.key}: array of ${a.shape}`);
+      }
+    }
+  }
+  return lines.join('\n');
+}
+
+function formatEnumValue(v: string | number): string {
+  return typeof v === 'string' ? `'${v}'` : String(v);
+}
+
+// =============================================================================
+// Section shape catalog — variant enums + item-array object shapes.
+//
+// The registry's `defaultDataKeys` is a flat list of strings. Without enum
+// values for variant keys, the model emits free-text guesses for fields with
+// closed unions (`layout`, `iconStyle`, `contentAlign`, etc.) and the
+// renderer silently falls back to defaults — the "layout drift" symptom.
+// Without array-element shapes, the model skips array fields whose internal
+// shape it can't infer — the "funnel copy mostly blank except headlines"
+// symptom. This catalog fixes both.
+//
+// Source of truth is the section module's TypeScript shape — when you change
+// a section's data shape, update the matching entry below. The catalog is
+// intentionally inline (not generated) so the prompt stays in one file.
+// =============================================================================
+
+type VariantEnum = {
+  key: string;
+  values: readonly (string | number)[];
+  guidance?: string;
+};
+
+type ItemArrayShape = {
+  key: string;
+  /** TypeScript-style object shape. The leading `{` and trailing `}` are
+   *  included; the renderer wraps this in `array of ...`. */
+  shape: string;
+};
+
+type SectionShape = {
+  variants: readonly VariantEnum[];
+  arrays: readonly ItemArrayShape[];
+};
+
+const ICON_ID_NOTE = "an icon id from the curated set (see 'Icon library' above)";
+
+export const SECTION_SHAPE_CATALOG: Partial<Record<SectionType, SectionShape>> = {
+  hero: {
+    variants: [
+      { key: 'layout', values: ['split', 'overlay'] },
+      { key: 'imageSide', values: ['left', 'right'] },
+      {
+        key: 'contentAlign',
+        values: ['left', 'center', 'right'],
+        guidance: 'center for short marketing-led copy; left for longer or informational copy.',
+      },
+      { key: 'headlineSize', values: ['m', 'l', 'xl'] },
+      { key: 'subSize', values: ['s', 'm', 'l'] },
+      {
+        key: 'overlayOpacity',
+        values: [0, 25, 50, 75, 100],
+        guidance: 'only used when layout=overlay; scrim strength over the background image.',
+      },
+    ],
+    arrays: [],
+  },
+  offer: {
+    variants: [
+      {
+        key: 'layout',
+        values: ['card', 'stack'],
+        guidance: "'card' = single priced offer with inclusions; 'stack' = value-stack of components.",
+      },
+      { key: 'headerAlign', values: ['left', 'center', 'right'] },
+      { key: 'headlineSize', values: ['m', 'l', 'xl'] },
+      { key: 'stackStyle', values: ['grid', 'list'] },
+      {
+        key: 'columns',
+        values: [2, 3, 4],
+        guidance: 'used in stack mode; pick 2 for paired comparison, 3 for balanced grid, 4 for density.',
+      },
+    ],
+    arrays: [
+      { key: 'inclusions', shape: '{ id: string, text: string }' },
+      {
+        key: 'items',
+        shape: `{ id: string, icon: ${ICON_ID_NOTE}, title: string, description: string }`,
+      },
+      {
+        key: 'signals',
+        shape: `{ id: string, icon: ${ICON_ID_NOTE}, label: string }`,
+      },
+    ],
+  },
+  features: {
+    variants: [
+      { key: 'layout', values: ['cards', 'plain'] },
+      {
+        key: 'mediaStyle',
+        values: ['icon', 'image', 'image-icon'],
+        guidance: "'icon' is the default for service-line lists; pick 'image' only if you have real photos.",
+      },
+      {
+        key: 'iconStyle',
+        values: ['soft', 'solid', 'bare'],
+        guidance: "'soft' for general business, 'solid' for stronger emphasis, 'bare' for minimal/technical.",
+      },
+      { key: 'headerAlign', values: ['left', 'center', 'right'] },
+      { key: 'headlineSize', values: ['m', 'l', 'xl'] },
+      { key: 'ctaStyle', values: ['solid', 'outline'] },
+      {
+        key: 'columns',
+        values: [2, 3, 4],
+        guidance: '3 is the default balanced grid; 2 for richer per-item copy; 4 for density.',
+      },
+    ],
+    arrays: [
+      {
+        key: 'items',
+        shape: `{ id: string, icon: ${ICON_ID_NOTE}, imageUrl: string, title: string, description: string, linkLabel: string, linkHref: string }`,
+      },
+    ],
+  },
+  about: {
+    variants: [
+      { key: 'imageSide', values: ['left', 'right'] },
+      { key: 'headlineSize', values: ['m', 'l', 'xl'] },
+      {
+        key: 'extra',
+        values: ['none', 'features', 'stats', 'note', 'button'],
+        guidance: 'which block follows the intro copy; pick one.',
+      },
+      { key: 'mediaMode', values: ['single', 'collage'] },
+      { key: 'mediaShape', values: ['rounded', 'arc'] },
+      { key: 'overlay', values: ['none', 'stat', 'quote'] },
+    ],
+    arrays: [
+      {
+        key: 'features',
+        shape: `{ id: string, icon: ${ICON_ID_NOTE}, title: string, description: string }`,
+      },
+      {
+        key: 'stats',
+        shape: `{ id: string, icon: ${ICON_ID_NOTE}, value: string, label: string }`,
+      },
+    ],
+  },
+  gallery: {
+    variants: [
+      { key: 'layout', values: ['grid', 'masonry'] },
+      { key: 'aspect', values: ['square', 'landscape', 'wide', 'portrait'] },
+      { key: 'headerAlign', values: ['left', 'center', 'right'] },
+      { key: 'headlineSize', values: ['m', 'l', 'xl'] },
+      { key: 'ctaStyle', values: ['solid', 'outline'] },
+      { key: 'columns', values: [2, 3, 4] },
+    ],
+    arrays: [
+      {
+        key: 'items',
+        shape: '{ id: string, imageUrl: string, caption: string, category: string }',
+      },
+    ],
+  },
+  reviews: {
+    variants: [
+      {
+        key: 'layout',
+        values: ['grid', 'spotlight'],
+        guidance: "'grid' shows N reviews side-by-side; 'spotlight' features one prominently.",
+      },
+      { key: 'headerAlign', values: ['left', 'center', 'right'] },
+      { key: 'headlineSize', values: ['m', 'l', 'xl'] },
+      { key: 'nav', values: ['none', 'dots', 'arrows'] },
+      { key: 'ctaStyle', values: ['link', 'solid', 'outline'] },
+      { key: 'columns', values: [2, 3] },
+    ],
+    arrays: [
+      {
+        key: 'items',
+        shape: '{ id: string, quote: string, authorName: string, authorRole: string, avatarUrl: string, rating: 0..5 }',
+      },
+    ],
+  },
+  faq: {
+    variants: [
+      { key: 'layout', values: ['centered', 'grid', 'sidebar'] },
+      { key: 'headerAlign', values: ['left', 'center', 'right'] },
+      { key: 'headlineSize', values: ['m', 'l', 'xl'] },
+      {
+        key: 'footer',
+        values: ['none', 'link', 'card', 'signals'],
+        guidance: 'what sits beneath the Q&A list; pick one.',
+      },
+      { key: 'columns', values: [1, 2] },
+    ],
+    arrays: [
+      { key: 'items', shape: '{ id: string, question: string, answer: string }' },
+      {
+        key: 'signals',
+        shape: `{ id: string, icon: ${ICON_ID_NOTE}, title: string, sub: string }`,
+      },
+    ],
+  },
+  cta: {
+    variants: [
+      { key: 'layout', values: ['centered', 'split', 'background', 'dual'] },
+      { key: 'align', values: ['left', 'center', 'right'] },
+      { key: 'headlineSize', values: ['m', 'l', 'xl'] },
+      { key: 'imageSide', values: ['left', 'right'] },
+      {
+        key: 'overlayOpacity',
+        values: [0, 25, 50, 75, 100],
+        guidance: 'scrim strength when layout=background.',
+      },
+    ],
+    arrays: [
+      {
+        key: 'signals',
+        shape: `{ id: string, icon: ${ICON_ID_NOTE}, label: string }`,
+      },
+    ],
+  },
+  contact: {
+    variants: [
+      {
+        key: 'layout',
+        values: ['details', 'cards', 'map', 'stacked'],
+        guidance: "'details' is the default; 'map' if a map image is supplied.",
+      },
+      { key: 'headerAlign', values: ['left', 'center', 'right'] },
+      { key: 'headlineSize', values: ['m', 'l', 'xl'] },
+    ],
+    arrays: [
+      {
+        key: 'items',
+        shape: `{ id: string, icon: ${ICON_ID_NOTE}, label: string, value: string, sub: string }`,
+      },
+    ],
+  },
+  trust: {
+    variants: [
+      { key: 'display', values: ['stats', 'logos'] },
+      { key: 'headerAlign', values: ['left', 'center', 'right'] },
+      { key: 'headlineSize', values: ['m', 'l', 'xl'] },
+      { key: 'columns', values: [3, 4, 5] },
+    ],
+    arrays: [
+      {
+        key: 'items',
+        shape: `{ id: string, icon: ${ICON_ID_NOTE}, value: string, label: string, rating: 0..5, imageUrl: string }`,
+      },
+      {
+        key: 'badges',
+        shape: `{ id: string, icon: ${ICON_ID_NOTE}, label: string }`,
+      },
+    ],
+  },
+};
+
+// =============================================================================
+// Shared appendix — heading-accent semantics + icon library + item-id rule.
+// Emitted once at the top of the registry catalog. Both the website prompt
+// (here) and the funnel prompt (via the exported helper) include this.
+// =============================================================================
+
+/** Curated icon ids from `lib/website/section-icons.ts`. The renderer
+ *  resolves an unknown id to a fallback glyph; staying inside this list keeps
+ *  the rendered page on-brand. */
+const ICON_LIBRARY: readonly string[] = [
+  'award', 'badge-check', 'bath', 'briefcase', 'brush', 'building',
+  'calendar', 'camera', 'car', 'check', 'circle-check', 'clock',
+  'compass', 'credit-card', 'dollar', 'drill', 'droplet', 'droplets',
+  'fan', 'flag', 'flame', 'gauge', 'gift', 'globe', 'hammer',
+  'handshake', 'hard-hat', 'headphones', 'heart', 'hourglass', 'house',
+  'key', 'layers', 'leaf', 'life-buoy', 'lightbulb', 'lock', 'mail',
+  'map-pin', 'megaphone', 'message', 'package', 'paint-roller',
+  'paintbrush', 'phone', 'plug', 'recycle', 'rocket', 'ruler',
+  'scissors', 'settings', 'shield', 'shield-check', 'shower-head',
+  'snowflake', 'sparkles', 'spray-can', 'sprout', 'star', 'sun',
+  'tag', 'target', 'thermometer', 'thumbs-up', 'trash', 'tree',
+  'trending-up', 'trophy', 'truck', 'users', 'washing-machine', 'wifi',
+  'wind', 'wrench', 'zap',
+];
+
+export const SHARED_FIELD_NOTES = [
+  '### Heading accents',
+  '',
+  'Sections that expose a `headlineAccent` (or `titleAccent`) render it as an OPTIONAL SECOND LINE beneath the main heading, in the brand accent colour. The accent is NOT a substring of the headline and NOT a duplicate of it — it is an additional clause on its own line.',
+  '',
+  'Correct:',
+  '  headline: "Burst pipe at midnight?"',
+  '  headlineAccent: "On site within 2 hours."',
+  '',
+  'Incorrect (duplicates the headline):',
+  '  headline: "Switchboard sorted in 24 hours"',
+  '  headlineAccent: "Switchboard sorted in 24 hours"',
+  '',
+  'Incorrect (accent is a fragment of the headline):',
+  '  headline: "Switchboard sorted in 24 hours"',
+  '  headlineAccent: "24 hours"',
+  '',
+  'If no second-line emphasis is warranted, leave the accent field empty.',
+  '',
+  '### Icon library',
+  '',
+  'Every `icon` field on an item — and any standalone icon field like `iconStyle`, `badgeIcon`, `footerCardIcon` — must use an id from this curated set. Ids outside the set render as a fallback glyph or get dropped.',
+  '',
+  ICON_LIBRARY.join(', '),
+  '',
+  '### Item ids',
+  '',
+  'Every object inside an `items` / `inclusions` / `signals` / `features` / `stats` / `badges` array needs a short unique `id` string (e.g. "feat-1", "inc-2", "rev-3"). Do not output an item without one.',
+  '',
+  '### Theme objects',
+  '',
+  'The `theme` field on a section is an OBJECT, not a string. It may be `{}` to inherit the brand defaults, or it may override one or more of `background` / `heading` / `body` with hex colour strings (e.g. `{ "background": "#0d1f3a" }`). Prefer `{}` unless a specific section needs to break from the brand palette.',
+].join('\n');
+
+/** Public helper — the funnel prompt uses this to build a per-section block
+ *  in the same shape as the website prompt's registry catalog. */
+export function formatSectionShape(type: SectionType): string {
+  const meta = SECTION_REGISTRY_META.find((m) => m.type === type);
+  if (!meta) return '';
+  return formatSectionEntry(meta);
 }
 
 // -- Voice tone → prose translation -----------------------------------------
