@@ -95,11 +95,39 @@
 >   doesn't over-index on Voltline's industry / suburbs / response
 >   times for unrelated briefs.
 >
+> A follow-up session (`claude/prompt-copy-layout-form-fields-*`)
+> addressed two further findings from this audit:
+>
+> - **Copy-vs-layout conflation — RESOLVED.** The website + funnel
+>   prompts now consume `SectionMeta.capabilityHints.copyFields` to
+>   split each section's `defaultDataKeys` into a COPY bucket and a
+>   LAYOUT bucket (heuristic fallback for any future section that
+>   ships without hints). The catalog entry per section emits two
+>   lines — "Copy fields (populate with specific, on-brand content):"
+>   followed by "Layout fields (omit unless the brief specifically
+>   requires a variation — defaults apply):". The main rules in
+>   both the cached website system prompt
+>   (`src/lib/website/generate-live.ts`) and both funnel system
+>   prompts (`src/lib/website/generate-funnel-live.ts`) were
+>   reworded to match: populate every COPY field, omit LAYOUT
+>   fields unless the brief justifies a variation. The user-message
+>   system preamble in `src/lib/website/generation-prompt.ts` was
+>   updated in lockstep. See the CLAUDE.md parked decision below
+>   for the trigger to revisit.
+> - **Form `fields[]` waste — RESOLVED.** Both funnel step 1 and
+>   step 2 system prompts now carry an explicit "do NOT output a
+>   `fields` array on the form section" instruction in the form
+>   section's plan brief (in addition to the existing rule at the
+>   bottom of each prompt's Rules block). The form section's
+>   `fields[]` is built deterministically in code; any array the
+>   model emits is discarded by `validateAndAssemble` either way,
+>   but the prompt now says so up front so the model doesn't waste
+>   tokens drafting an array that will be thrown away.
+>
 > The remaining missing-piece bullets in this audit (banned-word
-> consolidation, copy-vs-layout via `capabilityHints`, shared
-> persona, voice on offer/enhance, etc.) are deferred to later
-> sessions and were intentionally NOT touched in the worked-examples
-> session.
+> consolidation, shared persona, voice on offer/enhance, etc.) are
+> deferred to later sessions and were intentionally NOT touched in
+> this session.
 >
 > Four prompts in scope, in the order requested:
 >
