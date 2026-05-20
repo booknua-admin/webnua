@@ -13,6 +13,7 @@
 import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 
+import { EnhanceableTextarea } from '@/components/shared/EnhanceableTextarea';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -23,6 +24,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { AppError } from '@/lib/errors';
 import { cn } from '@/lib/utils';
+import { enhanceField } from '@/lib/website/field-enhance';
 import {
   AUDIENCE_CHIPS,
   PRIMARY_INTENT_CHIPS,
@@ -70,8 +72,6 @@ export function CreateClientModal({
 
   // offer
   const [offer, setOffer] = useState('');
-  const [enhancing, setEnhancing] = useState(false);
-  const [enhanceError, setEnhanceError] = useState<string | null>(null);
   const [services, setServices] = useState<string[]>(['', '', '']);
 
   // brief
@@ -106,7 +106,7 @@ export function CreateClientModal({
   const reset = () => {
     setPhase('business');
     setName(''); setIndustry(''); setOwnerName(''); setPhone(''); setEmail(''); setArea('');
-    setOffer(''); setServices(['', '', '']); setEnhancing(false); setEnhanceError(null);
+    setOffer(''); setServices(['', '', '']);
     setIntent('book'); setAudience('cold-ad');
     setFunnelService(''); setFunnelCustomerPain(''); setFunnelGuarantee('');
     setFunnelTestimonials([{ quote: '', author: '', context: '' }]);
@@ -299,47 +299,20 @@ export function CreateClientModal({
 
           {phase === 'offer' ? (
             <div className="flex flex-col gap-5">
-              <Field
-                label="Your offer"
-                hint={
-                  <button
-                    type="button"
-                    disabled={enhancing || !offer.trim()}
-                    onClick={async () => {
-                      setEnhanceError(null);
-                      setEnhancing(true);
-                      try {
-                        const polished = await enhanceFunnelOfferText({
-                          rawText: offer,
-                          industry,
-                          businessName: name,
-                          serviceArea: area,
-                        });
-                        setOffer(polished);
-                      } catch (err) {
-                        const msg =
-                          err instanceof AppError
-                            ? err.message
-                            : err instanceof Error
-                              ? err.message
-                              : 'Offer enhancement failed.';
-                        setEnhanceError(msg);
-                      } finally {
-                        setEnhancing(false);
-                      }
-                    }}
-                    className="rounded-pill border border-rust/40 bg-rust-soft px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-rust transition-colors hover:bg-rust hover:text-paper disabled:opacity-50"
-                  >
-                    {enhancing ? 'Enhancing…' : '✦ Enhance with AI'}
-                  </button>
-                }
-              >
-                <textarea
+              <Field label="Your offer">
+                <EnhanceableTextarea
                   value={offer}
-                  onChange={(e) => setOffer(e.target.value)}
+                  onChange={setOffer}
                   rows={4}
                   placeholder="Describe what you do and what makes you different — rough notes are fine, AI will polish them."
-                  className="w-full rounded-md border border-rule bg-card px-3 py-2.5 text-[13px] text-ink outline-none focus:border-rust"
+                  enhance={(current) =>
+                    enhanceFunnelOfferText({
+                      rawText: current,
+                      industry,
+                      businessName: name,
+                      serviceArea: area,
+                    })
+                  }
                 />
               </Field>
               <Field label="Services you offer">
@@ -372,14 +345,6 @@ export function CreateClientModal({
                   </Button>
                 </div>
               </Field>
-              {enhanceError ? (
-                <div className="rounded-md border border-warn/40 border-l-4 border-l-warn bg-warn/[0.06] px-3 py-2 text-[12px] text-warn">
-                  <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em]">
-                    Offer enhancement error
-                  </p>
-                  <p className="mt-1 whitespace-pre-wrap break-words">{enhanceError}</p>
-                </div>
-              ) : null}
             </div>
           ) : null}
 
@@ -407,12 +372,23 @@ export function CreateClientModal({
                     label="What's the moment that makes a customer urgently search for this?"
                     required
                   >
-                    <textarea
+                    <EnhanceableTextarea
                       value={funnelCustomerPain}
-                      onChange={(e) => setFunnelCustomerPain(e.target.value)}
+                      onChange={setFunnelCustomerPain}
                       rows={3}
                       placeholder="A burst pipe at 9pm with water across the floor — they need someone on site tonight."
-                      className="w-full rounded-md border border-rule bg-card px-3 py-2.5 text-[13px] text-ink outline-none focus:border-rust"
+                      enhance={(current) =>
+                        enhanceField({
+                          fieldName: 'funnel_customer_pain',
+                          currentValue: current,
+                          briefContext: {
+                            businessName: name,
+                            industry,
+                            serviceArea: area,
+                            funnelService,
+                          },
+                        })
+                      }
                     />
                   </Field>
                   <Field label="What can you confidently promise or guarantee?" required>
