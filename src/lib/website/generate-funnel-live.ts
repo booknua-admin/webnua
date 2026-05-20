@@ -1,37 +1,42 @@
 // =============================================================================
-// generate-funnel-live — the real Claude-backed funnel-landing generator
-// (server-only).
+// generate-funnel-live — the real Claude-backed funnel generator (server-only).
 //
-// Mirror of generate-live.ts but for funnels. ONE Claude call produces the
-// seven-section funnel-landing step as one structured JSON response. The
-// schedule + thanks steps stay deterministic — they are funnel-only chrome
-// (schedulePicker / thanksConfirmation) and the wizard captures none of the
-// inputs an LLM would need to differentiate them. The seven landing sections
-// are where conversion lives, and where the chosen offer (Session 2) drives
-// the structure end to end.
+// TWO parallel Claude calls (Opus 4.7), one per non-deterministic step:
 //
-// Sultanic / Suby shape, locked at 7 sections in this exact order:
-//   1. hero            — leads with the offer headline; sub expands the promise
-//   2. offer           — presents the promise as the deal being offered
-//   3. reviews (#1)    — first social proof, builds credibility BEFORE the stack
-//   4. features        — value stack (3–5 items, each what-it-is + why-it-matters)
-//   5. trust           — risk reversal (the guarantee from the offer)
-//   6. reviews (#2)    — second social proof, handles final objection
-//   7. form            — lead-capture form; CTA copy from the offer
+//   Step 1 — Lead capture (7 sections in Suby/Sultanic shape):
+//     hero  →  offer  →  reviews(#1)  →  features  →  trust  →  reviews(#2)  →  form
+//     The `form` section is restricted to NAME + EMAIL only (minimum friction
+//     to get the lead). The hero ALSO gets the same name+email form attached
+//     via `Section.form` envelope — so the visitor can convert above the fold
+//     OR at the bottom. Both forms create / update the same lead.
+//
+//   Step 2 — Qualification (4 sections — reinforcement + qualify):
+//     hero  →  reviews  →  features  →  form
+//     Sections REINFORCE the booking decision (objection handling + outcomes
+//     + what-happens-next), and the form collects phone / service address /
+//     preferred date / preferred time-of-day / budget. The lead-link
+//     mechanism for stitching step-1 + step-2 submissions lives at the
+//     public-renderer + leads/queries level (existingLeadId on submit) and is
+//     not the generator's concern.
+//
+//   Step 3 — Thanks: deterministic, built by funnel/generation-stub.ts.
 //
 // Imported ONLY by /api/generate-funnel — never by client code, so the
 // Anthropic SDK stays out of the browser bundle. The browser reaches this
 // through fetch('/api/generate-funnel'); see funnel/generation-stub.ts.
 //
-// Opus 4.7 (vs the offer generator's Sonnet 4.6): funnel generation is
-// higher-value than the four-field offer step, the prompt is more complex,
-// and the output drives the entire landing page. See the CLAUDE.md parked
-// decision "Funnel vs offer generator model choice".
+// Opus 4.7 with `thinking: { type: 'adaptive' }` (Opus rejects the
+// enabled+budget shape — see CLAUDE.md parked decision).
 // =============================================================================
 
 import Anthropic from '@anthropic-ai/sdk';
 
-import { defaultFormConfig, type FormConfig } from './form-config';
+import {
+  defaultFormField,
+  makeFieldId,
+  type FormConfig,
+  type FormField,
+} from './form-config';
 import type {
   FunnelBrief,
   FunnelTestimonial,
@@ -43,13 +48,17 @@ import type { FallbackLogEntry } from './generation-stub';
 
 const MODEL = 'claude-opus-4-7';
 
-/** Per-section instruction the model treats as authoritative — not just labels. */
-const SECTION_PLAN: readonly { type: SectionType; role: string; brief: string }[] = [
+// =============================================================================
+// Step 1 — Lead capture
+// =============================================================================
+
+/** Per-section instruction the model treats as authoritative — not labels. */
+const LEAD_CAPTURE_SECTION_PLAN: readonly { type: SectionType; role: string; brief: string }[] = [
   {
     type: 'hero',
     role: 'Open. Hook the visitor on the offer.',
     brief:
-      'Lead with the offer headline VERBATIM. Sub expands the promise. Primary CTA = the offer cta_text, href "#form". Secondary CTA = "Call now" / phone if available.',
+      'Lead with the offer headline VERBATIM. Sub expands the promise. Primary CTA = the offer cta_text, href "#form". Secondary CTA = "Call now" / phone if available. (A short name+email form is rendered into the hero too via the section envelope — your copy is the headline that sells it.)',
   },
   {
     type: 'offer',
@@ -83,17 +92,17 @@ const SECTION_PLAN: readonly { type: SectionType; role: string; brief: string }[
   },
   {
     type: 'form',
-    role: 'CTA + Form — the conversion point.',
+    role: 'Lead capture — name + email only, minimum friction.',
     brief:
-      'eyebrow + heading from the offer\'s urgency. Heading reuses the customer outcome (e.g. "Book my emergency callout"). Keep it short — the form fields and submit button do the work.',
+      'eyebrow + heading from the offer\'s urgency. Heading reuses the customer outcome (e.g. "Get my emergency callout"). Keep it short — the form fields and submit button do the work. Visitor only gives name + email here; qualification happens on the next step.',
   },
 ];
 
-const SYSTEM_PROMPT = `You are a direct-response landing-page copywriter in the Suby / Sultanic tradition, writing for Webnua — a platform building conversion funnels for small service businesses (electricians, plumbers, cleaners, locksmiths, landscapers).
+const LEAD_CAPTURE_SYSTEM_PROMPT = `You are a direct-response landing-page copywriter in the Suby / Sultanic tradition, writing for Webnua — a platform building conversion funnels for small service businesses (electricians, plumbers, cleaners, locksmiths, landscapers).
 
-You are writing copy for a seven-section lead-capture funnel. ONE job: maximise form-fills. Every word earns its place.
+You are writing copy for the FIRST step of a two-step lead-capture funnel. The visitor's first task is the minimum-friction handover: name + email. Every word earns its place toward that single conversion.
 
-# How a high-converting funnel works (Suby/Sultanic shape)
+# How a high-converting lead-capture page works (Suby/Sultanic shape)
 
 1. The funnel sells ONE offer. Every section reinforces the same offer — the headline, promise, risk-reversal, and CTA from the operator's chosen offer ride end to end.
 2. The hero opens with the offer headline VERBATIM (the operator already wrote it; do not rewrite).
@@ -101,14 +110,14 @@ You are writing copy for a seven-section lead-capture funnel. ONE job: maximise 
 4. The value stack is concrete: 3–5 items, each is a tangible thing the customer gets, with a one-line why-it-matters.
 5. The risk-reversal is presented as the customer's guarantee, not a marketing line. Use the operator's own guarantee copy.
 6. A second social-proof block AFTER the value stack handles the final objection. Different angle than the first.
-7. The form is the only conversion point. CTA copy comes from the offer. No competing CTAs anywhere else on the page (CTAs in earlier sections all scroll to "#form").
+7. The form on this page captures NAME + EMAIL ONLY — minimum friction. Qualification happens on the next step. CTA copy comes from the offer.
 8. No corporate-speak. NEVER use: comprehensive, leverage, elevate, transform, solutions, premium quality, world-class, industry-leading, innovative, seamless, robust, synergy, cutting-edge, best-in-class, trusted partner, discerning. These signal that no human wrote this.
 9. Specifics over adjectives. "On site within 2 hours, 7 days a week" beats "fast, reliable service" every time.
 10. Use ONLY the testimonials the operator supplied verbatim. NEVER invent quoted testimonials with fake author names if the operator supplied any. If the brief carries zero testimonials, then and only then may you populate the reviews sections with credible-feeling generated reviews — and make them specific (named people, suburb, concrete job detail).
 
 # Section plan (you MUST output sections in this exact order)
 
-${SECTION_PLAN.map((s, i) => `${i + 1}. ${s.type}\n   Role: ${s.role}\n   ${s.brief}`).join('\n\n')}
+${LEAD_CAPTURE_SECTION_PLAN.map((s, i) => `${i + 1}. ${s.type}\n   Role: ${s.role}\n   ${s.brief}`).join('\n\n')}
 
 # Output contract
 
@@ -127,34 +136,149 @@ Rules:
 - Honour the brand voice exactly. Length: headlines <= 72 chars, subheadings <= 140 chars, body copy <= 400 chars unless explicitly a paragraph.
 - Hrefs: every "Book / Get / Buy" CTA href is "#form". Every "Call" CTA href is "tel:" + the operator's phone if available.`;
 
-export type FunnelLandingResult = {
+// =============================================================================
+// Step 2 — Qualification
+// =============================================================================
+
+const QUALIFICATION_SECTION_PLAN: readonly { type: SectionType; role: string; brief: string }[] = [
+  {
+    type: 'hero',
+    role: 'Reframe — the visitor is one step from booked; reassure and steer.',
+    brief:
+      'The visitor has already given name + email on the previous step. Headline: a short reframe — "Almost there. Let\'s get you on the schedule." Sub: restate the value the visitor is about to receive in concrete terms. NO new offer copy here; reinforce the existing one. Primary CTA = "Confirm my booking", href "#form".',
+  },
+  {
+    type: 'reviews',
+    role: 'Social proof, decision-stage angle — "they actually do what they say".',
+    brief:
+      'Different angle than the landing page: pick testimonials that focus on what the customer experiences AFTER booking — punctual arrival, fixed-quote held, work tidy, follow-up. If the operator supplied testimonials use them verbatim; otherwise generate 2 specific-feeling reviews (named people, suburb).',
+  },
+  {
+    type: 'features',
+    role: 'What happens next — a concrete sequence the visitor can picture.',
+    brief:
+      'Each item is a step in the visitor\'s near future. 3–4 items. Titles are 3–6 words ("We confirm by SMS", "Local pro calls you", "Fixed quote on site"). Descriptions are 1 sentence on what that step looks like and the time it takes. Pick icons (clock, message, shield-check, wrench, phone).',
+  },
+  {
+    type: 'form',
+    role: 'Qualify — phone, location, date, time-of-day, budget.',
+    brief:
+      'eyebrow + heading frame the form as "the final 30 seconds". Heading: action + outcome (e.g. "Lock in your callout"). Sub-heading short. The form fields themselves are wired in code — your job is the heading band copy.',
+  },
+];
+
+const QUALIFICATION_SYSTEM_PROMPT = `You are a direct-response copywriter writing the SECOND step of a two-step lead-capture funnel for a small service business (trades).
+
+The visitor has already given name + email on the previous step. The job of this page is to REINFORCE the booking decision and qualify the lead with a short follow-up form. No new offer, no new pitch — this is the homestretch.
+
+# How this page works
+
+1. Reassure: the visitor has already converted once; do not re-sell. Reframe their position ("you're almost booked") and steer them to finish.
+2. Pre-empt the regret moment. People who hand over name + email often hesitate on the next step ("am I really doing this?"). The reviews + the what-happens-next features answer that hesitation specifically.
+3. The features section is NOT marketing — it is a literal sequence of what the visitor will experience next. Concrete steps.
+4. The form here qualifies the booking — phone, service address, preferred date, preferred time of day (morning / afternoon / evening), budget. Field UI is wired in code; you write the heading band.
+5. No corporate-speak. Banned words: comprehensive, leverage, elevate, transform, solutions, premium quality, world-class, industry-leading, innovative, seamless, robust, synergy, cutting-edge, best-in-class, trusted partner, discerning.
+6. Use ONLY the testimonials the operator supplied verbatim. NEVER invent quoted testimonials with fake author names if the operator supplied any. If none were supplied, generate credible specific-feeling reviews (named people, suburb, concrete detail).
+
+# Section plan (you MUST output sections in this exact order)
+
+${QUALIFICATION_SECTION_PLAN.map((s, i) => `${i + 1}. ${s.type}\n   Role: ${s.role}\n   ${s.brief}`).join('\n\n')}
+
+# Output contract
+
+Return ONLY a single JSON object — no markdown fences, no commentary, no prose:
+
+{
+  "sections": [
+    { "type": string, "data": { ... } }
+  ]
+}
+
+Rules:
+- Output EXACTLY four sections, in the order specified above (hero, reviews, features, form).
+- For each section, populate the fields listed in "Section field keys" below. Skip a field by omitting the key.
+- Item arrays (reviews.items, features.items) MUST be arrays of objects with the field shapes given. Each item needs an "id".
+- Honour the brand voice. Headlines <= 72 chars; subheadings <= 140; body copy <= 400.
+- Hrefs: any CTA href is "#form".`;
+
+// =============================================================================
+// Public entry points
+// =============================================================================
+
+export type FunnelStepResult = {
   sections: Section[];
   fallbackLog: FallbackLogEntry[];
 };
 
-/** Generate the seven-section funnel landing step with one Claude call, then
- *  run the response through the same validation pipeline shape the website
- *  generator uses (missing fields are logged, never crash the build).
- *
- *  `generationId` lets the caller group all fallback entries under one id —
- *  same pattern as generatePageLive. Defaults to a fresh uuid standalone. */
+type LiveBrief = {
+  brand: BrandObject;
+  funnel: FunnelBrief;
+  phone: string;
+  serviceArea: string;
+  industry: string;
+  businessName: string;
+};
+
+/** Step 1 — generate the 7-section lead-capture landing. */
 export async function generateFunnelLandingLive(
-  brief: { brand: BrandObject; funnel: FunnelBrief; phone: string; serviceArea: string; industry: string; businessName: string },
+  brief: LiveBrief,
   generationId: string = crypto.randomUUID(),
-): Promise<FunnelLandingResult> {
+): Promise<FunnelStepResult> {
+  return runFunnelGeneration(brief, generationId, {
+    systemPrompt: LEAD_CAPTURE_SYSTEM_PROMPT,
+    expectedTypes: ['hero', 'offer', 'reviews', 'features', 'trust', 'reviews', 'form'],
+    introNote:
+      'Write step 1 — the lead-capture page. Seven sections. The form captures NAME + EMAIL ONLY; the hero ALSO carries the same name+email form via the section envelope.',
+    formBuilder: (b) => buildLeadCaptureFormConfig(b.funnel),
+    attachHeroFormEnvelope: true,
+  });
+}
+
+/** Step 2 — generate the 4-section qualification page. */
+export async function generateFunnelQualificationLive(
+  brief: LiveBrief,
+  generationId: string = crypto.randomUUID(),
+): Promise<FunnelStepResult> {
+  return runFunnelGeneration(brief, generationId, {
+    systemPrompt: QUALIFICATION_SYSTEM_PROMPT,
+    expectedTypes: ['hero', 'reviews', 'features', 'form'],
+    introNote:
+      'Write step 2 — the qualification page. Four sections. The form captures phone, service address, preferred date, preferred time-of-day, and budget; the field UI is wired in code — write the heading band copy only.',
+    formBuilder: () => buildQualificationFormConfig(),
+    attachHeroFormEnvelope: false,
+  });
+}
+
+// =============================================================================
+// Shared call + assembly
+// =============================================================================
+
+type RunConfig = {
+  systemPrompt: string;
+  expectedTypes: readonly SectionType[];
+  introNote: string;
+  formBuilder: (brief: LiveBrief) => FormConfig;
+  /** Step 1 only — attach the same lead-capture form to the hero section so
+   *  the visitor can convert above the fold without scrolling. */
+  attachHeroFormEnvelope: boolean;
+};
+
+async function runFunnelGeneration(
+  brief: LiveBrief,
+  generationId: string,
+  cfg: RunConfig,
+): Promise<FunnelStepResult> {
   const client = new Anthropic(); // reads ANTHROPIC_API_KEY from the environment
 
-  const userMessage = composeFunnelUserMessage(brief);
+  const userMessage = composeUserMessage(brief, cfg);
 
   const stream = client.messages.stream({
     model: MODEL,
     max_tokens: 16000,
-    // Opus 4.7 only accepts `adaptive` thinking — `{ type: 'enabled', budget_tokens }`
-    // returns 400 `"thinking.type.enabled" is not supported for this model`.
-    // Same shape the website generator uses (`generate-live.ts`).
+    // Opus 4.7 requires `adaptive` thinking (rejects enabled+budget).
     thinking: { type: 'adaptive' },
     system: [
-      { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+      { type: 'text', text: cfg.systemPrompt, cache_control: { type: 'ephemeral' } },
     ],
     messages: [{ role: 'user', content: userMessage }],
   });
@@ -167,19 +291,12 @@ export async function generateFunnelLandingLive(
     .trim();
 
   const raw = parseFunnelResponse(text);
-  return validateAndAssemble(raw, brief, generationId);
+  return validateAndAssemble(raw, brief, generationId, cfg);
 }
 
 // -- Prompt composition -----------------------------------------------------
 
-function composeFunnelUserMessage(brief: {
-  brand: BrandObject;
-  funnel: FunnelBrief;
-  phone: string;
-  serviceArea: string;
-  industry: string;
-  businessName: string;
-}): string {
+function composeUserMessage(brief: LiveBrief, cfg: RunConfig): string {
   const offer = brief.funnel.offer;
   const offerBlock = offer
     ? [
@@ -210,10 +327,12 @@ function composeFunnelUserMessage(brief: {
       : [
           '## Testimonials',
           '',
-          '(none supplied — generate credible specific reviews for the two social-proof sections; named people, suburb, concrete detail.)',
+          '(none supplied — generate credible specific reviews for the social-proof sections; named people, suburb, concrete detail.)',
         ].join('\n');
 
   return [
+    cfg.introNote,
+    '',
     `## Business`,
     '',
     `Name: ${brief.businessName || '(unnamed)'}`,
@@ -241,17 +360,23 @@ function composeFunnelUserMessage(brief: {
     '',
     `## Field keys per section`,
     '',
-    buildFieldKeysBlock(),
+    buildFieldKeysBlock(cfg.expectedTypes),
     '',
-    'Write the funnel.',
+    'Write the page.',
   ]
     .filter((s) => s !== '')
     .join('\n');
 }
 
-function buildFieldKeysBlock(): string {
-  const wanted: SectionType[] = ['hero', 'offer', 'reviews', 'features', 'trust', 'form'];
-  return wanted
+function buildFieldKeysBlock(types: readonly SectionType[]): string {
+  // De-dupe — `reviews` may appear twice in the lead-capture plan.
+  const seen = new Set<SectionType>();
+  return types
+    .filter((t) => {
+      if (seen.has(t)) return false;
+      seen.add(t);
+      return true;
+    })
     .map((t) => {
       const meta = getSectionMeta(t);
       if (!meta) return '';
@@ -289,17 +414,16 @@ function parseFunnelResponse(text: string): RawSection[] {
 
 // -- Validation + assembly --------------------------------------------------
 
-/** Validate the model's seven sections against the registry, drop nulls into
- *  the fallback log, and assemble into platform `Section` shape. A `form`
- *  section gets the default form envelope attached (which the SectionEditor
- *  add-section path also does — see SectionEditor.handleAddSection). */
 function validateAndAssemble(
   rawSections: RawSection[],
-  brief: { funnel: FunnelBrief },
+  brief: LiveBrief,
   generationId: string,
-): FunnelLandingResult {
+  cfg: RunConfig,
+): FunnelStepResult {
   const fallbackLog: FallbackLogEntry[] = [];
   const out: Section[] = [];
+  let heroEnvelopeAttached = false;
+  const formConfig = cfg.formBuilder(brief);
 
   for (const raw of rawSections) {
     if (typeof raw?.type !== 'string') continue;
@@ -312,9 +436,6 @@ function validateAndAssemble(
         ? { ...(raw.data as Record<string, unknown>) }
         : {};
 
-    // Per-key null/missing check — same shape as runValidationPipeline in
-    // generation-stub.ts (we cannot import that pipeline because it is
-    // page-typed; the funnel needs funnelStep validation).
     for (const key of meta.defaultDataKeys) {
       const v = data[key];
       if (v === undefined || v === null) {
@@ -337,7 +458,13 @@ function validateAndAssemble(
     };
 
     if (type === 'form') {
-      section.form = buildFunnelFormConfig(brief.funnel);
+      section.form = formConfig;
+    } else if (type === 'hero' && cfg.attachHeroFormEnvelope && !heroEnvelopeAttached) {
+      // Step-1 only: attach the SAME lead-capture form to the hero so the
+      // visitor can convert above the fold. The `form` section type at the
+      // bottom carries the same config — both forms feed the same lead.
+      section.form = formConfig;
+      heroEnvelopeAttached = true;
     }
 
     out.push(section);
@@ -346,10 +473,77 @@ function validateAndAssemble(
   return { sections: out, fallbackLog };
 }
 
-/** Seed a `form` section's envelope with a default config, then override the
- *  submit label with the offer's CTA text when it is available. */
-function buildFunnelFormConfig(funnel: FunnelBrief): FormConfig {
-  const base = defaultFormConfig();
-  const cta = funnel.offer?.ctaText?.trim();
-  return cta ? { ...base, submitLabel: cta } : base;
+// =============================================================================
+// Form-config builders
+// =============================================================================
+
+/** Step 1: name + email only. Submit label = offer.ctaText when available. */
+function buildLeadCaptureFormConfig(funnel: FunnelBrief): FormConfig {
+  const name: FormField = {
+    id: makeFieldId(),
+    type: 'text',
+    label: 'Your name',
+    required: true,
+    placeholder: 'Your name',
+    leadRole: 'name',
+  };
+  const email: FormField = defaultFormField('email');
+  email.required = true;
+  const submitLabel = funnel.offer?.ctaText?.trim() || 'Get started';
+  return {
+    title: 'Get in touch',
+    showTitle: false,
+    submitLabel,
+    fields: [name, email],
+    afterSubmit: { kind: 'nextStep' },
+    colors: {},
+  };
+}
+
+/** Step 2: phone + service address + preferred date + time-of-day + budget. */
+function buildQualificationFormConfig(): FormConfig {
+  const phone: FormField = defaultFormField('phone');
+  phone.required = true;
+
+  const address: FormField = {
+    id: makeFieldId(),
+    type: 'text',
+    label: 'Service address',
+    required: true,
+    placeholder: 'Where should we come?',
+  };
+
+  const preferredDate: FormField = {
+    id: makeFieldId(),
+    type: 'date',
+    label: 'Preferred date',
+    required: false,
+  };
+
+  const timeOfDay: FormField = {
+    id: makeFieldId(),
+    type: 'select',
+    label: 'Preferred time of day',
+    required: false,
+    placeholder: 'Pick a window',
+    options: ['Morning', 'Afternoon', 'Evening'],
+  };
+
+  const budget: FormField = {
+    id: makeFieldId(),
+    type: 'select',
+    label: 'Budget',
+    required: false,
+    placeholder: 'Ballpark',
+    options: ['Under $500', '$500–$2,000', '$2,000–$10,000', '$10,000+', 'Not sure yet'],
+  };
+
+  return {
+    title: 'Lock in your callout',
+    showTitle: false,
+    submitLabel: 'Confirm my booking',
+    fields: [phone, address, preferredDate, timeOfDay, budget],
+    afterSubmit: { kind: 'nextStep' },
+    colors: {},
+  };
 }

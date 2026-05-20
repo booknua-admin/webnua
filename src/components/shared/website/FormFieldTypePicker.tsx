@@ -16,12 +16,14 @@ export const FORM_FIELD_TYPE_LABEL: Record<FormFieldType, string> = {
   select: 'Dropdown',
   checkbox: 'Checkbox',
   image: 'Image upload',
+  date: 'Date',
 };
 
 const ORDER: readonly FormFieldType[] = [
   'text',
   'email',
   'phone',
+  'date',
   'textarea',
   'select',
   'checkbox',

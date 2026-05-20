@@ -21,13 +21,21 @@
 import { AppError } from '@/lib/errors';
 
 import { generateSync, randomDelayMs } from '@/lib/website/generation-stub';
-import { schedulePickerSection } from '@/lib/website/sections/schedulePicker';
-import { thanksConfirmationSection } from '@/lib/website/sections/thanksConfirmation';
+import { getSectionMeta } from '@/lib/website/sections/registry-meta';
 import {
   briefToGenerationContext,
   type ClientBrief,
 } from '@/lib/website/site-generation-stub';
 import type { Section } from '@/lib/website/types';
+
+// NOTE: section .tsx modules are NOT imported at the top level (e.g.
+// `schedulePickerSection`, `thanksConfirmationSection`). Those are 'use client'
+// modules — top-level imports here pull client-reference stubs into the server
+// bundle for /api/generate-funnel, and any call to `.defaultData()` on a stub
+// throws "is not a function" at runtime. The thanks-step builder reads its
+// defaults from registry-meta's `defaultDataValues` snapshot instead — same
+// pattern as `fillHeaderSection` / `fillFooterSection`. The schedule picker is
+// no longer used at all (Step 2 is a qualification form, not a picker).
 
 // NOTE: `./data-stub` is NOT imported at the top level. data-stub.tsx calls
 // section modules' `defaultData()` at module load (see voltlineLandingHero
@@ -104,31 +112,36 @@ export async function generateFunnelStub(
  *  fallback path for dev surfaces, the no-key environment, and tests. */
 export function generateFunnelSync(brief: ClientBrief): FunnelGenerationResult {
   // Landing step — a generated `generic` landing sequence (design variety +
-  // brief-aware copy already applied by the website page generator).
+  // brief-aware copy already applied by the website page generator). The
+  // deterministic fallback reuses the landing copy for the qualification
+  // step too — the real Claude path generates a dedicated qualification page.
   const landingPage = generateSync(briefToGenerationContext(brief, 'generic'));
   return buildFunnelSkeleton(brief, {
     landing: landingPage.page.sections,
-    schedule: scheduleStepSections(brief),
-    thanks: thanksStepSections(brief),
+    qualification: landingPage.page.sections,
+    thanks: thanksStepSections(),
   });
 }
 
 // -- skeleton + step builders -----------------------------------------------
 // Exported because the /api/generate-funnel route assembles its own result
-// from the AI-generated landing sections + deterministic schedule + thanks.
+// from the AI-generated landing + qualification sections + deterministic thanks.
 
 /** Wrap pre-built section arrays into a complete FunnelGenerationResult.
- *  The Claude-backed route generates `landing` and reuses the deterministic
- *  `schedule` / `thanks`. The deterministic path uses this too. */
+ *  Three-step funnel: lead-capture landing → qualification → thanks. */
 export function buildFunnelSkeleton(
   brief: ClientBrief,
-  steps: { landing: Section[]; schedule: Section[]; thanks: Section[] },
+  steps: { landing: Section[]; qualification: Section[]; thanks: Section[] },
 ): FunnelGenerationResult {
   const now = new Date().toISOString();
   const funnelId = `funnel-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  // `type: 'schedule'` is the closest match in the FunnelStepType union for
+  // the qualification slot — kept so the existing FunnelStepThumbnail
+  // dispatcher still renders something sensible. Display title is the
+  // qualification-step framing.
   const stepList: FunnelStep[] = [
     mkStep(funnelId, 'landing', 'landing', 'Landing', steps.landing, now),
-    mkStep(funnelId, 'schedule', 'schedule', 'Book a time', steps.schedule, now),
+    mkStep(funnelId, 'book', 'schedule', 'Book your callout', steps.qualification, now),
     mkStep(funnelId, 'thanks', 'thanks', 'Confirmed', steps.thanks, now),
   ];
   const funnel: Funnel = {
@@ -144,12 +157,8 @@ export function buildFunnelSkeleton(
   return { funnel, steps: stepList };
 }
 
-export function scheduleStepSections(brief: ClientBrief): Section[] {
-  return [scheduleSection(brief)];
-}
-
-export function thanksStepSections(brief: ClientBrief): Section[] {
-  return [thanksSection(brief)];
+export function thanksStepSections(): Section[] {
+  return [thanksSection()];
 }
 
 // -- internals --------------------------------------------------------------
@@ -200,36 +209,13 @@ function intentLabel(brief: ClientBrief): string {
   }
 }
 
-function scheduleSection(brief: ClientBrief): Section {
-  const isCallOrQuote =
-    brief.primaryIntent.kind === 'call' || brief.primaryIntent.kind === 'quote';
-  const name = brief.business.name || 'We';
-  return mkSection('schedulePicker', {
-    ...schedulePickerSection.defaultData(),
-    eyebrow: 'SCHEDULE',
-    title: isCallOrQuote ? 'Request a callback' : 'Pick a time that suits you',
-    intro: `${name} will SMS to confirm within minutes — choose a window below.`,
-    durationLabel: '1-hour window',
-    earliestSlotLabel: 'Earliest: today',
-  });
-}
-
-function thanksSection(brief: ClientBrief): Section {
-  const name = brief.business.name || 'We';
-  return mkSection('thanksConfirmation', {
-    ...thanksConfirmationSection.defaultData(),
-    icon: 'check',
-    title: "You're booked.",
-    body: `${name} will be in touch shortly to confirm the details.`,
-    detailLine: 'Look out for a text from a local number — that’s us.',
-    showReferral: true,
-    referralTag: 'REFER + EARN',
-    referralTitle: 'Know someone who needs us?',
-    referralBody:
-      'Refer a friend — they get a discount on their first job, you get credit on your next.',
-    referralCtaLabel: 'Send a referral',
-    referralCtaHref: '/refer',
-  });
+/** Deterministic thanks-step section. Reads its defaults from registry-meta
+ *  rather than calling `thanksConfirmationSection.defaultData()` — that section
+ *  module is 'use client' and becomes a stub on the server bundle of the
+ *  /api/generate-funnel route. Same pattern as fillHeaderSection. */
+function thanksSection(): Section {
+  const defaults = getSectionMeta('thanksConfirmation')?.defaultDataValues ?? {};
+  return mkSection('thanksConfirmation', { ...defaults });
 }
 
 // -- legacy passthrough -----------------------------------------------------

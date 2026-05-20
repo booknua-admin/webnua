@@ -18,17 +18,19 @@
 // pattern as /api/generate-site — one uuid per request, shared across all
 // fallback rows for the run.
 //
-// Structure: ONE Claude call generates the seven landing-step sections; the
-// schedule + thanks steps stay deterministic (chrome-only, no inputs the LLM
-// would need). See the CLAUDE.md parked decision "Funnel vs offer generator
-// model choice" for the Opus-here / Sonnet-on-offer split.
+// Structure: TWO parallel Opus calls — one for the lead-capture landing (Step
+// 1: 7 sections), one for the qualification page (Step 2: 4 sections). The
+// thanks step is deterministic chrome built by funnel/generation-stub.ts. See
+// the CLAUDE.md parked decision "Funnel vs offer generator model choice".
 // =============================================================================
 
 import { NextResponse } from 'next/server';
 
-import { generateFunnelLandingLive } from '@/lib/website/generate-funnel-live';
 import {
-  scheduleStepSections,
+  generateFunnelLandingLive,
+  generateFunnelQualificationLive,
+} from '@/lib/website/generate-funnel-live';
+import {
   thanksStepSections,
   buildFunnelSkeleton,
   type FunnelGenerationResult,
@@ -59,27 +61,32 @@ export async function POST(request: Request): Promise<Response> {
   const generationId = crypto.randomUUID();
 
   try {
-    const landing = await generateFunnelLandingLive(
-      {
-        brand: brief.brand,
-        funnel: brief.funnel,
-        phone: brief.business.phone ?? '',
-        serviceArea: brief.business.serviceArea ?? '',
-        industry: brief.industry,
-        businessName: brief.business.name,
-      },
-      generationId,
-    );
+    const liveBrief = {
+      brand: brief.brand,
+      funnel: brief.funnel,
+      phone: brief.business.phone ?? '',
+      serviceArea: brief.business.serviceArea ?? '',
+      industry: brief.industry,
+      businessName: brief.business.name,
+    };
+
+    // Two parallel Opus calls — landing (Step 1) + qualification (Step 2).
+    const [landing, qualification] = await Promise.all([
+      generateFunnelLandingLive(liveBrief, generationId),
+      generateFunnelQualificationLive(liveBrief, generationId),
+    ]);
 
     const result: FunnelGenerationResult = buildFunnelSkeleton(brief, {
       landing: landing.sections,
-      schedule: scheduleStepSections(brief),
-      thanks: thanksStepSections(brief),
+      qualification: qualification.sections,
+      thanks: thanksStepSections(),
     });
 
-    // Fire-and-forget — observability shouldn't block the response.
-    if (clientId && landing.fallbackLog.length > 0) {
-      void writeGenerationLog(clientId, generationId, landing.fallbackLog);
+    // Fire-and-forget — observability shouldn't block the response. Combined
+    // fallback log across both Claude calls shares the same generationId.
+    const allFallbacks = [...landing.fallbackLog, ...qualification.fallbackLog];
+    if (clientId && allFallbacks.length > 0) {
+      void writeGenerationLog(clientId, generationId, allFallbacks);
     }
 
     return NextResponse.json(result);
