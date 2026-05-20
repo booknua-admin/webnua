@@ -98,7 +98,7 @@ const LEAD_CAPTURE_SECTION_PLAN: readonly { type: SectionType; role: string; bri
     type: 'form',
     role: 'Lead capture — name + email only, minimum friction.',
     brief:
-      'eyebrow + heading from the offer\'s urgency. Heading reuses the customer outcome (e.g. "Get my emergency callout"). Keep it short — the form fields and submit button do the work. Visitor only gives name + email here; qualification happens on the next step.',
+      'The form\'s actual `fields[]` array is built deterministically in code — name + email are wired automatically. Do NOT output a `fields` array on the form section. Your job is the heading band copy only (eyebrow, heading). Heading reuses the customer outcome from the offer (e.g. "Get my emergency callout"); keep it short — the form fields and submit button do the work.',
   },
 ];
 
@@ -299,7 +299,10 @@ Return ONLY a single JSON object — no markdown fences, no commentary, no prose
 
 Rules:
 - Output EXACTLY seven sections, in the order specified above (hero, offer, reviews, features, trust, reviews, form).
-- For each section, populate the fields listed in the per-section catalog under "Field keys per section". For variant keys (layout, headerAlign, columns, iconStyle, etc.) the catalog enumerates the allowed values — pick exactly one of those for each variant key. Skip a copy field by omitting the key (the platform will fall back).
+- The per-section catalog under "Field keys per section" splits each section's fields into COPY and LAYOUT buckets.
+- Populate every COPY field with real, specific, on-brand text. Never placeholders, never lorem ipsum.
+- Do NOT specify LAYOUT fields unless the brief specifically requires a variation (e.g. brief asks for a centered hero). The renderer applies sensible defaults — emit fewer keys when in doubt.
+- When you DO specify a layout field, the catalog enumerates the allowed values — pick exactly one of those for each variant key.
 - Do NOT output a \`theme\` field on any section. Section themes are applied automatically by the renderer from the brand palette; any \`theme\` you emit will be discarded.
 - Item arrays (offer.inclusions, offer.items, offer.signals, features.items, trust.items, trust.badges, reviews.items) MUST be arrays of objects matching the shape given in the catalog. Every item needs a short unique "id" string (e.g. "feat-1", "rev-2"). Do not emit items as bare strings.
 - \`headlineAccent\` / \`titleAccent\` is an OPTIONAL SECOND LINE in the accent colour — never duplicate the headline into it. If no second-line emphasis adds value, leave it empty.
@@ -334,7 +337,7 @@ const QUALIFICATION_SECTION_PLAN: readonly { type: SectionType; role: string; br
     type: 'form',
     role: 'Qualify — phone, location, date, time-of-day, budget.',
     brief:
-      'eyebrow + heading frame the form as "the final 30 seconds". Heading: action + outcome (e.g. "Lock in your callout"). Sub-heading short. The form fields themselves are wired in code — your job is the heading band copy.',
+      'The form\'s actual `fields[]` array (phone, address, date, time, budget) is built deterministically in code. Do NOT output a `fields` array on the form section. Your job is the heading band copy only (eyebrow, heading). Heading: action + outcome (e.g. "Lock in your callout"); frame the form as "the final 30 seconds".',
   },
 ];
 
@@ -477,7 +480,10 @@ Return ONLY a single JSON object — no markdown fences, no commentary, no prose
 
 Rules:
 - Output EXACTLY four sections, in the order specified above (hero, reviews, features, form).
-- For each section, populate the fields listed in the per-section catalog under "Field keys per section". For variant keys (layout, headerAlign, columns, iconStyle, etc.) the catalog enumerates the allowed values — pick exactly one of those for each variant key. Skip a copy field by omitting the key.
+- The per-section catalog under "Field keys per section" splits each section's fields into COPY and LAYOUT buckets.
+- Populate every COPY field with real, specific, on-brand text. Never placeholders, never lorem ipsum.
+- Do NOT specify LAYOUT fields unless the brief specifically requires a variation. The renderer applies sensible defaults — emit fewer keys when in doubt.
+- When you DO specify a layout field, the catalog enumerates the allowed values — pick exactly one of those for each variant key.
 - Do NOT output a \`theme\` field on any section. Section themes are applied automatically by the renderer from the brand palette; any \`theme\` you emit will be discarded.
 - Item arrays (reviews.items, features.items) MUST be arrays of objects matching the shape given in the catalog. Every item needs a short unique "id" string.
 - \`headlineAccent\` / \`titleAccent\` is an OPTIONAL SECOND LINE in the accent colour — never duplicate the headline into it. Leave empty when no second-line emphasis adds value.

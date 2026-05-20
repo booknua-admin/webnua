@@ -82,8 +82,10 @@ function buildSystemPreamble(): string {
     '',
     'Constraints:',
     '- Use only section types listed in "Available section types" below.',
-    '- For each section you include, set `enabled: true` and populate all required fields.',
-    '- For variant keys (layout, iconStyle, contentAlign, headerAlign, columns, headlineSize, …) the catalog enumerates the allowed values — pick exactly one of those values. Variant keys are closed enums, not free text.',
+    '- For each section you include, set `enabled: true`.',
+    '- Populate every COPY field listed for each section with real, specific, on-brand content built from the business details provided. Never placeholders, never lorem ipsum, never "[business name]"-style tokens.',
+    "- Do NOT specify LAYOUT fields unless the brief specifically requires a variation (e.g. brief says \"use a centered hero\" would justify setting `contentAlign: 'center'`). The renderer applies sensible defaults.",
+    '- When you DO specify a layout field, the catalog enumerates the allowed values — pick exactly one of those values. Variant keys are closed enums, not free text.',
     '- Do NOT output a `theme` field on any section. Section themes are applied automatically by the renderer from the brand palette; any `theme` you emit will be discarded.',
     '- Item-array fields (`items`, `inclusions`, `signals`, `features`, `stats`, `badges`) are arrays of OBJECTS matching the per-section shape in the catalog. Every item needs a short unique `id`. Do not emit items as bare strings.',
     '- `headlineAccent` / `titleAccent` is an optional SECOND LINE rendered in the brand accent colour beneath the main heading. It is not a substring of the headline and not a duplicate of it. Leave empty when no second-line emphasis adds value.',
@@ -183,18 +185,27 @@ function formatRegistryEntry(def: SectionMeta): string {
 }
 
 /** Shared per-section formatter — used by the website registry block AND by
- *  the funnel prompt's field-keys block via `formatSectionShape`. */
+ *  the funnel prompt's field-keys block via `formatSectionShape`. Copy fields
+ *  are listed first as the model's primary target; layout fields follow with
+ *  an explicit omit-unless-required instruction so the model doesn't blindly
+ *  fill structural knobs. */
 export function formatSectionEntry(def: SectionMeta): string {
+  const { copyFields, layoutFields } = partitionFields(def);
   const lines = [
     `### ${def.type}`,
     `Label: ${def.label}`,
     `Description: ${def.description}`,
-    `Field keys: ${def.defaultDataKeys.join(', ') || '(none)'}`,
+    `Copy fields (populate with specific, on-brand content):`,
+    `  ${copyFields.join(', ') || '(none)'}`,
+    `Layout fields (omit unless the brief specifically requires a variation — defaults apply):`,
+    `  ${layoutFields.join(', ') || '(none)'}`,
   ];
   const shape = SECTION_SHAPE_CATALOG[def.type];
   if (shape) {
     if (shape.variants.length > 0) {
-      lines.push('Variant enums (use exactly these values for each key):');
+      lines.push(
+        'Variant enums (when you DO specify a layout field, use exactly one of these values):',
+      );
       for (const v of shape.variants) {
         const values = v.values.map(formatEnumValue).join(' | ');
         const guidance = v.guidance ? `  — ${v.guidance}` : '';
@@ -211,6 +222,65 @@ export function formatSectionEntry(def: SectionMeta): string {
     }
   }
   return lines.join('\n');
+}
+
+// =============================================================================
+// Copy vs layout partitioning.
+//
+// The model is asked to populate copy fields (real, specific text the operator
+// would never default) but to OMIT layout fields unless the brief justifies a
+// variation. SectionMeta.capabilityHints.copyFields is the authoritative source
+// when populated — every section in the current registry has it set. The
+// heuristic fallback covers future section additions that ship without hints.
+// =============================================================================
+
+/** Section keys that are unambiguously structural — closed-enum knobs the
+ *  renderer maps to layout / variant decisions. */
+const HEURISTIC_LAYOUT_KEYS: ReadonlySet<string> = new Set([
+  'theme', 'layout', 'columns', 'mediaStyle', 'iconStyle', 'aspect',
+  'stackStyle', 'mediaMode', 'mediaShape', 'imageSide', 'extra',
+  'overlay', 'display', 'footer', 'nav',
+]);
+
+/** Heuristic suffix patterns for layout fields. Covers `*Style`, `*Size`,
+ *  `*Align`, `*Side`, `*Position`, `*Opacity`, `*Visible`. */
+const HEURISTIC_LAYOUT_SUFFIX = /(Style|Size|Align|Side|Position|Opacity|Visible)$/;
+
+/** Booleans named `show*` are layout toggles (showHeadlineRule, showDividers,
+ *  etc.). The model shouldn't be picking these on a thin brief. */
+const HEURISTIC_BOOLEAN_PREFIX = /^show[A-Z]/;
+
+function isLayoutKeyHeuristic(key: string): boolean {
+  if (HEURISTIC_LAYOUT_KEYS.has(key)) return true;
+  if (HEURISTIC_LAYOUT_SUFFIX.test(key)) return true;
+  if (HEURISTIC_BOOLEAN_PREFIX.test(key)) return true;
+  return false;
+}
+
+/** Split a section's defaultDataKeys into copy + layout buckets. When the
+ *  section's `capabilityHints.copyFields` is populated (always, in the
+ *  current registry) it is authoritative; otherwise fall back to the
+ *  name-based heuristic above. */
+function partitionFields(def: SectionMeta): {
+  copyFields: string[];
+  layoutFields: string[];
+} {
+  const copyHint = def.capabilityHints?.copyFields;
+  const copyFields: string[] = [];
+  const layoutFields: string[] = [];
+  if (copyHint && copyHint.length > 0) {
+    const copySet = new Set(copyHint);
+    for (const key of def.defaultDataKeys) {
+      if (copySet.has(key)) copyFields.push(key);
+      else layoutFields.push(key);
+    }
+    return { copyFields, layoutFields };
+  }
+  for (const key of def.defaultDataKeys) {
+    if (isLayoutKeyHeuristic(key)) layoutFields.push(key);
+    else copyFields.push(key);
+  }
+  return { copyFields, layoutFields };
 }
 
 function formatEnumValue(v: string | number): string {
