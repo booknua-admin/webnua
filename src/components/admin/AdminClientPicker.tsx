@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { cn } from '@/lib/utils';
 import type { AdminClient } from '@/lib/nav/admin-clients';
@@ -23,6 +23,20 @@ function AdminClientPicker({ clients }: AdminClientPickerProps) {
   const { activeClient, hydrated, setActiveClientId, clearActiveClient } =
     useWorkspace();
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+
+  useEffect(() => {
+    if (!open) setQuery('');
+  }, [open]);
+
+  const filteredClients = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return clients;
+    return clients.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) || c.meta.toLowerCase().includes(q),
+    );
+  }, [clients, query]);
 
   if (!hydrated) {
     return (
@@ -89,6 +103,16 @@ function AdminClientPicker({ clients }: AdminClientPickerProps) {
 
       {open ? (
         <div className="flex flex-col gap-0.5 border-t border-paper/[0.08] p-1.5">
+          <div className="px-1 py-1">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search clients…"
+              aria-label="Search clients"
+              className="w-full rounded bg-paper/[0.06] px-2.5 py-1.5 text-sm text-paper placeholder:text-paper/40 outline-none transition-colors focus:bg-paper/[0.1]"
+            />
+          </div>
           <button
             type="button"
             onClick={handleSelectAgency}
@@ -107,7 +131,12 @@ function AdminClientPicker({ clients }: AdminClientPickerProps) {
           </button>
           <div className="my-0.5 border-t border-paper/[0.06]" />
           <div className="flex max-h-[260px] flex-col gap-0.5 overflow-y-auto">
-            {clients.map((client) => (
+            {filteredClients.length === 0 ? (
+              <div className="px-2 py-3 text-center font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-paper/50">
+                {'// No clients match'}
+              </div>
+            ) : null}
+            {filteredClients.map((client) => (
               <button
                 key={client.id}
                 type="button"
