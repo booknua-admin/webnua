@@ -2158,6 +2158,7 @@ export type Database = {
         | "form_field"
         | "form_abandon"
         | "form_submit"
+        | "form_submit_error"
         | "web_vital"
       approval_status: "pending" | "approved" | "rejected" | "recalled"
       automation_channel: "sms" | "email"

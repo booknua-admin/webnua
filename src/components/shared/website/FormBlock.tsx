@@ -53,6 +53,31 @@ function appendLeadParam(href: string, leadId: string): string {
   }
 }
 
+/** Window surface exposed by `public/webnua-track.js`. Optional — the script
+ *  is only present on PUBLISHED renders, never in the editor. */
+type WebnuaTrackAPI = {
+  formSubmitError?: (
+    formEl: HTMLFormElement | null,
+    info: { reason?: string; status?: number },
+  ) => void;
+};
+
+/** Fire `form_submit_error` on the global tracker when an API rejection is
+ *  caught. No-op when the script isn't present (editor / test renders). */
+function reportSubmitError(formEl: HTMLFormElement | null, err: unknown): void {
+  if (!formEl || typeof window === 'undefined') return;
+  const api = (window as unknown as { webnuaTrack?: WebnuaTrackAPI })
+    .webnuaTrack;
+  if (!api?.formSubmitError) return;
+  const reason =
+    err instanceof Error && err.message ? err.message.slice(0, 200) : 'unknown';
+  try {
+    api.formSubmitError(formEl, { reason });
+  } catch {
+    // Tracker faults must never surface to the visitor.
+  }
+}
+
 export type { SubmittedFormField, FormTestSubmitContext };
 
 export type FormBlockProps = {
@@ -292,7 +317,11 @@ export function FormBlock({
         return;
       }
       setDone(true);
-    } catch {
+    } catch (err) {
+      // analytics-audit §5.2 gap #1: the tracker's capture-phase form_submit
+      // already fired ("submit attempted"). Fire form_submit_error so the
+      // operator can read successful = submit − error.
+      reportSubmitError(formRef.current, err);
       setNotice({
         tone: 'warn',
         text: 'Something went wrong — please try again.',

@@ -298,10 +298,18 @@
   }
 
   // ---- forms ---------------------------------------------------------------
-  // form_start  — first focus of any field in a <form>
-  // form_field  — a field completed (blur, non-empty)
-  // form_abandon — page hidden with a started, unsubmitted form
-  // form_submit — a form's submit event (carries data-webnua-submission)
+  // form_start         — first focus of any field in a <form>
+  // form_field         — a field completed (blur, non-empty)
+  // form_abandon       — page hidden with a started, unsubmitted form
+  // form_submit        — a form's submit event (carries data-webnua-submission).
+  //                      Fires in the capture phase the moment a submit is
+  //                      attempted — this is "submit attempted", NOT "submit
+  //                      succeeded". For non-controlled HTML forms this is the
+  //                      only signal we can offer.
+  // form_submit_error  — React-mediated forms (FormBlock) call
+  //                      `window.webnuaTrack.formSubmitError(formEl, payload)`
+  //                      after the API rejects. Pairs with form_submit so the
+  //                      operator can read successful = submit − error.
 
   var formState = {}; // formIndex -> { started, submitted, abandoned }
 
@@ -361,6 +369,32 @@
         enqueue('form_abandon', { formIndex: parseInt(idxs[i], 10) });
       }
     }
+  }
+
+  // ---- programmatic API ----------------------------------------------------
+  // Exposed on `window.webnuaTrack` for React-mediated forms (FormBlock) that
+  // know the API outcome the capture-phase `onSubmit` listener never can.
+  // Stable surface — additions are non-breaking; renames need a deprecation.
+
+  function formSubmitError(formEl, info) {
+    if (!formEl || (formEl.tagName || '').toLowerCase() !== 'form') return;
+    var idx = formIndexOf(formEl);
+    if (idx < 0) return;
+    var payload = {
+      formIndex: idx,
+      submissionId:
+        (formEl.getAttribute('data-webnua-submission') || '').slice(0, 80),
+    };
+    if (info && typeof info.reason === 'string') {
+      payload.reason = info.reason.slice(0, 200);
+    }
+    if (info && typeof info.status === 'number') {
+      payload.status = info.status;
+    }
+    enqueue('form_submit_error', payload);
+    // The capture-phase onSubmit already flipped `submitted = true` so the
+    // abandon flush won't re-fire. Leave that — the visitor DID attempt to
+    // submit; the divergence between submit + error counts IS the signal.
   }
 
   // ---- web vitals (§1.1) ---------------------------------------------------
@@ -637,6 +671,12 @@
       flush(true);
     });
   }
+
+  // Stable programmatic surface — must be assigned before `start()` so React
+  // hydration sees it on first render even if `start()` is deferred to
+  // DOMContentLoaded.
+  window.webnuaTrack = window.webnuaTrack || {};
+  window.webnuaTrack.formSubmitError = formSubmitError;
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', start);

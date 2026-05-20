@@ -40,6 +40,7 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<EventType>([
   'form_field',
   'form_abandon',
   'form_submit',
+  'form_submit_error',
   'web_vital',
 ]);
 
