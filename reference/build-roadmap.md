@@ -16,33 +16,38 @@ Booking-write flows. No migration needed — `recurring_booking_schedules` exist
 
 ~4 commits. Independent. Lowest risk.
 
-## Phase 4 — Builder family backend (largest single chunk)
+## Phase 4 — Builder family backend (largest single chunk) ✅ DONE (PR #41 / merge `534de96`)
 
-Replace the localStorage builder stubs with Supabase against tables that
+Replaced the localStorage builder stubs with Supabase against tables that
 already exist (`website_versions`, `funnel_versions`, `content_drafts`,
 `website_approval_submissions`, `funnel_approval_submissions`,
 `force_publish_audit_log`, `brands`, `websites`, `funnels`).
 
-- Website + funnel data from `data-stub.tsx` → live reads
-- Autosave (`use-autosave`), draft store, publish lanes, approval queue,
-  rollback, preflight, force-publish audit → live
-- Funnel publish/approval (currently unbuilt even as stub — see
-  CLAUDE.md parked entry)
+- ✅ Website + funnel data from `data-stub.tsx` → live reads via
+  `lib/website/queries.tsx` + `lib/funnel/queries.tsx`.
+- ✅ Autosave (`use-autosave`), draft store, publish lanes, approval
+  queue, rollback, preflight, force-publish audit → live via
+  `mutations.ts` + `content-drafts.ts` + `snapshot.ts` +
+  `builder-events.ts`. `publish-stub.ts` + `draft-stub.ts` deleted;
+  `audit-stub.ts` + `website-approval-stub.ts` collapsed to type-only.
+- Funnel publish/approval still deferred — see CLAUDE.md parked entry.
 
-Depends on Phase 5's capability-RLS for write gating — sequence 5 first
-or accept stub-auth during build.
+## Phase 5 — Real auth + capability/workspace/agency/billing ✅ DONE (PR #43 / merge `1a4705e`)
 
-## Phase 5 — Real auth + capability/workspace/agency/billing
+Replaced the stub deletion points with Supabase-backed providers.
 
-Replace the 7 stub deletion points. Supabase-backed providers reading
-`users`, `capability_grants`, `user_client_access`, `agency_policy`,
-`policy_overrides`, `plan_catalog`, `plan_assignments`.
-
-- Login → role + capability + workspace resolution from DB
-- Wire team-invite / client-invite flows to `team_invites` /
-  `client_user_invites`
-- Enforce design §4.3 capability-gated RLS on builder writes
-- Delete `DevRoleSwitcher` + `/dev/*`
+- ✅ Login → role + capability + workspace resolution from DB.
+  `app/(auth)/login` is a real `signInWithPassword`; `user-stub.tsx`
+  (misnamed, kept for import stability) resolves from `auth.getSession`
+  → `public.users` → `capability_grants`.
+- ✅ Nine in-memory stores hydrated from Supabase via
+  `DataHydrationProvider` on every `onAuthStateChange`: agency-policy,
+  policy-overrides, plan-catalog, plan-assignments, client-invites,
+  seat-limit history, team-invites, roster, clients.
+- ✅ `DevRoleSwitcher` deleted + four `/dev/*` pages removed
+  (`/dev/sections` survives).
+- **Owed:** systematic cross-tenant RLS validation pass — policies
+  written but not negative-tested with real `auth.uid()`s.
 
 ## Phase 6 — AI generation
 
