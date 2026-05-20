@@ -135,12 +135,13 @@ Return ONLY a single JSON object — no markdown fences, no commentary, no prose
 
 Rules:
 - Output EXACTLY seven sections, in the order specified above (hero, offer, reviews, features, trust, reviews, form).
-- For each section, populate the fields listed in the per-section catalog under "Field keys per section". For variant keys (layout, theme, headerAlign, columns, iconStyle, etc.) the catalog enumerates the allowed values — pick exactly one of those for each variant key. Skip a copy field by omitting the key (the platform will fall back).
+- For each section, populate the fields listed in the per-section catalog under "Field keys per section". For variant keys (layout, headerAlign, columns, iconStyle, etc.) the catalog enumerates the allowed values — pick exactly one of those for each variant key. Skip a copy field by omitting the key (the platform will fall back).
+- Do NOT output a \`theme\` field on any section. Section themes are applied automatically by the renderer from the brand palette; any \`theme\` you emit will be discarded.
 - Item arrays (offer.inclusions, offer.items, offer.signals, features.items, trust.items, trust.badges, reviews.items) MUST be arrays of objects matching the shape given in the catalog. Every item needs a short unique "id" string (e.g. "feat-1", "rev-2"). Do not emit items as bare strings.
 - \`headlineAccent\` / \`titleAccent\` is an OPTIONAL SECOND LINE in the accent colour — never duplicate the headline into it. If no second-line emphasis adds value, leave it empty.
 - Honour the brand voice exactly. Length: headlines <= 72 chars, subheadings <= 140 chars, body copy <= 400 chars unless explicitly a paragraph.
 - Hrefs: every "Book / Get / Buy" CTA href is "#form". Every "Call" CTA href is "tel:" + the operator's phone if available.
-- The \`form\` section's \`fields\` array is built deterministically in code — do NOT output a \`fields\` array on the form section. Populate only \`theme\`, \`eyebrow\`, \`heading\`.`;
+- The \`form\` section's \`fields\` array is built deterministically in code — do NOT output a \`fields\` array on the form section. Populate only \`eyebrow\`, \`heading\`.`;
 
 // =============================================================================
 // Step 2 — Qualification
@@ -202,12 +203,13 @@ Return ONLY a single JSON object — no markdown fences, no commentary, no prose
 
 Rules:
 - Output EXACTLY four sections, in the order specified above (hero, reviews, features, form).
-- For each section, populate the fields listed in the per-section catalog under "Field keys per section". For variant keys (layout, theme, headerAlign, columns, iconStyle, etc.) the catalog enumerates the allowed values — pick exactly one of those for each variant key. Skip a copy field by omitting the key.
+- For each section, populate the fields listed in the per-section catalog under "Field keys per section". For variant keys (layout, headerAlign, columns, iconStyle, etc.) the catalog enumerates the allowed values — pick exactly one of those for each variant key. Skip a copy field by omitting the key.
+- Do NOT output a \`theme\` field on any section. Section themes are applied automatically by the renderer from the brand palette; any \`theme\` you emit will be discarded.
 - Item arrays (reviews.items, features.items) MUST be arrays of objects matching the shape given in the catalog. Every item needs a short unique "id" string.
 - \`headlineAccent\` / \`titleAccent\` is an OPTIONAL SECOND LINE in the accent colour — never duplicate the headline into it. Leave empty when no second-line emphasis adds value.
 - Honour the brand voice. Headlines <= 72 chars; subheadings <= 140; body copy <= 400.
 - Hrefs: any CTA href is "#form".
-- The \`form\` section's \`fields\` array is built deterministically in code — do NOT output a \`fields\` array. Populate only \`theme\`, \`eyebrow\`, \`heading\`.`;
+- The \`form\` section's \`fields\` array is built deterministically in code — do NOT output a \`fields\` array. Populate only \`eyebrow\`, \`heading\`.`;
 
 // =============================================================================
 // Public entry points
@@ -438,6 +440,22 @@ function validateAndAssemble(
       typeof raw.data === 'object' && raw.data !== null
         ? { ...(raw.data as Record<string, unknown>) }
         : {};
+
+    // Theme-discard guard: brand-default theming flows from the renderer.
+    // Strip any model-emitted `theme` so per-section overrides don't fight
+    // the brand palette. Logged as 'invalid' so the route's generation_log
+    // writer can track whether the model is still emitting it.
+    if ('theme' in data) {
+      const modelValue = data.theme;
+      delete data.theme;
+      fallbackLog.push({
+        generationId,
+        sectionType: type,
+        fieldName: 'theme',
+        reason: 'invalid',
+        modelValue,
+      });
+    }
 
     for (const key of meta.defaultDataKeys) {
       const v = data[key];

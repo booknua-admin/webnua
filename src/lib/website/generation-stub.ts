@@ -337,6 +337,24 @@ function runValidationPipeline(
     }
     const data = { ...s.data };
     const populated = new Set(s.populatedFields);
+    // Theme-discard guard: the model is told not to emit a `theme` field, but
+    // it sometimes still does — and a per-section theme can fight the brand
+    // defaults (text-on-bg contrast bugs). Strip it before the section lands
+    // in the editor so brand defaults apply uniformly. Logged as a fallback
+    // (reason='invalid') so /api/generate-site's generation_log writer can
+    // track whether the model is still attempting it after the prompt change.
+    if ('theme' in data) {
+      const modelValue = data.theme;
+      delete data.theme;
+      populated.delete('theme');
+      fallbackLog.push({
+        generationId,
+        sectionType: s.type,
+        fieldName: 'theme',
+        reason: 'invalid',
+        modelValue,
+      });
+    }
     for (const key of def.defaultDataKeys) {
       const value = data[key];
       if (value === undefined || value === null) {

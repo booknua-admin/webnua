@@ -77,7 +77,8 @@ function buildSystemPreamble(): string {
     'Constraints:',
     '- Use only section types listed in "Available section types" below.',
     '- For each section you include, set `enabled: true` and populate all required fields.',
-    '- For variant keys (layout, theme, iconStyle, contentAlign, headerAlign, columns, headlineSize, …) the catalog enumerates the allowed values — pick exactly one of those values. Variant keys are closed enums, not free text.',
+    '- For variant keys (layout, iconStyle, contentAlign, headerAlign, columns, headlineSize, …) the catalog enumerates the allowed values — pick exactly one of those values. Variant keys are closed enums, not free text.',
+    '- Do NOT output a `theme` field on any section. Section themes are applied automatically by the renderer from the brand palette; any `theme` you emit will be discarded.',
     '- Item-array fields (`items`, `inclusions`, `signals`, `features`, `stats`, `badges`) are arrays of OBJECTS matching the per-section shape in the catalog. Every item needs a short unique `id`. Do not emit items as bare strings.',
     '- `headlineAccent` / `titleAccent` is an optional SECOND LINE rendered in the brand accent colour beneath the main heading. It is not a substring of the headline and not a duplicate of it. Leave empty when no second-line emphasis adds value.',
     '- Headlines: ≤72 chars. Subheadings: ≤140 chars. Bodies: ≤400 chars unless the field is explicitly a paragraph.',
@@ -485,6 +486,10 @@ const ICON_LIBRARY: readonly string[] = [
 ];
 
 export const SHARED_FIELD_NOTES = [
+  '### Section themes',
+  '',
+  'Section themes (background, heading colour, body colour, accent colour) are applied AUTOMATICALLY by the renderer using the brand colour palette. Do NOT output a `theme` field on any section — the renderer ignores it, and any `theme` you emit will be discarded by the validation pipeline. Skip the `theme` key entirely; brand defaults apply.',
+  '',
   '### Heading accents',
   '',
   'Sections that expose a `headlineAccent` (or `titleAccent`) render it as an OPTIONAL SECOND LINE beneath the main heading, in the brand accent colour. The accent is NOT a substring of the headline and NOT a duplicate of it — it is an additional clause on its own line.',
@@ -512,10 +517,6 @@ export const SHARED_FIELD_NOTES = [
   '### Item ids',
   '',
   'Every object inside an `items` / `inclusions` / `signals` / `features` / `stats` / `badges` array needs a short unique `id` string (e.g. "feat-1", "inc-2", "rev-3"). Do not output an item without one.',
-  '',
-  '### Theme objects',
-  '',
-  'The `theme` field on a section is an OBJECT, not a string. It may be `{}` to inherit the brand defaults, or it may override one or more of `background` / `heading` / `body` with hex colour strings (e.g. `{ "background": "#0d1f3a" }`). Prefer `{}` unless a specific section needs to break from the brand palette.',
 ].join('\n');
 
 /** Public helper — the funnel prompt uses this to build a per-section block
