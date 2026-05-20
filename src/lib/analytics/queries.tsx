@@ -28,6 +28,19 @@ export type SurfaceFunnelTotals = {
   engaged: number;
   /** Visitors who focused a form field. */
   formStarted: number;
+  /** Visitors who started a form, then left the page without submitting
+   *  (analytics-audit §5.2 gap #2). Fired by the tracker on
+   *  `pagehide` / `visibilitychange→hidden`. */
+  formAbandoned: number;
+  /** Visitors who submitted (analytics-audit §5.2 gap #1). "Submit attempted"
+   *  semantics — the capture-phase listener fires before the API result is
+   *  known, so this counts every attempt; `formFailed` carries the rejections.
+   *  Successful submits = `formSubmitted − formFailed`. */
+  formSubmitted: number;
+  /** Visitors whose submit was rejected at `/api/forms/submit` (audit gap #1).
+   *  Fired by `FormBlock` after a `!res.ok` response. Pairs with
+   *  `formSubmitted`. */
+  formFailed: number;
   /** True once any tracked traffic exists for the surface. */
   hasData: boolean;
 };
@@ -48,6 +61,9 @@ const EMPTY_FUNNEL: SurfaceFunnelTotals = {
   landing: 0,
   engaged: 0,
   formStarted: 0,
+  formAbandoned: 0,
+  formSubmitted: 0,
+  formFailed: 0,
   hasData: false,
 };
 
@@ -94,6 +110,9 @@ export async function fetchSurfaceFunnelTotals(
       landing: sumStage('landing'),
       engaged: sumStage('engaged'),
       formStarted: sumStage('form_started'),
+      formAbandoned: sumStage('form_abandoned'),
+      formSubmitted: sumStage('form_submitted'),
+      formFailed: sumStage('form_failed'),
       hasData: true,
     };
   } catch {

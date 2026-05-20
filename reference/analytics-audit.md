@@ -401,3 +401,324 @@ Two candidate one-thing fixes ranked by leverage:
 
 Pick (1).
 
+---
+
+## §3 — Form interaction tracking (Layer 2)
+
+> Run 2026-05-20. Same diagnostic posture as §1 / §2. Scope: every
+> client-side form event the tracker can fire (`form_start`,
+> `form_field`, `form_abandon`, `form_submit`) plus the form-submit
+> failure path the prompt asked about. Pulls from
+> `public/webnua-track.js` lines 300–364,
+> `src/app/api/track/route.ts`,
+> `supabase/migrations/0035_analytics_tables.sql` lines 168–188,
+> `src/lib/analytics/queries.tsx`, and the
+> `src/components/shared/website/FormBlock.tsx` submit handler.
+>
+> **UPDATE 2026-05-20 — re-run after PR #73 (funnel lead threading).**
+> PR #73 lands the §2.6 fix: step 2 now appends a `form_submitted`
+> `lead_events` row to the step-1 lead rather than inserting a new
+> `customers` + `leads` row. The §3 findings below are otherwise
+> unchanged — the form-event taxonomy, the consent gating, the
+> aggregation `case` block, the read layer, and the
+> document-capture-phase `form_submit` listener all stayed put.
+>
+> One refinement applies to the form-submit-success row (§3.1 row 4):
+> tracked-submits and `leadCount` used to match numerically (1 lead
+> row per submit) and now **diverge for multi-step funnels** —
+> tracked-submits counts every submit attempt (so 2 for a step-1 +
+> step-2 visitor), while `leadCount` counts unique leads (1 for the
+> same visitor). The dashboard's "Form submitted" step counts
+> `leadCount`, so it now under-counts tracked submits in funnel
+> traffic. The `submission_id` reconciliation column (§1.7, §2.3)
+> still has no consumer; PR #73 makes its job slightly harder by
+> stashing step-2's submission id inside `lead_events.payload.submissionId`
+> rather than promoting it to `leads.submission_id`, so a full
+> reconciliation now needs to union the column with the event payload.
+>
+> Top-3 gaps in §5.2 are unchanged. Gap #1 (form-submit error silent
+> + false-positive against `form_submit`) is the same code path PR #73
+> touched but did not address — and the threading actually amplifies
+> the impact slightly: a step-2 submit that fails at `/api/forms/submit`
+> (e.g. the cross-tenant guard at route.ts lines 155–163 rejects a
+> tampered `?lead=`) still fires `form_submit` at the tracker and
+> leaves the step-1 lead orphaned with no second event. Worth tracking.
+>
+> **TL;DR:** of the five form events worth tracking, **one is wired
+> end-to-end** (`form_submit` → counted in the `form_submitted`
+> funnel stage and surfaced on the dashboard). **Two are scaffolded
+> but die at the aggregation boundary** (`form_field` and
+> `form_abandon` accept-and-store as raw events, then are dropped at
+> rollup and pruned after 90 days). **One is rollup-mapped but
+> never read** (`form_start` lands in `analytics_funnel_daily.stage =
+> 'form_started'` and is fetched by `SurfaceFunnelTotals.formStarted`,
+> which surfaces on website dashboards only — funnel surfaces write
+> it but nothing reads it; the §1.9 gap #2 applies). **One is
+> completely absent** (`form_submit` for the API-failure path —
+> there is no `form_submit_error` event; a failed submit is
+> indistinguishable from a successful one in the tracking stream).
+
+### 3.1 Event-by-event matrix
+
+| Event | Infrastructure | Capture | Aggregation | Surfacing | Status |
+|---|---|---|---|---|---|
+| **Form start** (first focus of any field per `<form>`) | `onFocusIn` (webnua-track.js 316–326) registered as `document.addEventListener('focusin', onFocusIn, true)` (line 625). One-shot per form-index per page-load via `formState[idx].started` guard. | ✅ Written to `analytics_events.event_type = 'form_start'` with `payload = { formIndex }`. **Consent-gated** — `categoryFor('form_start') = 'analytics'` (line 81–83), so a visitor who has not accepted the banner emits no `form_start`. | ✅ Aggregation function maps `form_start → 'form_started'` (migration 0035 line 181). Lands in `analytics_funnel_daily` keyed `(surface_id, day, 'form_started')`. | ✅ Read by `fetchSurfaceFunnelTotals` (queries.tsx line 96) and surfaced as `SurfaceFunnelTotals.formStarted`. Dashboard conversion-funnel "Form started — Began typing details" step (`composeHub` / `composeClientDashboard` lines 343–349). **Funnel surfaces write it but never read it** (the §1.9 gap #2 dead-end). | **Fully wired for website surfaces. Tracked-not-surfaced for funnel surfaces.** |
+| **Field interaction** (field blur with non-empty value) | `onFocusOut` (webnua-track.js 328–340) registered as `document.addEventListener('focusout', onFocusOut, true)` (line 626). Filters to `input \| textarea \| select` only; only fires when `value.trim()` is non-empty. **No `onChange` / no focus-only event** — drift from the prompt's "field focus/blur events" framing; the tracker captures *field completion*, not focus or skip. | ✅ Written to `analytics_events.event_type = 'form_field'` with `payload = { formIndex, field: name \| id \| tag }` (capped 80 chars). Consent-gated. **Fires on every qualifying blur** — no per-field dedupe, so editing → blurring → re-editing → blurring re-fires. | ❌ **Missing from the aggregation stage map.** The `case` block in `aggregate_analytics()` (migration 0035 lines 175–183) covers `page_view`, `scroll_depth`, `element_click`, `form_start`, `form_submit`. `form_field` is not listed; the `staged` subquery returns NULL for `stage` on that event type and the outer `where stage is not null` drops it. The row stays in `analytics_events` until the 90-day pruner removes it. | ❌ Nothing reads `event_type = 'form_field'` from `analytics_events` directly either — no SQL view, no query helper, no UI. The data is captured and then evaporates. | **Captured raw, dropped at rollup, never surfaced.** |
+| **Form abandon** (page hides with a started, unsubmitted form) | `flushAbandons` (webnua-track.js 355–364) called from the `visibilitychange → hidden` listener (line 630–631) and `pagehide` listener (line 635–637). Walks `formState`, fires once per form-index where `started && !submitted && !abandoned`. | ✅ Written to `analytics_events.event_type = 'form_abandon'` with `payload = { formIndex }`. Consent-gated. **Delivery channel:** dispatched via `flush(true)` which prefers `navigator.sendBeacon` (line 206–215) — by design, since the page is unloading; falls back to `fetch({ keepalive: true })`. | ❌ **Same gap as `form_field`** — `form_abandon` is not in `aggregate_analytics()`'s `case` block. Lands in raw events; never rolled up. | ❌ No consumer. There is no "abandoned forms today" tile, no per-form drop-off rate, no count anywhere in `lib/analytics/queries.tsx` or `lib/dashboard/queries.tsx`. §2.1 event 7 flagged this; this audit confirms the entire end-to-end is dead. | **Captured raw, dropped at rollup, never surfaced.** |
+| **Form submit — success** | `onSubmit` (webnua-track.js 342–353) registered as `document.addEventListener('submit', onSubmit, true)` (line 627). Capture-phase on `document` — fires **before** React's `<form onSubmit>` bubble-phase handler, so it always runs on a real submit attempt regardless of what the React handler does next. | ✅ Written to `analytics_events.event_type = 'form_submit'` with `payload = { formIndex, submissionId }` (read off `data-webnua-submission` set by `FormBlock` lines 95–107). Consent-gated. | ✅ Aggregation maps `form_submit → 'form_submitted'` (line 182). Lands in `analytics_funnel_daily.stage = 'form_submitted'`. | ⚠️ **Aggregated and stored, but the read layer doesn't expose it.** `SurfaceFunnelTotals` (queries.tsx lines 24–33) exposes `landing`, `engaged`, `formStarted` — **not `formSubmitted`**. The dashboard funnel uses the source-of-truth `leadCount` (from `leads` table) instead, for the "Form submitted — Became a new lead" step (queries.tsx 351–356). So the tracked submit count exists in the rollup but is never read; the operator sees lead counts, not tracked-submit counts. The `submission_id` column on `leads` (§1 / §2.3) was designed for reconciling the two — and still has no consumer. **Post-PR-#73 note:** the substitution now produces a numeric divergence rather than a match — tracked-submits counts attempts (step 1 + step 2 = 2) while `leadCount` counts unique leads (= 1 after threading). See the §3 update block above. | **Captured & aggregated; lead-count substituted at the read layer.** Per §1 / §2 the lead count is the source of truth, so this is by design — but the parallel rollup row is wasted I/O, and (post-PR-#73) the silent numeric gap between the two is now structural. |
+| **Form submit — error** (API rejection, 4xx/5xx) | **None.** `FormBlock` (lines 235–262) catches the failure and renders a warn notice ("Something went wrong — please try again") — no tracking event is emitted on the failure path. And because the tracker's `onSubmit` is on `document` in the capture phase, it has **already fired `form_submit`** by the time React's bubble-phase `<form onSubmit>` handler calls `preventDefault()` and makes the (eventually-failing) network call. | ⚠️ The successful-side `form_submit` event still fires for a failed submit. There is no compensating `form_submit_error` event, no `form_submit_failed`, no payload flag distinguishing the two. The tracker also marks `formState[idx].submitted = true` on the same dispatch (line 348), so `flushAbandons` will **not** fire `form_abandon` on a subsequent page-hide either — the visitor's failed attempt registers as a successful submit AND suppresses the abandon signal. | n/a — no event to aggregate. | ❌ Absent. The operator cannot tell from analytics that visitors are bouncing off a broken submit; only the `leads` count diverging from the tracked `form_submitted` count would reveal it, and §2.3 already established that nothing reads the divergence. The `analytics_event_type` enum (0035 lines 22–31) does not include any error event type, so adding one is a schema migration. | **Completely absent + a false-positive against `form_submit`.** This is the worst behavioural gap in §3 — a real outage on the submit API is invisible to analytics and inflates the success-funnel count. |
+
+### 3.2 Closer look — the abandoned-form pipeline
+
+The prompt specifically asked about the `form_abandon` gap §2 flagged. Detail:
+
+1. **Capture works** (script lines 355–364). The script tracks
+   per-form state (`started`, `submitted`, `abandoned` flags), and on
+   `visibilitychange → hidden` / `pagehide` it walks every form that
+   was started but not submitted and not already flagged abandoned,
+   firing one `form_abandon` event per such form.
+2. **Transport works** — the abandon flush is paired with
+   `flush(true)` (line 632 + 637), which uses `sendBeacon` on hide, the
+   intended channel for "fire-and-forget on unload". This is the
+   correct shape; the visitor's data lands at `/api/track`.
+3. **Ingest works** — `/api/track`'s `EVENT_TYPES` allowlist
+   (route.ts line 41) includes `'form_abandon'`, so the row writes
+   into `analytics_events` cleanly. Confirmed by inspection of the
+   service-role insert path.
+4. **Aggregation is the failure point.** Re-reading the rollup case
+   block (migration 0035 lines 175–183):
+
+   ```sql
+   case
+     when event_type = 'page_view' then 'landing'
+     when event_type = 'scroll_depth'
+       and coalesce((payload->>'depth')::int, 0) >= 50 then 'engaged'
+     when event_type = 'element_click' then 'cta_click'
+     when event_type = 'form_start' then 'form_started'
+     when event_type = 'form_submit' then 'form_submitted'
+   end as stage
+   ```
+
+   `form_abandon` is not in the list. The outer
+   `where stage is not null` filters the event out — so a perfectly
+   captured, perfectly transmitted, perfectly stored `form_abandon`
+   row vanishes at the rollup boundary and is pruned 90 days later.
+5. **Read layer wouldn't see it even if rolled up.**
+   `SurfaceFunnelTotals` (queries.tsx 24–33) hard-codes `landing /
+   engaged / formStarted` as its returned fields. Adding a `form_abandon`
+   rollup stage would still need a parallel `abandoned` field on the
+   read shape + a UI consumer.
+
+**What "add to the aggregation" would look like** (descriptive only, not
+a recommendation): one additional `when event_type = 'form_abandon'
+then 'form_abandoned'` branch in `aggregate_analytics()`, one new
+field on `SurfaceFunnelTotals`, one new step in the dashboard
+conversion funnel between `form-started` and `leads`. The
+already-captured raw rows would back-fill the rollup on the next
+hourly pass (the aggregation re-builds today + yesterday on each
+run), so historical data within the 90-day raw retention window is
+recoverable. None of this is in place today.
+
+### 3.3 Verdict — Layer 2
+
+| Event | State |
+|---|---|
+| Form start | ✅ end-to-end on websites; ⚠️ tracked-not-surfaced on funnels (§1.9 #2) |
+| Field interaction (`form_field`) | ❌ scaffolded but dead — captured raw, dropped at rollup |
+| Form abandon | ❌ scaffolded but dead — same shape as `form_field` |
+| Form submit success | ⚠️ aggregated rollup row never read; `leads` count substitutes at the dashboard |
+| Form submit error | ❌ completely absent + a false-positive against `form_submit` |
+
+The most surface-area-affecting gap is **form-submit error**: it is
+silent in tracking and registers as a successful submit. Of the
+"existing data but no surfacing" category, **form_abandon** is the
+cleanest closeable — raw data is being collected today, only the
+aggregation `case` branch and a read field stand between it and the
+operator's dashboard.
+
+---
+
+## §4 — Engagement tracking (Layer 3)
+
+> Run 2026-05-20. Pulls from `public/webnua-track.js` lines 261–298
+> + 134–162, `supabase/migrations/0035_analytics_tables.sql`,
+> `src/lib/analytics/queries.tsx`, and the dashboard composers in
+> `src/lib/dashboard/queries.tsx`.
+>
+> **TL;DR:** the script captures **more engagement signal than the
+> read layer exposes.** Scroll-depth thresholds are tracked at four
+> resolutions (25/50/75/90 — NOT 25/50/75/100 as the prompt
+> assumed); only the 50% threshold is exposed (as "engaged"). Clicks
+> on every anchor / button / role=button are captured indiscriminately
+> (no CTA flag, no section attribution); the rollup counts them as a
+> generic `cta_click` stage that nothing reads. Time-on-page is
+> **derived from event timestamps**, not from an explicit dwell event
+> or a `visibilitychange`-aware accumulator — meaning a visitor who
+> tab-switches, comes back 30 minutes later and reads, then leaves
+> records an inflated dwell. Session duration as a cross-page
+> concept is **not derived anywhere** — `session_id` persists across
+> pages but no query asks "how long was session X overall?".
+> Persistent `visitor_id` exists in localStorage and crosses
+> sessions, but no read surface asks "is this a returning visitor".
+
+### 4.1 Event-by-event matrix
+
+| Event | Infrastructure | Capture | Aggregation | Surfacing | Status |
+|---|---|---|---|---|---|
+| **Scroll depth** | `onScroll` (webnua-track.js 263–277) registered as `window.addEventListener('scroll', onScroll, { passive: true })` (line 622), called once on `start()` (line 623) so a load that arrives already scrolled (anchor jump, restored scroll position) counts. **No throttle / no `requestAnimationFrame`** — the handler runs on every scroll event, deduped per-threshold via `scrollFired[t]`. | ✅ Written to `analytics_events.event_type = 'scroll_depth'` with `payload = { depth: 25 \| 50 \| 75 \| 90 }`. Note the **thresholds: 25, 50, 75, 90** — NOT 100 as the prompt assumed. The 90% cap is a deliberate "near-bottom" heuristic (full 100% is hard to hit on pages with sticky footers / mobile address bars). Consent-gated. One event per threshold per page-load (`scrollFired[t]` guard, line 272). | ⚠️ Aggregation rolls **only the ≥50% threshold** to the `engaged` stage (migration 0035 lines 178–180). The 25, 75, and 90 events land in raw `analytics_events` and are dropped at rollup — same fate as `form_field` / `form_abandon`. | ✅ The 50% slice surfaces as `SurfaceFunnelTotals.engaged` and renders on the dashboard "Engaged — Scrolled past halfway" step. **No per-threshold breakdown is exposed.** 25%, 75%, and 90% are invisible. | **Partial — one threshold of four surfaces; the other three are captured raw, dropped at rollup, never surfaced.** |
+| **Time on page** | **No explicit instrumentation.** The script does not emit a `dwell` event, does not register `visibilitychange` for time accumulation (it uses `visibilitychange` only for `flushAbandons` + `flush(true)` on hide), does not register `beforeunload` for elapsed time, and does not accumulate elapsed visible time across visibility changes. | n/a — derived only. | ✅ The aggregation function computes dwell **as a side-effect of other events**: per `(surface_id, page_ref, session_id)` it takes `max(occurred_at) - min(occurred_at)` across all events in the day, then averages across sessions (migration 0035 lines 207–219). **Implications:** a visitor who emits a single event (e.g. consent-gated, only `page_view` fires) records zero dwell. A visitor who tab-switches away for 30 minutes and comes back to scroll once records an inflated dwell of ~30 minutes. The 30-minute session-idle reset on `webnua_sid` (script line 131) bounds the inflation but doesn't eliminate it. | ✅ `SurfacePageTotals.avgSeconds` is computed (queries.tsx 139) and rendered on the dashboard `LandingSnapshot` as the "AVG TIME" stat via `formatDwell()` (lines 731–738). | **Captured as a derivation, surfaced — but the derivation is loose** (visibility-blind, conflated with idle time). Honest for V1; not accurate enough to make confident UX claims from. |
+| **Click engagement** | `onClick` (webnua-track.js 281–298) registered as `document.addEventListener('click', onClick, true)` (line 624). Walks up the DOM at most 4 hops looking for `<a>`, `<button>`, or `role="button"`. | ✅ Written to `analytics_events.event_type = 'element_click'` with `payload = { label (innerText ≤120 chars), href, tag }`. Consent-gated. **No CTA / no section attribution / no marker:** every clickable element in the page counts identically — primary hero CTA, footer privacy link, nav anchor, phone-number `tel:` link, social-icon button. The renderer does not stamp section ids or CTA flags onto the markup that the click handler reads. | ✅ Aggregation maps `element_click → 'cta_click'` (migration 0035 line 180). Lands in `analytics_funnel_daily.stage = 'cta_click'` — counted at the per-surface per-day level, **not per-CTA**. Even if a per-CTA query were written, there is no `payload->>label` aggregation in the rollup; you'd have to query raw events while the 90-day retention window still holds. | ❌ **Nothing reads `cta_click`.** `SurfaceFunnelTotals` exposes only `landing / engaged / formStarted` (queries.tsx 24–33); the dashboard funnel jumps from "engaged" straight to "form-started" with no click stage between. The rollup row writes for nothing. | **Captured & aggregated as one undifferentiated stage; never read; per-element data discarded at rollup.** |
+| **Session duration** (cross-page within a session) | **No instrumentation.** `session_id` (`webnua_sid`) persists in localStorage with a 30-minute idle window (script lines 142–156); every event in the queue stamps the current `sessionId`. But the tracker emits no session-end event, no cumulative duration, no per-session accumulator. | n/a — derivable from raw events only. | ❌ **Not derived anywhere.** The dwell averaging (queries.tsx + the rollup) is keyed `(surface_id, page_ref, session_id)` — it produces a **per-page** dwell, summed across pages would in theory give a session duration, but no query does this. The page-level dwell metric is averaged across sessions, then exposed as one number — the per-session axis is consumed in the aggregation and never surfaces. | ❌ No surface. | **Completely absent at the read layer.** Raw data sufficient to derive it sits in `analytics_events` for 90 days and is pruned. |
+| **Visitor return** (same `visitor_id` across sessions) | `webnua_vid` is persistent in localStorage with analytics consent (script lines 137–141); ephemeral `anon-<rand>` without (line 158). Every event stamps the current `visitor_id`. | ✅ The data carries it — `analytics_events.visitor_id` is on every row. | ⚠️ The rollup uses `count(distinct visitor_id)` for `unique_visitors` per surface per day (and per stage in the funnel rollup). It does **not** track first-seen / last-seen / returning-count: there is no `analytics_visitors` table, no `first_seen_at` column on the rollup, no "returning vs new" split. | ❌ No surface. The dashboard never asks "of today's visitors, how many were here before"; `SurfacePageTotals.uniqueVisitors` is just today's distinct count, with no historical comparison axis. | **Captured at the identity layer, used for uniques only, not surfaced as a return-rate or cohort axis.** |
+
+### 4.2 Web Vitals — the one engagement-adjacent signal that IS fully wired
+
+Worth calling out because Web Vitals (`web_vital` event with
+`{ name, value }` payload for LCP / CLS / INP) is the only
+beyond-pageview signal the dashboard actually renders end-to-end:
+
+- Captured by `trackVitals()` (webnua-track.js 368–424) via three
+  `PerformanceObserver`s; reported once on first `visibilitychange →
+  hidden`.
+- Aggregated as `lcp_p75 / cls_p75 / inp_p75` on `analytics_page_daily`
+  via `percentile_cont(0.75)` (migration 0035 lines 220–235).
+- Surfaced as the "PAGE SPEED" stat on the client `LandingSnapshot`
+  via `pageSpeedScore()` (queries.tsx 156–189; renderer lines
+  707–746). Composite 50%/25%/25% LCP/CLS/INP score → 0–100,
+  banded as Fast / Moderate / Needs work.
+
+This is the proof-point that the analytics pipeline *can* deliver an
+end-to-end engagement signal — the gaps in §4.1 above are
+read-layer / aggregation gaps, not infrastructure gaps.
+
+### 4.3 Verdict — Layer 3
+
+| Event | State |
+|---|---|
+| Scroll depth — 50% (engaged) | ✅ end-to-end |
+| Scroll depth — 25 / 75 / 90 | ❌ captured raw, dropped at rollup |
+| Time on page | ⚠️ derived & surfaced, but visibility-blind so the value is loose |
+| Click engagement (per CTA) | ❌ captured raw, rolled as undifferentiated stage, never read |
+| Session duration | ❌ derivable but never derived |
+| Visitor return | ❌ data exists at identity layer, no analytics surface |
+| Web Vitals (LCP / CLS / INP) | ✅ end-to-end (page-speed score on dashboard) |
+
+The pattern from §3 repeats here: **client-side capture is generous;
+the read layer is the bottleneck.** Three of the four "captured raw,
+dropped at rollup" events (25 / 75 / 90 scroll thresholds, `form_field`,
+`form_abandon`) are unblockable by aggregation-layer edits without
+schema changes — they would need new stage values in
+`analytics_funnel_daily` and new fields on `SurfaceFunnelTotals`.
+
+---
+
+## §5 — Cross-layer synthesis
+
+### 5.1 What the operator sees today, walked through a real session
+
+Hypothetical visitor session against a published website:
+
+> Visitor lands on the home page → scrolls past the offer →
+> clicks the hero CTA → focuses the email field → submits the form →
+> visits the contact page → leaves.
+
+| Step | Captured? | Surfaced to operator? | Notes |
+|---|---|---|---|
+| Landing on home | Yes — `page_view` (essential, no consent gate) | Yes — `LandingSnapshot.visits`, `SurfaceFunnelTotals.landing` (§1) | The only step that lands without analytics consent. |
+| Scroll past offer (≥50%) | Yes — `scroll_depth { depth: 50 }`; consent-gated | Yes — funnel "Engaged" step | Aggregated. |
+| Scroll past 25 / 75 / 90 | Yes — three separate raw events | **No** — dropped at rollup | Granularity exists but is invisible. |
+| Click hero CTA | Yes — `element_click { label: "Get a quote", … }`; consent-gated | **No** — `cta_click` rollup row writes for nobody. The dashboard skips from "engaged" to "form started". | Per-CTA labels discarded at rollup. |
+| Focus email field (first focus) | Yes — `form_start`; consent-gated | Yes — `SurfaceFunnelTotals.formStarted`, "Form started" funnel step (website surfaces). **No** for funnel surfaces (§1.9 #2). | Wired for websites only. |
+| Type into email field, blur | Yes — `form_field { field: "email" }`; consent-gated | **No** — dropped at rollup, no read consumer | Field-completion telemetry exists in raw for 90 days, then evaporates. |
+| Submit form | Yes — `form_submit { submissionId }`; consent-gated | **Partially.** The tracked rollup row is written but unread; the operator sees the real `leads` row in their inbox and the "Form submitted" funnel step counts `leadCount`, not tracked submits. (§2 already noted the `submission_id` reconciliation column is never read.) | Source-of-truth is the `leads` table; tracking carries a parallel count. |
+| If the submit had failed at the API | **No** — there is no `form_submit_error` event; the `form_submit` already fired in the capture phase, falsely counting it as a success. (§3.1 row 5) | n/a | Most-impactful unsurfaced behaviour gap. |
+| Navigate to contact page (same session) | Yes — new `page_view` on the new path; same `session_id` retained until 30-min idle | Yes for visits / dwell — page-keyed (§1) | Per-page totals work. |
+| Total session duration across the two pages | Yes — implicitly, all events stamp `session_id` | **No** — never derived | Two pages of dwell exist; no roll-up sums them. |
+| Visitor leaves the contact page (page hide) | Yes — `flushAbandons` (no started form so nothing fires); Web Vitals report; queue beacon-flushed | Yes for vitals — feeds "PAGE SPEED" stat | Departure itself is implicit (no events arrive after). |
+| Visitor returns next week (same `webnua_vid`) | Yes — persistent localStorage id | **No** — no "returning visitor" surface; only that day's unique count is shown | Identity persists; insight does not. |
+
+**One-paragraph summary an operator could read today:**
+
+> Your dashboard tells you how many people landed on your site, how
+> many scrolled past halfway, how many touched a form field, how
+> many submitted (counted from real leads, not tracker counts),
+> how many converted to bookings, how many of those left a review,
+> and a one-number page-speed score from the visitor's browser.
+> What it does **not** tell you: which CTA they clicked, how far
+> down the page they actually got beyond "past halfway", how long
+> their whole session lasted across pages, whether they were here
+> before, whether they tried to submit the form and got a server
+> error, whether they started a form and walked away without
+> submitting, or — for funnel surfaces specifically — *any* of the
+> engagement numbers above, because the dashboard fetches funnel
+> rollups only at the website level (§1.9 gap #2).
+
+### 5.2 Top 3 highest-value gaps to close
+
+> **UPDATE 2026-05-20 — all three gaps closed in follow-up commits.**
+> Gap #1 (form-submit error) shipped via the new `form_submit_error`
+> event type (migrations 0038 + 0039) + a `window.webnuaTrack.formSubmitError`
+> API the React `FormBlock` calls in its catch block — successful
+> submits now read as `formSubmitted − formFailed`. Gap #2
+> (`form_abandon` aggregation) shipped via migration 0040 — abandons
+> roll up into a `form_abandoned` stage and the conversion-funnel
+> view renders a "Form abandoned · Left without submitting"
+> side-channel step. Gap #3 (funnel surfaces never read) shipped via
+> the dashboard composers — `composeClientDashboard` and `composeHub`
+> now prefer the client's funnel surface for tracked totals, falling
+> back to the website when no funnel exists. Step-1-vs-step-2
+> granularity in the rollup remains lost to the surface_id × stage
+> PK (audit §2.2) — accepted for V1 per the parked CLAUDE.md item
+> "Funnel analytics gaps that remain after lead threading". The
+> ranked list below is preserved as the original audit record.
+
+Ranked by severity × surface area × closeability — same lens as §1 / §2.
+
+1. **Form-submit error is silent + counted as a success.**
+   *Severity: silent data loss + false positive on the funnel.*
+   *Surface area: every form on every published site.* *Closeability:
+   small — `FormBlock`'s catch block could fire an explicit tracker
+   event (`'form_submit_error'`), and the existing `form_submit`
+   stamping in the capture-phase listener could be deferred to a
+   submit-resolved channel.* Today an outage on `/api/forms/submit`
+   shows up nowhere in analytics; tracked-submits and leads diverge
+   silently. This is the worst behavioural gap surfaced by §3 and
+   the only one that *inflates* a positive metric the operator
+   trusts (the "form submitted" funnel step counts leads, but the
+   underlying tracked stream — which the dashboard would fall back
+   to if leads were ever delayed — overcounts).
+
+2. **`form_abandon` is fully captured, fully transmitted, fully
+   stored — and dropped at the rollup boundary.**
+   *Severity: visibility gap.* *Surface area: every form on every
+   published site.* *Closeability: smallest — one additional `when
+   event_type = 'form_abandon' then 'form_abandoned'` branch in the
+   aggregation `case` block, one new field on `SurfaceFunnelTotals`,
+   one new funnel step.* The 90-day raw-event window means the
+   rollup back-fills the moment the branch is added — no historical
+   loss for fixes deployed in the next 90 days of traffic. This is
+   the operator-side complement to gap #1: knowing how many people
+   *try* the form (formStarted), submit it (formSubmitted), and
+   walked away (formAbandoned) closes the form's drop-off picture.
+
+3. **Funnel surfaces emit every engagement event but the dashboard
+   never reads them.** *Severity: structural — every gain from
+   closing gaps #1 / #2 has to be re-closed for funnels separately,
+   and §2 already identified this as a contributing factor in the
+   funnel-lead duplicate-rows problem.* *Surface area: every
+   published funnel.* *Closeability: medium — `composeHub` and
+   `composeClientDashboard` call `fetchSurfaceFunnelTotals(website.id)`
+   today; routing a funnel surface's id through the same call would
+   require deciding which funnel(s) a given dashboard view should
+   aggregate (per §1.9 gap #2, the data is per-surface and the
+   funnel rollup loses step granularity to `surface_id × stage`).*
+   This is the §1.9 #2 / §2.2 already-flagged gap, re-confirmed here
+   because Layer-2 and Layer-3 events ride the same dead-end pipe.
+   Until this is wired, every per-event fix is half a fix.
+
+Gaps #4–N (`form_field` rollup, per-CTA click attribution, scroll
+thresholds beyond 50%, session duration, returning-visitor surface)
+are real but lower priority — none of them inflate a wrong number,
+and each is recoverable from raw data within the 90-day window for
+the first 90 days after the read layer learns to ask for them.
+
