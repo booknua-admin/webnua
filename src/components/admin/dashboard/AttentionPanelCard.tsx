@@ -41,7 +41,7 @@ function AttentionPanelCard({ panel }: { panel: AttentionPanelData }) {
           </Link>
         ) : null}
       </div>
-      <div className="flex flex-1 flex-col">
+      <div className="flex max-h-[420px] flex-1 flex-col overflow-y-auto">
         {panel.placeholder ? (
           <PanelNotice>{panel.placeholder}</PanelNotice>
         ) : panel.rows.length === 0 ? (
