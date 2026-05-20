@@ -17,6 +17,7 @@
 // =============================================================================
 
 import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
 
 import { CapabilityGate } from '@/components/shared/CapabilityGate';
 import { ConnectDomainButton } from '@/components/shared/website/ConnectDomainButton';
@@ -24,6 +25,8 @@ import { DomainStatusIndicator } from '@/components/shared/website/DomainStatusI
 import { NewPageEntry } from '@/components/shared/website/NewPageEntry';
 import { PageGridCard } from '@/components/shared/website/PageGridCard';
 import { VersionHistoryCard } from '@/components/shared/website/VersionHistoryCard';
+import { WebsiteEngagementCard } from '@/components/shared/website/WebsiteEngagementCard';
+import { fetchPageTotalsByRef } from '@/lib/analytics/queries';
 import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
@@ -100,6 +103,12 @@ function WebsiteHub({ website }: { website: Website }) {
   const user = useUser();
   const draftQuery = useEffectiveDraft(website.id);
   const versionsQuery = useWebsiteVersions(website.id);
+  // 30-day per-page totals for the page grid cards; the surface-level
+  // engagement card fetches its own 7-day window separately.
+  const pageTotalsQuery = useQuery({
+    queryKey: ['analytics', 'page-totals', website.id],
+    queryFn: () => fetchPageTotalsByRef(website.id, 30),
+  });
 
   if (draftQuery.isLoading || versionsQuery.isLoading) {
     return (
@@ -219,6 +228,11 @@ function WebsiteHub({ website }: { website: Website }) {
           <NavSummaryCard nav={snapshot.nav} pages={pages} />
         </div>
 
+        {/* Visitor-engagement insights — surface-level (analytics-audit §3/§4) */}
+        <div className="mb-6">
+          <WebsiteEngagementCard surfaceId={website.id} />
+        </div>
+
         {/* Page grid + version history */}
         <div className="grid gap-4 md:grid-cols-[1fr_320px]">
           <div>
@@ -237,7 +251,11 @@ function WebsiteHub({ website }: { website: Website }) {
             ) : (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {pages.map((page: Page) => (
-                  <PageGridCard key={page.id} page={page} />
+                  <PageGridCard
+                    key={page.id}
+                    page={page}
+                    totals={pageTotalsQuery.data?.get(page.slug)}
+                  />
                 ))}
               </div>
             )}

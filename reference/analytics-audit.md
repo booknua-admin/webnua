@@ -405,6 +405,23 @@ Pick (1).
 
 ## §3 — Form interaction tracking (Layer 2)
 
+> **UPDATE 2026-05-20 (website-side close).** The website-side aggregation
+> gaps in §3 / §4 are now closed. Migration 0040 wired `form_abandon` to
+> the `form_abandoned` rollup stage; **migration 0041** (this session)
+> adds the three previously-dropped scroll thresholds (`scrolled_25`,
+> `scrolled_75`, `scrolled_90`) plus a per-element `element_label`
+> column on `analytics_funnel_daily` (PK extended to
+> `(surface_id, day, stage, element_label)`) so per-CTA click rollup
+> rows are queryable. `SurfaceFunnelTotals` gained `scrolled25 / scrolled75 /
+> scrolled90 / ctaClickTotal`, a new `fetchSurfaceClickBreakdown`
+> returns the top-N CTAs by clicks, and a new `fetchPageTotalsByRef`
+> reads `analytics_page_daily` keyed by page slug for the per-page
+> stats now rendered on `PageGridCard` (visits 30d + avg time). A
+> `WebsiteEngagementCard` mounted on `/website` surfaces the three
+> panels (scroll-depth breakdown / top CTAs / form completion). The
+> funnel rollup step-granularity question (per-step `page_ref` on
+> `analytics_funnel_daily`) is **Session B** — not addressed here.
+>
 > Run 2026-05-20. Same diagnostic posture as §1 / §2. Scope: every
 > client-side form event the tracker can fire (`form_start`,
 > `form_field`, `form_abandon`, `form_submit`) plus the form-submit
