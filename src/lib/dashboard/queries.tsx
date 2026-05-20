@@ -347,6 +347,20 @@ function conversionFunnel(
         count: tracked.formStarted,
         pct: pct(tracked.formStarted),
       },
+      // Abandons are a side-channel between form-started and leads — visitors
+      // who started, didn't submit. Suppressed when zero so the funnel reads
+      // cleanly for surfaces with no abandons recorded yet.
+      ...(tracked.formAbandoned > 0
+        ? [
+            {
+              kind: 'form-abandoned',
+              label: 'Form abandoned',
+              sublabel: 'Left without submitting',
+              count: tracked.formAbandoned,
+              pct: pct(tracked.formAbandoned),
+            },
+          ]
+        : []),
       {
         kind: 'leads',
         label: 'Form submitted',
