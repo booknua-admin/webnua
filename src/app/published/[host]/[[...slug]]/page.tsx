@@ -170,6 +170,7 @@ export default async function PublishedPage({
       <PublicSiteRenderer
         kind="funnel"
         clientId={target.clientId}
+        funnelId={target.tracking.surfaceId}
         brand={target.brand}
         step={target.step}
         nextStepHref={target.nextStepHref}

@@ -293,6 +293,7 @@ export function FormBlock({
         body: JSON.stringify({
           clientId: publicSubmit.clientId,
           surfaceKind: publicSubmit.surfaceKind,
+          funnelId: publicSubmit.funnelId ?? null,
           source: publicSubmit.sourceLabel,
           fields: assembled,
           submissionId: submissionIdRef.current,

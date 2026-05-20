@@ -26,6 +26,10 @@ export type PublicFormSubmit = {
    *  surfaced on the inbox row's Source column. `'meta'` is reserved for the
    *  later Meta lead-ad integration. */
   surfaceKind: 'website' | 'funnel';
+  /** Funnel-only — the funnel UUID the form is being served from. Written
+   *  to `leads.source_funnel_id` so the funnel-detail "booked from this
+   *  funnel" count can attribute. Omitted for website submissions. */
+  funnelId?: string | null;
   /** Human label of the form's origin, e.g. "Form · hero". */
   sourceLabel: string;
   /** Funnel-only — where an `afterSubmit: nextStep` form advances to. */

@@ -93,6 +93,7 @@ export async function POST(req: Request) {
   const {
     clientId,
     surfaceKind,
+    funnelId,
     source,
     fields,
     submissionId,
@@ -100,6 +101,7 @@ export async function POST(req: Request) {
   } = (body ?? {}) as {
     clientId?: unknown;
     surfaceKind?: unknown;
+    funnelId?: unknown;
     source?: unknown;
     fields?: unknown;
     submissionId?: unknown;
@@ -147,6 +149,17 @@ export async function POST(req: Request) {
   // omits the field (older clients).
   const cleanSourceKind: 'website' | 'funnel' =
     surfaceKind === 'funnel' ? 'funnel' : 'website';
+  // Funnel-to-lead attribution — optional. Only persisted when the caller is
+  // submitting from a funnel surface; a malformed value rejects explicitly
+  // (a caller who tried to attribute should know they failed, not get a
+  // silent NULL). For website submissions any funnelId is ignored.
+  let cleanFunnelId: string | null = null;
+  if (cleanSourceKind === 'funnel' && funnelId !== undefined && funnelId !== null) {
+    if (typeof funnelId !== 'string' || !UUID_RE.test(funnelId)) {
+      return bad('Invalid funnel reference.');
+    }
+    cleanFunnelId = funnelId;
+  }
 
   const svc = getServiceClient();
 
@@ -157,6 +170,21 @@ export async function POST(req: Request) {
     .eq('id', clientId)
     .maybeSingle();
   if (!client) return bad('Unknown client.', 404);
+
+  // Cross-tenant guard on the funnel reference — same shape as the
+  // existingLeadId check. A funnel referencing a different client is
+  // rejected. Lead is then written with the attribution; the existing-lead
+  // append branch below also propagates this funnelId.
+  if (cleanFunnelId) {
+    const { data: funnel } = await svc
+      .from('funnels')
+      .select('id, client_id')
+      .eq('id', cleanFunnelId)
+      .maybeSingle();
+    if (!funnel || funnel.client_id !== clientId) {
+      return bad('Unknown funnel reference.');
+    }
+  }
 
   // Cross-step path: append to an existing lead. Cross-tenant guard — the
   // lead must belong to the same client (a malicious caller can't update an
@@ -228,6 +256,7 @@ export async function POST(req: Request) {
       urgency: 'none',
       source: sourceLabel,
       source_kind: cleanSourceKind,
+      source_funnel_id: cleanFunnelId,
       submission_id: cleanSubmissionId,
     } as unknown as never)
     .select('id')
