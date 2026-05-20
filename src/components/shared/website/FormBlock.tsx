@@ -36,6 +36,23 @@ export const FORM_TITLE_ELEMENT = '__formTitle';
 export const FORM_SUBMIT_ELEMENT = '__formSubmit';
 export const FORM_SETTINGS_ELEMENT = '__formSettings';
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Append `?lead=<id>` (or update it if already present) to a relative href.
+ *  Threads the funnel step-1 lead id onto the step-2 URL so step 2's submit
+ *  is linked back to the existing lead. */
+function appendLeadParam(href: string, leadId: string): string {
+  try {
+    const url = new URL(href, window.location.origin);
+    url.searchParams.set('lead', leadId);
+    return url.pathname + url.search + url.hash;
+  } catch {
+    const sep = href.includes('?') ? '&' : '?';
+    return `${href}${sep}lead=${encodeURIComponent(leadId)}`;
+  }
+}
+
 export type { SubmittedFormField, FormTestSubmitContext };
 
 export type FormBlockProps = {
@@ -99,11 +116,23 @@ export function FormBlock({
   // the tracking script's `form_submit` event, so the read layer can
   // reconcile the tracked count against the source-of-truth `leads` count.
   const submissionIdRef = useRef<string | null>(null);
+  // Funnel cross-step linking (analytics-audit §2 fix). Step 1 puts the
+  // created lead's id on the next-step redirect as `?lead=<uuid>`; step 2
+  // reads it here and includes it in the submit so the route appends to the
+  // existing lead instead of creating a new one. Stays null on the first
+  // step / a direct-landing visitor — the route then takes its new-lead path.
+  const existingLeadIdRef = useRef<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
   useEffect(() => {
     const id = crypto.randomUUID();
     submissionIdRef.current = id;
     formRef.current?.setAttribute('data-webnua-submission', id);
+    try {
+      const raw = new URLSearchParams(window.location.search).get('lead');
+      if (raw && UUID_RE.test(raw)) existingLeadIdRef.current = raw;
+    } catch {
+      // window.location.search inaccessible — leave null.
+    }
   }, []);
 
   const setValue = (id: string, value: string) => {
@@ -240,16 +269,26 @@ export function FormBlock({
           source: publicSubmit.sourceLabel,
           fields: assembled,
           submissionId: submissionIdRef.current,
+          existingLeadId: existingLeadIdRef.current,
         }),
       });
       if (!res.ok) throw new Error('submit failed');
+      const responseBody = (await res.json().catch(() => null)) as
+        | { ok?: boolean; leadId?: string }
+        | null;
+      const createdLeadId =
+        typeof responseBody?.leadId === 'string' ? responseBody.leadId : null;
 
       if (form.afterSubmit.kind === 'url') {
         window.location.href = form.afterSubmit.url || '/';
         return;
       }
       if (form.afterSubmit.kind === 'nextStep' && publicSubmit.nextStepHref) {
-        window.location.href = publicSubmit.nextStepHref;
+        // Thread the lead id forward so the next step's submission appends
+        // to this lead rather than creating a new one (analytics-audit §2).
+        window.location.href = createdLeadId
+          ? appendLeadParam(publicSubmit.nextStepHref, createdLeadId)
+          : publicSubmit.nextStepHref;
         return;
       }
       setDone(true);

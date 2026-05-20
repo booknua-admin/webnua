@@ -191,6 +191,20 @@ When a real client site goes live on a public host, the script will fire, events
 > `src/app/api/forms/submit/`, the public renderer, and the leads UI
 > under `src/app/leads/`.
 >
+> **UPDATE 2026-05-20 — the duplicate-lead gap is now fixed.** The
+> §2.6 smallest-next-step has shipped: the public submit route accepts
+> `existingLeadId`, validates it belongs to the same `clientId`, and
+> appends a `form_submitted` event to the referenced lead instead of
+> inserting a new row. `FormBlock` reads `?lead=` from the URL on
+> mount and appends `?lead=<id>` to the `nextStepHref` redirect after
+> step 1's submission. So step 1 + step 2 from one visitor now land
+> as a single lead with two timeline events. Events 4 + 6 in §2.1
+> and §2.5 question 1 are resolved. **The other gaps in §2 remain
+> open** — step-1-vs-step-2 ambiguity in the rollup, drop-off
+> detection, partial-vs-qualified status, operator inbox filtering by
+> completion. Tracked in CLAUDE.md "Funnel analytics gaps that
+> remain after lead threading".
+>
 > **TL;DR:** the funnel is structurally **two disconnected forms**, not
 > a linked two-step lead-capture. Step 1 creates lead A. Step 2 creates
 > lead B. Nothing in the running system stitches them together — the
