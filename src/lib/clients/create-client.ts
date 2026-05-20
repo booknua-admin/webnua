@@ -9,7 +9,7 @@
 // =============================================================================
 
 import { AppError, normalizeError } from '@/lib/errors';
-import { generateFunnelSync } from '@/lib/funnel/generation-stub';
+import { generateFunnelStub } from '@/lib/funnel/generation-stub';
 import { supabase } from '@/lib/supabase/client';
 import { offerToRow } from '@/lib/website/offer-generate';
 import { generateSiteStub, type ClientBrief } from '@/lib/website/site-generation-stub';
@@ -165,7 +165,10 @@ export async function createClientWithGeneration(
 
   // -- 4. funnel + draft version --
   if (input.wantFunnel) {
-    const fr = generateFunnelSync(brief);
+    // Real Claude generation via /api/generate-funnel; falls back to the
+    // deterministic generator if ANTHROPIC_API_KEY is unset. Passing clientId
+    // lets the route attribute generation_log rows to this client.
+    const fr = await generateFunnelStub(brief, { clientId: client.id });
     // The funnel is served at {websiteHost}/{slug}; 'offer' is free because a
     // new client gets exactly one funnel. domain_primary is vestigial under
     // path-based routing — kept for the not-null column, set to the host.

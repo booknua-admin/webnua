@@ -1,17 +1,24 @@
 // =============================================================================
-// generateFunnelStub — the funnel generator (stub).
+// generateFunnelStub — the funnel generator.
 //
-// Brief-aware: given a ClientBrief it composes a three-step funnel — a
-// generated landing sequence (the page generator's `generic` output, so the
-// design-variety + brief-aware copy layers apply), a schedule step, and a
-// thanks step. The schedule / thanks steps carry the funnel-only sections
-// (`schedulePicker` / `thanksConfirmation`) the page generator cannot emit.
+// Wired to real Claude via /api/generate-funnel — ONE Opus call produces the
+// seven-section funnel landing step (hero → offer → reviews → features →
+// trust → reviews → form) in the Suby / Sultanic shape. The schedule + thanks
+// steps stay deterministic — they are chrome-only and the wizard captures
+// none of the inputs an LLM would need to differentiate them.
 //
-// Called without a brief it falls back to the registry-backed Voltline
-// funnel (back-compat for the legacy onboarding draft route).
+// Fallback policy (mirrors site-generation-stub.ts):
+//   - 503 (key not configured) → silently fall back to the deterministic
+//     `generateFunnelSync` so dev / local flows still work without a key;
+//   - 500 (real generation failure) → throw `AppError` carrying the server's
+//     { name, status, detail } body so the modal surfaces it (PR #58 pattern);
+//   - fetch throw (network / abort propagated) → fall back, console.warn.
 //
-// Replace with a real backend call when the LLM lands; the contract stays.
+// Called without a brief it still falls back to the registry-backed Voltline
+// funnel (back-compat for any legacy caller).
 // =============================================================================
+
+import { AppError } from '@/lib/errors';
 
 import { generateSync, randomDelayMs } from '@/lib/website/generation-stub';
 import { schedulePickerSection } from '@/lib/website/sections/schedulePicker';
@@ -34,57 +41,109 @@ const STUB_FUNNEL_ID = 'emergency-call-out';
 
 // -- public entry point -----------------------------------------------------
 
+/** Generate a funnel. Calls the real Claude-backed /api/generate-funnel route;
+ *  falls back to the deterministic `generateFunnelSync` if that route is
+ *  unconfigured (no ANTHROPIC_API_KEY) or fails. */
 export async function generateFunnelStub(
   brief?: ClientBrief,
-  options?: { signal?: AbortSignal; instantForDev?: boolean },
+  options?: { signal?: AbortSignal; instantForDev?: boolean; clientId?: string },
 ): Promise<FunnelGenerationResult> {
-  if (!options?.instantForDev) {
-    await new Promise<void>((resolve, reject) => {
-      if (options?.signal?.aborted) {
-        reject(new DOMException('Aborted', 'AbortError'));
-        return;
-      }
-      const t = setTimeout(resolve, randomDelayMs());
-      options?.signal?.addEventListener('abort', () => {
-        clearTimeout(t);
-        reject(new DOMException('Aborted', 'AbortError'));
-      });
-    });
+  if (!brief) {
+    // No brief = legacy passthrough; never hits the route.
+    if (!options?.instantForDev) await delayWithAbort(randomDelayMs(), options?.signal);
+    return voltlinePassthrough();
   }
-  return brief ? generateFunnelSync(brief) : voltlinePassthrough();
+  if (options?.instantForDev) {
+    return generateFunnelSync(brief);
+  }
+
+  let response: Response;
+  try {
+    response = await fetch('/api/generate-funnel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...brief, clientId: options?.clientId }),
+      signal: options?.signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
+    console.warn('[generate-funnel] fetch failed, falling back to stub generator', error);
+    await delayWithAbort(randomDelayMs(), options?.signal);
+    return generateFunnelSync(brief);
+  }
+
+  if (response.ok) {
+    return (await response.json()) as FunnelGenerationResult;
+  }
+
+  // 503 = generation-not-configured (no ANTHROPIC_API_KEY). Graceful degrade.
+  if (response.status === 503) {
+    console.warn(
+      '[generate-funnel] /api/generate-funnel returned 503 (not configured), using stub generator',
+    );
+    await delayWithAbort(randomDelayMs(), options?.signal);
+    return generateFunnelSync(brief);
+  }
+
+  // Any other non-OK → real failure. Surface via AppError so the modal shows
+  // the actual Claude error instead of silently degrading to the stub.
+  const body = await readErrorBody(response);
+  throw AppError.unexpected(body, formatGenerationErrorMessage(response.status, body));
 }
 
-/** Synchronous brief-aware funnel generation (no delay). */
+/** Synchronous brief-aware funnel generation (no delay) — deterministic
+ *  fallback path for dev surfaces, the no-key environment, and tests. */
 export function generateFunnelSync(brief: ClientBrief): FunnelGenerationResult {
+  // Landing step — a generated `generic` landing sequence (design variety +
+  // brief-aware copy already applied by the website page generator).
+  const landingPage = generateSync(briefToGenerationContext(brief, 'generic'));
+  return buildFunnelSkeleton(brief, {
+    landing: landingPage.page.sections,
+    schedule: scheduleStepSections(brief),
+    thanks: thanksStepSections(brief),
+  });
+}
+
+// -- skeleton + step builders -----------------------------------------------
+// Exported because the /api/generate-funnel route assembles its own result
+// from the AI-generated landing sections + deterministic schedule + thanks.
+
+/** Wrap pre-built section arrays into a complete FunnelGenerationResult.
+ *  The Claude-backed route generates `landing` and reuses the deterministic
+ *  `schedule` / `thanks`. The deterministic path uses this too. */
+export function buildFunnelSkeleton(
+  brief: ClientBrief,
+  steps: { landing: Section[]; schedule: Section[]; thanks: Section[] },
+): FunnelGenerationResult {
   const now = new Date().toISOString();
   const funnelId = `funnel-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-  const business = brief.business;
-
-  // Landing step — a generated `generic` landing sequence (design variety +
-  // brief-aware copy already applied by the page generator).
-  const landingPage = generateSync(briefToGenerationContext(brief, 'generic'));
-
-  const steps: FunnelStep[] = [
-    mkStep(funnelId, 'landing', 'landing', 'Landing', landingPage.page.sections, now),
-    mkStep(funnelId, 'schedule', 'schedule', 'Book a time', [scheduleSection(brief)], now),
-    mkStep(funnelId, 'thanks', 'thanks', 'Confirmed', [thanksSection(brief)], now),
+  const stepList: FunnelStep[] = [
+    mkStep(funnelId, 'landing', 'landing', 'Landing', steps.landing, now),
+    mkStep(funnelId, 'schedule', 'schedule', 'Book a time', steps.schedule, now),
+    mkStep(funnelId, 'thanks', 'thanks', 'Confirmed', steps.thanks, now),
   ];
-
   const funnel: Funnel = {
     id: funnelId,
     clientId: '__pending__',
-    name: `${business.name || brief.industry} · ${intentLabel(brief)}`,
+    name: `${brief.business.name || brief.industry} · ${intentLabel(brief)}`,
     domain: { primary: '', aliases: [], sslStatus: 'pending' },
     draftVersionId: `${funnelId}-draft`,
     publishedVersionId: null,
     createdAt: now,
     updatedAt: now,
   };
-
-  return { funnel, steps };
+  return { funnel, steps: stepList };
 }
 
-// -- step / section builders ------------------------------------------------
+export function scheduleStepSections(brief: ClientBrief): Section[] {
+  return [scheduleSection(brief)];
+}
+
+export function thanksStepSections(brief: ClientBrief): Section[] {
+  return [thanksSection(brief)];
+}
+
+// -- internals --------------------------------------------------------------
 
 function mkStep(
   funnelId: string,
@@ -174,4 +233,42 @@ function voltlinePassthrough(): FunnelGenerationResult {
     throw new Error(`generateFunnelStub: no funnel resolves to "${STUB_FUNNEL_ID}".`);
   }
   return { funnel, steps: draft.snapshot.steps };
+}
+
+// -- shared fetch helpers ---------------------------------------------------
+
+type GenerationErrorBody = {
+  error?: string;
+  name?: string;
+  status?: number;
+  detail?: string;
+};
+
+async function readErrorBody(response: Response): Promise<GenerationErrorBody> {
+  try {
+    return (await response.json()) as GenerationErrorBody;
+  } catch {
+    return {};
+  }
+}
+
+function formatGenerationErrorMessage(httpStatus: number, body: GenerationErrorBody): string {
+  const upstream = body.status ? ` ${body.status}` : '';
+  const name = body.name ?? 'Error';
+  const detail = body.detail?.trim() || body.error || `HTTP ${httpStatus}`;
+  return `Funnel generation failed — ${name}${upstream}: ${detail}`;
+}
+
+function delayWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => {
+      clearTimeout(timer);
+      reject(new DOMException('Aborted', 'AbortError'));
+    });
+  });
 }
