@@ -235,6 +235,41 @@ export async function fetchSurfaceClickBreakdown(
 
 type PageRollupRowWithRef = PageRollupRow & { page_ref: string };
 
+/** Daily visit counts for one surface — the data the `/website` hero
+ *  sparkline reads. Returns an oldest→newest array of `{ day, visits }`,
+ *  zero-filled for days with no rollup row. */
+export async function fetchPageVisitsDaily(
+  surfaceId: string,
+  days: number = 30,
+): Promise<{ day: string; visits: number }[]> {
+  const start = windowStartDay(days);
+  const series: { day: string; visits: number }[] = [];
+  // Build the zero-filled day list up front so the sparkline has stable
+  // length regardless of which days produced events.
+  const startDate = new Date(`${start}T00:00:00Z`);
+  for (let i = 0; i < days; i++) {
+    const d = new Date(startDate);
+    d.setUTCDate(startDate.getUTCDate() + i);
+    series.push({ day: d.toISOString().slice(0, 10), visits: 0 });
+  }
+  try {
+    const { data, error } = await supabase
+      .from('analytics_page_daily')
+      .select('day, visits')
+      .eq('surface_id', surfaceId)
+      .gte('day', start);
+    if (error || !data) return series;
+    const byDay = new Map<string, number>();
+    for (const row of data as { day: string; visits: number }[]) {
+      const key = row.day.slice(0, 10);
+      byDay.set(key, (byDay.get(key) ?? 0) + (row.visits ?? 0));
+    }
+    return series.map((s) => ({ day: s.day, visits: byDay.get(s.day) ?? 0 }));
+  } catch {
+    return series;
+  }
+}
+
 /** Per-page totals over a custom window — keyed by page slug (page_ref).
  *  `/website` page cards use `days = 30` so visit counts match the prototype's
  *  "VISITS 30D" framing. Returns a Map keyed on page_ref; absent slugs mean

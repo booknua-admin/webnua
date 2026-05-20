@@ -23,9 +23,13 @@ import { CapabilityGate } from '@/components/shared/CapabilityGate';
 import { ConnectDomainButton } from '@/components/shared/website/ConnectDomainButton';
 import { DomainStatusIndicator } from '@/components/shared/website/DomainStatusIndicator';
 import { NewPageEntry } from '@/components/shared/website/NewPageEntry';
+import { OpenRequestsCard } from '@/components/shared/website/OpenRequestsCard';
 import { PageGridCard } from '@/components/shared/website/PageGridCard';
+import { SingletonStrip } from '@/components/shared/website/SingletonStrip';
 import { VersionHistoryCard } from '@/components/shared/website/VersionHistoryCard';
+import { WebsiteActivityCard } from '@/components/shared/website/WebsiteActivityCard';
 import { WebsiteEngagementCard } from '@/components/shared/website/WebsiteEngagementCard';
+import { WebsiteHero } from '@/components/shared/website/WebsiteHero';
 import { fetchPageTotalsByRef } from '@/lib/analytics/queries';
 import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
@@ -33,14 +37,7 @@ import { Button } from '@/components/ui/button';
 import { useUser } from '@/lib/auth/user-stub';
 import { useAdminClients } from '@/lib/clients/clients-store';
 import { useEffectiveDraft, useWebsiteForClient, useWebsiteVersions } from '@/lib/website/queries';
-import {
-  MAX_NAV_LINKS,
-  type NavLink as NavLinkType,
-  type Page,
-  type Section,
-  type Version,
-  type Website,
-} from '@/lib/website/types';
+import { type Page, type Version, type Website } from '@/lib/website/types';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 export default function WebsiteHubPage() {
@@ -156,111 +153,102 @@ function WebsiteHub({ website }: { website: Website }) {
     return (b.publishedAt ?? b.createdAt).localeCompare(a.publishedAt ?? a.createdAt);
   });
 
+  const isLive = !!website.publishedVersionId;
+  // Resolve "BY YOU / BY WEBNUA" for each page by looking up the most-recent
+  // version that touched it. The version snapshot is whole-site (no per-page
+  // editor attribution), so V1 maps every page to the website's latest
+  // version's `createdBy` / `publishedBy`. Per-page edit attribution is a
+  // backend follow-up flagged alongside the per-page analytics gap (audit
+  // §2.2 / Session B).
+  const latestVersion = history[0];
+  const latestActorId = latestVersion
+    ? (latestVersion.publishedBy ?? latestVersion.createdBy)
+    : null;
+  const editedBy: 'you' | 'webnua' =
+    latestActorId && user?.id === latestActorId ? 'you' : 'webnua';
+  const editedAgo = latestVersion
+    ? formatRelativeAgo(latestVersion.publishedAt ?? latestVersion.createdAt)
+    : '—';
+
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb current="Website" />} />
       <div className="px-10 py-9">
-        <div className="mb-6 flex items-start justify-between gap-4">
-          <div>
-            <p className="mb-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-rust">
-              {`// ${website.domain.primary}`}
-            </p>
-            <h1 className="text-[36px] font-extrabold leading-[1.05] tracking-[-0.02em] text-ink">
-              {website.name}&rsquo;s{' '}
-              <em className="font-extrabold not-italic text-rust">website</em>.
-            </h1>
-            <p className="mt-2 max-w-[600px] text-[14px] leading-[1.55] text-ink-mid">
-              The current draft of every page on this website, plus the header / footer / nav that
-              wraps them. <strong>Funnels are a separate surface</strong> — find them at{' '}
-              <Link href="/funnels" className="text-rust hover:text-rust-deep">
-                /funnels
-              </Link>
-              .
-            </p>
-          </div>
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div />
           <WorkspaceContextBanner />
         </div>
 
-        {/* Domain status + live link + review entry point */}
+        {/* Ink hero — site identity + monthly perf */}
+        <WebsiteHero website={website} />
+
+        {/* Domain status + view-live + review entry point */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <DomainStatusIndicator domain={website.domain} />
             {user?.role === 'admin' ? <ConnectDomainButton website={website} /> : null}
           </div>
-          <div className="flex items-center gap-3">
-            {website.publishedVersionId ? (
-              <a
-                href={`https://${website.domain.primary}`}
-                target="_blank"
-                rel="noreferrer"
-                className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet hover:text-ink"
-              >
-                View live ↗
-              </a>
-            ) : (
-              <span
-                title="Publish this website to view it live."
-                className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet/50"
-              >
-                Not published yet
-              </span>
-            )}
-            <Button asChild>
-              <Link href="/website/review">Review &amp; publish →</Link>
-            </Button>
-          </div>
+          <Button asChild>
+            <Link href="/website/review">Review &amp; publish →</Link>
+          </Button>
         </div>
 
-        {/* Header + Footer + Nav — website-level singletons */}
-        <div className="mb-6 grid gap-3 md:grid-cols-3">
-          <SingletonCard
-            label="Header"
-            description="Logo + nav + optional global CTA. Wraps every page."
-            href="/website/header"
-            section={snapshot.header}
-          />
-          <SingletonCard
-            label="Footer"
-            description="Links + contact info + socials + legal. Wraps every page."
-            href="/website/footer"
-            section={snapshot.footer}
-          />
-          <NavSummaryCard nav={snapshot.nav} pages={pages} />
+        {/* Header strip — wraps every page above */}
+        <div className="mb-4">
+          <SingletonStrip variant="header" section={snapshot.header} nav={snapshot.nav} />
+        </div>
+
+        {/* Page grid — pages in their visual sandwich between header + footer */}
+        <div className="mb-3 flex items-center justify-between">
+          <p className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+            {'// PAGES · '}
+            <strong className="text-ink">{pages.length}</strong>{' '}
+            {pages.length === 1 ? 'page' : 'pages'} ·{' '}
+            {isLive ? 'live' : 'unpublished draft'}
+          </p>
+          <NewPageEntry />
+        </div>
+        {pages.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-rule bg-paper px-4 py-6 text-center text-[13px] text-ink-quiet">
+            No pages on this website yet.
+          </p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {pages.map((page: Page) => (
+              <PageGridCard
+                key={page.id}
+                page={page}
+                totals={pageTotalsQuery.data?.get(page.slug)}
+                domain={website.domain.primary}
+                editedBy={editedBy}
+                editedAgo={editedAgo}
+                isLive={isLive}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Footer strip — wraps every page below */}
+        <div className="mt-4">
+          <SingletonStrip variant="footer" section={snapshot.footer} />
         </div>
 
         {/* Visitor-engagement insights — surface-level (analytics-audit §3/§4) */}
-        <div className="mb-6">
+        <div className="mt-6">
           <WebsiteEngagementCard surfaceId={website.id} />
         </div>
 
-        {/* Page grid + version history */}
-        <div className="grid gap-4 md:grid-cols-[1fr_320px]">
-          <div>
-            <div className="mb-3 flex items-center justify-between">
-              <p className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
-                <strong className="text-ink">{pages.length}</strong>{' '}
-                {pages.length === 1 ? 'page' : 'pages'} ·{' '}
-                {website.publishedVersionId ? 'live' : 'unpublished draft'}
-              </p>
-              <NewPageEntry />
-            </div>
-            {pages.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-rule bg-paper px-4 py-6 text-center text-[13px] text-ink-quiet">
-                No pages on this website yet.
-              </p>
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {pages.map((page: Page) => (
-                  <PageGridCard
-                    key={page.id}
-                    page={page}
-                    totals={pageTotalsQuery.data?.get(page.slug)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+        {/* Recent activity (left) + Open requests (right) */}
+        <div className="mt-6 grid gap-4 md:grid-cols-[1.4fr_1fr]">
+          <WebsiteActivityCard
+            websiteId={website.id}
+            currentUserId={user?.id ?? null}
+          />
+          <OpenRequestsCard />
+        </div>
 
+        {/* Version history — moved to the bottom from the right rail */}
+        <div className="mt-6">
           <VersionHistoryCard
             title={
               <>
@@ -269,8 +257,9 @@ function WebsiteHub({ website }: { website: Website }) {
             }
             subtitle={
               <>
-                <strong>{history.length}</strong> {history.length === 1 ? 'version' : 'versions'}.
-                Restore any published version as a new draft.
+                <strong>{history.length}</strong>{' '}
+                {history.length === 1 ? 'version' : 'versions'}. Restore any
+                published version as a new draft.
               </>
             }
             versions={history}
@@ -283,84 +272,21 @@ function WebsiteHub({ website }: { website: Website }) {
   );
 }
 
-// -- Singleton + nav cards (website-hub-specific) --------------------------
-
-function SingletonCard({
-  label,
-  description,
-  href,
-  section,
-}: {
-  label: string;
-  description: string;
-  href: string;
-  section: Section;
-}) {
-  return (
-    <Link
-      href={href}
-      className="group block overflow-hidden rounded-lg border border-rule bg-card transition-colors hover:border-ink/20"
-    >
-      <div className="border-b border-rule bg-paper-2 px-4 py-2.5">
-        <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust">
-          {`// WEBSITE-LEVEL · ${label.toUpperCase()}`}
-        </p>
-      </div>
-      <div className="px-4 py-4">
-        <p className="mb-1 text-[15px] font-bold text-ink">{label}</p>
-        <p className="text-[12.5px] leading-[1.5] text-ink-quiet">{description}</p>
-        <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
-          {section.enabled ? 'On' : 'Off'} · singleton
-        </p>
-      </div>
-      <div className="border-t border-rule bg-paper-2 px-4 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust group-hover:text-rust-deep">
-        Open editor →
-      </div>
-    </Link>
-  );
-}
-
-function NavSummaryCard({ nav, pages }: { nav: NavLinkType[]; pages: Page[] }) {
-  const pageById = new Map(pages.map((p) => [p.id, p]));
-  return (
-    <div className="overflow-hidden rounded-lg border border-rule bg-card">
-      <div className="border-b border-rule bg-paper-2 px-4 py-2.5">
-        <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust">
-          {'// WEBSITE-LEVEL · NAV'}
-        </p>
-      </div>
-      <div className="px-4 py-4">
-        <p className="mb-1 text-[15px] font-bold text-ink">Top navigation</p>
-        <p className="mb-3 text-[12.5px] leading-[1.5] text-ink-quiet">
-          Up to <strong>{MAX_NAV_LINKS}</strong> top-level links. Edit the full nav in the Header
-          editor.
-        </p>
-        <ul className="space-y-1">
-          {nav.length === 0 ? (
-            <li className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
-              No links yet.
-            </li>
-          ) : (
-            nav.map((link, i) => {
-              const targetLabel =
-                link.target.kind === 'page'
-                  ? (pageById.get(link.target.pageId)?.slug ?? '?')
-                  : link.target.href;
-              return (
-                <li
-                  key={i}
-                  className="flex items-baseline justify-between gap-3 font-mono text-[11px]"
-                >
-                  <span className="text-ink">{link.label}</span>
-                  <span className="text-ink-quiet">/{targetLabel}</span>
-                </li>
-              );
-            })
-          )}
-        </ul>
-      </div>
-    </div>
-  );
+function formatRelativeAgo(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '—';
+  const diff = Date.now() - then;
+  const mins = Math.round(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}M AGO`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}H AGO`;
+  const days = Math.round(hrs / 24);
+  if (days < 7) return `${days}D AGO`;
+  const weeks = Math.round(days / 7);
+  if (weeks < 5) return `${weeks}W AGO`;
+  const months = Math.round(days / 30);
+  return `${months}MO AGO`;
 }
 
 // -- Empty states ----------------------------------------------------------
