@@ -41,7 +41,11 @@ import type {
   FunnelBrief,
   FunnelTestimonial,
 } from './site-generation-stub';
-import { voiceToneToProse } from './generation-prompt';
+import {
+  SHARED_FIELD_NOTES,
+  formatSectionShape,
+  voiceToneToProse,
+} from './generation-prompt';
 import { getSectionMeta } from './sections/registry-meta';
 import type { BrandObject, Section, SectionType } from './types';
 import type { FallbackLogEntry } from './generation-stub';
@@ -131,10 +135,12 @@ Return ONLY a single JSON object — no markdown fences, no commentary, no prose
 
 Rules:
 - Output EXACTLY seven sections, in the order specified above (hero, offer, reviews, features, trust, reviews, form).
-- For each section, populate the fields listed in "Section field keys" below. Skip a field by omitting the key (the platform will fall back).
-- Item arrays (offer.inclusions, features.items, trust.items, reviews.items) MUST be arrays of objects with the field shapes given. Each item object needs an "id" — use any short unique string (e.g. "feat-1", "rev-2").
+- For each section, populate the fields listed in the per-section catalog under "Field keys per section". For variant keys (layout, theme, headerAlign, columns, iconStyle, etc.) the catalog enumerates the allowed values — pick exactly one of those for each variant key. Skip a copy field by omitting the key (the platform will fall back).
+- Item arrays (offer.inclusions, offer.items, offer.signals, features.items, trust.items, trust.badges, reviews.items) MUST be arrays of objects matching the shape given in the catalog. Every item needs a short unique "id" string (e.g. "feat-1", "rev-2"). Do not emit items as bare strings.
+- \`headlineAccent\` / \`titleAccent\` is an OPTIONAL SECOND LINE in the accent colour — never duplicate the headline into it. If no second-line emphasis adds value, leave it empty.
 - Honour the brand voice exactly. Length: headlines <= 72 chars, subheadings <= 140 chars, body copy <= 400 chars unless explicitly a paragraph.
-- Hrefs: every "Book / Get / Buy" CTA href is "#form". Every "Call" CTA href is "tel:" + the operator's phone if available.`;
+- Hrefs: every "Book / Get / Buy" CTA href is "#form". Every "Call" CTA href is "tel:" + the operator's phone if available.
+- The \`form\` section's \`fields\` array is built deterministically in code — do NOT output a \`fields\` array on the form section. Populate only \`theme\`, \`eyebrow\`, \`heading\`.`;
 
 // =============================================================================
 // Step 2 — Qualification
@@ -196,10 +202,12 @@ Return ONLY a single JSON object — no markdown fences, no commentary, no prose
 
 Rules:
 - Output EXACTLY four sections, in the order specified above (hero, reviews, features, form).
-- For each section, populate the fields listed in "Section field keys" below. Skip a field by omitting the key.
-- Item arrays (reviews.items, features.items) MUST be arrays of objects with the field shapes given. Each item needs an "id".
+- For each section, populate the fields listed in the per-section catalog under "Field keys per section". For variant keys (layout, theme, headerAlign, columns, iconStyle, etc.) the catalog enumerates the allowed values — pick exactly one of those for each variant key. Skip a copy field by omitting the key.
+- Item arrays (reviews.items, features.items) MUST be arrays of objects matching the shape given in the catalog. Every item needs a short unique "id" string.
+- \`headlineAccent\` / \`titleAccent\` is an OPTIONAL SECOND LINE in the accent colour — never duplicate the headline into it. Leave empty when no second-line emphasis adds value.
 - Honour the brand voice. Headlines <= 72 chars; subheadings <= 140; body copy <= 400.
-- Hrefs: any CTA href is "#form".`;
+- Hrefs: any CTA href is "#form".
+- The \`form\` section's \`fields\` array is built deterministically in code — do NOT output a \`fields\` array. Populate only \`theme\`, \`eyebrow\`, \`heading\`.`;
 
 // =============================================================================
 // Public entry points
@@ -371,19 +379,14 @@ function composeUserMessage(brief: LiveBrief, cfg: RunConfig): string {
 function buildFieldKeysBlock(types: readonly SectionType[]): string {
   // De-dupe — `reviews` may appear twice in the lead-capture plan.
   const seen = new Set<SectionType>();
-  return types
-    .filter((t) => {
-      if (seen.has(t)) return false;
-      seen.add(t);
-      return true;
-    })
-    .map((t) => {
-      const meta = getSectionMeta(t);
-      if (!meta) return '';
-      return `- ${t}: ${meta.defaultDataKeys.join(', ')}`;
-    })
-    .filter(Boolean)
-    .join('\n');
+  const blocks: string[] = [SHARED_FIELD_NOTES];
+  for (const t of types) {
+    if (seen.has(t)) continue;
+    seen.add(t);
+    const entry = formatSectionShape(t);
+    if (entry) blocks.push(entry);
+  }
+  return blocks.join('\n\n');
 }
 
 function isUsableTestimonial(t: FunnelTestimonial): boolean {

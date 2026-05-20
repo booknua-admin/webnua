@@ -7,6 +7,43 @@
 > subsequent sessions can target specific weaknesses rather than rediscover
 > them. **No code changes. No prompt suggestions.**
 >
+> ## Resolution log
+>
+> Three of the missing-piece bullets called out below were addressed in a
+> targeted fix session on top of `17b8985` (branch
+> `claude/fix-generation-quality-UcpkA`):
+>
+> - **Item array shapes — RESOLVED.** A `SECTION_SHAPE_CATALOG` in
+>   `src/lib/website/generation-prompt.ts` declares the per-section
+>   item-array element shape (`items`, `inclusions`, `signals`,
+>   `features`, `stats`, `badges`). Emitted inline below `Field keys:`
+>   in the website prompt; consumed by the funnel prompt through the
+>   exported `formatSectionShape(type)` helper so both prompts see the
+>   same shape annotations.
+> - **`headlineAccent` / `titleAccent` semantics — RESOLVED.** Documented
+>   in a new shared appendix block (`SHARED_FIELD_NOTES`) included in
+>   both the website registry catalog and the funnel field-keys block,
+>   and reinforced inline in each prompt's "Rules:" list. The semantic
+>   matches the actual renderer: an optional SECOND LINE in the accent
+>   colour beneath the headline — NOT a substring of the headline (the
+>   semantic in the original fix-task brief was incorrect; the in-editor
+>   helper text "Optional second line — rendered in the brand accent
+>   colour." is the source of truth).
+> - **Variant / layout enum values — RESOLVED.** Every variant key in
+>   the catalog (`layout`, `theme`, `imageSide`, `contentAlign`,
+>   `headerAlign`, `headlineSize`, `subSize`, `stackStyle`, `columns`,
+>   `mediaStyle`, `iconStyle`, `aspect`, `ctaStyle`, `nav`, `extra`,
+>   `mediaMode`, `mediaShape`, `overlay`, `footer`, `display`, `align`,
+>   `overlayOpacity`) is now enumerated with its closed value set and a
+>   one-line guidance hint where the choice is non-obvious. The icon
+>   library (74 curated ids) is also listed once in the shared notes
+>   block so any `icon` field has an explicit valid-value set.
+>
+> The remaining missing-piece bullets in this audit (banned-word
+> consolidation, worked examples, copy-vs-layout via `capabilityHints`,
+> shared persona, voice on offer/enhance, etc.) are deferred to later
+> sessions and were intentionally NOT touched in this fix.
+>
 > Four prompts in scope, in the order requested:
 >
 > 1. **Website generation** — `src/lib/website/generate-live.ts` + `src/lib/website/generation-prompt.ts`, served by `POST /api/generate-site`.

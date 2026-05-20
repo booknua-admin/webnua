@@ -84,6 +84,34 @@ onboarding-wizard Q&A → real `GenerationContext`.
 - Wizard Q&A → real `GenerationContext` — still owed (see CLAUDE.md
   parked decision).
 
+### Phase 6 polish — prompt quality (in progress)
+
+Iterative quality work on the four generation prompts surfaced by
+`reference/prompt-audit.md`. Each item is a discrete session — small,
+testable, no scope drift.
+
+- ✅ Variant enums + item-array shapes + heading-accent semantics +
+  icon library — in the website + funnel prompts via
+  `SECTION_SHAPE_CATALOG` + `SHARED_FIELD_NOTES` in
+  `lib/website/generation-prompt.ts`. Addresses the three reported
+  symptoms (blank funnel arrays, duplicated accents, layout drift).
+  See CLAUDE.md parked decision "Prompt-content fixes for reported
+  symptoms".
+- Banned-word list consolidation across the four prompts (offer +
+  funnel × 2 + enhance carry the same 16 corporate-speak terms;
+  the website prompt has none). Deferred.
+- Copy-vs-layout distinction via `SectionMeta.capabilityHints` — the
+  website prompt currently asks the model to "populate every field
+  key", which includes structural knobs the model shouldn't be
+  copy-drafting. Deferred.
+- Voice tone on offer + enhance prompts — currently voice-blind.
+  Deferred.
+- Shared base persona (cached system block reused across all four
+  routes). Deferred.
+- Worked-example shots — a fully-populated section JSON inline in
+  each system prompt. Deferred — the catalog approach above was
+  picked first as lighter-weight.
+
 ## Phase 7 — Integrations
 
 OAuth + API: GBP, Meta Ads, GA4, Google Ads (business) · Stripe, Resend,
