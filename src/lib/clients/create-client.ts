@@ -57,6 +57,15 @@ export async function createClientWithGeneration(
   const fields: Record<string, string> = {};
   if (!brief.business.name.trim()) fields.name = 'Business name is required.';
   if (!brief.industry.trim()) fields.industry = 'Trade / industry is required.';
+  // Funnel-brief required-when-requested guard. Mirrors the wizard UI; the
+  // data layer enforces it so a bypass (direct API, future flows) can't write
+  // a half-briefed funnel.
+  if (input.wantFunnel) {
+    if (!brief.funnel.service.trim()) fields.funnelService = 'Funnel service is required.';
+    if (!brief.funnel.customerPain.trim())
+      fields.funnelCustomerPain = 'Customer pain is required.';
+    if (!brief.funnel.guarantee.trim()) fields.funnelGuarantee = 'Funnel guarantee is required.';
+  }
   if (Object.keys(fields).length > 0) {
     throw AppError.validation(fields, 'Complete the required business details.');
   }
@@ -166,6 +175,10 @@ export async function createClientWithGeneration(
         name: fr.funnel.name,
         slug: 'offer',
         domain_primary: `${client.slug}.webnua.dev`,
+        funnel_service: brief.funnel.service || null,
+        funnel_customer_pain: brief.funnel.customerPain || null,
+        funnel_guarantee: brief.funnel.guarantee || null,
+        funnel_testimonials: brief.funnel.testimonials,
       })
       .select('id')
       .single();
