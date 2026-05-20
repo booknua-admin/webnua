@@ -68,10 +68,38 @@
 >   route's `generation_log` writer can track whether the model is
 >   still attempting to specify theme after this change.
 >
+> A follow-up session (`claude/add-prompt-examples-ueeX7`) addressed
+> the worked-examples gap called out in this audit as "the single
+> highest-leverage missing piece across all four prompts":
+>
+> - **Worked examples — RESOLVED across all four prompts.** Each
+>   generation prompt now ships a fully-populated, validated example
+>   anchored to a single fictional anchor business (Voltline
+>   Electrical, residential electrical contractor in Perth coastal
+>   suburbs — Cottesloe, Mosman Park, Claremont). The example shows
+>   shape, specificity, and the copy quality bar in one place. The
+>   website prompt carries a six-section home page (hero → trust →
+>   features → reviews → offer → cta); the funnel step-1 prompt
+>   carries a seven-section lead-capture page in the Suby/Sultanic
+>   order; the funnel step-2 prompt carries a four-section
+>   qualification page; the offer prompt carries a complete
+>   four-field offer; the enhance-field prompt carries a before/after
+>   pair for the `funnel_customer_pain` field. Every JSON example
+>   validates cleanly through the section-type registry and the
+>   curated icon vocabulary, and uses no banned vocabulary. See
+>   `src/lib/website/generation-prompt.ts` (website),
+>   `src/lib/website/generate-funnel-live.ts` (funnel step 1 + 2),
+>   `src/app/api/generate-offer/route.ts` (offer),
+>   `src/app/api/enhance-field/route.ts` (enhance). Each example
+>   ends with a "do NOT copy these specifics" guard so the model
+>   doesn't over-index on Voltline's industry / suburbs / response
+>   times for unrelated briefs.
+>
 > The remaining missing-piece bullets in this audit (banned-word
-> consolidation, worked examples, copy-vs-layout via `capabilityHints`,
-> shared persona, voice on offer/enhance, etc.) are deferred to later
-> sessions and were intentionally NOT touched in this fix.
+> consolidation, copy-vs-layout via `capabilityHints`, shared
+> persona, voice on offer/enhance, etc.) are deferred to later
+> sessions and were intentionally NOT touched in the worked-examples
+> session.
 >
 > Four prompts in scope, in the order requested:
 >
