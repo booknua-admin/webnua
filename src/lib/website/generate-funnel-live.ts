@@ -149,7 +149,10 @@ export async function generateFunnelLandingLive(
   const stream = client.messages.stream({
     model: MODEL,
     max_tokens: 16000,
-    thinking: { type: 'enabled', budget_tokens: 5000 },
+    // Opus 4.7 only accepts `adaptive` thinking — `{ type: 'enabled', budget_tokens }`
+    // returns 400 `"thinking.type.enabled" is not supported for this model`.
+    // Same shape the website generator uses (`generate-live.ts`).
+    thinking: { type: 'adaptive' },
     system: [
       { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
     ],
