@@ -459,6 +459,7 @@ async function fetchClientDashboard(): Promise<ClientDashboard> {
     reviewsResult,
     completionsResult,
     websiteResult,
+    funnelResult,
   ] = await Promise.all([
     supabase.from('users').select('display_name').eq('id', user.id).single(),
     supabase.from('clients').select('name, slug'),
@@ -467,6 +468,11 @@ async function fetchClientDashboard(): Promise<ClientDashboard> {
     supabase.from('reviews').select(REVIEW_SELECT),
     supabase.from('job_completions').select('amount_charged, completed_at'),
     supabase.from('websites').select('id, domain_primary'),
+    // analytics-audit §5.2 gap #3: funnels are the conversion-focused surface
+    // — when one exists for the client, its tracked totals beat the website's.
+    // Funnel rollup keys on surface_id × stage, so step 1 + step 2 page_views
+    // collapse into one `landing` count (audit §2.2); accept this for V1.
+    supabase.from('funnels').select('id').limit(1),
   ]);
 
   for (const r of [
@@ -476,20 +482,23 @@ async function fetchClientDashboard(): Promise<ClientDashboard> {
     reviewsResult,
     completionsResult,
     websiteResult,
+    funnelResult,
   ]) {
     if (r.error) throw normalizeError(r.error);
   }
 
   const website =
     (websiteResult.data as { id: string; domain_primary: string }[])[0] ?? null;
-  // Tracked analytics — fetched only when a website exists. The helpers
-  // swallow their own errors, so a missing rollup never breaks the dashboard.
-  const [funnelTotals, pageTotals] = website
-    ? await Promise.all([
-        fetchSurfaceFunnelTotals(website.id),
-        fetchSurfacePageTotals(website.id),
-      ])
-    : [null, null];
+  const funnel = (funnelResult.data as { id: string }[])[0] ?? null;
+  // Tracked analytics — prefer the funnel surface when one exists (conversion-
+  // focused); fall back to the website surface. Page totals stay on the
+  // website (AVG TIME tiles are website-page-keyed). Helpers swallow their
+  // own errors so a missing rollup never breaks the dashboard.
+  const funnelSurfaceId = funnel?.id ?? website?.id ?? null;
+  const [funnelTotals, pageTotals] = await Promise.all([
+    funnelSurfaceId ? fetchSurfaceFunnelTotals(funnelSurfaceId) : null,
+    website ? fetchSurfacePageTotals(website.id) : null,
+  ]);
 
   const join: ClientDashboardJoin = {
     client: (clientResult.data as { name: string; slug: string }[])[0] ?? null,
@@ -850,6 +859,7 @@ async function fetchClientHub(clientSlug: string): Promise<ClientHub> {
     reviewsResult,
     completionsResult,
     websiteResult,
+    funnelResult,
     automationsResult,
     campaignsResult,
   ] = await Promise.all([
@@ -865,6 +875,10 @@ async function fetchClientHub(clientSlug: string): Promise<ClientHub> {
       .from('websites')
       .select('id, domain_primary')
       .eq('client_id', clientId),
+    // analytics-audit §5.2 gap #3: prefer the funnel surface for tracked
+    // totals when one exists; fall back to the website. Step-1 vs step-2
+    // granularity is lost in the rollup PK today (audit §2.2) — accepted V1.
+    supabase.from('funnels').select('id').eq('client_id', clientId).limit(1),
     supabase.from('automations').select('enabled').eq('client_id', clientId),
     supabase
       .from('campaigns')
@@ -879,6 +893,7 @@ async function fetchClientHub(clientSlug: string): Promise<ClientHub> {
     reviewsResult,
     completionsResult,
     websiteResult,
+    funnelResult,
     automationsResult,
     campaignsResult,
   ]) {
@@ -896,8 +911,11 @@ async function fetchClientHub(clientSlug: string): Promise<ClientHub> {
   const automations = (automationsResult.data ?? []) as { enabled: boolean }[];
   const hubWebsite =
     (websiteResult.data as { id: string; domain_primary: string }[])[0] ?? null;
-  const funnelTotals = hubWebsite
-    ? await fetchSurfaceFunnelTotals(hubWebsite.id)
+  const hubFunnel =
+    (funnelResult.data as { id: string }[])[0] ?? null;
+  const funnelSurfaceId = hubFunnel?.id ?? hubWebsite?.id ?? null;
+  const funnelTotals = funnelSurfaceId
+    ? await fetchSurfaceFunnelTotals(funnelSurfaceId)
     : null;
 
   const join: HubJoin = {

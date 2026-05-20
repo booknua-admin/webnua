@@ -655,6 +655,23 @@ Hypothetical visitor session against a published website:
 
 ### 5.2 Top 3 highest-value gaps to close
 
+> **UPDATE 2026-05-20 — all three gaps closed in follow-up commits.**
+> Gap #1 (form-submit error) shipped via the new `form_submit_error`
+> event type (migrations 0038 + 0039) + a `window.webnuaTrack.formSubmitError`
+> API the React `FormBlock` calls in its catch block — successful
+> submits now read as `formSubmitted − formFailed`. Gap #2
+> (`form_abandon` aggregation) shipped via migration 0040 — abandons
+> roll up into a `form_abandoned` stage and the conversion-funnel
+> view renders a "Form abandoned · Left without submitting"
+> side-channel step. Gap #3 (funnel surfaces never read) shipped via
+> the dashboard composers — `composeClientDashboard` and `composeHub`
+> now prefer the client's funnel surface for tracked totals, falling
+> back to the website when no funnel exists. Step-1-vs-step-2
+> granularity in the rollup remains lost to the surface_id × stage
+> PK (audit §2.2) — accepted for V1 per the parked CLAUDE.md item
+> "Funnel analytics gaps that remain after lead threading". The
+> ranked list below is preserved as the original audit record.
+
 Ranked by severity × surface area × closeability — same lens as §1 / §2.
 
 1. **Form-submit error is silent + counted as a success.**
