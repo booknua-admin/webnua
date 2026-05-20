@@ -33,6 +33,30 @@ import {
 } from './generation-stub';
 import type { BrandObject, Page, PageType, Section } from './types';
 
+/** One testimonial captured by the wizard for the AI funnel offer.
+ *  Empty list → the funnel renders placeholder social proof, never an
+ *  AI-invented quote (see CLAUDE.md "Open decisions / parked"). */
+export type FunnelTestimonial = {
+  quote: string;
+  author: string;
+  context: string;
+};
+
+/** Funnel-specific brief inputs. Required when funnel generation is
+ *  requested; safe to leave at their empty defaults otherwise. The AI
+ *  funnel generator (wired in a later session) reads these to build one
+ *  offer that becomes the spine of the funnel. */
+export type FunnelBrief = {
+  /** Which one service the funnel sells. */
+  service: string;
+  /** The moment that makes a customer urgently search. */
+  customerPain: string;
+  /** Risk-reversal the business is willing to promise. */
+  guarantee: string;
+  /** 0–3 entries. Empty = placeholder social proof in the funnel. */
+  testimonials: FunnelTestimonial[];
+};
+
 /** The brief captured by the create-client modal. */
 export type ClientBrief = {
   business: BusinessDetails;
@@ -40,6 +64,7 @@ export type ClientBrief = {
   brand: BrandObject;
   primaryIntent: PrimaryIntent;
   audience: Audience;
+  funnel: FunnelBrief;
 };
 
 export type SiteGenerationResult = {

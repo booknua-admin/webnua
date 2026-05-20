@@ -31,7 +31,7 @@ import {
   type PrimaryIntent,
 } from '@/lib/website/generation-context';
 import { CURATED_FONTS } from '@/lib/website/google-fonts';
-import type { ClientBrief } from '@/lib/website/site-generation-stub';
+import type { ClientBrief, FunnelTestimonial } from '@/lib/website/site-generation-stub';
 import { uploadSectionImage } from '@/lib/website/upload-image';
 import { VOICE_TONE_PRESETS, type BrandObject } from '@/lib/website/types';
 
@@ -92,6 +92,13 @@ export function CreateClientModal({
   // brief
   const [intent, setIntent] = useState<IntentKind>('book');
   const [audience, setAudience] = useState<Audience>('cold-ad');
+  // brief — funnel-specific inputs (feed the AI funnel offer in a later session)
+  const [funnelService, setFunnelService] = useState('');
+  const [funnelCustomerPain, setFunnelCustomerPain] = useState('');
+  const [funnelGuarantee, setFunnelGuarantee] = useState('');
+  const [funnelTestimonials, setFunnelTestimonials] = useState<FunnelTestimonial[]>([
+    { quote: '', author: '', context: '' },
+  ]);
 
   // design
   const [brandColors, setBrandColors] = useState<string[]>([DEFAULT_BRAND_COLOR]);
@@ -111,6 +118,8 @@ export function CreateClientModal({
     setName(''); setIndustry(''); setOwnerName(''); setPhone(''); setEmail(''); setArea('');
     setOffer(''); setServices(['', '', '']); setEnhancing(false);
     setIntent('book'); setAudience('cold-ad');
+    setFunnelService(''); setFunnelCustomerPain(''); setFunnelGuarantee('');
+    setFunnelTestimonials([{ quote: '', author: '', context: '' }]);
     setBrandColors([DEFAULT_BRAND_COLOR]); setHeadingFont('inter-tight'); setBodyFont('inter-tight');
     setLogoUrl(''); setLogoUploading(false);
     setWantWebsite(true); setWantFunnel(true); setError(null);
@@ -162,12 +171,21 @@ export function CreateClientModal({
       headingFont,
       bodyFont,
     };
+    const cleanTestimonials = funnelTestimonials
+      .map((t) => ({ quote: t.quote.trim(), author: t.author.trim(), context: t.context.trim() }))
+      .filter((t) => t.quote || t.author || t.context);
     const brief: ClientBrief = {
       business,
       industry: industry.trim(),
       brand,
       primaryIntent: { kind: intent },
       audience,
+      funnel: {
+        service: funnelService.trim(),
+        customerPain: funnelCustomerPain.trim(),
+        guarantee: funnelGuarantee.trim(),
+        testimonials: cleanTestimonials,
+      },
     };
     try {
       // Lazy-loaded — keeps the heavy generation + Supabase write graph out
@@ -331,6 +349,116 @@ export function CreateClientModal({
               <Field label="Who is the traffic?">
                 <ChipRow options={AUDIENCE_CHIPS} value={audience} onChange={setAudience} />
               </Field>
+              <div className="border-t border-paper-2 pt-5">
+                <p className="mb-3 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust">
+                  {'// FUNNEL INPUTS'}
+                </p>
+                <div className="flex flex-col gap-4">
+                  <Field label="Which one service is the funnel built around?" required>
+                    <Input
+                      value={funnelService}
+                      onChange={(e) => setFunnelService(e.target.value)}
+                      placeholder="Emergency call-out"
+                    />
+                  </Field>
+                  <Field
+                    label="What's the moment that makes a customer urgently search for this?"
+                    required
+                  >
+                    <textarea
+                      value={funnelCustomerPain}
+                      onChange={(e) => setFunnelCustomerPain(e.target.value)}
+                      rows={3}
+                      placeholder="A burst pipe at 9pm with water across the floor — they need someone on site tonight."
+                      className="w-full rounded-md border border-rule bg-card px-3 py-2.5 text-[13px] text-ink outline-none focus:border-rust"
+                    />
+                  </Field>
+                  <Field label="What can you confidently promise or guarantee?" required>
+                    <Input
+                      value={funnelGuarantee}
+                      onChange={(e) => setFunnelGuarantee(e.target.value)}
+                      placeholder="On site within 2 hours or the callout's free."
+                    />
+                  </Field>
+                  <Field label="Customer testimonials (optional, 2–3)">
+                    <div className="flex flex-col gap-3">
+                      <p className="text-[11.5px] text-ink-quiet">
+                        Leave empty and your funnel renders a clean &ldquo;your reviews will appear
+                        here&rdquo; placeholder — we never invent fake testimonials. Real reviews
+                        auto-pull once Google Business is connected.
+                      </p>
+                      {funnelTestimonials.map((t, i) => (
+                        <div
+                          key={i}
+                          className="flex flex-col gap-2 rounded-md border border-rule bg-paper px-3 py-2.5"
+                        >
+                          <textarea
+                            value={t.quote}
+                            onChange={(e) =>
+                              setFunnelTestimonials((arr) =>
+                                arr.map((x, idx) => (idx === i ? { ...x, quote: e.target.value } : x)),
+                              )
+                            }
+                            rows={2}
+                            placeholder="Quote — what the customer said"
+                            className="w-full rounded-md border border-rule bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-rust"
+                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <Input
+                              value={t.author}
+                              onChange={(e) =>
+                                setFunnelTestimonials((arr) =>
+                                  arr.map((x, idx) =>
+                                    idx === i ? { ...x, author: e.target.value } : x,
+                                  ),
+                                )
+                              }
+                              placeholder="Name"
+                            />
+                            <Input
+                              value={t.context}
+                              onChange={(e) =>
+                                setFunnelTestimonials((arr) =>
+                                  arr.map((x, idx) =>
+                                    idx === i ? { ...x, context: e.target.value } : x,
+                                  ),
+                                )
+                              }
+                              placeholder="Context (suburb, job type)"
+                            />
+                          </div>
+                          {funnelTestimonials.length > 1 ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setFunnelTestimonials((arr) => arr.filter((_, idx) => idx !== i))
+                              }
+                              className="self-start font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust hover:text-rust-deep"
+                            >
+                              × Remove
+                            </button>
+                          ) : null}
+                        </div>
+                      ))}
+                      {funnelTestimonials.length < 3 ? (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() =>
+                            setFunnelTestimonials((arr) => [
+                              ...arr,
+                              { quote: '', author: '', context: '' },
+                            ])
+                          }
+                          className="w-fit"
+                        >
+                          + Add testimonial
+                        </Button>
+                      ) : null}
+                    </div>
+                  </Field>
+                </div>
+              </div>
             </div>
           ) : null}
 

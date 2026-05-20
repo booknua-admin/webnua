@@ -959,6 +959,10 @@ export type Database = {
           domain_primary: string
           domain_ssl_status: Database["public"]["Enums"]["ssl_status"]
           draft_version_id: string | null
+          funnel_customer_pain: string | null
+          funnel_guarantee: string | null
+          funnel_service: string | null
+          funnel_testimonials: Json
           id: string
           name: string
           published_version_id: string | null
@@ -973,6 +977,10 @@ export type Database = {
           domain_primary: string
           domain_ssl_status?: Database["public"]["Enums"]["ssl_status"]
           draft_version_id?: string | null
+          funnel_customer_pain?: string | null
+          funnel_guarantee?: string | null
+          funnel_service?: string | null
+          funnel_testimonials?: Json
           id?: string
           name: string
           published_version_id?: string | null
@@ -987,6 +995,10 @@ export type Database = {
           domain_primary?: string
           domain_ssl_status?: Database["public"]["Enums"]["ssl_status"]
           draft_version_id?: string | null
+          funnel_customer_pain?: string | null
+          funnel_guarantee?: string | null
+          funnel_service?: string | null
+          funnel_testimonials?: Json
           id?: string
           name?: string
           published_version_id?: string | null
