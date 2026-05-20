@@ -121,6 +121,60 @@ function pickString(obj: Record<string, unknown>, ...keys: string[]): string {
   return '';
 }
 
+/** Polish a rough offer paragraph the operator typed on the wizard's brief
+ *  step into something tighter and more concrete. Sonnet-backed via
+ *  /api/enhance-offer. Same fallback shape as generateFunnelOffer:
+ *    - 503 (key unset) → throw AppError.validation so the wizard surfaces
+ *      "configure ANTHROPIC_API_KEY" rather than silently no-op'ing;
+ *    - 500 (real failure) → throw AppError.unexpected with the server's
+ *      { name, status, detail } body so the wizard's error pane shows it. */
+export async function enhanceFunnelOfferText(
+  input: { rawText: string; industry: string; businessName?: string; serviceArea?: string },
+  options?: { signal?: AbortSignal },
+): Promise<string> {
+  let response: Response;
+  try {
+    response = await fetch('/api/enhance-offer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+      signal: options?.signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error;
+    }
+    throw AppError.unexpected(
+      error,
+      'Offer enhancement failed — network error. Check your connection and try again.',
+    );
+  }
+
+  if (response.ok) {
+    const body = (await response.json()) as { text?: unknown };
+    if (typeof body.text !== 'string' || !body.text.trim()) {
+      throw AppError.unexpected(body, 'Offer enhancement returned no text.');
+    }
+    return body.text.trim();
+  }
+
+  const body = await readErrorBody(response);
+  if (response.status === 503) {
+    throw AppError.validation(
+      { offer: 'AI offer enhancement is not configured (ANTHROPIC_API_KEY missing).' },
+      'Offer enhancement is not configured on this environment.',
+    );
+  }
+  throw AppError.unexpected(body, formatEnhanceErrorMessage(response.status, body));
+}
+
+function formatEnhanceErrorMessage(httpStatus: number, body: GenerationErrorBody): string {
+  const upstream = body.status ? ` ${body.status}` : '';
+  const name = body.name ?? 'Error';
+  const detail = body.detail?.trim() || body.error || `HTTP ${httpStatus}`;
+  return `Offer enhancement failed — ${name}${upstream}: ${detail}`;
+}
+
 /** The shape persisted to funnels.funnel_offer (snake_case to match the DB). */
 export type FunnelOfferRow = {
   headline: string;

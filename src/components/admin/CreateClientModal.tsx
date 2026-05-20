@@ -31,7 +31,7 @@ import {
   type PrimaryIntent,
 } from '@/lib/website/generation-context';
 import { CURATED_FONTS } from '@/lib/website/google-fonts';
-import { generateFunnelOffer, type FunnelOffer } from '@/lib/website/offer-generate';
+import { enhanceFunnelOfferText, generateFunnelOffer, type FunnelOffer } from '@/lib/website/offer-generate';
 import type { ClientBrief, FunnelTestimonial } from '@/lib/website/site-generation-stub';
 import { uploadSectionImage } from '@/lib/website/upload-image';
 import { VOICE_TONE_PRESETS, type BrandObject } from '@/lib/website/types';
@@ -49,23 +49,6 @@ const INTENT_OPTIONS = PRIMARY_INTENT_CHIPS.filter((c) => c.id !== 'other') as {
   id: IntentKind;
   label: string;
 }[];
-
-/** Stub "AI enhance" — a light polish of the rough offer text. The real
- *  Claude API replaces this. */
-function enhanceOffer(raw: string, industry: string): string {
-  const text = raw.trim();
-  if (!text) {
-    return `We deliver dependable ${
-      industry.trim().toLowerCase() || 'local service'
-    } with honest, upfront pricing — and every job is backed by our workmanship guarantee.`;
-  }
-  let out = text.charAt(0).toUpperCase() + text.slice(1);
-  if (!/[.!?]$/.test(out)) out += '.';
-  if (!/guarantee|warrant/i.test(out)) {
-    out += ' Every job comes with an upfront quote and our workmanship guarantee.';
-  }
-  return out;
-}
 
 export function CreateClientModal({
   open,
@@ -88,6 +71,7 @@ export function CreateClientModal({
   // offer
   const [offer, setOffer] = useState('');
   const [enhancing, setEnhancing] = useState(false);
+  const [enhanceError, setEnhanceError] = useState<string | null>(null);
   const [services, setServices] = useState<string[]>(['', '', '']);
 
   // brief
@@ -122,7 +106,7 @@ export function CreateClientModal({
   const reset = () => {
     setPhase('business');
     setName(''); setIndustry(''); setOwnerName(''); setPhone(''); setEmail(''); setArea('');
-    setOffer(''); setServices(['', '', '']); setEnhancing(false);
+    setOffer(''); setServices(['', '', '']); setEnhancing(false); setEnhanceError(null);
     setIntent('book'); setAudience('cold-ad');
     setFunnelService(''); setFunnelCustomerPain(''); setFunnelGuarantee('');
     setFunnelTestimonials([{ quote: '', author: '', context: '' }]);
@@ -320,13 +304,29 @@ export function CreateClientModal({
                 hint={
                   <button
                     type="button"
-                    disabled={enhancing}
-                    onClick={() => {
+                    disabled={enhancing || !offer.trim()}
+                    onClick={async () => {
+                      setEnhanceError(null);
                       setEnhancing(true);
-                      setTimeout(() => {
-                        setOffer((o) => enhanceOffer(o, industry));
+                      try {
+                        const polished = await enhanceFunnelOfferText({
+                          rawText: offer,
+                          industry,
+                          businessName: name,
+                          serviceArea: area,
+                        });
+                        setOffer(polished);
+                      } catch (err) {
+                        const msg =
+                          err instanceof AppError
+                            ? err.message
+                            : err instanceof Error
+                              ? err.message
+                              : 'Offer enhancement failed.';
+                        setEnhanceError(msg);
+                      } finally {
                         setEnhancing(false);
-                      }, 700);
+                      }
                     }}
                     className="rounded-pill border border-rust/40 bg-rust-soft px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-rust transition-colors hover:bg-rust hover:text-paper disabled:opacity-50"
                   >
@@ -372,6 +372,14 @@ export function CreateClientModal({
                   </Button>
                 </div>
               </Field>
+              {enhanceError ? (
+                <div className="rounded-md border border-warn/40 border-l-4 border-l-warn bg-warn/[0.06] px-3 py-2 text-[12px] text-warn">
+                  <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em]">
+                    Offer enhancement error
+                  </p>
+                  <p className="mt-1 whitespace-pre-wrap break-words">{enhanceError}</p>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
