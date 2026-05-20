@@ -23,9 +23,7 @@ import { contactSection } from './sections/contact';
 import { ctaSection } from './sections/cta';
 import { faqSection } from './sections/faq';
 import { featuresSection } from './sections/features';
-import { footerSection } from './sections/footer';
 import { gallerySection } from './sections/gallery';
-import { headerSection } from './sections/header';
 import { heroSection } from './sections/hero';
 import { offerSection } from './sections/offer';
 import { reviewsSection } from './sections/reviews';
@@ -866,8 +864,13 @@ function genSection(type: SectionType, data: Record<string, unknown>): Section {
 
 export function fillHeaderSection(ctx: GenerationContext): Section {
   const b = ctx.business;
+  // Read the static defaults from registry-meta — section modules are
+  // 'use client' and become client-reference stubs in the server bundle,
+  // so headerSection.defaultData() would crash on the /api/generate-site
+  // path. See the parked decision "Section metadata server/client boundary".
+  const defaults = getSectionMeta('header')?.defaultDataValues ?? {};
   return genSection('header', {
-    ...headerSection.defaultData(),
+    ...defaults,
     layout: 'logo-left',
     logoText: b?.name || 'Your Business',
     logoTagline: capitalize(ctx.brand.industryCategory || ''),
@@ -882,8 +885,9 @@ export function fillHeaderSection(ctx: GenerationContext): Section {
 export function fillFooterSection(ctx: GenerationContext): Section {
   const b = ctx.business;
   const year = new Date().getFullYear();
+  const defaults = getSectionMeta('footer')?.defaultDataValues ?? {};
   return genSection('footer', {
-    ...footerSection.defaultData(),
+    ...defaults,
     logoText: b?.name || 'Your Business',
     logoImageUrl: ctx.brand.logoUrl ?? '',
     brandLine: ctx.brand.audienceLine || `Trusted ${ctx.brand.industryCategory}.`,

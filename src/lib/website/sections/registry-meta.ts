@@ -57,6 +57,16 @@ export type SectionMeta = {
    *  section's DEFAULTS by convention; if a field is added in the section
    *  file, add it here too. */
   defaultDataKeys: readonly string[];
+  /** Server-safe static snapshot of the section's `defaultData()` output.
+   *  Section modules are `'use client'`, so server consumers (currently the
+   *  `fillHeaderSection` / `fillFooterSection` helpers reached from the
+   *  `/api/generate-site` route) cannot call `defaultData()` on the section
+   *  exports — they become client-reference stubs in the server bundle.
+   *  Populate this for any section a server-reachable code path needs to
+   *  read defaults from. Use stable string ids for any item arrays — they
+   *  are scoped to a single rendered section, so collisions across
+   *  generated sites are harmless. */
+  defaultDataValues?: Readonly<Record<string, unknown>>;
 };
 
 // -- Stackable sections (page + funnelStep) --------------------------------
@@ -685,6 +695,17 @@ export const headerMeta: SectionMeta = {
     'ctaHref',
     'ctaStyle',
   ],
+  defaultDataValues: {
+    theme: {},
+    layout: 'logo-left',
+    logoText: 'Your Business',
+    logoTagline: '',
+    logoImageUrl: '',
+    showCta: true,
+    ctaLabel: 'Get a quote',
+    ctaHref: '/contact',
+    ctaStyle: 'solid',
+  },
 };
 
 export const footerMeta: SectionMeta = {
@@ -745,6 +766,68 @@ export const footerMeta: SectionMeta = {
     'legalText',
     'legalLinks',
   ],
+  defaultDataValues: {
+    theme: {},
+    logoText: 'Your Business',
+    logoImageUrl: '',
+    brandLine: 'Quality service you can count on.',
+    socials: [
+      { id: 'soc-fb', network: 'facebook', href: '#' },
+      { id: 'soc-ig', network: 'instagram', href: '#' },
+      { id: 'soc-li', network: 'linkedin', href: '#' },
+    ],
+    columns: [
+      {
+        id: 'col-services',
+        heading: 'Services',
+        links: [
+          { id: 'lnk-services-1', label: 'Overview', href: '#' },
+          { id: 'lnk-services-2', label: 'Pricing', href: '#' },
+          { id: 'lnk-services-3', label: 'Book a job', href: '#' },
+          { id: 'lnk-services-4', label: 'Service areas', href: '#' },
+        ],
+      },
+      {
+        id: 'col-company',
+        heading: 'Company',
+        links: [
+          { id: 'lnk-company-1', label: 'About us', href: '#' },
+          { id: 'lnk-company-2', label: 'Our work', href: '#' },
+          { id: 'lnk-company-3', label: 'Reviews', href: '#' },
+          { id: 'lnk-company-4', label: 'Careers', href: '#' },
+        ],
+      },
+      {
+        id: 'col-resources',
+        heading: 'Resources',
+        links: [
+          { id: 'lnk-resources-1', label: 'FAQs', href: '#' },
+          { id: 'lnk-resources-2', label: 'Guides', href: '#' },
+          { id: 'lnk-resources-3', label: 'Contact', href: '#' },
+          { id: 'lnk-resources-4', label: 'Blog', href: '#' },
+        ],
+      },
+    ],
+    showContact: true,
+    contactHeading: 'Contact us',
+    contactAddress: '123 Main Street, Anytown',
+    contactPhone: '(555) 123-4567',
+    contactEmail: 'hello@example.com',
+    rightBlock: 'newsletter',
+    newsletterTitle: 'Stay in the loop',
+    newsletterText: 'Subscribe for tips, ideas, and exclusive offers.',
+    ctaIcon: 'message',
+    ctaTitle: "Let's build something great",
+    ctaText: 'Have a project in mind? Let’s talk about how we can help.',
+    ctaLabel: 'Get a free quote',
+    ctaHref: '/contact',
+    legalText: '© 2026 Your Business. All rights reserved.',
+    legalLinks: [
+      { id: 'leg-privacy', label: 'Privacy Policy', href: '#' },
+      { id: 'leg-terms', label: 'Terms of Service', href: '#' },
+      { id: 'leg-sitemap', label: 'Sitemap', href: '#' },
+    ],
+  },
 };
 
 // -- The registry array -----------------------------------------------------
