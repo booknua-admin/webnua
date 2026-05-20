@@ -214,10 +214,17 @@ When a real client site goes live on a public host, the script will fire, events
 > both inbox bodies. Drop-off detection has a derived read-time
 > signal (`isLeadDroppedOff` + the `LEAD_DROP_OFF_HOURS = 24`
 > threshold) — the actual scheduled worker calling it is Phase 8
-> (automation execution engine). Funnel-to-lead attribution
-> (`leads.source_funnel_id`) is the immediate follow-up session;
-> the hero "booked from this funnel" tile renders `—` via the
-> shape-stable `getBookedFromFunnelCount` until then. See CLAUDE.md
+> (automation execution engine). Funnel-to-lead attribution is now
+> wired too: migration 0044 adds `leads.source_funnel_id` (nullable
+> FK to `funnels`, set-null on delete); the public submit handler
+> persists it on funnel submissions (cross-tenant guard: funnel
+> must belong to the same client); `getBookedFromFunnelCount` runs
+> a real count over `leads` filtered by `source_funnel_id` + status
+> ∈ {booked, completed} + capture window (7 days default, matching
+> the hero's "Funnel performance · 7 days" label). The `/funnels/[id]`
+> hero "booked from this funnel" tile now renders real numbers
+> instead of `—`. Leads captured before the migration carry NULL
+> and are correctly excluded from the count. See CLAUDE.md
 > "Funnel analytics gaps that remain after lead threading" for the
 > resolved-vs-deferred split.
 >
@@ -709,10 +716,14 @@ Hypothetical visitor session against a published website:
 > pre-migration); per-step rendering moves to `/funnels/[id]` via
 > the new `fetchFunnelStepBreakdown`. Operator inbox now carries
 > `LeadCompletionFilter` (in-progress vs completed, derived from
-> `form_submitted` event count on each lead). The funnel-to-lead
-> attribution piece (`leads.source_funnel_id` for the hero "booked"
-> tile) ships in the next session — see the parked CLAUDE.md
-> "Funnel-to-lead attribution" item.
+> `form_submitted` event count on each lead). Funnel-to-lead
+> attribution shipped right after: migration 0044 adds
+> `leads.source_funnel_id` (nullable FK to `funnels`, set-null on
+> delete); the public submit handler persists it on funnel
+> submissions; `getBookedFromFunnelCount` runs the real count and
+> the funnel-detail hero "booked from this funnel" tile renders
+> live numbers. Closes the original CLAUDE.md "Funnel-to-lead
+> attribution" parked decision.
 > The ranked list below is preserved as the original audit record.
 
 Ranked by severity × surface area × closeability — same lens as §1 / §2.

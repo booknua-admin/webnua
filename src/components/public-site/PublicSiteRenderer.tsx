@@ -45,6 +45,7 @@ type Props =
   | {
       kind: 'funnel';
       clientId: string;
+      funnelId: string;
       brand: BrandObject;
       step: FunnelStep;
       nextStepHref: string | null;
@@ -55,12 +56,14 @@ function RenderedSection({
   brand,
   clientId,
   surfaceKind,
+  funnelId,
   nextStepHref,
 }: {
   section: Section;
   brand: BrandObject;
   clientId: string;
   surfaceKind: 'website' | 'funnel';
+  funnelId?: string | null;
   nextStepHref?: string | null;
 }) {
   if (section.enabled === false) return null;
@@ -83,6 +86,7 @@ function RenderedSection({
         publicSubmit: {
           clientId,
           surfaceKind,
+          funnelId: surfaceKind === 'funnel' ? funnelId ?? null : null,
           sourceLabel: `Form · ${label}`,
           nextStepHref,
         },
@@ -111,6 +115,7 @@ export function PublicSiteRenderer(props: Props) {
             brand={props.brand}
             clientId={props.clientId}
             surfaceKind="funnel"
+            funnelId={props.funnelId}
             nextStepHref={props.nextStepHref}
           />
         ))}

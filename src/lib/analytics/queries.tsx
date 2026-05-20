@@ -272,24 +272,47 @@ export async function fetchFunnelStepBreakdown(
   }
 }
 
-/** Booked-from-this-funnel count over the window.
- *
- *  **Returns `null` until `source_funnel_id` is added to `leads`.** The
- *  follow-up session will populate the real query (one straight count over
+/** Booked-from-this-funnel count over the window. One straight count over
  *  `leads` filtered by `source_funnel_id = funnelId` + status ∈ {booked,
- *  completed} + within `dateRange`). The signature is shaped now so the
- *  funnel hero card binds to a stable surface — the only change in the
- *  follow-up is this function's body. See CLAUDE.md parked decision
- *  "Funnel-to-lead attribution". */
+ *  completed} + capture date within the window. A `null` return means the
+ *  query failed (network / RLS); the caller renders an honest dash. A `0`
+ *  return is a real "no booked leads yet" answer and renders as 0.
+ *
+ *  Window: `dateRange` when provided; otherwise the default 7-day window so
+ *  the hero "Funnel performance · 7 days" stays consistent. The filter is
+ *  on `leads.created_at` — when the lead was captured — since that's the
+ *  funnel-conversion timestamp; a lead captured outside the window but
+ *  marked booked later is not counted as "booked from the funnel this week."
+ *
+ *  Attribution arrives via migration 0044 (`leads.source_funnel_id`); leads
+ *  captured before then carry NULL there and are excluded from the count. */
 export async function getBookedFromFunnelCount(
-  // The follow-up wires both. They are referenced via the void-cast below so
-  // strict-mode unused-arg lint doesn't fire today.
   funnelId: string,
   dateRange: { start: Date; end: Date } | null = null,
 ): Promise<number | null> {
-  void funnelId;
-  void dateRange;
-  return null;
+  try {
+    const startIso = dateRange
+      ? dateRange.start.toISOString()
+      : `${windowStartDay()}T00:00:00.000Z`;
+    let query = supabase
+      .from('leads')
+      // `source_funnel_id` was added by migration 0044 and won't appear in
+      // the generated DB types until type-gen is re-run; cast through
+      // unknown so the filter accepts the column (same pattern the route
+      // uses for the insert).
+      .select('id', { count: 'exact', head: true })
+      .eq('source_funnel_id' as unknown as never, funnelId)
+      .in('status', ['booked', 'completed'])
+      .gte('created_at', startIso);
+    if (dateRange) {
+      query = query.lte('created_at', dateRange.end.toISOString());
+    }
+    const { count, error } = await query;
+    if (error) return null;
+    return count ?? 0;
+  } catch {
+    return null;
+  }
 }
 
 type PageRollupRow = {
