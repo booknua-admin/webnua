@@ -9,7 +9,7 @@
 // =============================================================================
 
 import { AppError, normalizeError } from '@/lib/errors';
-import { generateFunnelSync } from '@/lib/funnel/generation-stub';
+import { generateFunnelStub } from '@/lib/funnel/generation-stub';
 import { supabase } from '@/lib/supabase/client';
 import { offerToRow } from '@/lib/website/offer-generate';
 import { generateSiteStub, type ClientBrief } from '@/lib/website/site-generation-stub';
@@ -165,7 +165,10 @@ export async function createClientWithGeneration(
 
   // -- 4. funnel + draft version --
   if (input.wantFunnel) {
-    const fr = generateFunnelSync(brief);
+    // Real Claude generation via /api/generate-funnel; falls back to the
+    // deterministic generator if ANTHROPIC_API_KEY is unset. Passing clientId
+    // lets the route attribute generation_log rows to this client.
+    const fr = await generateFunnelStub(brief, { clientId: client.id });
     // The funnel is served at {websiteHost}/{slug}; 'offer' is free because a
     // new client gets exactly one funnel. domain_primary is vestigial under
     // path-based routing — kept for the not-null column, set to the host.
@@ -184,7 +187,10 @@ export async function createClientWithGeneration(
       })
       .select('id')
       .single();
-    if (fnErr || !fn) throw normalizeError(fnErr ?? new Error('funnel insert failed'));
+    if (fnErr || !fn) {
+      console.error('[create-client] funnels insert failed', fnErr);
+      throw normalizeError(fnErr ?? new Error('funnel insert failed'));
+    }
     funnelId = fn.id;
 
     const steps = fr.steps.map((s) => ({ ...s, funnelId: fn.id }));
@@ -199,13 +205,19 @@ export async function createClientWithGeneration(
       })
       .select('id')
       .single();
-    if (fvErr || !fv) throw normalizeError(fvErr ?? new Error('funnel version insert failed'));
+    if (fvErr || !fv) {
+      console.error('[create-client] funnel_versions insert failed', fvErr);
+      throw normalizeError(fvErr ?? new Error('funnel version insert failed'));
+    }
 
     const { error: fnUpdErr } = await supabase
       .from('funnels')
       .update({ draft_version_id: fv.id })
       .eq('id', fn.id);
-    if (fnUpdErr) throw normalizeError(fnUpdErr);
+    if (fnUpdErr) {
+      console.error('[create-client] funnels draft pointer update failed', fnUpdErr);
+      throw normalizeError(fnUpdErr);
+    }
   }
 
   // Refresh the in-memory client cache so the new client appears in the

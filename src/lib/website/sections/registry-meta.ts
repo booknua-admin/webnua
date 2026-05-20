@@ -666,6 +666,25 @@ export const thanksConfirmationMeta: SectionMeta = {
     'referralCtaLabel',
     'referralCtaHref',
   ],
+  // Server-side consumers (the funnel generation route's thanks-step
+  // builder) read defaults from here — section modules are 'use client'
+  // and become client-reference stubs in the server bundle. Same pattern
+  // as headerMeta / footerMeta. Mirror of the DEFAULTS const in
+  // sections/thanksConfirmation.tsx.
+  defaultDataValues: {
+    theme: {},
+    icon: 'check',
+    title: "You're booked.",
+    body: "We'll SMS to confirm within 10 minutes.",
+    detailLine: "Look for a text from a local number — that's us.",
+    showReferral: true,
+    referralTag: 'REFER + EARN',
+    referralTitle: 'Know someone who needs us?',
+    referralBody:
+      'Refer a friend — they get $25 off their first job, you get $25 credit on your next.',
+    referralCtaLabel: 'Send a referral',
+    referralCtaHref: '/refer',
+  },
 };
 
 // -- Website-level singletons ----------------------------------------------

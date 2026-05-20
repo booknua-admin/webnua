@@ -71,8 +71,16 @@ onboarding-wizard Q&A → real `GenerationContext`.
   undefined (reading 'includes')` that PR #58's unmasking surfaced.
   See CLAUDE.md parked decisions ("Phase 6 generation TypeError —
   RESOLVED" and "Section metadata server/client boundary").
-- Funnel generator (`generateFunnelSync`) is still deterministic
-  — the next AI-generation increment.
+- ✅ Funnel generator wired to real Claude via `/api/generate-funnel`
+  + `generate-funnel-live.ts`. ONE Opus 4.7 call produces the
+  seven-section landing step (hero → offer → reviews → features →
+  trust → reviews → form) in the Sultanic / Suby shape, driven by
+  the chosen offer (Session 2) + brief + testimonials. Schedule +
+  thanks steps stay deterministic. Same fallback contract as the
+  website route — 503 silently falls back to `generateFunnelSync`,
+  500 unmasks via `AppError`. Writes `generation_log` rows for
+  missing-field fallbacks. See CLAUDE.md parked decision "Funnel
+  vs offer generator model choice".
 - Wizard Q&A → real `GenerationContext` — still owed (see CLAUDE.md
   parked decision).
 

@@ -30,7 +30,8 @@ export type FormFieldType =
   | 'textarea'
   | 'select'
   | 'checkbox'
-  | 'image';
+  | 'image'
+  | 'date';
 
 /** Maps a field's submitted value onto a lead identity column. One field per
  *  role; a field with no role only lands in the lead_event payload. */
@@ -119,6 +120,7 @@ const FIELD_TYPE_LABEL: Record<FormFieldType, string> = {
   select: 'Choose an option',
   checkbox: 'I agree',
   image: 'Upload a photo',
+  date: 'Preferred date',
 };
 
 const FIELD_TYPE_PLACEHOLDER: Record<FormFieldType, string> = {
@@ -129,6 +131,7 @@ const FIELD_TYPE_PLACEHOLDER: Record<FormFieldType, string> = {
   select: '',
   checkbox: '',
   image: '',
+  date: '',
 };
 
 /** A fresh field of the given type, with a sensible label, placeholder, and

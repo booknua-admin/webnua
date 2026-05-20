@@ -130,7 +130,9 @@ Write the four-field offer.`;
     const client = new Anthropic();
     const message = await client.messages.create({
       model: MODEL,
-      max_tokens: 2000,
+      // Anthropic requires max_tokens > thinking.budget_tokens; 4000 leaves
+      // ample headroom for the ~150-token four-field offer after thinking.
+      max_tokens: 4000,
       thinking: { type: 'enabled', budget_tokens: 2000 },
       system: [
         {

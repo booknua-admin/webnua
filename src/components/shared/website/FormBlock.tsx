@@ -497,6 +497,14 @@ function FieldInput({
           className={inputClass}
           style={inputStyle}
         />
+      ) : field.type === 'date' ? (
+        <input
+          type="date"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={inputClass}
+          style={inputStyle}
+        />
       ) : (
         <input
           type={field.type === 'email' ? 'email' : field.type === 'phone' ? 'tel' : 'text'}
