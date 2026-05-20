@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 
 import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import { aboutMeta } from './registry-meta';
 import { getSectionIcon } from '../section-icons';
 import {
   brandThemeDefaults,
@@ -1024,37 +1025,8 @@ function QuoteCard({ data, accent }: { data: AboutData; accent: string }) {
 }
 
 export const aboutSection = defineSection<AboutData>({
-  type: 'about',
-  label: '// ABOUT',
-  description:
-    'About / why-choose-us block — copy beside an image, with feature list, stats, signoff, or button.',
+  ...aboutMeta,
   defaultData,
   Fields: AboutFields,
   Preview: AboutPreview,
-  capabilityHints: {
-    copyFields: [
-      'eyebrow',
-      'headline',
-      'headlineAccent',
-      'sub',
-      'features',
-      'stats',
-      'noteText',
-      'buttonLabel',
-      'buttonHref',
-      'badgeValue',
-      'badgeLabel',
-      'badgeQuote',
-    ],
-    mediaFields: ['imageUrl', 'imageUrl2', 'imageUrl3'],
-  },
-  elementLabels: {
-    eyebrow: 'Eyebrow',
-    headline: 'Headline',
-    subheadline: 'Intro paragraph',
-    extra: 'Extra block',
-    overlay: 'Overlay card',
-  },
-  allowedContainers: ['page', 'funnelStep'],
-  implemented: true,
 });

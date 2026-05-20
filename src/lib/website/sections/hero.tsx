@@ -5,6 +5,7 @@ import { FormBlock } from '@/components/shared/website/FormBlock';
 
 import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import { heroMeta } from './registry-meta';
 import { brandThemeDefaults, resolveTheme, type SectionTheme } from '../section-theme';
 import { CopyField } from './_shared/CopyField';
 import { LinkField } from './_shared/LinkField';
@@ -585,32 +586,8 @@ function HeroBackground({ url, scrim, opacity }: { url: string; scrim: string; o
 }
 
 export const heroSection = defineSection<HeroData>({
-  type: 'hero',
-  label: '// HERO',
-  description: 'Above-the-fold lead — eyebrow, two-line headline, sub, two CTAs, image.',
+  ...heroMeta,
   defaultData,
   Fields: HeroFields,
   Preview: HeroPreview,
-  capabilityHints: {
-    copyFields: [
-      'eyebrow',
-      'headline',
-      'headlineAccent',
-      'sub',
-      'ctaPrimaryLabel',
-      'ctaPrimaryHref',
-      'ctaSecondaryLabel',
-      'ctaSecondaryHref',
-    ],
-    mediaFields: ['heroImageUrl'],
-  },
-  elementLabels: {
-    eyebrow: 'Eyebrow',
-    headline: 'Headline',
-    subheadline: 'Sub-headline',
-    ctaPrimary: 'Primary button',
-    ctaSecondary: 'Secondary button',
-  },
-  allowedContainers: ['page', 'funnelStep'],
-  implemented: true,
 });

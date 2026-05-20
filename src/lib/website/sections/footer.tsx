@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 
 import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import { footerMeta } from './registry-meta';
 import { getSectionIcon } from '../section-icons';
 import {
   brandThemeDefaults,
@@ -888,41 +889,8 @@ function CtaCard({
 }
 
 export const footerSection = defineSection<FooterData>({
-  type: 'footer',
-  label: '// FOOTER',
-  description:
-    'Site footer — brand block, link columns, contact details, newsletter / CTA, copyright bar.',
+  ...footerMeta,
   defaultData,
   Fields: FooterFields,
   Preview: FooterPreview,
-  capabilityHints: {
-    copyFields: [
-      'logoText',
-      'brandLine',
-      'socials',
-      'columns',
-      'contactHeading',
-      'contactAddress',
-      'contactPhone',
-      'contactEmail',
-      'newsletterTitle',
-      'newsletterText',
-      'ctaTitle',
-      'ctaText',
-      'ctaLabel',
-      'ctaHref',
-      'legalText',
-      'legalLinks',
-    ],
-    mediaFields: ['logoImageUrl'],
-  },
-  elementLabels: {
-    brand: 'Brand block',
-    columns: 'Link columns',
-    contact: 'Contact block',
-    right: 'Side block',
-    legal: 'Copyright bar',
-  },
-  allowedContainers: ['websiteFooter'],
-  implemented: true,
 });

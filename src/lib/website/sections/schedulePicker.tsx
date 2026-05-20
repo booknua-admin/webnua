@@ -4,6 +4,7 @@ import { BuilderFormSection } from '@/components/shared/builder/BuilderField';
 
 import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import { schedulePickerMeta } from './registry-meta';
 import {
   brandThemeDefaults,
   mixHex,
@@ -299,20 +300,8 @@ function SchedulePickerPreview({
 }
 
 export const schedulePickerSection = defineSection<SchedulePickerData>({
-  type: 'schedulePicker',
-  label: '// SCHEDULE PICKER',
-  description: 'Calendar-integrated booking picker (mockup — booking system lands later).',
+  ...schedulePickerMeta,
   defaultData,
   Fields: SchedulePickerFields,
   Preview: SchedulePickerPreview,
-  capabilityHints: {
-    copyFields: ['eyebrow', 'title', 'intro', 'durationLabel', 'earliestSlotLabel'],
-  },
-  elementLabels: {
-    eyebrow: 'Eyebrow',
-    headline: 'Title',
-    subheadline: 'Intro',
-  },
-  allowedContainers: ['funnelStep'],
-  implemented: true,
 });

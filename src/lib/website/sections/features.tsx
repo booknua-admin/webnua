@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 
 import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import { featuresMeta } from './registry-meta';
 import {
   brandThemeDefaults,
   mixHex,
@@ -933,24 +934,8 @@ function FeatureCard({
 }
 
 export const featuresSection = defineSection<FeaturesData>({
-  type: 'features',
-  label: '// FEATURES',
-  description:
-    'Icon / image grid showcase — header band over N item cards, optional CTA.',
+  ...featuresMeta,
   defaultData,
   Fields: FeaturesFields,
   Preview: FeaturesPreview,
-  capabilityHints: {
-    copyFields: ['eyebrow', 'headline', 'headlineAccent', 'sub', 'ctaLabel', 'ctaHref', 'items'],
-    mediaFields: ['items'],
-  },
-  elementLabels: {
-    eyebrow: 'Eyebrow',
-    headline: 'Headline',
-    subheadline: 'Sub-headline',
-    items: 'Service items',
-    cta: 'Button',
-  },
-  allowedContainers: ['page', 'funnelStep'],
-  implemented: true,
 });

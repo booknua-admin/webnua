@@ -18,6 +18,7 @@ import {
 } from '@/components/shared/builder/BuilderField';
 
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import { formMeta } from './registry-meta';
 import {
   brandThemeDefaults,
   resolveTheme,
@@ -177,20 +178,8 @@ function FormSectionPreview({
 }
 
 export const formSection = defineSection<FormSectionData>({
-  type: 'form',
-  label: '// FORM',
-  description:
-    'A lead-capture form — collects enquiries straight into the leads inbox.',
+  ...formMeta,
   defaultData,
   Fields: FormSectionFields,
   Preview: FormSectionPreview,
-  capabilityHints: {
-    copyFields: ['eyebrow', 'heading'],
-  },
-  elementLabels: {
-    eyebrow: 'Eyebrow',
-    heading: 'Heading',
-  },
-  allowedContainers: ['page', 'funnelStep'],
-  implemented: true,
 });

@@ -11,6 +11,7 @@ import { CapabilityGate } from '@/components/shared/CapabilityGate';
 import { Button } from '@/components/ui/button';
 
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import { servicesMeta } from './registry-meta';
 import { CopyField } from './_shared/CopyField';
 
 // =============================================================================
@@ -276,15 +277,8 @@ function ServicesPreview({ data, brand }: SectionPreviewProps<ServicesData>) {
 // that still carry a `services` section continue to render; it no longer
 // appears in the "Add section" picker. Remove once seed data is migrated.
 export const servicesSection = defineSection<ServicesData>({
-  type: 'services',
-  label: '// SERVICES',
-  description: 'Deprecated — superseded by the Features section.',
+  ...servicesMeta,
   defaultData,
   Fields: ServicesFields,
   Preview: ServicesPreview,
-  capabilityHints: {
-    copyFields: ['title', 'intro', 'services'],
-  },
-  allowedContainers: ['page', 'funnelStep'],
-  implemented: false,
 });

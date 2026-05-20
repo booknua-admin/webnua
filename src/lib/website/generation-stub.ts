@@ -17,7 +17,7 @@ import type {
   GenerationContext,
   PrimaryIntent,
 } from './generation-context';
-import { getSectionDefinition } from './sections';
+import { getSectionMeta } from './sections/registry-meta';
 import { aboutSection } from './sections/about';
 import { contactSection } from './sections/contact';
 import { ctaSection } from './sections/cta';
@@ -316,7 +316,11 @@ function runValidationPipeline(
   const kept: GeneratedSection[] = [];
 
   for (const s of sections) {
-    const def = getSectionDefinition(s.type);
+    // Server-safe metadata: the section .tsx modules are 'use client', so
+    // we can't reach their full defineSection() object from the server
+    // bundle. SectionMeta carries the keys + container constraints; the
+    // editor's withDefaults() fills missing fields at render time.
+    const def = getSectionMeta(s.type);
     if (!def) {
       droppedSections.push({ generationId, type: s.type, reason: 'unknown-type' });
       continue;
@@ -333,13 +337,11 @@ function runValidationPipeline(
       droppedSections.push({ generationId, type: s.type, reason: 'invalid-page-type' });
       continue;
     }
-    const example = def.defaultData() as Record<string, unknown>;
     const data = { ...s.data };
     const populated = new Set(s.populatedFields);
-    for (const key of Object.keys(example)) {
+    for (const key of def.defaultDataKeys) {
       const value = data[key];
       if (value === undefined || value === null) {
-        data[key] = example[key];
         populated.delete(key);
         fallbackLog.push({
           generationId,

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 
 import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import { ctaMeta } from './registry-meta';
 import { getSectionIcon } from '../section-icons';
 import {
   brandThemeDefaults,
@@ -1038,40 +1039,8 @@ function BackgroundLayer({ url, scrim, opacity }: { url: string; scrim: string; 
 }
 
 export const ctaSection = defineSection<CTAData>({
-  type: 'cta',
-  label: '// CTA',
-  description:
-    'Call-to-action block — centered, split-image, background-image, or dual-panel layouts.',
+  ...ctaMeta,
   defaultData,
   Fields: CTAFields,
   Preview: CTAPreview,
-  capabilityHints: {
-    copyFields: [
-      'eyebrow',
-      'headline',
-      'headlineAccent',
-      'sub',
-      'primaryLabel',
-      'primaryHref',
-      'secondaryLabel',
-      'secondaryHref',
-      'signals',
-      'panelA',
-      'panelB',
-      'dualDivider',
-    ],
-    mediaFields: ['imageUrl'],
-  },
-  elementLabels: {
-    eyebrow: 'Eyebrow',
-    headline: 'Headline',
-    subheadline: 'Sub-headline',
-    primaryCta: 'Primary button',
-    secondaryCta: 'Secondary button',
-    signals: 'Trust signals',
-    panelA: 'Left panel',
-    panelB: 'Right panel',
-  },
-  allowedContainers: ['page', 'funnelStep'],
-  implemented: true,
 });
