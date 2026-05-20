@@ -29,7 +29,14 @@ import {
 } from '@/lib/website/site-generation-stub';
 import type { Section } from '@/lib/website/types';
 
-import { findFunnel, getDraftForFunnel } from './data-stub';
+// NOTE: `./data-stub` is NOT imported at the top level. data-stub.tsx calls
+// section modules' `defaultData()` at module load (see voltlineLandingHero
+// et al.), and section modules are 'use client' — so a top-level import here
+// pulls client-reference stubs into the server bundle for `/api/generate-funnel`
+// and crashes the build with "heroSection.defaultData is not a function" at
+// module evaluation. See CLAUDE.md parked decision "Section metadata
+// server/client boundary". The no-brief legacy passthrough lazy-imports it
+// instead so the server bundle never evaluates data-stub.tsx.
 import type { Funnel, FunnelStep } from './types';
 
 export type FunnelGenerationResult = {
@@ -49,7 +56,9 @@ export async function generateFunnelStub(
   options?: { signal?: AbortSignal; instantForDev?: boolean; clientId?: string },
 ): Promise<FunnelGenerationResult> {
   if (!brief) {
-    // No brief = legacy passthrough; never hits the route.
+    // No brief = legacy passthrough; never hits the route. Lazy-imports
+    // data-stub to keep its 'use client' section-module reach out of the
+    // server bundle — see the import comment above.
     if (!options?.instantForDev) await delayWithAbort(randomDelayMs(), options?.signal);
     return voltlinePassthrough();
   }
@@ -225,8 +234,13 @@ function thanksSection(brief: ClientBrief): Section {
 
 // -- legacy passthrough -----------------------------------------------------
 
-/** No-brief fallback — the registry-backed Voltline funnel. */
-function voltlinePassthrough(): FunnelGenerationResult {
+/** No-brief fallback — the registry-backed Voltline funnel. Dynamic import
+ *  to keep `data-stub.tsx` (which calls `'use client'` section modules at
+ *  module load) out of the server bundle. Only client-side callers reach
+ *  this path; the server-side `/api/generate-funnel` route always supplies
+ *  a brief, so this dynamic import is never evaluated on the server. */
+async function voltlinePassthrough(): Promise<FunnelGenerationResult> {
+  const { findFunnel, getDraftForFunnel } = await import('./data-stub');
   const funnel = findFunnel(STUB_FUNNEL_ID);
   const draft = funnel ? getDraftForFunnel(STUB_FUNNEL_ID) : null;
   if (!funnel || !draft) {
