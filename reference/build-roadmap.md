@@ -50,6 +50,18 @@ Replace `generatePageStub` / `generateFunnelStub` with a real Claude
 API edge function; record runs in `generation_log`. Wire
 onboarding-wizard Q&A → real `GenerationContext`.
 
+- ✅ Website generator wired to real Claude via `/api/generate-site`
+  + `generate-live.ts` (PR #47 / commit `efc4374`).
+- ✅ Silent-fallback mask removed — real 500s now surface in
+  `CreateClientModal`'s error pane via `AppError`.
+- ✅ Record runs in `generation_log` — one row per §4.4 fallback
+  field, all sharing the run's `generation_id` uuid. Service-role
+  insert from the route handler.
+- Funnel generator (`generateFunnelSync`) is still deterministic
+  — the next AI-generation increment.
+- Wizard Q&A → real `GenerationContext` — still owed (see CLAUDE.md
+  parked decision).
+
 ## Phase 7 — Integrations
 
 OAuth + API: GBP, Meta Ads, GA4, Google Ads (business) · Stripe, Resend,

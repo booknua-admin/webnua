@@ -86,10 +86,14 @@ export function generateSiteSync(brief: ClientBrief): SiteGenerationResult {
 /** The site generator. Calls the real Claude-backed /api/generate-site route;
  *  falls back to the deterministic generator if that route is unconfigured
  *  (no ANTHROPIC_API_KEY) or fails. Async so the call site can show a progress
- *  card. `instantForDev` skips straight to the deterministic path. */
+ *  card. `instantForDev` skips straight to the deterministic path.
+ *
+ *  `clientId` is forwarded to the route so it can attribute generation_log
+ *  rows to the client this run belongs to (optional — dev preview surfaces
+ *  may run without a created client). */
 export async function generateSiteStub(
   brief: ClientBrief,
-  options?: { signal?: AbortSignal; instantForDev?: boolean },
+  options?: { signal?: AbortSignal; instantForDev?: boolean; clientId?: string },
 ): Promise<SiteGenerationResult> {
   if (options?.instantForDev) {
     return generateSiteSync(brief);
@@ -101,7 +105,7 @@ export async function generateSiteStub(
     response = await fetch('/api/generate-site', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(brief),
+      body: JSON.stringify({ ...brief, clientId: options?.clientId }),
       signal: options?.signal,
     });
   } catch (error) {

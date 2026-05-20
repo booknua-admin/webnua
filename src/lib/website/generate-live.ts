@@ -74,14 +74,17 @@ type RawPage = {
 };
 
 /** Generate one page with a real Claude call, then run it through the same
- *  validation + assembly pipeline the deterministic stub uses. */
+ *  validation + assembly pipeline the deterministic stub uses.
+ *
+ *  `generationId` lets the caller group all pages of one site-generation
+ *  run under a single id — the shape `generation_log.generation_id` is
+ *  designed for (one site-generation → one uuid → N rows, one per
+ *  fallback field). Defaults to a fresh uuid when called standalone. */
 export async function generatePageLive(
   ctx: GenerationContext,
+  generationId: string = crypto.randomUUID(),
 ): Promise<GenerationResult> {
   const client = new Anthropic(); // reads ANTHROPIC_API_KEY from the environment
-  const generationId = `gen-live-${Date.now().toString(36)}-${Math.random()
-    .toString(36)
-    .slice(2, 6)}`;
 
   const stream = client.messages.stream({
     model: MODEL,
