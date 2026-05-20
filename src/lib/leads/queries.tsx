@@ -47,6 +47,19 @@ type LeadActivity = {
   metaTone: 'good' | 'rust' | 'quiet';
 };
 
+/** Derived completion state of a lead's funnel run — used by the inbox
+ *  "still in progress" / "completed" filter and by internal automation
+ *  logic (a step-1-only lead is the natural target for a follow-up nudge).
+ *
+ *  NOT a user-facing lead label / grade — operators see "Leads captured: N"
+ *  as the headline metric (analytics-audit §5.1). This is a filter axis,
+ *  not a quality axis. Derived at read time from `lead_events` —
+ *  intentionally NOT a persisted column on `leads` (see CLAUDE.md parked
+ *  decision "Funnel lead completion state"). */
+export type LeadCompletion =
+  | 'in_progress'   // ≥1 form_submitted, but only step 1 (single submit)
+  | 'completed';    // ≥2 form_submitted — both steps of the funnel landed
+
 export type LeadInboxRecord = {
   id: string;
   name: string;
@@ -60,6 +73,7 @@ export type LeadInboxRecord = {
   preview: string;
   activity: LeadActivity;
   unread: boolean;
+  completion: LeadCompletion;
 };
 
 // ---- The Supabase row shapes the select returns ----
@@ -91,6 +105,47 @@ const LEAD_SELECT =
 // ---- Derivations (design doc §5 — stub fields the schema does not store) ----
 
 const MESSAGE_KINDS = new Set(['sms_in', 'sms_out', 'email_in', 'email_out']);
+
+/** Hours from a lead's first `form_submitted` event before a step-1-only
+ *  lead is considered "dropped" by internal automation logic. V1 choice —
+ *  documented in CLAUDE.md "Funnel lead completion state" with the revisit
+ *  trigger (operators report leads marked dropped too soon, or sit
+ *  in-progress forever). */
+export const LEAD_DROP_OFF_HOURS = 24;
+
+/** Count of `form_submitted` events on a lead — the spine of `LeadCompletion`.
+ *  A step-1-only visitor lands as one `form_submitted`; the threading from
+ *  PR #73 stitches their step-2 submit onto the same lead, so a completed
+ *  funnel run reads as 2. */
+function countFormSubmits(events: LeadEventRow[]): number {
+  let n = 0;
+  for (const e of events) if (e.kind === 'form_submitted') n += 1;
+  return n;
+}
+
+/** Derive the completion state. Two-state for V1: `in_progress` (1 submit)
+ *  or `completed` (≥2 submits). The 24-hour drop-off threshold is read by
+ *  `isLeadDroppedOff` for automation logic — the inbox filter does NOT need
+ *  the third state because the operator is filtering by action, not by
+ *  lead quality. */
+function deriveCompletion(events: LeadEventRow[]): LeadCompletion {
+  return countFormSubmits(events) >= 2 ? 'completed' : 'in_progress';
+}
+
+/** True when a lead has only a step-1 submit AND its first submit is
+ *  older than `LEAD_DROP_OFF_HOURS`. Used by internal automation logic
+ *  (the "send a follow-up nudge" decision); NOT surfaced as a lead label
+ *  on the inbox row. Exported so automation read paths can call it. */
+export function isLeadDroppedOff(
+  events: LeadEventRow[],
+  now: Date = new Date(),
+): boolean {
+  const submits = events.filter((e) => e.kind === 'form_submitted');
+  if (submits.length !== 1) return false;
+  const firstAt = Date.parse(submits[0].occurred_at);
+  if (!Number.isFinite(firstAt)) return false;
+  return now.getTime() - firstAt >= LEAD_DROP_OFF_HOURS * 3600 * 1000;
+}
 
 function payloadObject(payload: unknown): Record<string, unknown> {
   return payload !== null && typeof payload === 'object'
@@ -203,6 +258,7 @@ async function fetchLeadInbox(): Promise<LeadInboxRecord[]> {
     preview: derivePreview(row.lead_events),
     activity: deriveActivity(row.lead_events),
     unread: !readLeadIds.has(row.id),
+    completion: deriveCompletion(row.lead_events),
   }));
 }
 
@@ -220,6 +276,7 @@ function toClientLeadRow(record: LeadInboxRecord): ClientLeadRow {
     age: relativeTime(record.createdAt),
     unread: record.unread,
     href: `/leads/${record.id}`,
+    completion: record.completion,
   };
 }
 
@@ -239,6 +296,7 @@ function toAdminLeadRow(record: LeadInboxRecord): AdminLeadRow {
     metaTone: record.activity.metaTone,
     unread: record.unread,
     href: `/leads/${record.id}`,
+    completion: record.completion,
   };
 }
 

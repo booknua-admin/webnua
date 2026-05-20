@@ -44,6 +44,11 @@ export type LeadFilterChip = {
   count?: number;
 };
 
+/** Derived funnel-run completion state — see `LeadCompletion` in queries.tsx
+ *  for the spec. Lifted onto the row so the inbox filter can read it without
+ *  re-querying lead_events. */
+export type LeadCompletion = 'in_progress' | 'completed';
+
 // Inbox rows
 export type ClientLeadRow = {
   id: string;
@@ -57,6 +62,7 @@ export type ClientLeadRow = {
   age: string;
   unread: boolean;
   href: string;
+  completion: LeadCompletion;
 };
 
 export type AdminLeadRow = {
@@ -77,6 +83,7 @@ export type AdminLeadRow = {
   metaTone: 'good' | 'rust' | 'quiet';
   unread: boolean;
   href: string;
+  completion: LeadCompletion;
 };
 
 // Timeline event

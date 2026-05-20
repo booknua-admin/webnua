@@ -112,6 +112,34 @@ type FunnelRollupRow = {
   unique_visitors: number;
 };
 
+/** Per-step funnel totals for one funnel surface — keyed by step `page_ref`
+ *  (the funnel step's slug, '' for the landing step which is served at the
+ *  funnel root). Built from the `(surface_id, day, stage, page_ref)` rollup
+ *  rows added by migration 0042. Used by the `/funnels/[id]` detail surface
+ *  to render per-step visitor counts + step-to-step drop-off. */
+export type FunnelStepTotals = {
+  pageRef: string;
+  landing: number;
+  formStarted: number;
+  formAbandoned: number;
+  formSubmitted: number;
+  formFailed: number;
+};
+
+/** Step-by-step drop-off summary for one funnel surface. Derived at read
+ *  time — the rollup stores counts, the read layer computes the rates. */
+export type FunnelStepBreakdown = {
+  /** Per-step totals in the order the caller requested (matches `pageRefs`
+   *  argument). Steps with no rollup row resolve to a zero-filled entry so
+   *  the dashboard can render every step uniformly. */
+  steps: FunnelStepTotals[];
+  /** Overall conversion: form_submitted on the last step / page_view on the
+   *  first step. Null when there is no first-step traffic. */
+  overallConversion: number | null;
+  /** True once any step has tracked traffic. */
+  hasData: boolean;
+};
+
 /** Tracked funnel totals for one website / funnel surface. */
 export async function fetchSurfaceFunnelTotals(
   surfaceId: string,
@@ -145,6 +173,123 @@ export async function fetchSurfaceFunnelTotals(
   } catch {
     return EMPTY_FUNNEL;
   }
+}
+
+type FunnelStepRollupRow = {
+  stage: string;
+  unique_visitors: number;
+  page_ref: string | null;
+};
+
+/** Per-step funnel breakdown over the window. `pageRefs` is the ordered list
+ *  of step slugs (the funnel's landing step is served at the funnel root and
+ *  reports as `''` — pass `''` first). The reading is per-step + the implied
+ *  arrows: step N+1's `landing` divided by step N's `landing` is the reach
+ *  rate between steps; the last step's `form_submitted` divided by the first
+ *  step's `landing` is the overall conversion.
+ *
+ *  Backwards-compatible with single-page funnel surfaces: a website surface
+ *  that has only ever fired one `page_ref` produces a single-step breakdown
+ *  whose `landing` matches `fetchSurfaceFunnelTotals(...).landing` exactly.
+ *  Designed for the `/funnels/[id]` detail page per the prototype Screen 23
+ *  spec; the per-step axis is the analytics-audit §2.2 / §2.6 close. */
+export async function fetchFunnelStepBreakdown(
+  surfaceId: string,
+  pageRefs: readonly string[],
+): Promise<FunnelStepBreakdown> {
+  const emptyStep = (pageRef: string): FunnelStepTotals => ({
+    pageRef,
+    landing: 0,
+    formStarted: 0,
+    formAbandoned: 0,
+    formSubmitted: 0,
+    formFailed: 0,
+  });
+  const empty: FunnelStepBreakdown = {
+    steps: pageRefs.map(emptyStep),
+    overallConversion: null,
+    hasData: false,
+  };
+  try {
+    const { data, error } = await supabase
+      .from('analytics_funnel_daily')
+      .select('stage, unique_visitors, page_ref')
+      .eq('surface_id', surfaceId)
+      .gte('day', windowStartDay());
+    if (error || !data) return empty;
+    // Cast through unknown — `page_ref` was added to the funnel rollup PK by
+    // migration 0042 and won't appear in the generated DB types until the
+    // type-gen is re-run.
+    const rows = data as unknown as FunnelStepRollupRow[];
+    if (rows.length === 0) return empty;
+
+    // Group rows by page_ref, accumulating per-stage counts. Unknown step
+    // slugs (rollup rows whose page_ref isn't in `pageRefs`) are dropped
+    // here — they belong to a step the caller didn't ask about (e.g. an
+    // archived step slug from an earlier funnel version).
+    const byRef = new Map<string, FunnelStepTotals>();
+    for (const ref of pageRefs) byRef.set(ref, emptyStep(ref));
+    for (const r of rows) {
+      const ref = r.page_ref ?? '';
+      const bucket = byRef.get(ref);
+      if (!bucket) continue;
+      const n = r.unique_visitors ?? 0;
+      switch (r.stage) {
+        case 'landing':
+          bucket.landing += n;
+          break;
+        case 'form_started':
+          bucket.formStarted += n;
+          break;
+        case 'form_abandoned':
+          bucket.formAbandoned += n;
+          break;
+        case 'form_submitted':
+          bucket.formSubmitted += n;
+          break;
+        case 'form_failed':
+          bucket.formFailed += n;
+          break;
+      }
+    }
+
+    const steps = pageRefs.map((ref) => byRef.get(ref) ?? emptyStep(ref));
+    const firstLanding = steps[0]?.landing ?? 0;
+    const lastSubmitted = steps[steps.length - 1]?.formSubmitted ?? 0;
+    const overallConversion = firstLanding > 0
+      ? lastSubmitted / firstLanding
+      : null;
+    const hasData = steps.some(
+      (s) =>
+        s.landing > 0 ||
+        s.formStarted > 0 ||
+        s.formAbandoned > 0 ||
+        s.formSubmitted > 0,
+    );
+    return { steps, overallConversion, hasData };
+  } catch {
+    return empty;
+  }
+}
+
+/** Booked-from-this-funnel count over the window.
+ *
+ *  **Returns `null` until `source_funnel_id` is added to `leads`.** The
+ *  follow-up session will populate the real query (one straight count over
+ *  `leads` filtered by `source_funnel_id = funnelId` + status ∈ {booked,
+ *  completed} + within `dateRange`). The signature is shaped now so the
+ *  funnel hero card binds to a stable surface — the only change in the
+ *  follow-up is this function's body. See CLAUDE.md parked decision
+ *  "Funnel-to-lead attribution". */
+export async function getBookedFromFunnelCount(
+  // The follow-up wires both. They are referenced via the void-cast below so
+  // strict-mode unused-arg lint doesn't fire today.
+  funnelId: string,
+  dateRange: { start: Date; end: Date } | null = null,
+): Promise<number | null> {
+  void funnelId;
+  void dateRange;
+  return null;
 }
 
 type PageRollupRow = {

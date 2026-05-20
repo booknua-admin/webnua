@@ -2,6 +2,10 @@
 
 import { useMemo, useState } from 'react';
 
+import {
+  LeadCompletionFilter,
+  type LeadCompletionFilterValue,
+} from '@/components/shared/leads/LeadCompletionFilter';
 import { LeadRow } from '@/components/shared/leads/LeadRow';
 import { LeadTabsBar } from '@/components/shared/leads/LeadTabsBar';
 import { PageHeader } from '@/components/shared/PageHeader';
@@ -14,27 +18,38 @@ import { useClientLeadsInbox } from '@/lib/leads/queries';
 
 function ClientLeadsContent() {
   const [activeTab, setActiveTab] = useState('new');
+  // Funnel-run completion filter — opt-in narrowing, default 'all'. See
+  // `LeadCompletionFilter` for the action-not-grade framing.
+  const [completionFilter, setCompletionFilter] =
+    useState<LeadCompletionFilterValue>('all');
   const { data: leads, isLoading, error } = useClientLeadsInbox();
+
+  // Completion narrows the pool first; tabs + the visible list compose
+  // against the narrowed pool so the two filters interact correctly.
+  const completionPool = useMemo(() => {
+    const rows = leads ?? [];
+    return completionFilter === 'all'
+      ? rows
+      : rows.filter((lead) => lead.completion === completionFilter);
+  }, [leads, completionFilter]);
 
   // Tab ids map 1:1 to LeadStatus (plus `all`). Counts are recomputed from
   // the live rows so the badge and the filtered list always agree.
   const tabs = useMemo(() => {
-    const rows = leads ?? [];
     return clientLeadsTabs.map((tab) => ({
       ...tab,
       count:
         tab.id === 'all'
-          ? rows.length
-          : rows.filter((lead) => lead.status === tab.id).length,
+          ? completionPool.length
+          : completionPool.filter((lead) => lead.status === tab.id).length,
     }));
-  }, [leads]);
+  }, [completionPool]);
 
   const visibleLeads = useMemo(() => {
-    const rows = leads ?? [];
     return activeTab === 'all'
-      ? rows
-      : rows.filter((lead) => lead.status === activeTab);
-  }, [leads, activeTab]);
+      ? completionPool
+      : completionPool.filter((lead) => lead.status === activeTab);
+  }, [completionPool, activeTab]);
 
   return (
     <>
@@ -60,6 +75,11 @@ function ClientLeadsContent() {
             </Button>
           </div>
         </div>
+
+        <LeadCompletionFilter
+          value={completionFilter}
+          onChange={setCompletionFilter}
+        />
 
         <div className="overflow-hidden rounded-[14px] border border-ink/8 bg-card">
           {isLoading ? (
