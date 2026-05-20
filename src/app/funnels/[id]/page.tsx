@@ -403,7 +403,7 @@ export default function FunnelDetailPage() {
               </>
             }
             subtitle={
-              <>Performance insights appear once your funnel has live traffic.</>
+              <>Performance insights appear once your funnel has traffic.</>
             }
             items={[
               {
@@ -412,13 +412,14 @@ export default function FunnelDetailPage() {
                 glyph: 'i',
                 body: (
                   <>
-                    <strong>Analytics aren&apos;t connected yet.</strong> Once
-                    Google Analytics is wired up, Webnua will track visits,
-                    drop-off and conversion here and flag what&apos;s working
-                    or breaking.
+                    <strong>Waiting for traffic.</strong> Webnua tracks every
+                    visit, scroll, form interaction and conversion in-app — no
+                    external analytics tools needed. Once your funnel starts
+                    receiving visits, performance insights and drop-off
+                    flagging will appear here.
                   </>
                 ),
-                meta: 'Awaiting analytics integration',
+                meta: 'No traffic yet',
               },
             ]}
           />

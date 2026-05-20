@@ -3,10 +3,6 @@
 import { useMemo, useState } from 'react';
 
 import { ClientMultiSelect } from '@/components/shared/ClientMultiSelect';
-import {
-  LeadCompletionFilter,
-  type LeadCompletionFilterValue,
-} from '@/components/shared/leads/LeadCompletionFilter';
 import { LeadRow } from '@/components/shared/leads/LeadRow';
 import { LeadTabsBar } from '@/components/shared/leads/LeadTabsBar';
 import { LeadsHero } from '@/components/shared/leads/LeadsHero';
@@ -22,10 +18,6 @@ import { useIsAgencyMode, useWorkspace } from '@/lib/workspace/workspace-stub';
 function AdminLeadsContent() {
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState('new');
-  // Funnel-run completion filter — opt-in narrowing, default 'all'. See
-  // `LeadCompletionFilter` for the action-not-grade framing.
-  const [completionFilter, setCompletionFilter] =
-    useState<LeadCompletionFilterValue>('all');
   const { data: leads, isLoading, error } = useAdminLeadsInbox();
 
   // The client filter narrows the pool first; tab counts + the visible
@@ -50,17 +42,6 @@ function AdminLeadsContent() {
     [allLeads, effectiveClients],
   );
 
-  // Completion filter narrows the client-scoped pool further. Composed AFTER
-  // the client filter so the tab counts reflect the operator's current view
-  // (e.g. "in-progress within FreshHome" not "in-progress across all clients").
-  const filteredPool = useMemo(
-    () =>
-      completionFilter === 'all'
-        ? clientPool
-        : clientPool.filter((lead) => lead.completion === completionFilter),
-    [clientPool, completionFilter],
-  );
-
   // Per-client lead counts, keyed on client slug — shown in the dropdown.
   const clientCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -70,19 +51,19 @@ function AdminLeadsContent() {
     return counts;
   }, [allLeads]);
 
-  // Tab ids map 1:1 to LeadStatus. Counts recomputed from the filtered pool.
+  // Tab ids map 1:1 to LeadStatus. Counts recomputed from the client pool.
   const tabs = useMemo(
     () =>
       adminLeadsTabs.map((tab) => ({
         ...tab,
-        count: filteredPool.filter((lead) => lead.status === tab.id).length,
+        count: clientPool.filter((lead) => lead.status === tab.id).length,
       })),
-    [filteredPool],
+    [clientPool],
   );
 
   const visibleLeads = useMemo(
-    () => filteredPool.filter((lead) => lead.status === activeTab),
-    [filteredPool, activeTab],
+    () => clientPool.filter((lead) => lead.status === activeTab),
+    [clientPool, activeTab],
   );
 
   return (
@@ -126,20 +107,15 @@ function AdminLeadsContent() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <LeadTabsBar tabs={tabs} value={activeTab} onChange={setActiveTab} />
-          <LeadCompletionFilter
-            value={completionFilter}
-            onChange={setCompletionFilter}
-          />
-        </div>
+        <LeadTabsBar tabs={tabs} value={activeTab} onChange={setActiveTab} />
 
         <div className="overflow-hidden rounded-2xl border border-ink/8 bg-card">
-          <div className="grid grid-cols-[36px_180px_1fr_110px_90px_100px] items-center gap-3 border-b border-ink/8 bg-paper-2/40 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
+          <div className="grid grid-cols-[36px_180px_1fr_110px_80px_80px_100px] items-center gap-3 border-b border-ink/8 bg-paper-2/40 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
             <div />
             <div>{'// Lead'}</div>
             <div>{'// Preview'}</div>
             <div>{'// Status'}</div>
+            <div>{'// Source'}</div>
             <div>{'// Age'}</div>
             <div className="text-right">{'// Activity'}</div>
           </div>
@@ -167,6 +143,7 @@ function AdminLeadsContent() {
                 metaTone={lead.metaTone}
                 unread={lead.unread}
                 href={lead.href}
+                sourceKind={lead.sourceKind}
               />
             ))
           )}

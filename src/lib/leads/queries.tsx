@@ -30,10 +30,12 @@ import {
   type ConversationDay,
   type ConversationMessage,
   type LeadClientTone,
+  type LeadCompletion,
   type LeadConversation,
   type LeadDetail,
   type LeadQuickAction,
   type LeadRailCard,
+  type LeadSourceKind,
   type LeadStatus,
   type LeadTimelineDot,
   type LeadTimelineEvent,
@@ -46,19 +48,6 @@ type LeadActivity = {
   meta: string;
   metaTone: 'good' | 'rust' | 'quiet';
 };
-
-/** Derived completion state of a lead's funnel run — used by the inbox
- *  "still in progress" / "completed" filter and by internal automation
- *  logic (a step-1-only lead is the natural target for a follow-up nudge).
- *
- *  NOT a user-facing lead label / grade — operators see "Leads captured: N"
- *  as the headline metric (analytics-audit §5.1). This is a filter axis,
- *  not a quality axis. Derived at read time from `lead_events` —
- *  intentionally NOT a persisted column on `leads` (see CLAUDE.md parked
- *  decision "Funnel lead completion state"). */
-export type LeadCompletion =
-  | 'in_progress'   // ≥1 form_submitted, but only step 1 (single submit)
-  | 'completed';    // ≥2 form_submitted — both steps of the funnel landed
 
 export type LeadInboxRecord = {
   id: string;
@@ -74,6 +63,7 @@ export type LeadInboxRecord = {
   activity: LeadActivity;
   unread: boolean;
   completion: LeadCompletion;
+  sourceKind: LeadSourceKind;
 };
 
 // ---- The Supabase row shapes the select returns ----
@@ -91,13 +81,14 @@ type LeadJoinRow = {
   urgency: LeadUrgency;
   customer_name_snapshot: string;
   created_at: string;
+  source_kind: 'website' | 'funnel' | 'meta' | null;
   customer: { suburb: string | null } | null;
   client: { name: string; industry: string; slug: string } | null;
   lead_events: LeadEventRow[];
 };
 
 const LEAD_SELECT =
-  'id, status, urgency, customer_name_snapshot, created_at, ' +
+  'id, status, urgency, customer_name_snapshot, created_at, source_kind, ' +
   'customer:customers(suburb), ' +
   'client:clients(name, industry, slug), ' +
   'lead_events(kind, occurred_at, automation_id, payload)';
@@ -259,6 +250,7 @@ async function fetchLeadInbox(): Promise<LeadInboxRecord[]> {
     activity: deriveActivity(row.lead_events),
     unread: !readLeadIds.has(row.id),
     completion: deriveCompletion(row.lead_events),
+    sourceKind: row.source_kind ?? 'website',
   }));
 }
 
@@ -277,6 +269,7 @@ function toClientLeadRow(record: LeadInboxRecord): ClientLeadRow {
     unread: record.unread,
     href: `/leads/${record.id}`,
     completion: record.completion,
+    sourceKind: record.sourceKind,
   };
 }
 
@@ -297,6 +290,7 @@ function toAdminLeadRow(record: LeadInboxRecord): AdminLeadRow {
     unread: record.unread,
     href: `/leads/${record.id}`,
     completion: record.completion,
+    sourceKind: record.sourceKind,
   };
 }
 
@@ -911,14 +905,20 @@ async function updateLeadStatus(input: {
   if (eventError) throw normalizeError(eventError);
 }
 
-/** Change a lead's status. On success every leads query is invalidated so the
- *  inbox, detail header and timeline reflect the move. */
+/** Change a lead's status. On success every leads query AND the dashboard
+ *  / hub queries are invalidated so the inbox, the lead detail header +
+ *  timeline, and the dashboard / hub stat tiles (urgent hero, leads-by-
+ *  status counts, conversion funnel) all reflect the move. Without the
+ *  `['dashboard']` invalidation a "→ booked" status change correctly
+ *  updated the inbox row but left the dashboard counts stale until a
+ *  hard refresh. */
 export function useUpdateLeadStatus() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: updateLeadStatus,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['leads'] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
   });
 }
@@ -933,6 +933,9 @@ export function useUpdateLeadStatus() {
 export type CreateLeadInput = {
   /** The client (UUID) the website / funnel belongs to. */
   clientId: string;
+  /** Categorical surface attribution — written to `leads.source_kind` and
+   *  surfaced on the inbox row's Source column. */
+  surfaceKind: 'website' | 'funnel';
   /** Human label of the form's origin, e.g. "Form · Hero". */
   source: string;
   fields: SubmittedFormField[];
@@ -1004,6 +1007,9 @@ async function submitLead(input: CreateLeadInput): Promise<{ leadId: string }> {
 
   const { data: lead, error: leadError } = await supabase
     .from('leads')
+    // `source_kind` was added by migration 0043 and won't appear in the
+    // generated DB types until type-gen is re-run; cast through unknown so
+    // the insert accepts the column. Same pattern as the analytics queries.
     .insert({
       client_id: input.clientId,
       customer_id: customer.id,
@@ -1012,7 +1018,8 @@ async function submitLead(input: CreateLeadInput): Promise<{ leadId: string }> {
       status: 'new',
       urgency: 'none',
       source: input.source,
-    })
+      source_kind: input.surfaceKind,
+    } as unknown as never)
     .select('id')
     .single();
   if (leadError) throw normalizeError(leadError);

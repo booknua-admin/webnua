@@ -224,6 +224,7 @@ export function FormBlock({
 
       await createLead.mutateAsync({
         clientId: testSubmitCtx.clientId,
+        surfaceKind: testSubmitCtx.surfaceKind,
         source: testSubmitCtx.sourceLabel,
         fields: assembled,
       });
@@ -291,6 +292,7 @@ export function FormBlock({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           clientId: publicSubmit.clientId,
+          surfaceKind: publicSubmit.surfaceKind,
           source: publicSubmit.sourceLabel,
           fields: assembled,
           submissionId: submissionIdRef.current,
