@@ -2206,6 +2206,10 @@ export type Database = {
         | "thanksConfirmation"
         | "header"
         | "footer"
+        | "features"
+        | "gallery"
+        | "about"
+        | "contact"
       ssl_status: "pending" | "live" | "error"
       team_role: "owner" | "operator" | "junior"
       ticket_awaiting: "operator" | "client"
@@ -2413,6 +2417,10 @@ export const Constants = {
         "thanksConfirmation",
         "header",
         "footer",
+        "features",
+        "gallery",
+        "about",
+        "contact",
       ],
       ssl_status: ["pending", "live", "error"],
       team_role: ["owner", "operator", "junior"],

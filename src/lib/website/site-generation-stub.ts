@@ -1,5 +1,5 @@
 // =============================================================================
-// site-generation-stub — the multi-page website generator (stub).
+// site-generation-stub — the multi-page website generator.
 //
 // Parallel to lib/funnel/generation-stub.ts. Where `generatePageStub`
 // produces ONE page, this produces a small site (home / services / about /
@@ -7,12 +7,17 @@
 // carries the design-variety layer, so a generated site has a coherent but
 // non-repetitive set of pages.
 //
-// `generateSiteStub` calls the real Claude-backed /api/generate-site route
-// and falls back to the deterministic `generateSiteSync` when that route is
-// unconfigured (no ANTHROPIC_API_KEY) or fails — so the flow works with or
-// without an API key. The ClientBrief → SiteGenerationResult contract is the
-// same either way.
+// `generateSiteStub` calls the real Claude-backed /api/generate-site route.
+// Fallback policy (see CLAUDE.md "Phase 6 generation fallback policy"):
+//   - 503 (key not configured) → silently fall back to the deterministic
+//     `generateSiteSync` so dev / local flows still work without a key;
+//   - 500 (real generation failure) → throw `AppError` carrying the server's
+//     { name, status, detail } body so the modal surfaces it;
+//   - fetch throw (network / abort propagated) → fall back, console.warn.
+// The ClientBrief → SiteGenerationResult contract is the same either way.
 // =============================================================================
+
+import { AppError } from '@/lib/errors';
 
 import type {
   Audience,
@@ -81,37 +86,82 @@ export function generateSiteSync(brief: ClientBrief): SiteGenerationResult {
 /** The site generator. Calls the real Claude-backed /api/generate-site route;
  *  falls back to the deterministic generator if that route is unconfigured
  *  (no ANTHROPIC_API_KEY) or fails. Async so the call site can show a progress
- *  card. `instantForDev` skips straight to the deterministic path. */
+ *  card. `instantForDev` skips straight to the deterministic path.
+ *
+ *  `clientId` is forwarded to the route so it can attribute generation_log
+ *  rows to the client this run belongs to (optional — dev preview surfaces
+ *  may run without a created client). */
 export async function generateSiteStub(
   brief: ClientBrief,
-  options?: { signal?: AbortSignal; instantForDev?: boolean },
+  options?: { signal?: AbortSignal; instantForDev?: boolean; clientId?: string },
 ): Promise<SiteGenerationResult> {
   if (options?.instantForDev) {
     return generateSiteSync(brief);
   }
 
   // Try the real Claude-backed generator first.
+  let response: Response;
   try {
-    const response = await fetch('/api/generate-site', {
+    response = await fetch('/api/generate-site', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(brief),
+      body: JSON.stringify({ ...brief, clientId: options?.clientId }),
       signal: options?.signal,
     });
-    if (response.ok) {
-      return (await response.json()) as SiteGenerationResult;
-    }
-    // 503 (not configured) / 500 (failed) → fall through to the stub.
   } catch (error) {
-    // A user-initiated abort must propagate; anything else → fall back.
+    // A user-initiated abort must propagate; a network failure falls back so
+    // the create flow doesn't hard-fail on transient connectivity issues.
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw error;
     }
+    console.warn('[generate-site] fetch failed, falling back to stub generator', error);
+    await delayWithAbort(randomDelayMs(), options?.signal);
+    return generateSiteSync(brief);
   }
 
-  // Fallback — keep the synthetic delay so the progress card still shows.
-  await delayWithAbort(randomDelayMs(), options?.signal);
-  return generateSiteSync(brief);
+  if (response.ok) {
+    return (await response.json()) as SiteGenerationResult;
+  }
+
+  // 503 = generation-not-configured (no ANTHROPIC_API_KEY). Intentional
+  // graceful degrade for dev — fall back to the deterministic generator.
+  if (response.status === 503) {
+    console.warn(
+      '[generate-site] /api/generate-site returned 503 (not configured), using stub generator',
+    );
+    await delayWithAbort(randomDelayMs(), options?.signal);
+    return generateSiteSync(brief);
+  }
+
+  // Any other non-OK status → real failure. Surface the server's
+  // { error, name, status, detail } body via AppError so the modal can show
+  // the actual Claude error instead of silently degrading to the stub.
+  const body = await readErrorBody(response);
+  throw AppError.unexpected(body, formatGenerationErrorMessage(response.status, body));
+}
+
+type GenerationErrorBody = {
+  error?: string;
+  name?: string;
+  status?: number;
+  detail?: string;
+};
+
+async function readErrorBody(response: Response): Promise<GenerationErrorBody> {
+  try {
+    return (await response.json()) as GenerationErrorBody;
+  } catch {
+    return {};
+  }
+}
+
+function formatGenerationErrorMessage(httpStatus: number, body: GenerationErrorBody): string {
+  // Server contract: { error, name, status, detail } — `detail` is the
+  // upstream Anthropic message; `status` is the Anthropic HTTP status.
+  const upstream = body.status ? ` ${body.status}` : '';
+  const name = body.name ?? 'Error';
+  const detail = body.detail?.trim() || body.error || `HTTP ${httpStatus}`;
+  return `Generation failed — ${name}${upstream}: ${detail}`;
 }
 
 function delayWithAbort(ms: number, signal?: AbortSignal): Promise<void> {

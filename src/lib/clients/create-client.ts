@@ -108,8 +108,9 @@ export async function createClientWithGeneration(
   // -- 3. website + draft version --
   if (input.wantWebsite) {
     // Real Claude generation via /api/generate-site; falls back to the
-    // deterministic generator if ANTHROPIC_API_KEY is unset or the call fails.
-    const site = await generateSiteStub(brief);
+    // deterministic generator if ANTHROPIC_API_KEY is unset. Passing clientId
+    // lets the route attribute generation_log rows to this client.
+    const site = await generateSiteStub(brief, { clientId: client.id });
     const { data: web, error: webErr } = await supabase
       .from('websites')
       .insert({
