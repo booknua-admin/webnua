@@ -445,7 +445,14 @@ export function CreateClientModal({
                 checked={wantFunnel}
                 onToggle={() => setWantFunnel((v) => !v)}
               />
-              {error ? <p className="text-[12px] text-warn">{error}</p> : null}
+              {error ? (
+                <div className="rounded-md border border-warn/40 border-l-4 border-l-warn bg-warn/[0.06] px-3 py-2 text-[12px] text-warn">
+                  <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em]">
+                    Generation error
+                  </p>
+                  <p className="mt-1 whitespace-pre-wrap break-words">{error}</p>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
