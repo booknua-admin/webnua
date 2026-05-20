@@ -84,6 +84,36 @@ The customer-pain framing may reference cost worries ("worried about surprise ch
 
 A specific dollar/euro/pound figure may appear in the offer ONLY if the operator's brief contains that exact figure.
 
+# Worked example (Voltline Electrical — emergency callout)
+
+Brief input:
+- Industry: residential electrical contractor
+- Service area: Perth coastal suburbs (Cottesloe, Mosman Park, Claremont)
+- Funnel service: emergency callout for power-out situations
+- Customer pain: power has gone out unexpectedly, often at night, often during a storm. Family is left without lights, working refrigeration, or heating. Customer has tried the obvious fixes (resetting the switchboard, checking with neighbours) and needs a qualified person on site fast, with no surprise bill.
+- Guarantee: 2-hour on-site response, licensed electrician, fixed quote in writing before any work starts, free callout if we can't fix it on the first visit
+
+Correct output:
+
+\`\`\`json
+{
+  "headline": "Power out at midnight? On site within 2 hours, 7 days a week.",
+  "promise": "We answer 24/7. Licensed electrician on site within 2 hours of your call — fixed quote before we start work.",
+  "risk_reversal": "Free callout if we can't fix it on the first visit.",
+  "cta_text": "Get my power back on"
+}
+\`\`\`
+
+Why this output works:
+- headline (13 words is fine): names the exact pain ("Power out at midnight?") and the exact outcome ("on site within 2 hours, 7 days a week"). The customer recognises themselves and the result they want in one line.
+- promise (24 words): three concrete things — 24/7 answer, 2-hour on-site, fixed quote in writing — taken directly from the brief's guarantee. No invented numbers; no vague "fast" or "reliable".
+- risk_reversal (10 words): the exact guarantee from the brief, restated tightly. The customer can picture it and find it fair. No "satisfaction guaranteed" filler.
+- cta_text (5 words): first-person, action-led, names the OUTCOME the customer is buying ("my power back on"). Not "Submit", not "Get started", not "Book now".
+- No invented prices anywhere — the brief carried no price, so the offer uses qualitative pricing language ("fixed quote before we start work").
+- No banned vocabulary — no "comprehensive", "premium", "transform", "leverage", "industry-leading", etc.
+
+Your output should match this quality bar, adapted to the actual brief you receive.
+
 # Output contract
 
 Return ONLY a single JSON object — no markdown fences, no commentary, no prose before or after. Exactly this shape:

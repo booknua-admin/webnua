@@ -123,6 +123,170 @@ You are writing copy for the FIRST step of a two-step lead-capture funnel. The v
 
 ${LEAD_CAPTURE_SECTION_PLAN.map((s, i) => `${i + 1}. ${s.type}\n   Role: ${s.role}\n   ${s.brief}`).join('\n\n')}
 
+# Worked example (Voltline Electrical — emergency callout funnel, step 1)
+
+Anchor brief: Voltline Electrical, residential electrical contractor in Perth coastal suburbs (Cottesloe, Mosman Park, Claremont). Owner Mark, 15 years on the tools. This funnel sells emergency callouts for power-out situations. The chosen offer is { headline: "Power out at midnight? On site within 2 hours, 7 days a week.", promise: "We answer 24/7. Licensed electrician on site within 2 hours of your call — fixed quote before we start work.", risk_reversal: "Free callout if we can't fix it on the first visit.", cta_text: "Get my power back on" }. Voice: casual-but-credible, urgency 3/5.
+
+A high-quality step-1 lead-capture page for that brief, in the locked Suby/Sultanic section order:
+
+\`\`\`json
+{
+  "sections": [
+    {
+      "type": "hero",
+      "data": {
+        "layout": "split",
+        "contentAlign": "left",
+        "headlineSize": "xl",
+        "eyebrow": "// PERTH COAST · 24/7",
+        "headline": "Power out at midnight? On site within 2 hours, 7 days a week.",
+        "headlineAccent": "Licensed electrician, fixed quote before we start.",
+        "sub": "Mark and the Voltline team answer 24/7. We diagnose the fault, give you a fixed price in writing, and only start work when you say go. Free callout if we can't fix it on the first visit.",
+        "ctaPrimaryLabel": "Get my power back on",
+        "ctaPrimaryHref": "#form",
+        "ctaSecondaryLabel": "Call now",
+        "ctaSecondaryHref": "tel:0893841100"
+      }
+    },
+    {
+      "type": "offer",
+      "data": {
+        "layout": "card",
+        "headerAlign": "center",
+        "headlineSize": "l",
+        "tag": "// EMERGENCY CALLOUT",
+        "title": "On site in 2 hours. Fixed quote before we work.",
+        "sub": "We answer 24/7. Licensed electrician on site within 2 hours of your call — fixed quote before we start work.",
+        "inclusions": [
+          { "id": "inc-1", "text": "24/7 phone answered — by Mark or the on-call sparkie" },
+          { "id": "inc-2", "text": "On site within 2 hours of your call, anywhere on the Perth coast" },
+          { "id": "inc-3", "text": "Diagnosis and a fixed quote BEFORE any work starts" },
+          { "id": "inc-4", "text": "Licensed EC10437 — fully insured, paperwork lodged" }
+        ],
+        "scarcityCopy": "Storm-season nights book out fast — calling now puts you in the next on-the-road slot.",
+        "ctaVisible": true,
+        "ctaLabel": "Get my power back on",
+        "ctaHref": "#form"
+      }
+    },
+    {
+      "type": "reviews",
+      "data": {
+        "layout": "spotlight",
+        "headerAlign": "center",
+        "headlineSize": "m",
+        "eyebrow": "// 11PM ON A SUNDAY",
+        "headline": "Sarah called Voltline at 11pm. Lights were back on by 12:20am.",
+        "items": [
+          {
+            "id": "rev-1",
+            "quote": "Switchboard tripped at 11pm on a Sunday and wouldn't reset. I called four electricians; Mark was the only one who picked up. He was at the door within an hour, diagnosed it as a failed RCD, fixed price quoted on the spot, lights back on before midnight. I will never call anyone else.",
+            "authorName": "Sarah W.",
+            "authorRole": "Cottesloe",
+            "rating": 5
+          }
+        ]
+      }
+    },
+    {
+      "type": "features",
+      "data": {
+        "layout": "cards",
+        "mediaStyle": "icon",
+        "iconStyle": "soft",
+        "columns": 2,
+        "headerAlign": "left",
+        "headlineSize": "l",
+        "eyebrow": "// WHAT YOU GET",
+        "headline": "Four things that make a midnight callout actually work.",
+        "items": [
+          {
+            "id": "feat-1",
+            "icon": "phone",
+            "title": "24/7 phone — answered by a human",
+            "description": "Mark or the on-call sparkie picks up. No call centre, no \\"we'll get back to you tomorrow\\"."
+          },
+          {
+            "id": "feat-2",
+            "icon": "clock",
+            "title": "On site within 2 hours",
+            "description": "From Fremantle to Scarborough. We drive vans loaded with the parts most callouts need so the second trip is rare."
+          },
+          {
+            "id": "feat-3",
+            "icon": "circle-check",
+            "title": "Fixed quote before work starts",
+            "description": "We diagnose first, write the price down, and only start when you sign off. No surprise charges, no \\"while I was there\\" extras."
+          },
+          {
+            "id": "feat-4",
+            "icon": "shield-check",
+            "title": "Licensed and insured",
+            "description": "EC10437 · Master Electricians member. Paperwork lodged with Western Power when the job needs it."
+          }
+        ]
+      }
+    },
+    {
+      "type": "trust",
+      "data": {
+        "display": "stats",
+        "columns": 4,
+        "headerAlign": "center",
+        "headlineSize": "m",
+        "eyebrow": "// THE GUARANTEE",
+        "headline": "Free callout if we can't fix it on the first visit.",
+        "sub": "That's the deal. If we have to come back a second time to finish a job we should have finished the first time, the callout is on us.",
+        "items": [
+          { "id": "ts-1", "icon": "clock", "value": "2hr", "label": "Average on-site time" },
+          { "id": "ts-2", "icon": "shield-check", "value": "EC10437", "label": "Licensed · fully insured" },
+          { "id": "ts-3", "icon": "circle-check", "value": "98%", "label": "Fixed on first visit" },
+          { "id": "ts-4", "icon": "star", "value": "4.9 / 5", "label": "180+ Google reviews" }
+        ]
+      }
+    },
+    {
+      "type": "reviews",
+      "data": {
+        "layout": "spotlight",
+        "headerAlign": "center",
+        "headlineSize": "m",
+        "eyebrow": "// STILL DECIDING?",
+        "headline": "James was worried about the bill. He got the bill BEFORE the work.",
+        "items": [
+          {
+            "id": "rev-2",
+            "quote": "Honestly, I expected a midnight callout to mean a four-figure bill before I even saw the electrician. Mark drove over, found a tripped RCD, quoted the exact replacement plus the callout, and that was the bill. Not a dollar more. First time I've felt looked after by a tradie in 20 years.",
+            "authorName": "James K.",
+            "authorRole": "Mosman Park",
+            "rating": 5
+          }
+        ]
+      }
+    },
+    {
+      "type": "form",
+      "data": {
+        "eyebrow": "// 30 SECONDS",
+        "heading": "Get my power back on"
+      }
+    }
+  ]
+}
+\`\`\`
+
+What this example demonstrates:
+- The hero headline is the offer headline VERBATIM. \`headlineAccent\` is a SECOND LINE in the accent colour, not a fragment of the headline.
+- The same offer copy threads through hero → offer → trust. One offer, one funnel, one ask.
+- Social proof BEFORE the value stack (reviews → features), and a second social-proof block AFTER the value stack handling the price objection — that is the Suby/Sultanic shape.
+- Reviews are specific: named author, suburb, concrete job detail (Sunday 11pm, tripped RCD, fixed before midnight). No "Great service!".
+- Features (the value stack) are four concrete components of the offer. Each title is a tangible thing the customer gets; each description is one sentence on why it matters.
+- Trust signals carry real numbers (15 years equivalent represented via "2hr / EC10437 / 98% / 4.9"). No "industry-leading" or "world-class".
+- The \`form\` section has only \`eyebrow\` + \`heading\` — NO \`fields\` array. Field UI is wired in code.
+- Icons (phone, clock, circle-check, shield-check, star) all come from the curated set.
+
+Your output should match this quality bar, adapted to the actual brief you receive. Do NOT copy Voltline's specifics (Perth, electrician, 2-hour response, named suburbs, EC10437) into a different business's funnel.
+
 # Output contract
 
 Return ONLY a single JSON object — no markdown fences, no commentary, no prose before or after. The exact shape:
@@ -190,6 +354,116 @@ The visitor has already given name + email on the previous step. The job of this
 # Section plan (you MUST output sections in this exact order)
 
 ${QUALIFICATION_SECTION_PLAN.map((s, i) => `${i + 1}. ${s.type}\n   Role: ${s.role}\n   ${s.brief}`).join('\n\n')}
+
+# Worked example (Voltline Electrical — emergency callout funnel, step 2)
+
+Anchor brief: same Voltline Electrical funnel as step 1 (the same chosen offer is in play; the visitor has just given their name + email and landed here). Voice: casual-but-credible, urgency 3/5.
+
+A high-quality step-2 qualification page for that brief:
+
+\`\`\`json
+{
+  "sections": [
+    {
+      "type": "hero",
+      "data": {
+        "layout": "split",
+        "contentAlign": "left",
+        "headlineSize": "l",
+        "eyebrow": "// ONE MORE STEP",
+        "headline": "Almost there. Let's lock in your callout.",
+        "headlineAccent": "30 seconds to confirm.",
+        "sub": "We've got your name and email. A few more details below — the address, when you'd like us there, and the rough budget — and we'll have an electrician on the way.",
+        "ctaPrimaryLabel": "Confirm my booking",
+        "ctaPrimaryHref": "#form"
+      }
+    },
+    {
+      "type": "reviews",
+      "data": {
+        "layout": "grid",
+        "columns": 2,
+        "headerAlign": "center",
+        "headlineSize": "m",
+        "eyebrow": "// AFTER THE CALL",
+        "headline": "What actually happens after you confirm.",
+        "items": [
+          {
+            "id": "rev-1",
+            "quote": "Confirmation SMS hit my phone the second I hit submit. Mark called within ten minutes to confirm the address. The van was on my street within the hour. Exactly what he said would happen.",
+            "authorName": "Priya S.",
+            "authorRole": "Claremont",
+            "rating": 5
+          },
+          {
+            "id": "rev-2",
+            "quote": "Fixed quote on the spot, work done while we ate dinner. The total on the invoice was the total I'd been quoted — no \\"oh I also had to do\\" extras. That alone is rare in this town.",
+            "authorName": "David T.",
+            "authorRole": "Cottesloe",
+            "rating": 5
+          }
+        ]
+      }
+    },
+    {
+      "type": "features",
+      "data": {
+        "layout": "cards",
+        "mediaStyle": "icon",
+        "iconStyle": "soft",
+        "columns": 4,
+        "headerAlign": "center",
+        "headlineSize": "m",
+        "eyebrow": "// WHAT HAPPENS NEXT",
+        "headline": "Four steps. Roughly two hours from now.",
+        "items": [
+          {
+            "id": "step-1",
+            "icon": "message",
+            "title": "Confirmation SMS",
+            "description": "You'll get a text confirming your details within 60 seconds. No surprises."
+          },
+          {
+            "id": "step-2",
+            "icon": "phone",
+            "title": "Mark calls back",
+            "description": "Within 10 minutes, the on-call electrician calls to confirm the address and the nature of the fault."
+          },
+          {
+            "id": "step-3",
+            "icon": "circle-check",
+            "title": "Fixed quote on site",
+            "description": "Electrician arrives, diagnoses, writes the price down, and only starts when you sign off."
+          },
+          {
+            "id": "step-4",
+            "icon": "shield-check",
+            "title": "Work done, paperwork lodged",
+            "description": "Job finished, certificate emailed the next morning, paperwork sent to Western Power if it's needed."
+          }
+        ]
+      }
+    },
+    {
+      "type": "form",
+      "data": {
+        "eyebrow": "// FINAL 30 SECONDS",
+        "heading": "Lock in your callout"
+      }
+    }
+  ]
+}
+\`\`\`
+
+What this example demonstrates:
+- The hero does NOT re-pitch the offer — it reframes the visitor's position ("almost there") and steers them to finish. \`headlineAccent\` is a second line ("30 seconds to confirm.") — not a duplicate.
+- Reviews are picked for the decision-stage angle: punctual arrival, fixed-quote held, work tidy. Different testimonials than step 1 (Priya / David, not Sarah / James).
+- The features section is a LITERAL sequence the visitor will experience next — four concrete steps, not marketing-speak. Each title is 3–5 words; each description is one sentence on what that step looks like.
+- Icons (message, phone, circle-check, shield-check) come from the curated set and match each step.
+- The \`form\` section has only \`eyebrow\` + \`heading\` — NO \`fields\` array.
+- No new offer copy. No re-sell. The page assumes the visitor already wants the service.
+
+Your output should match this quality bar, adapted to the actual brief you receive. Do NOT copy Voltline's specifics into a different business's funnel.
 
 # Output contract
 

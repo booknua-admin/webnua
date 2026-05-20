@@ -18,7 +18,8 @@ export type PromptBlock = {
     | 'brand'
     | 'page-questions'
     | 'existing-pages'
-    | 'registry-catalog';
+    | 'registry-catalog'
+    | 'example';
   heading: string;
   body: string;
 };
@@ -55,6 +56,11 @@ export function buildPromptBlocks(ctx: GenerationContext): PromptBlock[] {
     id: 'registry-catalog',
     heading: 'Available section types',
     body: buildRegistryBlock(ctx),
+  });
+  blocks.push({
+    id: 'example',
+    heading: 'Example output (Voltline Electrical home page)',
+    body: WORKED_EXAMPLE_BODY,
   });
   return blocks;
 }
@@ -564,3 +570,204 @@ function quoteBlock(text: string): string {
 export function intentLabel(intent: PrimaryIntent): string {
   return describeIntent(intent);
 }
+
+// =============================================================================
+// Worked example — Voltline Electrical, residential electrical contractor,
+// Perth coastal suburbs. Six-section home page demonstrating the shape, the
+// quality bar (specific copy, named reviews with suburbs, concrete numbers),
+// and the variant + icon choices the catalog above describes. The model
+// should produce output of THIS quality, adapted to the brief it receives.
+//
+// The example is shared across all four AI generation prompts (website,
+// funnel step 1, funnel step 2, offer) so the model sees a single consistent
+// standard. See CLAUDE.md parked decision "Worked examples".
+// =============================================================================
+
+const WORKED_EXAMPLE_BODY = `Here is a complete, well-formed output for a Voltline Electrical home page (residential electrical contractor in Perth coastal suburbs — Cottesloe, Mosman Park, Claremont; owner Mark, 15 years on the tools; differentiators are fixed-quote pricing and same-day emergency response). Use this as the model for shape, specificity, and copy quality. Your output should match this structure and quality bar, adapted to the brief you actually receive — do NOT copy Voltline's specifics (Perth, electrician, 2-hour response, suburbs, owner name) into a different business's page.
+
+\`\`\`json
+{
+  "title": "Voltline Electrical · Cottesloe, Mosman Park, Claremont",
+  "slug": "home",
+  "seo": {
+    "title": "Residential electrician — Cottesloe & Perth coast | Voltline",
+    "description": "Fixed-quote residential electrical work across Cottesloe, Mosman Park and Claremont. Switchboards, EV chargers, emergency callouts. Licensed, on time, no surprise charges."
+  },
+  "sections": [
+    {
+      "type": "hero",
+      "enabled": true,
+      "data": {
+        "layout": "split",
+        "imageSide": "right",
+        "contentAlign": "left",
+        "headlineSize": "xl",
+        "subSize": "m",
+        "eyebrow": "// PERTH COASTAL SUBURBS",
+        "headline": "Electrical work without the runaround.",
+        "headlineAccent": "Fixed quote before we touch a wire.",
+        "sub": "Mark and the Voltline team have been wiring Cottesloe, Mosman Park and Claremont homes for 15 years. Switchboards, EV chargers, emergency callouts — done the way Mark would want it done for his own family.",
+        "ctaPrimaryVisible": true,
+        "ctaPrimaryLabel": "Book a quote",
+        "ctaPrimaryHref": "#contact",
+        "ctaSecondaryVisible": true,
+        "ctaSecondaryLabel": "Call (08) 9384 1100",
+        "ctaSecondaryHref": "tel:0893841100"
+      }
+    },
+    {
+      "type": "trust",
+      "enabled": true,
+      "data": {
+        "display": "stats",
+        "columns": 4,
+        "headerAlign": "center",
+        "headlineSize": "m",
+        "eyebrow": "// WHY HOMEOWNERS PICK US",
+        "headline": "15 years on the tools, no surprises on the bill.",
+        "sub": "Licensed, insured, and honest about what a job will cost before we start.",
+        "items": [
+          { "id": "ts-1", "icon": "clock", "value": "15", "label": "Years wiring Perth homes" },
+          { "id": "ts-2", "icon": "shield-check", "value": "Licensed", "label": "EC10437 · Master Electricians" },
+          { "id": "ts-3", "icon": "circle-check", "value": "Fixed", "label": "Quote before we start" },
+          { "id": "ts-4", "icon": "star", "value": "4.9 / 5", "label": "Across 180+ Google reviews" }
+        ]
+      }
+    },
+    {
+      "type": "features",
+      "enabled": true,
+      "data": {
+        "layout": "cards",
+        "mediaStyle": "icon",
+        "iconStyle": "soft",
+        "columns": 3,
+        "headerAlign": "left",
+        "headlineSize": "l",
+        "eyebrow": "// WHAT WE DO",
+        "headline": "Three things we get called for, every week.",
+        "sub": "We don't take every job — only the ones we know we can do well. These are the three we do most.",
+        "items": [
+          {
+            "id": "feat-1",
+            "icon": "zap",
+            "title": "Switchboard upgrades",
+            "description": "Old fuse boards swapped for safety-switched boards, paperwork lodged with Western Power. One day on site for most homes."
+          },
+          {
+            "id": "feat-2",
+            "icon": "plug",
+            "title": "EV charger installation",
+            "description": "Tesla, Polestar, BYD wallboxes installed with the right circuit and the right protection. Quoted before the install, set up while we're there."
+          },
+          {
+            "id": "feat-3",
+            "icon": "phone",
+            "title": "Emergency callouts",
+            "description": "Power gone? On site within 2 hours, 7 days a week. We diagnose, fix what we can fix, quote the rest before any work starts."
+          }
+        ]
+      }
+    },
+    {
+      "type": "reviews",
+      "enabled": true,
+      "data": {
+        "layout": "grid",
+        "columns": 3,
+        "headerAlign": "center",
+        "headlineSize": "m",
+        "eyebrow": "// REVIEWS",
+        "headline": "What our Cottesloe and Mosman Park customers say.",
+        "sub": "180+ reviews on Google. Three recent ones below.",
+        "showRatingSummary": true,
+        "ratingStars": 5,
+        "ratingValue": "4.9",
+        "ratingCount": "180+ Google reviews",
+        "items": [
+          {
+            "id": "rev-1",
+            "quote": "Switchboard tripped at 11pm on a Sunday. Mark answered the phone himself and was at the door before midnight. Fixed quote, fixed the problem, lights back on.",
+            "authorName": "Sarah W.",
+            "authorRole": "Cottesloe",
+            "rating": 5
+          },
+          {
+            "id": "rev-2",
+            "quote": "Got three quotes for the EV charger. Voltline wasn't the cheapest but Mark walked me through exactly what he'd do and why. No upsells. Job took half a day.",
+            "authorName": "James K.",
+            "authorRole": "Mosman Park",
+            "rating": 5
+          },
+          {
+            "id": "rev-3",
+            "quote": "Buyer's inspection flagged the switchboard before settlement. Voltline replaced it inside a week and lodged the paperwork with Western Power. Settlement went through on time.",
+            "authorName": "Priya S.",
+            "authorRole": "Claremont",
+            "rating": 5
+          }
+        ]
+      }
+    },
+    {
+      "type": "offer",
+      "enabled": true,
+      "data": {
+        "layout": "card",
+        "headerAlign": "center",
+        "headlineSize": "l",
+        "tag": "// FIRST-TIME JOBS",
+        "title": "Honest pricing — written down before we start.",
+        "sub": "We come out, look at the work, write the quote down, and only start when you say yes. The price you sign is the price you pay.",
+        "priceLabel": "Free on-site quote",
+        "priceCaption": "Most quotes given within 48 hours of booking.",
+        "inclusions": [
+          { "id": "inc-1", "text": "Quote in writing before any work starts" },
+          { "id": "inc-2", "text": "Fixed total — no \\"while I was there\\" surprises" },
+          { "id": "inc-3", "text": "Licensed electrician on the job, not a sub" },
+          { "id": "inc-4", "text": "12-month workmanship guarantee in writing" }
+        ],
+        "scarcityCopy": "Booking 1–2 weeks ahead for routine work; emergency callouts same day.",
+        "ctaVisible": true,
+        "ctaLabel": "Book a quote",
+        "ctaHref": "#contact"
+      }
+    },
+    {
+      "type": "cta",
+      "enabled": true,
+      "data": {
+        "layout": "centered",
+        "align": "center",
+        "headlineSize": "l",
+        "eyebrow": "// READY WHEN YOU ARE",
+        "headline": "Power out, or planning ahead?",
+        "headlineAccent": "Either way, call Mark.",
+        "sub": "Two-hour response for emergencies. 48-hour quote turnaround for everything else.",
+        "primaryVisible": true,
+        "primaryLabel": "Book a quote",
+        "primaryHref": "#contact",
+        "secondaryVisible": true,
+        "secondaryLabel": "Call (08) 9384 1100",
+        "secondaryHref": "tel:0893841100",
+        "showSignals": true,
+        "signals": [
+          { "id": "sig-1", "icon": "clock", "label": "2-hour emergency response" },
+          { "id": "sig-2", "icon": "shield-check", "label": "Licensed EC10437" },
+          { "id": "sig-3", "icon": "circle-check", "label": "Fixed quote in writing" }
+        ]
+      }
+    }
+  ]
+}
+\`\`\`
+
+What this example demonstrates:
+- Every section reinforces the SAME pair of differentiators (fixed quote + fast response). One page, one job.
+- Concrete numbers everywhere: 15 years, 180+ reviews, 4.9 rating, 2-hour response, 48-hour quote, licence number, suburbs named by name.
+- \`headlineAccent\` on hero + final CTA is a SECOND LINE in the brand accent colour ("Fixed quote before we touch a wire." / "Either way, call Mark.") — not a duplicate of the headline, not a fragment of it.
+- Reviews are named, suburb-tagged, and reference an actual job done (switchboard at 11pm, EV charger half-day install, settlement on time). No "Great service!" filler.
+- Icons come from the curated set (clock, shield-check, circle-check, star, zap, plug, phone) — every \`icon\` value is one of the catalogued ids.
+- Variant choices match the catalog (\`layout: 'cards'\`, \`mediaStyle: 'icon'\`, \`iconStyle: 'soft'\`, \`columns: 3\` for features; \`display: 'stats'\` for trust; \`layout: 'grid'\` for reviews) — closed enums, exactly the catalogued values.
+- No \`theme\` field on any section. No banned vocabulary (no "comprehensive", "transform", "premium", "leverage", etc.). No invented prices.
+`;
