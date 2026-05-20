@@ -19,6 +19,13 @@
 // the client row exists, but generation_log.client_id is NOT NULL. Failures
 // land in console + the 500 detail; success is observable through the
 // resulting funnels.funnel_offer row. Matches the generate-seo precedent.
+//
+// Invented-price guard: the model occasionally invents prices when the
+// brief doesn't carry one. After the first call, if a currency symbol or
+// price pattern appears in the output AND no pricing was in the brief, we
+// retry ONCE with a stronger no-pricing instruction prepended. Cap at one
+// retry per call. Observability is console-only (see generation_log note
+// above). See CLAUDE.md parked decision "Offer pricing".
 // =============================================================================
 
 import { NextResponse } from 'next/server';
@@ -66,6 +73,17 @@ NEVER use any of: "comprehensive", "discerning", "trusted partner", "cutting-edg
 
 NEVER invent facts, prices, response times, or guarantees that are not in the brief. Use ONLY the timeframes, numbers, and promises the operator provided.
 
+# Pricing — when the brief carries no specific price
+
+If the brief carries no specific price number, do NOT invent one. No "$99", no "€50 fixed", no "from $200". Instead, use qualitative pricing language in the promise field:
+  - "Honest upfront pricing, no surprises"
+  - "Free quote, no obligation"
+  - "Fixed-price quotes — what we say is what you pay"
+
+The customer-pain framing may reference cost worries ("worried about surprise charges", "scared of a bill blowout") but never names a specific number unless one is in the brief. The risk_reversal field may state "free quote" or "no callout fee" only when the brief explicitly carries that guarantee.
+
+A specific dollar/euro/pound figure may appear in the offer ONLY if the operator's brief contains that exact figure.
+
 # Output contract
 
 Return ONLY a single JSON object — no markdown fences, no commentary, no prose before or after. Exactly this shape:
@@ -110,7 +128,12 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  const userMessage = `Brief
+  const briefText = [industry, serviceArea, funnelService, funnelCustomerPain, funnelGuarantee].join(
+    '\n',
+  );
+  const briefHasPrice = hasPricePattern(briefText);
+
+  const baseUserMessage = `Brief
 -----
 Industry: ${industry || '(not specified)'}
 Service area: ${serviceArea || '(not specified)'}
@@ -128,29 +151,39 @@ Write the four-field offer.`;
 
   try {
     const client = new Anthropic();
-    const message = await client.messages.create({
-      model: MODEL,
-      // Anthropic requires max_tokens > thinking.budget_tokens; 4000 leaves
-      // ample headroom for the ~150-token four-field offer after thinking.
-      max_tokens: 4000,
-      thinking: { type: 'enabled', budget_tokens: 2000 },
-      system: [
-        {
-          type: 'text',
-          text: SYSTEM_PROMPT,
-          cache_control: { type: 'ephemeral' },
-        },
-      ],
-      messages: [{ role: 'user', content: userMessage }],
-    });
 
-    const text = message.content
-      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-      .map((block) => block.text)
-      .join('')
-      .trim();
+    // First attempt.
+    let raw = await callOffer(client, baseUserMessage);
 
-    const raw = parseOffer(text);
+    // Invented-price guard: if no price was in the brief but the model put a
+    // currency symbol or price pattern in any field, retry ONCE with a
+    // stronger instruction prepended. One retry only — no retry storms.
+    if (!briefHasPrice && offerHasPrice(raw)) {
+      const offending = priceOffendingFields(raw);
+      console.warn(
+        '[generate-offer] invented price detected on first attempt — retrying once',
+        { fields: offending, brief: { funnelService, funnelGuarantee } },
+      );
+      const reinforcedMessage = [
+        'CRITICAL: the brief below contains NO specific price. Do NOT include a currency symbol or dollar/euro/pound number anywhere in your output. Use qualitative pricing language only (e.g. "honest upfront pricing", "free quote, no obligation", "fixed-price quote on the spot").',
+        '',
+        baseUserMessage,
+      ].join('\n');
+      const retried = await callOffer(client, reinforcedMessage);
+      if (!offerHasPrice(retried)) {
+        raw = retried;
+      } else {
+        // Retry also invented a price — keep the retry result (no better
+        // option than to ship it; user can edit any field). Loudly logged
+        // so the pattern is recoverable if it recurs.
+        console.warn(
+          '[generate-offer] retry also produced an invented price; shipping the retry result',
+          { fields: priceOffendingFields(retried) },
+        );
+        raw = retried;
+      }
+    }
+
     return NextResponse.json({
       offer: {
         headline: raw.headline,
@@ -180,6 +213,59 @@ type RawOffer = {
   risk_reversal: string;
   cta_text: string;
 };
+
+async function callOffer(client: Anthropic, userMessage: string): Promise<RawOffer> {
+  const message = await client.messages.create({
+    model: MODEL,
+    // Anthropic requires max_tokens > thinking.budget_tokens; 4000 leaves
+    // ample headroom for the ~150-token four-field offer after thinking.
+    max_tokens: 4000,
+    thinking: { type: 'enabled', budget_tokens: 2000 },
+    system: [
+      {
+        type: 'text',
+        text: SYSTEM_PROMPT,
+        cache_control: { type: 'ephemeral' },
+      },
+    ],
+    messages: [{ role: 'user', content: userMessage }],
+  });
+  const text = message.content
+    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+    .map((block) => block.text)
+    .join('')
+    .trim();
+  return parseOffer(text);
+}
+
+// Matches a currency symbol next to a digit, a digit next to a currency
+// symbol, or a number followed by a currency word. Deliberately narrow —
+// matches "$99" / "€50" / "99 dollars" / "£1,000" but not "24 hours" or
+// "12-month guarantee".
+const PRICE_PATTERN =
+  /(?:[€$£¥¤]\s?\d|\d[\d,]*\s?[€$£¥¤]|\b\d[\d,]*\s?(?:dollars?|euros?|pounds?|usd|eur|gbp|aud|cad|nzd|cents?)\b)/i;
+
+function hasPricePattern(text: string): boolean {
+  return PRICE_PATTERN.test(text);
+}
+
+function offerHasPrice(offer: RawOffer): boolean {
+  return (
+    hasPricePattern(offer.headline) ||
+    hasPricePattern(offer.promise) ||
+    hasPricePattern(offer.risk_reversal) ||
+    hasPricePattern(offer.cta_text)
+  );
+}
+
+function priceOffendingFields(offer: RawOffer): string[] {
+  const out: string[] = [];
+  if (hasPricePattern(offer.headline)) out.push('headline');
+  if (hasPricePattern(offer.promise)) out.push('promise');
+  if (hasPricePattern(offer.risk_reversal)) out.push('risk_reversal');
+  if (hasPricePattern(offer.cta_text)) out.push('cta_text');
+  return out;
+}
 
 function parseOffer(text: string): RawOffer {
   let body = text.trim();

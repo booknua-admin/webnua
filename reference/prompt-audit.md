@@ -39,6 +39,35 @@
 >   library (74 curated ids) is also listed once in the shared notes
 >   block so any `icon` field has an explicit valid-value set.
 >
+> A follow-up session (`claude/fix-quality-issues-8rzEq`) addressed two
+> further symptoms reported after the variant/accent fix landed:
+>
+> - **Offer pricing fabrication — RESOLVED.** The offer system prompt
+>   now carries explicit guidance about qualitative pricing language
+>   when no number is in the brief, and the route adds a runtime
+>   safeguard: after the first Claude call returns, currency
+>   symbols / number-followed-by-currency patterns are detected in the
+>   four returned fields; if a price appears in the output AND no price
+>   was in the brief, the route retries ONCE with a stronger
+>   no-pricing instruction prepended to the user message. Capped at one
+>   retry — no retry storms. Observability is console-only (the
+>   `generation_log` table requires `client_id`, but offer generation
+>   runs BEFORE the client row exists; see the CLAUDE.md parked
+>   decision for the rationale). See `src/app/api/generate-offer/route.ts`.
+> - **Section-theme contrast bugs — RESOLVED.** The model is no longer
+>   asked to emit a `theme` field on any section. The shared
+>   `SHARED_FIELD_NOTES` block now opens with a "Section themes"
+>   appendix explaining that themes are applied automatically by the
+>   renderer from the brand palette. The website + funnel system
+>   prompts each carry an explicit "Do NOT output a `theme` field"
+>   rule. The validation pipeline (`runValidationPipeline` in
+>   `generation-stub.ts` and `validateAndAssemble` in
+>   `generate-funnel-live.ts`) strips any model-emitted `theme` value
+>   before the section lands in the editor, logging a fallback entry
+>   (`reason: 'invalid'`, `fieldName: 'theme'`) so the website
+>   route's `generation_log` writer can track whether the model is
+>   still attempting to specify theme after this change.
+>
 > The remaining missing-piece bullets in this audit (banned-word
 > consolidation, worked examples, copy-vs-layout via `capabilityHints`,
 > shared persona, voice on offer/enhance, etc.) are deferred to later
