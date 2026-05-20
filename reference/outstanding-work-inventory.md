@@ -1,11 +1,16 @@
 # Outstanding-work inventory
 
-> Read-only diagnostic produced 2026-05-20 on branch
-> `claude/outstanding-work-inventory-BifMN`. Cross-references
-> `CLAUDE.md`, `reference/build-roadmap.md`,
+> Read-only diagnostic. Original pass 2026-05-20 (branch
+> `claude/outstanding-work-inventory-BifMN`). **Verification pass
+> 2026-05-20** (branch `claude/inventory-verification-pass-{auto}`)
+> — every Section-A item has been verified against actual code or
+> data, ambiguous statuses resolved, new untracked items added.
+> See the "Verification pass — what changed" block at the foot for a
+> diff summary.
+>
+> Cross-references `CLAUDE.md`, `reference/build-roadmap.md`,
 > `reference/analytics-audit.md`, `reference/prompt-audit.md`, and
-> `reference/drift-recovery/*` to surface every outstanding or
-> deferred item in one place.
+> `reference/drift-recovery/*`.
 >
 > Effort sizing: **small** < 300 lines · **medium** 300–800 lines ·
 > **large** 800+ lines (or multi-session).
@@ -20,197 +25,188 @@ operators if a paying client landed today.
 ### A1. Cross-tenant RLS validation pass (security)
 - **Current state.** Per `build-roadmap.md` Phase 5 and CLAUDE.md
   ("Auth — DONE … **Still owed:** a deliberate cross-tenant RLS
-  validation pass — the policies have not been systematically
-  negative-tested with real `auth.uid()`s"). Policies are written
-  across all live tables (clients, websites, funnels, leads, bookings,
-  tickets, notifications, automations, content_drafts, capability_grants,
-  agency_policy, plan_assignments, lead_attachments bucket, etc.) but
-  no systematic negative test confirms tenant A cannot read or write
-  tenant B's rows.
-- **What would need to ship.** A test harness (Vitest + the anon /
-  service-role / per-tenant JWT pattern) that asserts: SELECT / INSERT /
-  UPDATE / DELETE on every table by a tenant-B user against tenant-A
-  rows returns zero rows or a permission error. Also assert the
-  `anon` role is refused everywhere (it must stay refused — the docs
-  call out this is what produces the wall of `401` warnings on a
-  logged-out load). Fix any failures found.
+  validation pass"). Policies are written across all live tables
+  (clients, websites, funnels, leads, bookings, tickets,
+  notifications, automations, content_drafts, capability_grants,
+  agency_policy, plan_assignments, lead_attachments bucket, etc.)
+  but no systematic negative test confirms tenant A cannot read or
+  write tenant B's rows.
+- **What would need to ship.** A test harness (Vitest + the
+  anon / service-role / per-tenant JWT pattern) that asserts: SELECT
+  / INSERT / UPDATE / DELETE on every table by a tenant-B user
+  against tenant-A rows returns zero rows or a permission error.
+  Also assert the `anon` role is refused everywhere. Fix any
+  failures found.
 - **Effort.** Medium for the harness; gap-dependent for any fixes
   surfaced (likely small — the policies are written, they need
   validation more than rewriting).
 
-### A2. Wizard Q&A inputs are not fed to the website generation prompt
-- **Current state.** Per build-roadmap.md Phase 6 ("Wizard Q&A → real
-  `GenerationContext` — still owed") and CLAUDE.md
-  `lib/website/sections/header.tsx` note plus the
-  `composePrompt`/`buildPromptBlocks` design — the `/website/new` flow
-  collects five questions (pageType / intent / audience / specifics /
-  avoid) and routes them into `generatePageStub`. The deterministic
-  stub ignores `specifics` + `avoid`; the live Claude path
-  (`generate-live.ts`) does consume them via `composePrompt`. The
-  `CreateClientModal` create-client flow uses brand + funnel-offer
-  context but does NOT yet thread the wizard's Q&A answers into the
-  per-page generation context. Result: a new client's site is
-  generated from the brief alone, ignoring any Q&A signals the wizard
-  could capture.
-- **What would need to ship.** Decide whether the create-client flow
-  is the right home for per-page Q&A at all (the wizard sunset
-  parked decision suggests the brief is the only intake; per-page
-  Q&A may belong only to `/website/new`). If yes, thread the answers
-  into the `ClientBrief → GenerationContext` mapping in
-  `lib/clients/create-client.ts`. If no, mark explicitly resolved
-  and remove the build-roadmap line.
-- **Effort.** Small if the answer is "leave create-client as-is and
-  remove the line"; medium if Q&A surfaces in create-client.
+### A2. Wizard Q&A → GenerationContext — VERIFIED CLOSED (build-roadmap line is stale)
+- **Verification finding (2026-05-20).** Read `CreateClientModal.tsx`
+  + `site-generation-stub.ts:briefToGenerationContext` +
+  `generation-prompt.ts:buildQuestionsBlock`. The current wizard
+  **does** capture `intent` (`PRIMARY_INTENT_CHIPS` chip row) and
+  `audience` (`AUDIENCE_CHIPS` chip row) and threads them into
+  `ClientBrief.primaryIntent` + `ClientBrief.audience`.
+  `briefToGenerationContext` forwards both onto `GenerationContext`,
+  and `buildQuestionsBlock` emits them into the user prompt
+  (`generation-prompt.ts:138-139`). The wizard's free-text `offer`
+  field is mapped to `ctx.specifics` (line 90 of site-generation-stub)
+  and the prompt surfaces it under "Specifics from the user". The
+  only field of `GenerationContext` not populated is `avoid` (always
+  `null`) — which is a reasonable absence for a create-client flow
+  (the operator has no "things to avoid" opinion until they see
+  drafted copy).
+- **Verdict.** A2 is **closed by current design**. The
+  build-roadmap.md line "Wizard Q&A → real `GenerationContext` —
+  still owed" is **stale** (it referred to the now-sunset 8-step
+  wizard, not `CreateClientModal`). **Action:** remove the line from
+  build-roadmap.md as part of the next housekeeping pass.
+- **Effort.** Trivial (one-line doc edit).
 
 ### A3. Funnel publish + approval lane is not built
 - **Current state.** Per CLAUDE.md ("Funnel publish / autosave /
-  approval — DEFERRED past Session 7") and build-roadmap.md Phase 4
-  ("Funnel publish/approval still deferred"). The funnel-step editor
-  saves drafts via `useAutosave` against a funnel-keyed `DraftSlot`,
-  but `EditorToolbar` hides both Publish actions when
-  `mode.kind === 'funnelStep'`. `useUserPendingSubmission` short-
-  circuits to null for funnel mode. A funnel cannot be published
-  inside the app today; if a client edits their funnel, the changes
-  cannot reach the published version through normal UI flow.
-- **What would need to ship.** A `funnel-publish-stub.ts` (or, given
-  Phase 4 happened, a `funnel/mutations.ts` extension) parallel to
-  the website publish lanes, a `useUserPendingFunnelSubmission` hook,
-  a `FunnelApprovalSubmission` type, a funnel-shaped `runPreflight`
-  (the rule engine is website-snapshot-shaped today), a
-  `/funnels/[id]/review` surface, and routing the funnel editor's
-  toolbar `reviewHref` through it. Shapes are intentionally aligned
-  with the website lanes per CLAUDE.md.
-- **Effort.** Medium — most of the architecture is mirror-ready;
-  preflight rule adaptation is the open piece.
+  approval — DEFERRED past Session 7") and build-roadmap.md
+  Phase 4 ("Funnel publish/approval still deferred"). The
+  funnel-step editor saves drafts via `useAutosave`, but
+  `EditorToolbar` hides both Publish actions when
+  `mode.kind === 'funnelStep'`; `useUserPendingSubmission`
+  short-circuits to null for funnel mode. A funnel cannot be
+  published inside the app today; if a client edits their funnel,
+  the changes cannot reach the published version through the
+  normal UI flow.
+- **What would need to ship.** A `funnel-publish-stub.ts` parallel
+  to website publish lanes, `useUserPendingFunnelSubmission`,
+  `FunnelApprovalSubmission` type, funnel-shaped `runPreflight`
+  (the rule engine is website-snapshot-shaped today),
+  `/funnels/[id]/review` surface, route the funnel editor's
+  toolbar `reviewHref` through it.
+- **Effort.** Medium — most architecture mirror-ready; preflight
+  rule adaptation is the open piece.
 
-### A4. Real public-site hosting (the "are clients actually live?" gap)
-- **Current state.** Per the analytics-audit §1.9 #1 and CLAUDE.md
-  build-phases footer ("Public site rendering"): the render pipeline
-  exists (PR #50 — middleware host-routing, `/published/[host]/[[...slug]]`
-  renderer, tracking-script injection, form rendering) and the
-  per-website domain-attach control exists (`ConnectDomainButton` →
-  `/api/domains` + `setCustomDomain`). What the audit calls
-  "the *production* path that points a client's domain at the Vercel
-  project + persists `websites.domain_primary` for a real customer"
-  is **not** confirmed to have been done for any real client. Phase 10
-  is the umbrella ("Domain management V2"). Until at least one real
-  client site is live on a custom host, analytics produces zero data
-  and the "live website" promise is unmet.
-- **What would need to ship.** Operational, not code: at minimum
-  confirm one real customer can complete the domain-connect flow
-  end-to-end (point a real registrar's records, SSL provisions, the
-  middleware routes to `/published`, the tracking script fires, the
-  rollup populates). Add an "is this domain live" healthcheck if it
-  isn't there.
-- **Effort.** Small if the existing code works end-to-end on a real
-  domain (mostly operational verification); medium if `vercel.ts`,
-  the middleware, or the `setCustomDomain` flow surfaces gaps under
-  a real registrar.
+### A4. Real public-site hosting — VERIFIED untested with a real customer domain
+- **Verification finding (2026-05-20).** Queried `websites` table:
+  all 21 rows use `*.webnua.dev` `domain_primary` (e.g.
+  `voltline.webnua.dev`, `freshhome.webnua.dev`,
+  `dublin-clean-co.webnua.dev`). Zero rows have a custom external
+  domain. Two rows show `domain_ssl_status = 'live'`, the rest are
+  `'pending'`. `domain_aliases` is empty on every row.
+- **Verdict.** The renderer + middleware + `ConnectDomainButton`
+  + `/api/domains` Vercel integration all exist (PR #50 + the
+  domain-management session) but **the production path from
+  "customer enters their domain at their registrar → SSL provisions
+  → middleware routes → tracking script fires → rollup populates"
+  has never been exercised against a real registrar**. The flow
+  could work; it has not been proven to.
+- **What would need to ship.** Operational, not code: run one
+  customer through the full domain-connect flow end-to-end against
+  a real registrar's DNS. Add an "is this domain serving" health
+  check on the operator side if surface gaps emerge.
+- **Effort.** Small if works first time; medium if `vercel.ts`,
+  the middleware, or `setCustomDomain` surfaces a gap under a
+  real registrar.
 
 ### A5. Integration connect flows are stubs (Phase 7 dependency)
 - **Current state.** Per CLAUDE.md `ConnectIntegrationModal` + the
-  "Phase 7 — Integrations" build-phase line. The modal opens, shows
-  four OAuth-style steps, the footer button just closes. No
-  `integration_connections` table, no OAuth-token storage, no
-  per-provider API surface. So:
-  - GBP — no reviews auto-pull. `useClientReviews` / `useAdminReviews`
-    surface real `reviews` table rows, but nothing writes to it.
-  - Meta Ads / Google Ads — no campaign metrics. `useClientCampaigns`
-    + `useAdminCampaigns` render the campaign *record* + activity log
-    live, but every performance metric (leads / spend / CPL / ROAS /
-    trend / sparkline) renders "Awaiting Meta Ads".
-  - Stripe — no billing. Plans set policy bundles; nothing charges.
-    Invoices in `InvoiceList` are display stubs.
-  - Resend / Twilio — no email / SMS. Automations cannot send (see A6).
-- **What would need to ship.** Phase 7 in full. The build-roadmap
-  explicitly notes this is "Owned by the human developer — done on
-  a local machine with real credentials, not in a sandbox session."
-- **Effort.** Large — per-provider OAuth + API + write-path + UI
-  swap-out of the stub. Realistically multiple sessions per provider.
+  "Phase 7 — Integrations" build-phase line. Modal closes on
+  button-press; no `integration_connections` table, no OAuth
+  storage, no per-provider API surface. So GBP (no reviews
+  auto-pull), Meta / Google Ads (no campaign metrics), Stripe
+  (no real billing — invoices are stubs), Resend / Twilio
+  (no email / SMS — automations cannot send).
+- **What would need to ship.** Phase 7 in full. Build-roadmap
+  notes this is human-developer-owned.
+- **Effort.** Large per provider × 7 providers.
 
 ### A6. Automation execution engine — automations never fire
-- **Current state.** Per CLAUDE.md ("Phase 8 — Automation / messaging
-  execution engine. Automations are definitions only — nothing sends")
-  and the resolved/deferred ledger ("Automation overlap / anti-spam
-  suppression rules — DEFERRED"). The library has 21 seeded automations
-  across four clients (six trigger types: lead_created /
-  lead_stale_24h / booking_upcoming / job_completed / booking_no_show /
-  customer_dormant). The toggle is real and persisted; the step copy
-  is editable and persisted. Nothing schedules, evaluates triggers, or
-  sends. A client switching on an automation receives no behaviour
-  change.
-- **What would need to ship.** Phase 8: a scheduler (edge function +
-  cron), a `messaging_events` send-log table, the suppression /
-  priority-tier / quiet-hours / per-recipient frequency-cap policy
-  (also surfaces `automationDefaults` in the agency-policy resolver,
-  which is typed-deferred today). Closes the campaign + automation
-  performance metrics gap as a side effect.
-- **Effort.** Large — depends on Phase 7 (Resend / Twilio).
+- **Current state.** Per CLAUDE.md ("Phase 8 — automations are
+  definitions only, nothing sends"). The library has 21 seeded
+  automations across four clients. Toggle persists; step copy
+  persists. Nothing schedules, evaluates triggers, or sends.
+- **What would need to ship.** Phase 8: scheduler, `messaging_events`
+  send-log, suppression / priority / quiet-hours / frequency-cap
+  policy (also surfaces `automationDefaults` in the agency policy
+  resolver, which is typed-deferred today).
+- **Effort.** Large — depends on Phase 7.
 
 ### A7. Production observability is missing
-- **Current state.** Per build-roadmap.md Phase 10 and analytics-audit
-  §1.9 #3 ("`/api/track` write-failures are silent — `await … insert(rows)`
-  has no error handling; a Postgres write error becomes an unhandled
-  rejection in a serverless function that's already returned 204").
-  There is no error-monitoring sink (Sentry/Logflare/etc.), no DB-side
-  alert on insertion-rate drops, no Vercel-log surfacing for failed
-  generation runs (the `generate-offer` / `enhance-field` routes
-  intentionally don't write `generation_log` — they `console.warn`
-  only because `client_id` is NOT NULL before the client row exists).
-  A production outage on the tracking endpoint, the generation routes,
-  or the public-form submit route is invisible until someone notices
-  a number wrong in the UI.
-- **What would need to ship.** Phase 10 production hardening:
-  pick a monitoring sink, wire it to every API route, alert on rate
-  drops + 5xx rates. Optionally relax `generation_log.client_id` to
-  nullable so pre-client-row generation can log too, or add a sister
-  `generation_diagnostics` table without the FK.
-- **Effort.** Medium — provider choice + per-route wiring + one
-  alert-rule pass.
+- **Current state.** Per build-roadmap.md Phase 10 and
+  analytics-audit §1.9 #3. No error-monitoring sink (Sentry/Logflare
+  /etc), no DB-side alert on insertion-rate drops, no Vercel-log
+  surfacing for failed generation runs. Pre-client-row generation
+  routes (`generate-offer`, `enhance-field`, etc.) log to
+  `console.warn` only because `generation_log.client_id` is NOT
+  NULL.
+- **What would need to ship.** Pick a monitoring sink, wire to
+  every API route, alert on rate drops + 5xx rates. Optionally
+  relax `generation_log.client_id` to nullable.
+- **Effort.** Medium.
 
-### A8. Funnel form submit + step-2 lead threading edge cases — status unclear; verify before scheduling
-- **Current state.** The §2 + §3 analytics-audit update blocks claim
-  the duplicate-lead gap is closed (`existingLeadId` threading via
-  `?lead=<id>`), funnel rollup step-granularity is closed (migration
-  0042 + `page_ref` PK extension), source_funnel_id attribution is
-  wired (migration 0044). However the §3 update also says: "a step-2
-  submit that fails at `/api/forms/submit` (e.g. the cross-tenant
-  guard … rejects a tampered `?lead=`) still fires `form_submit` at
-  the tracker and leaves the step-1 lead orphaned with no second
-  event. Worth tracking." This is the form-submit-error false-positive
-  gap (analytics-audit §5.2 #1, claimed RESOLVED via migrations 0038
-  + 0039 + a `formSubmitError` tracker API the React `FormBlock`
-  calls in its catch block). **Verify the catch-block wiring actually
-  exists in `FormBlock.tsx` and the new event type appears in
-  `analytics_event_type`** — the audit claims it shipped but the
-  §3 re-run note flags the same concern as still applicable.
-- **What would need to ship.** First, verify what shipped. If the
-  catch-block call to `window.webnuaTrack.formSubmitError` exists
-  and `formFailed` rolls up, this item is closed. If it doesn't, ship
-  the `FormBlock` catch-block invocation and confirm the rollup
-  branch in the aggregation function handles `form_submit_error`.
-- **Effort.** Small to verify + small to fix if needed.
+### A8. Funnel form-submit-error wiring — VERIFIED CLOSED
+- **Verification finding (2026-05-20).** Read
+  `public/webnua-track.js` + `FormBlock.tsx` + the migration log.
+  All four pieces exist and wire together: enum value (migration
+  `0038_form_submit_error_enum.sql`); rollup branch
+  (`form_submit_error → 'form_failed'` in migrations 0039 + 0040 +
+  0041 + 0042); tracker API
+  (`window.webnuaTrack.formSubmitError` exposed at
+  `webnua-track.js:679`, fires `form_submit_error` event at line
+  394); FormBlock catch-block invocation
+  (`FormBlock.tsx:75 — api.formSubmitError(formEl, { reason })`).
+- **Verdict.** A8 is **closed**. The `form_submit_error` event
+  is captured, transmitted, aggregated, and the analytics-audit
+  §5.2 RESOLVED marker is correct. The §3 re-run "worth tracking"
+  flag was conservative-but-stale. Tracked-successful-submits =
+  `form_submitted − form_failed` per the §5.2 update.
 
-### A9. Wizard `funnel_testimonials` placeholder vs published funnel
-- **Current state.** Per CLAUDE.md parked decision
-  ("`funnel_testimonials` renders placeholders, never AI-generated
-  testimonials"). An operator who skips the testimonials step gets
-  a real placeholder ("Your customer reviews will appear here") in
-  the published funnel. **Status check needed.** A funnel built
-  with no testimonials renders that placeholder on the public site —
-  if a real client published today they would see this on their own
-  funnel. Confirm whether the renderer hides the social-proof
-  section entirely vs renders the placeholder vs falls back to the
-  brand's `reviews` table (where GBP-pulled reviews would land if
-  Phase 7 were done). The honest-placeholder posture is correct
-  policy; the question is what *renders* today.
-- **What would need to ship.** Verify the public renderer's behaviour
-  when `funnel_testimonials` is empty AND the client's `reviews`
-  table is empty (pre-Phase-7, this is every client). If the
-  placeholder ships on the public page, decide whether to (a) keep
-  it as-is (honesty default), (b) hide the section, or (c) wire a
-  fallback to website-level `reviews` rows.
-- **Effort.** Small.
+### A9. Funnel testimonials — VERIFIED CRITICAL — invented testimonials ship on published funnels
+- **Verification finding (2026-05-20).** Queried published funnels
+  with empty `funnel_testimonials`: Dublin Clean co
+  (`21151324-…`, published 2026-05-20) has `funnel_testimonials =
+  []` but its published version's step 1 snapshot contains TWO
+  `reviews` sections, both with **AI-fabricated testimonials**
+  ("Aoife M., Rathmines, Dublin 6" with a six-month paragraph
+  quote; "Conor B., Drumcondra, Dublin 9" likewise). The Voltline
+  funnel uses the deterministic seed (no `reviews` sections), so
+  it does not exhibit this — but every Claude-generated funnel
+  with empty testimonials will.
+- **Why it shipped.** Read `generate-funnel-live.ts`. The prompt
+  **explicitly instructs the model to invent reviews** when the
+  brief is empty: `line 77` ("If none were supplied, populate
+  generic but specific-feeling reviews — named people, suburb,
+  concrete detail"), `line 120` ("If the brief carries zero
+  testimonials, then and only then may you populate the reviews
+  sections with credible-feeling generated reviews"), `line 355`
+  (same instruction for step 2), `line 620` (the brief-context
+  block emits "(none supplied — generate credible specific
+  reviews; named people, suburb, concrete detail)" to the model
+  directly). The prompt does the OPPOSITE of the documented
+  CLAUDE.md parked policy: "**When the list is empty, the funnel
+  renders an explicit 'Your customer reviews will appear here'
+  placeholder** rather than asking Claude to invent quotes —
+  fabricated testimonials are a credibility / consumer-protection
+  foot-gun nothing else in the platform recovers from."
+- **Verdict.** **CRITICAL.** Every operator who publishes a funnel
+  without supplying real testimonials currently has fabricated
+  customer quotes on their live funnel. This is a credibility
+  risk (the customer asked for real reviews when there were none)
+  and arguably a consumer-protection violation in jurisdictions
+  with "no fake reviews" rules (UK CMA Digital Markets Act, EU
+  Omnibus Directive, FTC endorsement guides).
+- **What would need to ship.** Choose one and ship:
+  1. **(Aligns with CLAUDE.md policy.)** Remove the "if none
+     supplied, generate generic-but-specific" instructions in
+     `generate-funnel-live.ts` (4 sites). Replace the funnel
+     prompt's two `reviews` section roles with "skip this section
+     if no testimonials supplied". Add a renderer fallback that
+     shows the explicit "Your customer reviews will appear here"
+     placeholder when the section is empty/absent.
+  2. **(Alternative — recover the existing funnels.)** Plus a
+     one-off migration to strip AI-fabricated reviews from
+     existing published funnel snapshots where the brief carries
+     `funnel_testimonials = []`.
+- **Effort.** Small (prompt edits + renderer fallback) + small
+  (migration). Could ship in one session.
 
 ---
 
@@ -220,291 +216,223 @@ Items that meaningfully affect product quality but won't break the
 platform for early users.
 
 ### B1. Approvals Realtime is not in the publication
-- **Current state.** Per CLAUDE.md ("Approvals Realtime is not wired —
-  the approval write path is Supabase but the table is not in the
-  publication") and build-roadmap.md Phase 9 update. The approvals tab
-  still relies on the `BUILDER_EVENT` bus + query invalidation (works
-  within a single tab, single user — fine for the V1 single-operator
-  team). A second operator approving from a different tab will not see
-  state propagate without a manual refresh.
-- **What would need to ship.** Add `website_approval_submissions` to
-  the `supabase_realtime` publication (one-line migration) + a
-  `RealtimeProvider` channel + an invalidate handler for the
-  `['approvals']` query keys.
-- **Effort.** Small.
+- Per CLAUDE.md. Add `website_approval_submissions` to
+  `supabase_realtime` publication + `RealtimeProvider` channel +
+  invalidate handler. **Effort.** Small.
 
 ### B2. Operator-facing notification surface is not built
-- **Current state.** Per CLAUDE.md `client/notifications/`
-  architectural note ("Client-only — the admin notification surface
-  is not built") and the prototype-disagreement note on the
-  negative-review modal ("If a future operator-facing 'FreshHome
-  just got a 2★' surfacing lands in Cluster 6, build that as a
-  sibling"). Operators rely on the tickets inbox + the dashboard
-  hub for cross-client signals; there's no notification bell.
-- **What would need to ship.** A sibling `admin/notifications/`
-  feed reading the same `notifications` table (RLS bounds the
-  cross-client rows for operators) with the operator-relevant
-  triggers (sub-4★ reviews, escalated tickets, integration
-  reauth-needed). Could reuse the existing `NotificationPanel`
-  with an admin-tab vocabulary.
-- **Effort.** Medium.
+- Per CLAUDE.md `client/notifications/` architectural note. A
+  sibling `admin/notifications/` feed reading the same
+  `notifications` table with operator triggers (sub-4★ reviews,
+  escalated tickets, integration reauth). **Effort.** Medium.
 
 ### B3. Automation editor — step timing, add/remove/reorder not wired
-- **Current state.** Per CLAUDE.md `lib/automations/queries.tsx` note
-  ("**Still not wired:** step *timing* (the delay pill is display-only)
-  and step add/remove/reorder — those need a delay picker + a step
-  insert/delete/position mutation"). Step copy is editable and
-  persists; step timing + structure is read-only.
-- **What would need to ship.** A delay picker component + `useUpdateAutomationStep`
-  for `delay_minutes`, plus insert/delete/reorder mutations against
-  `automation_steps`. Coordinates with the (deferred) execution engine.
-- **Effort.** Small to medium.
+- Per CLAUDE.md. Step copy is editable + persists; timing +
+  structure is read-only. Delay picker + insert/delete/position
+  mutation. **Effort.** Small to medium.
 
 ### B4. Real-screenshot page thumbnails on `/website`
-- **Current state.** Per CLAUDE.md `PageThumbnail` ("Pure CSS — no
-  SVG, no real screenshots. A real-screenshot pipeline is V2"). Each
-  page card on the website hub shows a per-page-type wireframe
-  silhouette, not a render of the actual page.
-- **What would need to ship.** A render-to-image pipeline
-  (Playwright in a serverless function, or `@vercel/og` for a SSR'd
-  thumbnail), storage bucket for snapshots, invalidation on publish.
-- **Effort.** Medium.
+- Per CLAUDE.md `PageThumbnail`. Pure CSS wireframes today; a
+  render-to-image pipeline is V2. **Effort.** Medium.
 
 ### B5. Streaming UX for generation progress
-- **Current state.** Per CLAUDE.md `GenerationSplash` ("Hardcoded
-  timings approximate the real generator's latency … Not tied to
-  real progress events — real streaming is a separate later session;
-  until then this is an honest reassurance pattern"). The splash
-  shows six staged checkmarks on a fixed timer; if the generator
-  is slow the splash advances on schedule and parks; if it's fast
-  it dismisses cleanly anyway.
-- **What would need to ship.** SSE or a streaming response from
-  `/api/generate-site`, a real progress event channel, a
-  `GenerationSplash` that consumes events instead of a timer.
-- **Effort.** Medium.
+- Per CLAUDE.md `GenerationSplash`. Hardcoded timer today; real
+  SSE / streaming is its own session. **Effort.** Medium.
 
-### B6. Page-grid stats currently V1 only (avg time + visits)
-- **Current state.** Per CLAUDE.md `PageGridCard` ("V1 ships AVG TIME
-  for every page type; BOUNCE / SUBMITS / FUNNEL CTR are Session B
-  once `analytics_funnel_daily` gets the `page_ref` PK extension").
-  Migration 0042 has now landed (per CLAUDE.md migration log), so
-  the schema gap is closed; the read-layer + UI extension to render
-  per-page-type variant cells is the remaining piece.
-- **What would need to ship.** Extend `fetchPageTotalsByRef` or add
-  a sibling reader that pulls per-page funnel rollup rows
-  (`stage = 'form_submitted'`, `stage = 'engaged'`, etc.) for the
-  per-page-type variant cells. Update `PageGridCard` to render
-  them per the existing per-page-type plan.
-- **Effort.** Small.
+### B6. Per-page-type stats — bounce / submits / funnel CTR
+- Per CLAUDE.md `PageGridCard` ("V1 ships AVG TIME … BOUNCE /
+  SUBMITS / FUNNEL CTR are Session B"). Migration 0042 closed
+  the schema gap; read-layer + UI extension remain. **Effort.**
+  Small.
 
-### B7. Prompt-quality polish remains (banned-word consolidation, shared persona, voice on offer/enhance)
-- **Current state.** Per build-roadmap.md "Phase 6 polish" and the
-  `prompt-audit.md` resolution log. Three sessions have shipped
-  (variant enums / item shapes / accent semantics / icon library;
-  offer pricing fabrication; theme contrast). Five items remain
-  deferred: banned-word list consolidation across the four prompts;
-  copy-vs-layout via `capabilityHints` (RESOLVED per the resolution
-  log — verify); voice tone on offer + enhance prompts (currently
+### B7. Prompt-quality polish remaining items
+- Per build-roadmap "Phase 6 polish" + prompt-audit.md resolution
+  log. Five deferred items: banned-word consolidation across the
+  four prompts; voice tone on offer + enhance prompts (currently
   voice-blind); shared base persona (cached system block reused);
-  worked-example shots (RESOLVED per the resolution log).
-- **What would need to ship.** Per remaining item — each is its own
-  small session per the build-roadmap. None is load-bearing; they
-  improve copy quality without unblocking anything.
-- **Effort.** Small each (3-4 sessions total).
+  copy-vs-layout via `capabilityHints` (RESOLVED — verify);
+  worked-example shots (RESOLVED — verify). **Effort.** Small each,
+  4 sessions total, parallel-safe.
 
-### B8. Test-send modals are display stubs
-- **Current state.** Per CLAUDE.md `AutomationTestSendModal` ("both
-  close the modal — wire to real send when backend lands") and
-  `GenerateApiKeyModal` (same pattern — token doesn't persist).
-  Operator-facing UI is wired; the action button is inert until
-  Phase 7 (test-send) or a real API-key persistence path lands.
-- **What would need to ship.** Test-send waits on Phase 7's
-  Resend/Twilio; the API-key modal needs an `api_keys` table + the
-  `whk_live_*` issuance + revoke flow.
-- **Effort.** Small for API keys; depends on Phase 7 for test-send.
+### B8. Test-send modals + API-key persistence stubs
+- Per CLAUDE.md `AutomationTestSendModal` + `GenerateApiKeyModal`.
+  Test-send depends on Phase 7 (Resend/Twilio); API keys need an
+  `api_keys` table + the `whk_live_*` issuance + revoke flow.
+  **Effort.** Small for API keys; depends on Phase 7 for test-send.
 
 ### B9. Generation-log gap for pre-client-row routes
-- **Current state.** Per CLAUDE.md parked decision ("No
-  `generation_log` write — the wizard runs offer generation BEFORE
-  the client row exists, and `generation_log.client_id` is NOT NULL").
-  Affects `generate-offer`, `enhance-field`, `enhance-offer`,
-  `generate-seo`. Failures land in console only. The website + funnel
-  generators DO write to `generation_log` (those run after a client
-  exists).
-- **What would need to ship.** Either relax `client_id` to nullable
-  on `generation_log` (closes the observability gap for the wizard
-  routes), or add a sister `generation_diagnostics` table without
-  the FK constraint.
-- **Effort.** Small.
+- Per CLAUDE.md parked decision. `generate-offer`, `enhance-field`,
+  `enhance-offer`, `generate-seo` failures land in console only
+  because `client_id` is NOT NULL. Either relax to nullable or add
+  a sister `generation_diagnostics` table. **Effort.** Small.
 
-### B10. Unread per-CTA / per-threshold scroll analytics
-- **Current state.** Per analytics-audit §4.3 / §5.2 #4-N. Closed
-  schema-wise: migration 0041 extended the rollup PK with
-  `element_label` and added the missing scroll thresholds
-  (25 / 75 / 90). Surfaced in the new `WebsiteEngagementCard`.
-  Per-funnel-CTA breakdown + per-threshold scroll heatmap surfaces
-  for the operator dashboard (cross-client) are not built.
-- **What would need to ship.** Operator-side aggregate views over
-  the existing rollup columns.
-- **Effort.** Small.
+### B10. Unread per-CTA / per-threshold scroll analytics surfaces
+- Per analytics-audit §5.2. Schema closed (migrations 0041 +
+  0042); operator-side aggregate views over the rollup columns
+  remain. **Effort.** Small.
 
 ### B11. Session duration + returning-visitor surface
-- **Current state.** Per analytics-audit §4.1 / §4.3. Data exists
-  (`session_id` persists, `visitor_id` persists in localStorage with
-  analytics consent); no query derives session duration across
-  pages, no UI surfaces "returning visitor". The operator gets
-  per-page dwell only.
-- **What would need to ship.** A `fetchSessionTotals(surfaceId)`
-  read + a returning-vs-new tile on the dashboard. Within the 90-day
-  raw-event retention window, no migration needed.
-- **Effort.** Small.
+- Per analytics-audit §4.1 / §4.3. Data exists (`session_id`
+  persists, `visitor_id` persists); no query derives session
+  duration, no UI surfaces returning-vs-new. **Effort.** Small.
 
-### B12. `leads.submission_id` is written but never read (reconciliation deferred)
-- **Current state.** Per analytics-audit §1.7 + §2.3. The column is
-  populated by `/api/forms/submit`; no query consumes it. The
-  intended reconciler ("match tracked `form_submit` count against
-  actual `leads` count") does not exist.
-- **What would need to ship.** A small reconciliation read or a
-  scheduled job comparing `analytics_events` `form_submit` payload
-  submission ids against `leads.submission_id` and flagging
-  drift. Within the 90-day raw-event window.
-- **Effort.** Small.
+### B12. `leads.submission_id` written but never read (reconciliation deferred)
+- Per analytics-audit §1.7 + §2.3. Column populated by
+  `/api/forms/submit`; no consumer. Scheduled reconciler comparing
+  tracked submits vs leads. **Effort.** Small.
 
-### B13. `funnel_testimonials` AI-pull fallback (post-GBP integration)
-- **Current state.** Per CLAUDE.md parked decision (deferred until
-  Phase 7 GBP integration ships). An empty `funnel_testimonials`
-  array currently renders a placeholder; with GBP wired, the
-  renderer could fall back to real Google reviews.
-- **What would need to ship.** Renderer change + read against
-  `reviews` table when `funnel_testimonials` is empty. Trivial
-  once Phase 7 lands.
-- **Effort.** Small (post-Phase-7).
+### B13. GBP fallback for empty `funnel_testimonials` (post-Phase-7)
+- Per CLAUDE.md parked decision. With GBP wired, empty
+  `funnel_testimonials` could resolve to real Google reviews
+  instead of A9's placeholder. **Effort.** Small (post-Phase-7).
 
 ### B14. Editor test-submit funnel-id attribution (intentional defer)
-- **Current state.** Per CLAUDE.md migration 0044 notes
-  ("Editor test-submit attribution is intentionally NOT wired").
-  Test submits from a funnel preview record `source_kind = 'funnel'`
-  but `source_funnel_id = NULL`. Test traffic is rare in production
-  analytics; the funnel-detail "booked from this funnel" counter
-  correctly excludes test leads, but if test traffic ever spikes
-  the count would under-count by one bucket.
-- **What would need to ship.** Thread `funnelId` through
-  `FormTestSubmitContext` + `submitLead`. Trigger to revisit per
-  CLAUDE.md: only if test traffic starts polluting the count.
-- **Effort.** Small.
+- Per CLAUDE.md migration 0044 notes. Test submits from a funnel
+  preview record `source_kind = 'funnel'` but `source_funnel_id =
+  NULL`. Revisit only if test traffic starts polluting the count.
+  **Effort.** Small.
+
+### B15. Current CreateClientModal wizard major upgrade *(new this pass)*
+- **Source.** Not tracked in CLAUDE.md or build-roadmap; raised
+  in conversation. The current `CreateClientModal` (the canonical
+  client-create surface that replaced the sunset 8-step wizard)
+  has known UX issues that affect every client onboarding:
+  modal too small for the content; visual polish lower than the
+  rest of the platform; could move to a dedicated `/clients/new`
+  page rather than a `Dialog`; could auto-populate fields more
+  aggressively (industry defaults, brand defaults, possibly URL
+  scraping or GBP lookup); end-to-end feels clunky.
+- **What would need to ship.** UX redesign + engineering pass
+  across the modal + the create flow. Should be preceded by a
+  brief design conversation, since the auto-population sources
+  are a real product decision: industry-default templates (small
+  effort, deterministic), URL scraping of the operator-supplied
+  business website (medium effort, third-party fragility), GBP
+  lookup (depends on Phase 7), free-text "tell me about your
+  business" with AI extraction (medium effort, prompt-design
+  call). These are different effort levels and the choice
+  shapes the rest of the work.
+- **Effort.** Medium-to-large (UX redesign + engineering across
+  multiple files; potentially blocked on Phase 7 for the GBP
+  option).
+
+### B16. VERCEL_TOKEN / VERCEL_PROJECT_ID / VERCEL_TEAM_ID env-var operational config *(new this pass)*
+- **Source.** `build-roadmap.md` "Deployment env" footer. The
+  three env vars are documented in `.env.example` but not
+  confirmed set on the deployment. Without them,
+  `ConnectDomainButton` saves the domain to the website row but
+  does **not** register it with Vercel, so HTTPS never
+  provisions — per CLAUDE.md `ConnectDomainButton`: "unset env →
+  the domain is still saved, an operator finishes it in the
+  Vercel dashboard." This is a quiet degradation operator-side.
+- **What would need to ship.** Confirm the three vars are set on
+  the production deployment. Add a startup check or operator-side
+  warning if absent.
+- **Effort.** Small (operational + tiny code warning).
+
+### B17. Recurring booking rolling-window top-up job *(new this pass)*
+- **Source.** CLAUDE.md `recurring-setup.tsx` parked note: "Still
+  deferred: a top-up job to extend the recurring window past the
+  seeded ~10 bookings." A client with an active recurring
+  schedule will see their calendar empty out beyond ~10 visits
+  ahead until someone re-creates the schedule. **Effort.** Small
+  (a daily cron that extends the rolling window).
+
+### B18. Per-operator notification preferences *(new this pass)*
+- **Source.** CLAUDE.md `client-notifications.ts` preferences
+  surface vs `notifications/queries.tsx` write path. Client users
+  have per-channel notification preferences (`client_notifications.ts`,
+  SMS / email / push toggles) but the trigger-driven write path
+  (migration 0032) does NOT consult them — every fired trigger
+  fans to every client user regardless of their stated
+  preferences. The Notifications tab is a display stub. **Effort.**
+  Small (filter the fan-out in the trigger functions against the
+  preference table, or in the notification feed read).
 
 ---
 
 ## Section C — Deferred by design
 
-Items explicitly deferred to later phases or marked "later" in
-CLAUDE.md parked decisions.
+### C1. Phase 7 — Integrations (full).
+GBP, Meta Ads, GA4, Google Ads, Stripe, Resend, Twilio OAuth +
+API wiring. Human-developer-owned with real credentials.
 
-### C1. Phase 7 — Integrations (full)
-- GBP, Meta Ads, GA4, Google Ads, Stripe, Resend, Twilio OAuth +
-  API wiring. **Why deferred.** Build-roadmap.md flags this as
-  owned by the human developer with real credentials, not sandbox
-  work. **Trigger to revisit.** The current phase plan slots it
-  next after the Phase 6 prompt-quality polish.
+### C2. Phase 8 — Messaging / automation execution engine.
+Depends on Phase 7.
 
-### C2. Phase 8 — Messaging / automation execution engine
-- Scheduler + `messaging_events` send-log + suppression + anti-spam
-  rules. **Why deferred.** Depends on Phase 7 (needs a working
-  sender). **Trigger to revisit.** After Phase 7.
+### C3. Phase 10 — Production hardening.
+Domain management V2, deploy config, env/secrets, error monitoring,
+security review, live browser E2E.
 
-### C3. Phase 10 — Production hardening
-- Domain management V2, deploy config, env/secrets policy, error
-  monitoring, security review, live browser E2E pass.
-  **Why deferred.** Final phase before Phase 11. **Trigger to
-  revisit.** After Phases 7 + 8 + 9 close.
+### C4. Phase 11 — Proof Page prospecting tool.
+Per CLAUDE.md: deferred until the full platform — front and back
+end — is working.
 
-### C4. Phase 11 — Proof Page prospecting tool
-- The admin audit → proof-page → outreach pipeline.
-  **Why deferred.** CLAUDE.md explicit: "deferred until the full
-  platform — front and back end — is working". **Trigger to
-  revisit.** All other phases complete.
+### C5. Workspace-governance capabilities (manageBilling, manageTeam, deleteClient).
+13-cap builder model doesn't include these. Per CLAUDE.md parked
+decision, deferred to the backend pass or first real billing
+surface.
 
-### C5. Workspace-governance capabilities (manageBilling, manageTeam, etc.)
-- The 13-cap builder model doesn't include `manageBilling`,
-  `manageTeam`, `deleteClient`, `viewFinancials`. **Why deferred.**
-  Per CLAUDE.md parked decision, deferred to the backend pass or
-  first real billing surface. **Trigger to revisit.** When real
-  billing (Phase 7 Stripe) lands or when a second org tier needs
-  to express divergence between owner and operator.
+### C6. Client-internal role hierarchy (flat for V1).
+Per CLAUDE.md. Needs C5 first.
 
-### C6. Client-internal role hierarchy (flat for V1)
-- Every client-invited user gets `CLIENT_DEFAULTS`; no co-owner /
-  member tier. **Why deferred.** Per CLAUDE.md parked decision —
-  needs the workspace-governance caps (C5) first. **Trigger to
-  revisit.** With C5.
+### C7. Multi-operator `{operatorLabel}` token.
+`explainers.ts` hardcodes "your operator" / "your account". First
+white-label / multi-operator customer.
 
-### C7. Multi-operator `{operatorLabel}` token
-- `src/lib/auth/explainers.ts` hardcodes "your operator" / "your
-  account". **Why deferred.** Single-operator deploys only for V1.
-  **Trigger to revisit.** First white-label / multi-operator
-  customer.
+### C8. Real-screenshot page thumbnails.
+V2; CSS wireframe is sufficient for V1 hub.
 
-### C8. Real-screenshot page thumbnails on `/website`
-- Per CLAUDE.md `PageThumbnail`. **Why deferred.** V2; the CSS
-  wireframe is good enough for the V1 hub. **Trigger to revisit.**
-  Operator feedback that the silhouette is misleading vs the real
-  page, or a marketing surface that needs a real thumbnail.
+### C9. Streaming UX for generation progress.
+Honest reassurance via timer sufficient for V1.
 
-### C9. Streaming UX for generation progress
-- Per CLAUDE.md `GenerationSplash`. **Why deferred.** Honest
-  reassurance via timer is sufficient for V1; SSE is its own
-  session. **Trigger to revisit.** If generation latency varies
-  enough that the timer feels obviously wrong.
+### C10. TicketsHero + LeadsHero twin merge.
+Wait for the next touch on either.
 
-### C10. Section thumbnail consolidation
-- Per CLAUDE.md TicketsHero/LeadsHero twin observation. **Why
-  deferred.** Wait for the next touch on either. **Trigger to
-  revisit.** Next session that touches one of them.
+### C11. Multi-page funnel + qualification engine (V2 shapes).
+3-step fixed sequence is V1.
 
-### C11. Multi-page funnel + qualification engine
-- Per the funnel-step editor mode-discriminator section. The
-  funnel data model supports 3 steps (landing / schedule /
-  thanks) deterministic in step 3. **Why deferred.** Multi-step
-  funnels with branching qualification are V2 — the V1 shape is
-  a fixed two-form sequence. **Trigger to revisit.** When a
-  client needs a 4+ step or branching funnel.
+### C12. Persisted lead-completion column.
+Derived at read time today; cheap. Revisit only if dashboard
+filters by completion at scale (≥10k leads).
 
-### C12. Audit log + dashboard tile for funnel rollup drift / completion
-- Per CLAUDE.md "Funnel lead completion state — derived at read
-  time, not persisted". **Why deferred.** The derivation is
-  cheap and `lead_events` is in the inbox select. **Trigger to
-  revisit.** If a dashboard surface needs to filter by completion
-  at high cardinality (≥10k leads).
+### C13. Numbered-option-row shared primitive.
+`ConflictOptionRow` + `NegativeReviewActionRow` sibling. Extract
+on third use.
 
-### C13. Numbered-option-row shared primitive
-- `ConflictOptionRow` + `NegativeReviewActionRow` are visually
-  adjacent. **Why deferred.** Two siblings is fine. **Trigger to
-  revisit.** Third use → extract.
+### C14. Generic `TabsBar` primitive.
+`TicketTabsBar` + `LeadTabsBar` siblings. Extract on third use.
 
-### C14. Generic `TabsBar` primitive
-- `TicketTabsBar` + `LeadTabsBar` are structurally identical.
-  **Why deferred.** Two is fine. **Trigger to revisit.** Third
-  surface.
+### C15. Per-section media upload + crop pipeline.
+MediaField is URL-only today. Ships with asset management.
 
-### C15. Per-section media-upload pipeline
-- The MediaField is URL-text-only today. **Why deferred.** A real
-  upload + crop UI ships with asset management. **Trigger to
-  revisit.** When operators need to actually manage media (likely
-  Phase 7 or 10).
+### C16. Service sub-page pipeline (per-service deep landing pages).
+Untracked anywhere; only ships if a real customer asks for it.
 
-### C16. Service sub-page pipeline (per-service deep landing pages)
-- Not in any current phase plan; mentioned in the prompt as
-  potentially deferred. **Status.** Not tracked anywhere in
-  CLAUDE.md or build-roadmap; not on any roadmap. **Trigger to
-  revisit.** A real customer asks for it.
+### C17. Previous 8-step `/clients/new/<step>` wizard. SUNSET. *(corrected this pass)*
+- This entry refers to the PREVIOUS multi-page wizard that was
+  deliberately sunset. The canonical replacement is the current
+  `CreateClientModal` (`components/admin/CreateClientModal.tsx`).
+  No further work intended on the 8-step wizard. The current
+  modal's own outstanding upgrade work lives in **B15** above —
+  treat C17 + B15 as distinct.
 
-### C17. 8-step wizard major upgrade
-- Per CLAUDE.md parked decision: the 8-step `/clients/new/<step>`
-  onboarding wizard was sunset; `CreateClientModal` is the
-  canonical create flow. **Why deferred.** The quick-create modal
-  is sufficient; the long wizard was over-built for V1. **Trigger
-  to revisit.** A multi-page brief intake genuinely doesn't fit
-  the modal.
+### C18. Conversion intelligence design conversation *(new this pass)*
+- **Source.** Discussed in conversation as the foundation for the
+  optimization agent (auto-improving sites / forms / funnels
+  based on engagement data) but the design conversation itself
+  has not happened. Outputs would be
+  `reference/conversion-intelligence-design.md`: defines what the
+  optimization agent needs from the data layer; constrains
+  future engagement-tracking schema decisions.
+- **Why deferred.** No upstream blocker, but no concrete trigger
+  either. Probably most useful after Phase 7 lights up real
+  engagement data the agent can act on. Recorded here so it
+  doesn't get forgotten.
+- **Trigger to revisit.** When Phase 7 + 8 produce enough live
+  engagement data that "the agent could meaningfully improve
+  something" is a real question — likely 1–2 onboarded customers
+  with 30+ days of traffic.
 
 ---
 
@@ -512,24 +440,22 @@ CLAUDE.md parked decisions.
 
 | Phase | Status | Notes |
 |---|---|---|
-| **3b — Booking-write flows** | ✅ DONE | All three flows (reschedule / new booking / recurring) wired to live Supabase per CLAUDE.md. SMS preview is still a display stub (no messaging backend — depends on Phase 7/8). |
-| **4 — Builder family backend** | ✅ DONE (PR #41 / merge `534de96`) | localStorage `publish-stub` + `draft-stub` deleted; `queries.tsx` + `mutations.ts` + `content-drafts.ts` + `snapshot.ts` + `builder-events.ts` live. **Funnel publish/approval explicitly deferred — see A3.** |
-| **5 — Real auth + capability + agency + billing** | ✅ DONE (PR #43 / merge `1a4705e`) | Sign-in is real, nine stores hydrate via `DataHydrationProvider`, `DevRoleSwitcher` + most `/dev/*` deleted. **Owed: systematic cross-tenant RLS validation pass — see A1.** |
-| **6 — AI generation** | ✅ DONE (PR #47) — polish in progress | Website + funnel generators wired to real Claude. `generation_log` writes. Server/client metadata boundary resolved. **Owed: wizard Q&A → real `GenerationContext` — see A2.** Polish items deferred per B7. |
-| **7 — Integrations** | ⏸ NOT STARTED | Largest remaining work. Owned by human dev with real creds. Unblocks reviews / campaigns / billing / messaging — see A5. |
-| **8 — Automation execution engine** | ⏸ NOT STARTED | Depends on Phase 7 (needs Resend/Twilio). See A6. |
-| **9 — Realtime + notification writes** | ✅ DONE (mostly) | Triggers fan notifications on leads / bookings / reviews / operator ticket replies (migration 0032). `notifications` / `tickets` / `ticket_messages` in publication. **Approvals Realtime not yet in publication — see B1.** |
-| **10 — Production hardening** | ⏸ NOT STARTED | Domain management V2, error monitoring, security review, E2E pass — see A4 + A7. |
-| **11 — Proof Page prospecting tool** | ⏸ DEFERRED INDEFINITELY | Per CLAUDE.md: deferred until full platform working. C4. |
+| **3b — Booking-write flows** | ✅ DONE | All three flows live; SMS preview still a display stub (Phase 7/8 dep). |
+| **4 — Builder family backend** | ✅ DONE (PR #41 / `534de96`) | localStorage stubs deleted; funnel publish/approval explicitly deferred (A3). |
+| **5 — Real auth + capability + agency + billing** | ✅ DONE (PR #43 / `1a4705e`) | RLS validation pass owed (A1). |
+| **6 — AI generation** | ✅ DONE (PR #47); polish in progress | Verification: Q&A → GenerationContext is closed (A2). Build-roadmap line referring to wizard Q&A wiring is stale. Polish items B7. |
+| **7 — Integrations** | ⏸ NOT STARTED | Largest remaining work. Human-owned. A5. |
+| **8 — Automation execution engine** | ⏸ NOT STARTED | Depends on Phase 7. A6. |
+| **9 — Realtime + notification writes** | ✅ DONE (mostly) | Approvals Realtime not in publication (B1). |
+| **10 — Production hardening** | ⏸ NOT STARTED | A4 + A7. |
+| **11 — Proof Page prospecting** | ⏸ DEFERRED INDEFINITELY | C4. |
 
 ### Sequencing constraints
-- Phase 8 depends on Phase 7 (needs a sender).
-- Phase 6 polish (B7) can run in parallel with anything.
-- Phase 10 production hardening should run after Phase 7 + 8 so the
-  monitoring sink covers the integration + sender code paths.
-- Cross-tenant RLS validation (A1) blocks any production-customer
-  onboarding regardless of phase. It is the only Section-A item that
-  is genuinely a security-blocker.
+- Phase 8 depends on Phase 7.
+- Phase 10 should run after 7 + 8 so observability covers the
+  integration + sender code paths.
+- A1 (RLS validation) blocks any production-customer onboarding
+  regardless of phase. It is the only Section-A security blocker.
 
 ### Effort to complete the plan
 - Phase 6 polish: small × 4 sessions.
@@ -537,78 +463,140 @@ CLAUDE.md parked decisions.
 - Phase 8: large.
 - Phase 9 remainder: small (B1).
 - Phase 10: medium-large.
-- Phase 11: large (its own multi-cluster feature).
+- Phase 11: large.
 
 ---
 
-## Section E — Recommendations
+## Section E — Recommendations (revised after verification pass)
 
-Ship in this order. The judgment call: A1 (RLS validation) is the
-only true blocker for *any* real customer; everything else is
-ship-quality work that closes specific user-visible gaps.
+Verification re-ordered the top of the list. **A9 promotes ahead
+of A1** because A9 is actively false-on-live-funnels today (every
+operator without supplied testimonials has invented reviews on
+their published funnel), whereas A1 is a latent risk that fires
+on cross-tenant access (which can't happen yet because there's
+only one operator + their seeded tenants). Both ship before any
+new customer onboarding.
 
-### 1. Cross-tenant RLS validation pass + any fixes it surfaces (A1)
-**Ship first.** This is the only Section-A item that gates onboarding
-a paying customer. Per Phase 5's own "Owed" line, the policies are
-written but not negative-tested. A medium-sized harness + a small
-fix pass is realistic in one session. **User impact:** prevents the
-"tenant A reads tenant B's leads" class of incident; nothing else
-matters if this isn't solid.
+### 1. Ship A9 (remove fabricated testimonials + recover existing funnels)
+**Ship first.** Per verification: every Claude-generated funnel
+with empty `funnel_testimonials` currently has invented customer
+reviews on the live funnel, directly contradicting the CLAUDE.md
+parked policy. The prompt edits are 4 sites in
+`generate-funnel-live.ts` + a renderer fallback + a one-off
+migration to strip AI reviews from the two already-published
+funnel snapshots that have them (Dublin Clean co; Voltline is
+clean because it's the seed). **User impact:** removes the
+credibility / consumer-protection-violation exposure on every
+live funnel. **Effort:** small, one session.
 
-### 2. Cluster the three small "verify-and-finish" items (A8 + B1 + A9 + B12)
-**Ship second** as a single session-or-two cluster:
-- **A8** — verify the `form_submit_error` catch-block wiring actually
-  shipped per the §5.2 RESOLVED claim (small).
+### 2. Ship A1 (cross-tenant RLS validation pass)
+**Ship second.** Per Phase 5's own "Owed" line. The harness +
+any fixes it surfaces. **User impact:** prevents the "tenant A
+reads tenant B's leads" class of incident before any customer
+relies on the boundary holding. **Effort:** medium harness +
+small fix pass.
+
+### 3. Cluster the verify-and-finish items (B1 + B12 + B16)
+**Ship third** as a single session:
 - **B1** — add `website_approval_submissions` to the
   `supabase_realtime` publication + `RealtimeProvider` channel
   (small migration + small client change).
-- **A9** — verify the public renderer's behaviour for empty
-  `funnel_testimonials` and decide the V1 posture explicitly (small).
 - **B12** — the `submission_id` reconciliation read (small).
+- **B16** — confirm `VERCEL_*` env vars are set on the production
+  deployment + add a startup warning if absent (small).
 
-Why cluster: each is small alone; clustered is one "loose-ends close"
-session worth ~400 lines total. **User impact:** removes the analytics
-gaps still flagged as "verify" and gets approvals propagating live
-between operator tabs.
+A2 (closed) and A8 (closed) drop off the recommendation list.
+A9 used to be in this cluster; it has been promoted to #1.
 
-### 3. Wizard Q&A → real `GenerationContext` decision + ship (A2)
-**Ship third.** Per build-roadmap.md this is the last explicitly-listed
-Phase 6 deliverable. The decision itself is more important than the
-code: either thread the Q&A through, or remove the line from the
-roadmap. Either way it's small. **User impact:** closes Phase 6 on
-the books and removes the implicit "we're going to fix the
-create-client flow" tension.
+**Effort.** ~400 lines total. **User impact:** removes the
+quiet operational degradations + closes the analytics
+reconciliation loop.
 
-### 4. Funnel publish + approval lane (A3)
-**Ship fourth.** The architecture mirrors the website lanes; medium
-session. **User impact:** removes the silent "your funnel changes
-can't actually be published" trap. A client who edits their funnel
-expects publish to work the same way it does for their website. Today
-it doesn't.
+### 4. Ship A3 (funnel publish + approval lane)
+**Ship fourth.** Architecture mirrors website lanes; medium
+session. **User impact:** removes the silent trap that funnel
+edits can't actually be published.
 
-### 5. Pick A4 OR begin Phase 7 (A5) — operator/business call
-**Ship fifth — needs an operator decision before scheduling.**
-Two roads:
-- **A4** (verify public-site hosting actually works for one real
-  customer): operational, small-to-medium. Confirms the rendering /
-  domain pipeline is end-to-end usable. Doesn't unblock major
-  features but proves the V1 promise.
-- **Phase 7 (A5)** start (likely Stripe first — billing is the most
-  decoupleable, lowest-dependency provider): large, multi-session,
-  but unblocks the largest set of downstream work (Phase 8, real
-  campaign metrics, real reviews).
+### 5. Pick A4 OR begin Phase 7 — operator/business call
+**Ship fifth — needs a product decision before scheduling.** Two
+roads:
+- **A4** (run one real customer through the domain-connect flow
+  end-to-end against a real registrar). Small-to-medium,
+  operational, proves the V1 promise.
+- **Phase 7 (A5)** start, likely Stripe first (least-dependency
+  provider). Large, multi-session, but unblocks A6 + real
+  campaign / review metrics.
 
-These two are the next-major-thing-to-do question. A4 is faster
-ROI; Phase 7 is bigger commitment but unblocks more. Pick based on
-"do we have a real customer to onboard?" (A4) or "are we focused on
-finishing build before onboarding anyone?" (Phase 7).
-
-### Items NOT in this top-5 (and why)
-- **A6 (automation engine)** depends on Phase 7 — bundle with that
-  road.
-- **A7 (production observability)** is Phase 10 — wait until Phase 7
-  has a real sink to monitor.
-- **B7 (prompt polish)** is parallel-safe — run as fill-in sessions
+### Items intentionally NOT in this top-5
+- **A6 (automation engine)** depends on Phase 7 — bundle with
+  that road.
+- **A7 (production observability)** is Phase 10 — wait until
+  Phase 7 has a real sink to monitor.
+- **B7 (prompt polish)** is parallel-safe — fill-in sessions
   between bigger items.
-- Everything in Section B + C — by definition not user-blocking and
-  not next-three priorities.
+- **B15 (CreateClientModal upgrade)** is real work but needs a
+  design conversation first; don't schedule the engineering
+  before the product call.
+- **C18 (conversion intelligence design conversation)** — record
+  now, run later when Phase 7+8 produce live data.
+
+---
+
+## Verification pass — what changed
+
+Diff from the original inventory (2026-05-20, branch
+`claude/outstanding-work-inventory-BifMN`):
+
+### Status moves
+- **A2 closed.** Verified: the wizard's intent + audience + offer
+  + business details DO flow into the prompt via
+  `briefToGenerationContext`. Build-roadmap line is stale.
+- **A8 closed.** Verified: `form_submit_error` event type +
+  aggregation + tracker API + `FormBlock` catch-block invocation
+  all shipped (migrations 0038–0042 + `webnua-track.js:679` +
+  `FormBlock.tsx:75`). The `§3` re-run flag was conservative-stale.
+- **A9 promoted to critical with new context.** Verified by
+  reading the funnel-generation prompt: the prompt actively
+  *instructs* the model to invent testimonials when none are
+  supplied (4 sites in `generate-funnel-live.ts`), and Dublin
+  Clean co's published funnel snapshot confirms two invented
+  testimonials are live. This is the OPPOSITE of the documented
+  CLAUDE.md policy. Promoted to Section A and to the #1
+  recommendation slot.
+- **A4 confirmed as outstanding.** Verified by querying the
+  `websites` table: zero rows have a non-webnua.dev domain.
+  The custom-registrar pipeline has never been exercised.
+
+### New items added
+- **B15** — current `CreateClientModal` wizard major upgrade
+  (UX redesign + auto-population sources design call).
+- **B16** — VERCEL_TOKEN/PROJECT_ID/TEAM_ID env-var operational
+  config confirmation.
+- **B17** — recurring booking rolling-window top-up cron.
+- **B18** — per-operator notification preferences not consulted
+  by the trigger fan-out.
+- **C18** — conversion intelligence design conversation
+  (recorded so it doesn't get forgotten).
+
+### Categorization fixed
+- **C17 reframed.** Now explicitly the SUNSET previous 8-step
+  wizard; the current modal's upgrade work moved to its own
+  entry (B15). Prevents future confusion that C17 covers the
+  current wizard's outstanding work.
+
+### Code-comment sweep
+- `grep -rIn "TODO|FIXME|XXX|HACK" src/ public/ supabase/`
+  returned zero results. No untracked code TODOs.
+
+### Open ambiguities still flagged
+- **B7** — the prompt-audit resolution log claims "copy-vs-layout
+  via `capabilityHints`" + "worked-example shots" both RESOLVED.
+  Inventory carries them with "verify" qualifiers; a future pass
+  should confirm by reading the prompt files at the cited paths.
+
+### Recommendation-list changes
+- **A9 promoted to #1** (was a Section-A item but not in top-5).
+- **A2 + A8 removed from the list** (both closed).
+- **A1 demoted to #2** (was #1).
+- **B15 + C18 added as "intentionally not in top-5" items** so
+  they don't disappear.
