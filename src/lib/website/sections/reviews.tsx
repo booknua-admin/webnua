@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 
 import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import { reviewsMeta } from './registry-meta';
 import {
   brandThemeDefaults,
   mixHex,
@@ -955,35 +956,8 @@ function CarouselNav({
 }
 
 export const reviewsSection = defineSection<ReviewsData>({
-  type: 'reviews',
-  label: '// REVIEWS',
-  description:
-    'Customer testimonials — a grid of review cards or a spotlight layout, optional rating summary.',
+  ...reviewsMeta,
   defaultData,
   Fields: ReviewsFields,
   Preview: ReviewsPreview,
-  capabilityHints: {
-    copyFields: [
-      'eyebrow',
-      'headline',
-      'headlineAccent',
-      'sub',
-      'items',
-      'ratingValue',
-      'ratingCount',
-      'ctaLabel',
-      'ctaHref',
-    ],
-    mediaFields: ['items', 'spotlightImageUrl'],
-  },
-  elementLabels: {
-    eyebrow: 'Eyebrow',
-    headline: 'Headline',
-    subheadline: 'Sub-headline',
-    items: 'Reviews',
-    rating: 'Rating summary',
-    cta: 'Button',
-  },
-  allowedContainers: ['page', 'funnelStep'],
-  implemented: true,
 });

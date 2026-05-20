@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 
 import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import { galleryMeta } from './registry-meta';
 import {
   brandThemeDefaults,
   mixHex,
@@ -788,34 +789,8 @@ function GalleryTile({
 }
 
 export const gallerySection = defineSection<GalleryData>({
-  type: 'gallery',
-  label: '// GALLERY',
-  description:
-    'Project / photo gallery — uniform auto-cropped grid or masonry, with filter chips.',
+  ...galleryMeta,
   defaultData,
   Fields: GalleryFields,
   Preview: GalleryPreview,
-  capabilityHints: {
-    copyFields: [
-      'eyebrow',
-      'headline',
-      'headlineAccent',
-      'sub',
-      'categories',
-      'items',
-      'ctaLabel',
-      'ctaHref',
-    ],
-    mediaFields: ['items'],
-  },
-  elementLabels: {
-    eyebrow: 'Eyebrow',
-    headline: 'Headline',
-    subheadline: 'Sub-headline',
-    filters: 'Filter chips',
-    items: 'Photos',
-    cta: 'Button',
-  },
-  allowedContainers: ['page', 'funnelStep'],
-  implemented: true,
 });

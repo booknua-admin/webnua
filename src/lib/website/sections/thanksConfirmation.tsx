@@ -7,6 +7,7 @@ import {
 
 import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import { thanksConfirmationMeta } from './registry-meta';
 import { getSectionIcon } from '../section-icons';
 import {
   brandThemeDefaults,
@@ -356,30 +357,8 @@ function ThanksConfirmationPreview({
 }
 
 export const thanksConfirmationSection = defineSection<ThanksConfirmationData>({
-  type: 'thanksConfirmation',
-  label: '// THANKS',
-  description: 'Funnel thanks-step confirmation — success icon, copy, optional referral block.',
+  ...thanksConfirmationMeta,
   defaultData,
   Fields: ThanksConfirmationFields,
   Preview: ThanksConfirmationPreview,
-  capabilityHints: {
-    copyFields: [
-      'title',
-      'body',
-      'detailLine',
-      'referralTag',
-      'referralTitle',
-      'referralBody',
-      'referralCtaLabel',
-      'referralCtaHref',
-    ],
-  },
-  elementLabels: {
-    icon: 'Success icon',
-    headline: 'Title',
-    body: 'Body copy',
-    referral: 'Referral block',
-  },
-  allowedContainers: ['funnelStep'],
-  implemented: true,
 });

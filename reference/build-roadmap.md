@@ -49,7 +49,7 @@ Replaced the stub deletion points with Supabase-backed providers.
 - **Owed:** systematic cross-tenant RLS validation pass — policies
   written but not negative-tested with real `auth.uid()`s.
 
-## Phase 6 — AI generation
+## Phase 6 — AI generation ✅
 
 Replace `generatePageStub` / `generateFunnelStub` with a real Claude
 API edge function; record runs in `generation_log`. Wire
@@ -58,10 +58,19 @@ onboarding-wizard Q&A → real `GenerationContext`.
 - ✅ Website generator wired to real Claude via `/api/generate-site`
   + `generate-live.ts` (PR #47 / commit `efc4374`).
 - ✅ Silent-fallback mask removed — real 500s now surface in
-  `CreateClientModal`'s error pane via `AppError`.
+  `CreateClientModal`'s error pane via `AppError` (PR #58 / merge
+  `f66865f`).
 - ✅ Record runs in `generation_log` — one row per §4.4 fallback
   field, all sharing the run's `generation_id` uuid. Service-role
   insert from the route handler.
+- ✅ Server/client metadata boundary — section files are
+  `'use client'`, so server consumers (`generation-prompt.ts`,
+  `generation-stub.ts`) read `SECTION_REGISTRY_META` from
+  `sections/registry-meta.ts` instead of importing section objects
+  directly. Resolves the `TypeError: Cannot read properties of
+  undefined (reading 'includes')` that PR #58's unmasking surfaced.
+  See CLAUDE.md parked decisions ("Phase 6 generation TypeError —
+  RESOLVED" and "Section metadata server/client boundary").
 - Funnel generator (`generateFunnelSync`) is still deterministic
   — the next AI-generation increment.
 - Wizard Q&A → real `GenerationContext` — still owed (see CLAUDE.md

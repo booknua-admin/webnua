@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 
 import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import { faqMeta } from './registry-meta';
 import { getSectionIcon } from '../section-icons';
 import {
   brandThemeDefaults,
@@ -888,35 +889,8 @@ function FaqFooter({
 }
 
 export const faqSection = defineSection<FAQData>({
-  type: 'faq',
-  label: '// FAQ',
-  description:
-    'Question / answer accordion — centred, grid, or sidebar layout, with an optional footer block.',
+  ...faqMeta,
   defaultData,
   Fields: FAQFields,
   Preview: FAQPreview,
-  capabilityHints: {
-    copyFields: [
-      'eyebrow',
-      'headline',
-      'headlineAccent',
-      'sub',
-      'items',
-      'footerText',
-      'footerLinkLabel',
-      'footerLinkHref',
-      'footerCardTitle',
-      'footerCardText',
-      'signals',
-    ],
-  },
-  elementLabels: {
-    eyebrow: 'Eyebrow',
-    headline: 'Headline',
-    subheadline: 'Sub-headline',
-    items: 'Questions',
-    footer: 'Footer block',
-  },
-  allowedContainers: ['page', 'funnelStep'],
-  implemented: true,
 });

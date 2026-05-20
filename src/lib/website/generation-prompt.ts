@@ -10,8 +10,7 @@
 import type { BrandObject, PageType, VoiceTone } from './types';
 import type { GenerationContext, PrimaryIntent } from './generation-context';
 import { describeAudience, describeIntent, describePageType } from './generation-context';
-import { SECTION_REGISTRY } from './sections';
-import type { SectionTypeDefinition } from './registry';
+import { SECTION_REGISTRY_META, type SectionMeta } from './sections/registry-meta';
 
 export type PromptBlock = {
   id:
@@ -154,14 +153,11 @@ function buildExistingPagesBlock(ctx: GenerationContext): string {
 }
 
 function buildRegistryBlock(ctx: GenerationContext): string {
-  const eligible = SECTION_REGISTRY.filter((def) => isEligible(def, ctx));
+  const eligible = SECTION_REGISTRY_META.filter((def) => isEligible(def, ctx));
   return eligible.map(formatRegistryEntry).join('\n\n');
 }
 
-function isEligible(
-  def: SectionTypeDefinition,
-  ctx: GenerationContext,
-): boolean {
+function isEligible(def: SectionMeta, ctx: GenerationContext): boolean {
   if (!def.allowedContainers.includes('page')) return false;
   if (def.allowedPageTypes && def.allowedPageTypes.length > 0) {
     return def.allowedPageTypes.includes(ctx.pageType);
@@ -169,9 +165,8 @@ function isEligible(
   return true;
 }
 
-function formatRegistryEntry(def: SectionTypeDefinition): string {
-  const example = def.defaultData() as Record<string, unknown>;
-  const fields = Object.keys(example);
+function formatRegistryEntry(def: SectionMeta): string {
+  const fields = def.defaultDataKeys;
   return [
     `### ${def.type}`,
     `Label: ${def.label}`,

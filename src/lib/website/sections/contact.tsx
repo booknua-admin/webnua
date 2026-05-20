@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 
 import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import { contactMeta } from './registry-meta';
 import { getSectionIcon } from '../section-icons';
 import {
   brandThemeDefaults,
@@ -877,33 +878,8 @@ function MapBox({
 }
 
 export const contactSection = defineSection<ContactData>({
-  type: 'contact',
-  label: '// CONTACT',
-  description:
-    'Contact block — header, contact details, and a message form, in four layouts.',
+  ...contactMeta,
   defaultData,
   Fields: ContactFields,
   Preview: ContactPreview,
-  capabilityHints: {
-    copyFields: [
-      'eyebrow',
-      'headline',
-      'headlineAccent',
-      'sub',
-      'items',
-      'formTitle',
-      'formButtonLabel',
-    ],
-    mediaFields: ['imageUrl', 'mapImageUrl'],
-  },
-  elementLabels: {
-    eyebrow: 'Eyebrow',
-    headline: 'Headline',
-    subheadline: 'Sub-headline',
-    items: 'Contact details',
-    form: 'Message form',
-    media: 'Image / map',
-  },
-  allowedContainers: ['page', 'funnelStep'],
-  implemented: true,
 });

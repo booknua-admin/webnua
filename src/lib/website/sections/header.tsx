@@ -7,6 +7,7 @@ import { BuilderFormSection } from '@/components/shared/builder/BuilderField';
 
 import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import { headerMeta } from './registry-meta';
 import {
   brandThemeDefaults,
   resolveTheme,
@@ -514,20 +515,8 @@ function CtaButton({
 }
 
 export const headerSection = defineSection<HeaderData>({
-  type: 'header',
-  label: '// HEADER',
-  description: 'Site header — logo, navigation, and an optional CTA. Wraps every page.',
+  ...headerMeta,
   defaultData,
   Fields: HeaderFields,
   Preview: HeaderPreview,
-  capabilityHints: {
-    copyFields: ['logoText', 'logoTagline', 'ctaLabel', 'ctaHref'],
-    mediaFields: ['logoImageUrl'],
-  },
-  elementLabels: {
-    logo: 'Logo',
-    cta: 'CTA button',
-  },
-  allowedContainers: ['websiteHeader'],
-  implemented: true,
 });

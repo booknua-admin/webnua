@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 
 import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import { trustMeta } from './registry-meta';
 import { DEFAULT_SECTION_ICON, getSectionIcon } from '../section-icons';
 import {
   brandThemeDefaults,
@@ -776,24 +777,8 @@ function BadgeChip({
 }
 
 export const trustSection = defineSection<TrustData>({
-  type: 'trust',
-  label: '// TRUST',
-  description:
-    'Social-proof band — a row of trust stats or client logos, optional badge strip.',
+  ...trustMeta,
   defaultData,
   Fields: TrustFields,
   Preview: TrustPreview,
-  capabilityHints: {
-    copyFields: ['eyebrow', 'headline', 'headlineAccent', 'sub', 'items', 'badges'],
-    mediaFields: ['items'],
-  },
-  elementLabels: {
-    eyebrow: 'Eyebrow',
-    headline: 'Headline',
-    subheadline: 'Sub-headline',
-    items: 'Trust items',
-    badges: 'Badge strip',
-  },
-  allowedContainers: ['page', 'funnelStep'],
-  implemented: true,
 });

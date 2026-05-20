@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 
 import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import { offerMeta } from './registry-meta';
 import { getSectionIcon } from '../section-icons';
 import {
   brandThemeDefaults,
@@ -1072,42 +1073,8 @@ function OfferImage({ url, theme }: { url: string; theme: ResolvedTheme }) {
 }
 
 export const offerSection = defineSection<OfferData>({
-  type: 'offer',
-  label: '// OFFER',
-  description:
-    'Offer block — a single-offer card (price, inclusions, scarcity) or a value stack of components.',
+  ...offerMeta,
   defaultData,
   Fields: OfferFields,
   Preview: OfferPreview,
-  capabilityHints: {
-    copyFields: [
-      'tag',
-      'title',
-      'titleAccent',
-      'sub',
-      'priceLabel',
-      'priceCaption',
-      'inclusions',
-      'scarcityCopy',
-      'items',
-      'signals',
-      'ctaLabel',
-      'ctaHref',
-    ],
-    mediaFields: ['imageUrl'],
-  },
-  elementLabels: {
-    eyebrow: 'Eyebrow',
-    headline: 'Headline',
-    subheadline: 'Sub-headline',
-    price: 'Price',
-    inclusions: 'Inclusions',
-    scarcity: 'Scarcity line',
-    media: 'Image',
-    items: 'Value items',
-    signals: 'Trust signals',
-    cta: 'Button',
-  },
-  allowedContainers: ['page', 'funnelStep'],
-  implemented: true,
 });
