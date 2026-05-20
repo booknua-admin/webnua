@@ -853,7 +853,7 @@ function Avatar({
       />
     );
   }
-  const initials = name
+  const initials = (name ?? '')
     .split(/\s+/)
     .filter(Boolean)
     .slice(0, 2)
