@@ -63,6 +63,12 @@ export type HeaderData = {
   ctaLabel: string;
   ctaHref: string;
   ctaStyle: HeaderCtaStyle;
+  /** Sit the header over the first section with a transparent background. */
+  overlayHero: boolean;
+  /** Pin the header to the top of the viewport on scroll. */
+  sticky: boolean;
+  /** Nav-link colour. Empty = inherit the theme body colour. */
+  navColor: string;
 };
 
 /** The header's own colours — last link in the resolve chain. */
@@ -95,6 +101,9 @@ const DEFAULTS: HeaderData = {
   ctaLabel: 'Get a quote',
   ctaHref: '/contact',
   ctaStyle: 'solid',
+  overlayHero: false,
+  sticky: false,
+  navColor: '',
 };
 
 function defaultData(): HeaderData {
@@ -109,6 +118,16 @@ function omitThemeKey(theme: SectionTheme, key: keyof SectionTheme): SectionThem
   const next = { ...theme };
   delete next[key];
   return next;
+}
+
+/** Append an alpha channel to a 6-digit hex (`#rrggbb` → `#rrggbbaa`) for the
+ *  frosted-header translucent fill. Non-hex values pass through unchanged. */
+function withAlpha(hex: string, alpha: number): string {
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return hex;
+  const a = Math.round(Math.max(0, Math.min(1, alpha)) * 255)
+    .toString(16)
+    .padStart(2, '0');
+  return `${hex}${a}`;
 }
 
 const LAYOUT_OPTIONS: readonly VariantOption<HeaderLayout>[] = [
@@ -225,6 +244,35 @@ function HeaderFields({
           options={LAYOUT_OPTIONS}
           onChange={(v) => set('layout', v)}
         />
+      </BuilderFormSection>
+      <BuilderFormSection>
+        <ToggleField
+          label="Overlay the hero"
+          value={d.overlayHero}
+          onChange={(v) => set('overlayHero', v)}
+          helper={
+            <>Sit the header over the first section with a transparent background.</>
+          }
+        />
+        <ToggleField
+          label="Sticky on scroll"
+          value={d.sticky}
+          onChange={(v) => set('sticky', v)}
+          helper={<>Pin the header to the top of the page as visitors scroll.</>}
+        />
+        <ColorField
+          label="Nav link colour"
+          value={d.navColor || resolved.body}
+          inherited={d.navColor === ''}
+          onChange={(v) => set('navColor', v)}
+          onReset={() => set('navColor', '')}
+        />
+        {d.overlayHero && d.sticky ? (
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
+            Sticky + overlay — the bar gets a translucent blur so menu items stay
+            legible over page content.
+          </p>
+        ) : null}
       </BuilderFormSection>
       <BuilderFormSection>
         <MenuEditor />
@@ -522,8 +570,24 @@ function HeaderPreview({
       : SAMPLE_NAV;
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // Header surface — overlay (transparent over the hero) / overlay + sticky
+  // (translucent + blur so menu items stay legible while pinned) / solid.
+  const frosted = d.overlayHero && d.sticky;
+  const barBackground = frosted
+    ? withAlpha(resolved.background, 0.72)
+    : d.overlayHero
+      ? 'transparent'
+      : resolved.background;
+  const shellTheme: ResolvedTheme = { ...resolved, background: barBackground };
+
   return (
-    <SectionShell theme={resolved} brand={brand} inset="flush" pad="none">
+    <SectionShell
+      theme={shellTheme}
+      brand={brand}
+      inset="flush"
+      pad="none"
+      className={frosted ? 'backdrop-blur-md' : undefined}
+    >
       {({ theme, headingFont, accent }) => {
         const sel = (id: HeaderElement) => ({
           id,
@@ -574,11 +638,17 @@ function HeaderPreview({
                     items={navItems.slice(0, 2)}
                     theme={theme}
                     accent={accent}
+                    navColor={d.navColor}
                     className="hidden flex-1 @2xl:flex"
                   />
                   {logo}
                   <div className="hidden flex-1 items-center justify-end gap-6 @2xl:flex">
-                    <NavLinks items={navItems.slice(2)} theme={theme} accent={accent} />
+                    <NavLinks
+                      items={navItems.slice(2)}
+                      theme={theme}
+                      accent={accent}
+                      navColor={d.navColor}
+                    />
                     {cta}
                   </div>
                   {hamburger}
@@ -587,7 +657,12 @@ function HeaderPreview({
                 <>
                   {logo}
                   <div className="hidden flex-1 items-center justify-end gap-7 @2xl:flex">
-                    <NavLinks items={navItems} theme={theme} accent={accent} />
+                    <NavLinks
+                      items={navItems}
+                      theme={theme}
+                      accent={accent}
+                      navColor={d.navColor}
+                    />
                     {cta}
                   </div>
                   {hamburger}
@@ -599,6 +674,7 @@ function HeaderPreview({
                     items={navItems}
                     theme={theme}
                     accent={accent}
+                    navColor={d.navColor}
                     className="hidden flex-1 justify-center @2xl:flex"
                   />
                   <span className="hidden @2xl:inline-block">{cta}</span>
@@ -610,6 +686,7 @@ function HeaderPreview({
               <MobileMenu
                 items={navItems}
                 theme={theme}
+                surface={resolved.background}
                 accent={accent}
                 cta={
                   d.showCta && d.ctaLabel
@@ -631,12 +708,16 @@ function HeaderPreview({
 function MobileMenu({
   items,
   theme,
+  surface,
   accent,
   cta,
   live,
 }: {
   items: readonly HeaderNavItem[];
   theme: ResolvedTheme;
+  /** Solid panel background — the bar can be transparent / frosted, but the
+   *  dropdown panel always needs an opaque surface. */
+  surface: string;
   accent: string;
   cta: { label: string; href: string; style: HeaderCtaStyle } | null;
   live: boolean;
@@ -644,7 +725,7 @@ function MobileMenu({
   return (
     <div
       className="flex flex-col gap-1 border-t px-8 py-3 @2xl:hidden"
-      style={{ borderColor: theme.border, backgroundColor: theme.background }}
+      style={{ borderColor: theme.border, backgroundColor: surface }}
     >
       {items.map((item, i) =>
         item.href ? (
@@ -730,17 +811,21 @@ function NavLinks({
   items,
   theme,
   accent,
+  navColor,
   className,
 }: {
   items: readonly HeaderNavItem[];
   theme: ResolvedTheme;
   accent: string;
+  /** Operator-set nav-link colour. Empty → the first link pops in the
+   *  accent, the rest use the theme body colour. Set → all links use it. */
+  navColor?: string;
   className?: string;
 }) {
   return (
     <nav className={`flex items-center gap-7 ${className ?? ''}`} aria-label="Site navigation">
       {items.map((item, i) => {
-        const color = i === 0 ? accent : theme.body;
+        const color = navColor || (i === 0 ? accent : theme.body);
         return item.href ? (
           <a
             key={`${item.label}-${i}`}

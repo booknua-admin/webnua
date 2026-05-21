@@ -713,6 +713,9 @@ export const headerMeta: SectionMeta = {
     'ctaLabel',
     'ctaHref',
     'ctaStyle',
+    'overlayHero',
+    'sticky',
+    'navColor',
   ],
   defaultDataValues: {
     theme: {},
@@ -724,6 +727,9 @@ export const headerMeta: SectionMeta = {
     ctaLabel: 'Get a quote',
     ctaHref: '/contact',
     ctaStyle: 'solid',
+    overlayHero: false,
+    sticky: false,
+    navColor: '',
   },
 };
 
