@@ -25,6 +25,12 @@ import { CopyField } from './_shared/CopyField';
 import { SurfaceLink } from './_shared/live-surface';
 import { IconField } from './_shared/IconField';
 import { MediaField } from './_shared/MediaField';
+import {
+  coerceImageDisplay,
+  defaultImageDisplay,
+  imageBoxClasses,
+  type ImageDisplay,
+} from './_shared/image-display';
 import { SectionShell } from './_shared/SectionShell';
 import { SelectableElement } from './_shared/SelectableElement';
 import { ColorField, ThemePresetField } from './_shared/ThemeField';
@@ -88,6 +94,9 @@ export type AboutData = {
   imageUrl: string;
   imageUrl2: string;
   imageUrl3: string;
+  imageDisplay: ImageDisplay;
+  imageDisplay2: ImageDisplay;
+  imageDisplay3: ImageDisplay;
   /** Floating card layered over the media column. */
   overlay: AboutOverlay;
   badgeIcon: string;
@@ -156,6 +165,9 @@ const DEFAULTS: AboutData = {
   imageUrl: '',
   imageUrl2: '',
   imageUrl3: '',
+  imageDisplay: defaultImageDisplay(),
+  imageDisplay2: defaultImageDisplay(),
+  imageDisplay3: defaultImageDisplay(),
   overlay: 'stat',
   badgeIcon: 'check',
   badgeValue: '100%',
@@ -643,6 +655,8 @@ function AboutFields({
           label={d.mediaMode === 'collage' ? 'Main image' : 'Image'}
           value={d.imageUrl}
           onChange={(v) => set('imageUrl', v)}
+          display={coerceImageDisplay(d.imageDisplay)}
+          onDisplayChange={(v) => set('imageDisplay', v)}
         />
         {d.mediaMode === 'collage' ? (
           <>
@@ -650,11 +664,17 @@ function AboutFields({
               label="Collage image 2"
               value={d.imageUrl2}
               onChange={(v) => set('imageUrl2', v)}
+              display={coerceImageDisplay(d.imageDisplay2)}
+              onDisplayChange={(v) => set('imageDisplay2', v)}
+              displayControls={['fit', 'focal']}
             />
             <MediaField
               label="Collage image 3"
               value={d.imageUrl3}
               onChange={(v) => set('imageUrl3', v)}
+              display={coerceImageDisplay(d.imageDisplay3)}
+              onDisplayChange={(v) => set('imageDisplay3', v)}
+              displayControls={['fit', 'focal']}
             />
           </>
         ) : null}
@@ -907,10 +927,28 @@ function AboutMedia({
     return (
       <div className="grid w-full grid-cols-2 gap-3">
         <div className="col-span-2">
-          <ImageBox url={data.imageUrl} theme={theme} ratio="aspect-[16/9]" rounded />
+          <ImageBox
+            url={data.imageUrl}
+            theme={theme}
+            ratio="aspect-[16/9]"
+            rounded
+            display={data.imageDisplay}
+          />
         </div>
-        <ImageBox url={data.imageUrl2} theme={theme} ratio="aspect-square" rounded />
-        <ImageBox url={data.imageUrl3} theme={theme} ratio="aspect-square" rounded />
+        <ImageBox
+          url={data.imageUrl2}
+          theme={theme}
+          ratio="aspect-square"
+          rounded
+          display={data.imageDisplay2}
+        />
+        <ImageBox
+          url={data.imageUrl3}
+          theme={theme}
+          ratio="aspect-square"
+          rounded
+          display={data.imageDisplay3}
+        />
       </div>
     );
   }
@@ -930,6 +968,7 @@ function AboutMedia({
         theme={theme}
         ratio="aspect-[4/5]"
         roundedClass={radiusClass}
+        display={data.imageDisplay}
       />
       {data.overlay !== 'none' ? (
         <div className="absolute -bottom-5 left-5 right-12 max-w-[320px]">
@@ -952,22 +991,37 @@ function ImageBox({
   ratio,
   rounded,
   roundedClass,
+  display,
 }: {
   url: string;
   theme: ResolvedTheme;
   ratio: string;
   rounded?: boolean;
   roundedClass?: string;
+  display: ImageDisplay;
 }) {
   const rc = roundedClass ?? (rounded ? 'rounded-xl' : '');
+  const box = imageBoxClasses(display);
+  if (url && box.isOriginal) {
+    return (
+      <div
+        className={`relative w-full overflow-hidden ${rc}`}
+        style={{ backgroundColor: theme.card }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt="" className="block h-auto w-full" />
+      </div>
+    );
+  }
+  const aspectCls = box.aspectClass ?? ratio;
   return (
     <div
-      className={`relative ${ratio} w-full overflow-hidden ${rc}`}
+      className={`relative ${aspectCls} w-full overflow-hidden ${rc}`}
       style={{ backgroundColor: theme.card }}
     >
       {url ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        <img src={url} alt="" className={`absolute inset-0 h-full w-full ${box.fitClass}`} />
       ) : (
         <div className="absolute inset-0 flex items-center justify-center">
           <span

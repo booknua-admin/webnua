@@ -11,6 +11,12 @@ import { CopyField } from './_shared/CopyField';
 import { LinkField } from './_shared/LinkField';
 import { SurfaceLink } from './_shared/live-surface';
 import { MediaField } from './_shared/MediaField';
+import {
+  coerceImageDisplay,
+  defaultImageDisplay,
+  imageBoxClasses,
+  type ImageDisplay,
+} from './_shared/image-display';
 import { RangeField } from './_shared/RangeField';
 import { SectionShell } from './_shared/SectionShell';
 import { useSectionFormSlot } from './_shared/section-form-slot';
@@ -53,6 +59,7 @@ export type HeroData = {
   ctaSecondaryHref: string;
   ctaSecondaryVisible: boolean;
   heroImageUrl: string;
+  heroImageDisplay: ImageDisplay;
 };
 
 /** The hero's own colours — the last link in the resolve chain, so a fresh
@@ -82,6 +89,7 @@ const DEFAULTS: HeroData = {
   ctaSecondaryHref: 'tel:0400000000',
   ctaSecondaryVisible: true,
   heroImageUrl: '',
+  heroImageDisplay: defaultImageDisplay(),
 };
 
 function defaultData(): HeroData {
@@ -362,6 +370,9 @@ function HeroFields({
           label="Hero image"
           value={d.heroImageUrl}
           onChange={(v) => set('heroImageUrl', v)}
+          display={coerceImageDisplay(d.heroImageDisplay)}
+          onDisplayChange={(v) => set('heroImageDisplay', v)}
+          displayControls={d.layout === 'overlay' ? ['fit', 'focal'] : ['fit', 'aspect', 'focal']}
         />
       </BuilderFormSection>
     </>
@@ -405,6 +416,7 @@ function HeroPreview({
             url={d.heroImageUrl}
             scrim={resolved.background}
             opacity={d.overlayOpacity / 100}
+            display={d.heroImageDisplay}
           />
         ) : undefined
       }
@@ -531,7 +543,12 @@ function HeroPreview({
             {formColumn}
           </div>
         ) : (
-          <HeroImage key="side" url={d.heroImageUrl} theme={theme} />
+          <HeroImage
+            key="side"
+            url={d.heroImageUrl}
+            theme={theme}
+            display={d.heroImageDisplay}
+          />
         );
 
         return (
@@ -544,15 +561,34 @@ function HeroPreview({
   );
 }
 
-function HeroImage({ url, theme }: { url: string; theme: { card: string; muted: string } }) {
+function HeroImage({
+  url,
+  theme,
+  display,
+}: {
+  url: string;
+  theme: { card: string; muted: string };
+  display: ImageDisplay;
+}) {
+  const box = imageBoxClasses(display);
+  if (url && box.isOriginal) {
+    return (
+      <div className="relative w-full overflow-hidden" style={{ backgroundColor: theme.card }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt="" className="block h-auto w-full" />
+      </div>
+    );
+  }
+  // 'auto' keeps the hero image filling its column; a forced ratio boxes it.
+  const ratio = box.aspectClass ?? 'min-h-[280px] @2xl:min-h-full';
   return (
     <div
-      className="relative min-h-[280px] w-full overflow-hidden @2xl:min-h-full"
+      className={`relative w-full overflow-hidden ${ratio}`}
       style={{ backgroundColor: theme.card }}
     >
       {url ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        <img src={url} alt="" className={`absolute inset-0 h-full w-full ${box.fitClass}`} />
       ) : (
         <div className="absolute inset-0 flex items-center justify-center">
           <span
@@ -567,7 +603,17 @@ function HeroImage({ url, theme }: { url: string; theme: { card: string; muted: 
   );
 }
 
-function HeroBackground({ url, scrim, opacity }: { url: string; scrim: string; opacity: number }) {
+function HeroBackground({
+  url,
+  scrim,
+  opacity,
+  display,
+}: {
+  url: string;
+  scrim: string;
+  opacity: number;
+  display: ImageDisplay;
+}) {
   const a = (multiplier: number) => {
     const v = Math.round(Math.max(0, Math.min(1, opacity * multiplier)) * 255);
     return v.toString(16).padStart(2, '0');
@@ -576,7 +622,11 @@ function HeroBackground({ url, scrim, opacity }: { url: string; scrim: string; o
     <>
       {url ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        <img
+          src={url}
+          alt=""
+          className={`absolute inset-0 h-full w-full ${imageBoxClasses(display).fitClass}`}
+        />
       ) : null}
       <div
         className="absolute inset-0"

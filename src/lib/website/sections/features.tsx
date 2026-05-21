@@ -27,6 +27,7 @@ import { SurfaceLink } from './_shared/live-surface';
 import { gridColumnsClass } from './_shared/grid';
 import { IconField } from './_shared/IconField';
 import { MediaField } from './_shared/MediaField';
+import { coerceImageDisplay, imageBoxClasses, type ImageDisplay } from './_shared/image-display';
 import { SectionShell } from './_shared/SectionShell';
 import { SelectableElement } from './_shared/SelectableElement';
 import { ColorField, ThemePresetField } from './_shared/ThemeField';
@@ -58,6 +59,8 @@ export type FeatureItem = {
   /** An icon id from the curated `section-icons` library. */
   icon: string;
   imageUrl: string;
+  /** Per-image fit / focal point. Absent on old data — coerced on read. */
+  display?: ImageDisplay;
   title: string;
   description: string;
   linkLabel: string;
@@ -468,6 +471,9 @@ function FeaturesFields({
                   label="Image"
                   value={item.imageUrl}
                   onChange={(v) => setItem(i, { ...item, imageUrl: v })}
+                  display={coerceImageDisplay(item.display)}
+                  onDisplayChange={(v) => setItem(i, { ...item, display: v })}
+                  displayControls={['fit', 'focal']}
                 />
               ) : null}
               <CopyField
@@ -776,10 +782,12 @@ function FeatureImage({
   url,
   theme,
   rounded,
+  display,
 }: {
   url: string;
   theme: ResolvedTheme;
   rounded: boolean;
+  display?: ImageDisplay;
 }) {
   return (
     <div
@@ -788,7 +796,11 @@ function FeatureImage({
     >
       {url ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        <img
+          src={url}
+          alt=""
+          className={`absolute inset-0 h-full w-full ${imageBoxClasses(display).fitClass}`}
+        />
       ) : (
         <div className="absolute inset-0 flex items-center justify-center">
           <span
@@ -868,7 +880,12 @@ function FeatureCard({
             border: `1px solid ${theme.cardBorder}`,
           }}
         >
-          <FeatureImage url={item.imageUrl} theme={theme} rounded={false} />
+          <FeatureImage
+            url={item.imageUrl}
+            theme={theme}
+            rounded={false}
+            display={item.display}
+          />
           <div className="flex flex-1 flex-col items-center px-5 pb-6 pt-5">
             {overlapIcon && showIcon ? (
               <div className="-mt-12 mb-3">
@@ -916,7 +933,7 @@ function FeatureCard({
     >
       {showImage ? (
         <div className="mb-4 w-full">
-          <FeatureImage url={item.imageUrl} theme={theme} rounded />
+          <FeatureImage url={item.imageUrl} theme={theme} rounded display={item.display} />
         </div>
       ) : null}
       {showIcon && !overlapIcon ? (

@@ -25,6 +25,7 @@ import { CopyField } from './_shared/CopyField';
 import { SurfaceLink } from './_shared/live-surface';
 import { gridColumnsClass, masonryColumnsClass } from './_shared/grid';
 import { MediaField } from './_shared/MediaField';
+import { coerceImageDisplay, imageBoxClasses, type ImageDisplay } from './_shared/image-display';
 import { SectionShell } from './_shared/SectionShell';
 import { SelectableElement } from './_shared/SelectableElement';
 import { ColorField, ThemePresetField } from './_shared/ThemeField';
@@ -58,6 +59,8 @@ type GalleryElement =
 export type GalleryItem = {
   id: string;
   imageUrl: string;
+  /** Per-image fit / focal point. Absent on old data — coerced on read. */
+  display?: ImageDisplay;
   caption: string;
   /** Filter category — should match one of the filter chips. */
   category: string;
@@ -457,6 +460,9 @@ function GalleryFields({
                 label="Image"
                 value={item.imageUrl}
                 onChange={(v) => setItem(i, { ...item, imageUrl: v })}
+                display={coerceImageDisplay(item.display)}
+                onDisplayChange={(v) => setItem(i, { ...item, display: v })}
+                displayControls={['fit', 'focal']}
               />
               <BuilderFormRow>
                 <CopyField
@@ -765,7 +771,7 @@ function GalleryTile({
             <img
               src={item.imageUrl}
               alt={item.caption}
-              className="absolute inset-0 h-full w-full object-cover"
+              className={`absolute inset-0 h-full w-full ${imageBoxClasses(item.display).fitClass}`}
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center">
