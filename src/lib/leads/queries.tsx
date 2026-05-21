@@ -17,6 +17,7 @@ import type { ReactNode } from 'react';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+import { CopyableId } from '@/components/shared/CopyableId';
 import { AppError, normalizeError } from '@/lib/errors';
 import { supabase } from '@/lib/supabase/client';
 import { relativeTime } from '@/lib/time';
@@ -35,6 +36,7 @@ import {
   type LeadDetail,
   type LeadQuickAction,
   type LeadRailCard,
+  type LeadRailRow,
   type LeadSourceKind,
   type LeadStatus,
   type LeadTimelineDot,
@@ -337,6 +339,7 @@ type LeadDetailJoinRow = {
   status: LeadStatus;
   urgency: LeadUrgency;
   source: string | null;
+  submission_id: string | null;
   customer_name_snapshot: string;
   customer_phone_snapshot: string | null;
   created_at: string;
@@ -350,7 +353,7 @@ type LeadDetailJoinRow = {
 };
 
 const LEAD_DETAIL_SELECT =
-  'id, status, urgency, source, customer_name_snapshot, ' +
+  'id, status, urgency, source, submission_id, customer_name_snapshot, ' +
   'customer_phone_snapshot, created_at, ' +
   'customer:customers(suburb, email, address), ' +
   'client:clients(name, slug), ' +
@@ -550,16 +553,25 @@ function buildLeadDetail(
   if (row.customer?.email) metaParts.push(row.customer.email);
   if (suburb) metaParts.push(suburb);
 
+  const leadDetailRows: LeadRailRow[] = [
+    { label: 'Source', value: row.source ?? 'Direct' },
+    { label: 'Status', value: LEAD_STATUS_LABEL[row.status] },
+    { label: 'Urgency', value: LEAD_URGENCY_LABEL[row.urgency] || 'None' },
+    { label: 'First seen', value: relativeTime(row.created_at) },
+  ];
+  // The form `submission_id` lets an operator reconcile the lead back to the
+  // exact public-form submission that created it. Only form-captured leads
+  // carry one — a manual / imported lead has nothing to reconcile, so the row
+  // is omitted rather than shown empty.
+  if (row.submission_id) {
+    leadDetailRows.push({
+      label: 'Submission ID',
+      value: <CopyableId value={row.submission_id} />,
+    });
+  }
+
   const rail: LeadRailCard[] = [
-    {
-      heading: '// LEAD DETAILS',
-      rows: [
-        { label: 'Source', value: row.source ?? 'Direct' },
-        { label: 'Status', value: LEAD_STATUS_LABEL[row.status] },
-        { label: 'Urgency', value: LEAD_URGENCY_LABEL[row.urgency] || 'None' },
-        { label: 'First seen', value: relativeTime(row.created_at) },
-      ],
-    },
+    { heading: '// LEAD DETAILS', rows: leadDetailRows },
   ];
 
   const customerRows = [

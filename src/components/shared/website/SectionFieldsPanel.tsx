@@ -19,6 +19,7 @@ import { getSectionDefinition } from '@/lib/website/sections';
 import { SectionFieldContextProvider } from '@/lib/website/sections/_shared/field-context';
 import { SectionPopupEditProvider } from '@/lib/website/sections/_shared/section-popup-edit';
 
+import { PlaceholderTestimonialBanner } from './PlaceholderTestimonialBanner';
 import { SectionFormControls, formElementLabel, isFormElement } from './SectionFormControls';
 
 export type SectionFieldsPanelProps = {
@@ -122,6 +123,9 @@ export function SectionFieldsPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 [&_[data-slot=builder-form-section]]:mb-3.5 [&_[data-slot=builder-form-section]]:border-b [&_[data-slot=builder-form-section]]:border-paper-2 [&_[data-slot=builder-form-section]]:pb-3.5 [&_[data-slot=builder-form-section]:last-child]:mb-0 [&_[data-slot=builder-form-section]:last-child]:border-b-0 [&_[data-slot=builder-form-section]:last-child]:pb-0">
+        {/* AI-drafted-testimonial nudge — self-gates to reviews sections that
+            still carry unedited AI placeholders (B16). */}
+        <PlaceholderTestimonialBanner section={section} />
         {/* `as never` cast at the registry boundary — the Fields component
             is typed against its specific data shape; the registry stores
             them as unknown. defaultData() guarantees the shape on creation. */}
