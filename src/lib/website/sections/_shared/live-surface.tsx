@@ -15,6 +15,9 @@
 import { createContext, useContext, type CSSProperties, type ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
+import { POPUP_HREF } from '@/lib/website/popup-config';
+
+import { usePopupRuntime, useSectionPopupSlot } from './section-popup-slot';
 
 const LiveSurfaceContext = createContext(false);
 
@@ -35,19 +38,49 @@ function realHref(href: string | null | undefined): string | null {
 }
 
 export type SurfaceLinkProps = {
-  /** The stored CTA href — a page path (`/about`), `tel:` / `mailto:`, or an
-   *  external URL. Empty or `#` renders as a non-link. */
+  /** The stored CTA href — a page path (`/about`), `tel:` / `mailto:`, an
+   *  external URL, or the `POPUP_HREF` sentinel ("open this section's
+   *  popup"). Empty or `#` renders as a non-link. */
   href?: string | null;
   className?: string;
   style?: CSSProperties;
   children: ReactNode;
 };
 
-/** A section CTA / link. On the live site with a real href it renders a
- *  navigable `<a>`; in the editor (or with an empty / `#` href) it renders an
- *  inert `<span>` so the element stays click-to-select. */
+/** A section CTA / link. On the live site it renders a navigable `<a>` (a real
+ *  href) or a `<button>` (the `POPUP_HREF` sentinel + a configured section
+ *  popup); in the editor — or with an empty / `#` href, or no popup configured
+ *  — it renders an inert `<span>` so the element stays click-to-select. */
 export function SurfaceLink({ href, className, style, children }: SurfaceLinkProps) {
   const live = useIsLiveSurface();
+  const popupSlot = useSectionPopupSlot();
+  const popupRuntime = usePopupRuntime();
+
+  // Popup trigger — the POPUP_HREF sentinel. On a live surface with a
+  // configured section popup AND a runtime to open it, render a button;
+  // otherwise (the editor, or no popup configured) fall through to the inert
+  // <span> so the element stays click-to-select.
+  if (href?.trim() === POPUP_HREF) {
+    if (live && popupSlot && popupRuntime) {
+      const popup = popupSlot;
+      return (
+        <button
+          type="button"
+          onClick={() => popupRuntime.openPopup(popup)}
+          className={cn(className, 'no-underline')}
+          style={style}
+        >
+          {children}
+        </button>
+      );
+    }
+    return (
+      <span className={className} style={style}>
+        {children}
+      </span>
+    );
+  }
+
   const dest = realHref(href);
   if (live && dest) {
     return (

@@ -16,15 +16,20 @@
 // a published page omits them.
 // =============================================================================
 
+import type { ReactNode } from 'react';
+
 import type { FunnelStep } from '@/lib/funnel/types';
 import { getSectionDefinition } from '@/lib/website/sections';
 import { LiveSurfaceProvider } from '@/lib/website/sections/_shared/live-surface';
 import { SectionFormSlotProvider } from '@/lib/website/sections/_shared/section-form-slot';
+import { SectionPopupSlotProvider } from '@/lib/website/sections/_shared/section-popup-slot';
 import {
   WebsiteNavProvider,
   resolveNavLinks,
 } from '@/lib/website/sections/_shared/website-nav-slot';
 import type { BrandObject, NavLink, Page, Section } from '@/lib/website/types';
+
+import { PopupHost } from './PopupHost';
 
 type Props =
   | {
@@ -65,50 +70,68 @@ function RenderedSection({
   const def = getSectionDefinition(section.type);
   if (!def) return null;
   const Preview = def.Preview;
-  const node = <Preview data={section.data} brand={brand} />;
-
-  // No attached form → render the section as-is.
-  if (!section.form) return node;
+  let node: ReactNode = <Preview data={section.data} brand={brand} />;
 
   // Attached form → provide the slot so SectionShell / the hero render
   // FormBlock, wired to submit against the public endpoint.
-  const label = def.label.replace(/^\/\/\s*/, '').toLowerCase();
-  return (
-    <SectionFormSlotProvider
-      value={{
-        form: section.form,
-        brand,
-        publicSubmit: {
-          clientId,
-          surfaceKind,
-          funnelId: surfaceKind === 'funnel' ? funnelId ?? null : null,
-          sourceLabel: `Form · ${label}`,
-          nextStepHref,
-        },
-      }}
-    >
-      {node}
-    </SectionFormSlotProvider>
-  );
+  if (section.form) {
+    const label = def.label.replace(/^\/\/\s*/, '').toLowerCase();
+    node = (
+      <SectionFormSlotProvider
+        value={{
+          form: section.form,
+          brand,
+          publicSubmit: {
+            clientId,
+            surfaceKind,
+            funnelId: surfaceKind === 'funnel' ? funnelId ?? null : null,
+            sourceLabel: `Form · ${label}`,
+            nextStepHref,
+          },
+        }}
+      >
+        {node}
+      </SectionFormSlotProvider>
+    );
+  }
+
+  // Attached popup → provide the section-popup slot so a SurfaceLink inside
+  // this section (set to the POPUP_HREF sentinel) can open the modal.
+  if (section.popup) {
+    node = (
+      <SectionPopupSlotProvider value={section.popup}>{node}</SectionPopupSlotProvider>
+    );
+  }
+
+  return node;
 }
 
 export function PublicSiteRenderer(props: Props) {
   if (props.kind === 'funnel') {
     return (
       <LiveSurfaceProvider>
-        <main>
-          {props.step.sections.map((section) => (
-            <RenderedSection
-              key={section.id}
-              section={section}
-              brand={props.brand}
-              clientId={props.clientId}
-              surfaceKind="funnel"
-              funnelId={props.funnelId}
-              nextStepHref={props.nextStepHref}
-            />
-          ))}
-        </main>
+        <PopupHost
+          brand={props.brand}
+          surface={{
+            clientId: props.clientId,
+            surfaceKind: 'funnel',
+            funnelId: props.funnelId,
+          }}
+        >
+          <main>
+            {props.step.sections.map((section) => (
+              <RenderedSection
+                key={section.id}
+                section={section}
+                brand={props.brand}
+                clientId={props.clientId}
+                surfaceKind="funnel"
+                funnelId={props.funnelId}
+                nextStepHref={props.nextStepHref}
+              />
+            ))}
+          </main>
+        </PopupHost>
       </LiveSurfaceProvider>
     );
   }
@@ -156,27 +179,29 @@ export function PublicSiteRenderer(props: Props) {
 
   return (
     <LiveSurfaceProvider>
-      <WebsiteNavProvider links={resolveNavLinks(nav, pages)}>
-        {overlay && !sticky ? (
-          // Absolute header needs a positioned ancestor; main sits inside it
-          // so the header overlays the hero at the top.
-          <div className="relative">
-            <div className="absolute inset-x-0 top-0 z-50">{headerNode}</div>
-            {mainNode}
-          </div>
-        ) : headerWrapClass ? (
-          <>
-            <div className={headerWrapClass}>{headerNode}</div>
-            {mainNode}
-          </>
-        ) : (
-          <>
-            {headerNode}
-            {mainNode}
-          </>
-        )}
-        {footerNode}
-      </WebsiteNavProvider>
+      <PopupHost brand={brand} surface={{ clientId, surfaceKind: 'website' }}>
+        <WebsiteNavProvider links={resolveNavLinks(nav, pages)}>
+          {overlay && !sticky ? (
+            // Absolute header needs a positioned ancestor; main sits inside it
+            // so the header overlays the hero at the top.
+            <div className="relative">
+              <div className="absolute inset-x-0 top-0 z-50">{headerNode}</div>
+              {mainNode}
+            </div>
+          ) : headerWrapClass ? (
+            <>
+              <div className={headerWrapClass}>{headerNode}</div>
+              {mainNode}
+            </>
+          ) : (
+            <>
+              {headerNode}
+              {mainNode}
+            </>
+          )}
+          {footerNode}
+        </WebsiteNavProvider>
+      </PopupHost>
     </LiveSurfaceProvider>
   );
 }

@@ -11,6 +11,7 @@
 // =============================================================================
 
 import type { FormConfig } from './form-config';
+import type { PopupConfig } from './popup-config';
 
 // ---- Section types --------------------------------------------------------
 
@@ -58,6 +59,10 @@ export type Section = {
    *  (see lib/website/form-config.ts). Lives on the envelope, not in `data`,
    *  because `data` is per-type-typed and a form attaches to every type. */
   form?: FormConfig;
+  /** Optional popup/modal a button in this section can open instead of
+   *  navigating (see lib/website/popup-config.ts). Envelope-level for the
+   *  same reason as `form`. */
+  popup?: PopupConfig;
 };
 
 // ---- Pages ----------------------------------------------------------------

@@ -38,6 +38,7 @@ import { publishFunnelDraft, saveSeoForSteps } from '@/lib/funnel/mutations';
 import type { Funnel, FunnelStep } from '@/lib/funnel/types';
 import type { DraftSlot } from '@/lib/website/content-drafts';
 import { defaultFormConfig, type FormConfig, type FormPageLink } from '@/lib/website/form-config';
+import type { PopupConfig } from '@/lib/website/popup-config';
 import { saveSeoForPages } from '@/lib/website/mutations';
 import { useBrandForClient, useWebsiteForClient } from '@/lib/website/queries';
 import { applyCtaDefaults } from '@/lib/website/cta-defaults';
@@ -225,6 +226,18 @@ export function SectionEditor({ mode }: SectionEditorProps) {
         const next = { ...s };
         if (form) next.form = form;
         else delete next.form;
+        return next;
+      }),
+    );
+  };
+
+  const handleSetSectionPopup = (id: string, popup: PopupConfig | undefined) => {
+    setSections((current) =>
+      current.map((s) => {
+        if (s.id !== id) return s;
+        const next = { ...s };
+        if (popup) next.popup = popup;
+        else delete next.popup;
         return next;
       }),
     );
@@ -486,6 +499,7 @@ export function SectionEditor({ mode }: SectionEditorProps) {
             section={selectedSection}
             onChange={(nextData) => handleSectionDataChange(selectedSection.id, nextData)}
             onSetForm={(form) => handleSetSectionForm(selectedSection.id, form)}
+            onSetPopup={(popup) => handleSetSectionPopup(selectedSection.id, popup)}
             onClose={() => handleSelectSection(null)}
             hideClose={isSingleton}
             selectedElement={selectedElementId}

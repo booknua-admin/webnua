@@ -13,11 +13,13 @@
 // =============================================================================
 
 import type { FormConfig, FormPageLink } from '@/lib/website/form-config';
+import type { PopupConfig } from '@/lib/website/popup-config';
 import type { BrandObject, Section } from '@/lib/website/types';
 import { getSectionDefinition } from '@/lib/website/sections';
 import { SectionFieldContextProvider } from '@/lib/website/sections/_shared/field-context';
 
 import { SectionFormControls, formElementLabel, isFormElement } from './SectionFormControls';
+import { SectionPopupControls } from './SectionPopupControls';
 
 export type SectionFieldsPanelProps = {
   section: Section;
@@ -25,6 +27,8 @@ export type SectionFieldsPanelProps = {
   onChange: (nextData: Record<string, unknown>) => void;
   /** Sets / clears the section's attached form. */
   onSetForm: (form: FormConfig | undefined) => void;
+  /** Sets / clears the section's attached popup. */
+  onSetPopup: (popup: PopupConfig | undefined) => void;
   /** Closes the panel (clears section selection). */
   onClose: () => void;
   /** Suppresses the close button — used in singleton mode. */
@@ -47,6 +51,7 @@ export function SectionFieldsPanel({
   section,
   onChange,
   onSetForm,
+  onSetPopup,
   onClose,
   hideClose = false,
   selectedElement,
@@ -140,17 +145,27 @@ export function SectionFieldsPanel({
                 clientId={clientId}
                 brand={brand}
               />
-              {/* At section level the form manager sits below the section's
-                  own settings — attach a form / edit its field list. */}
+              {/* At section level the form + popup managers sit below the
+                  section's own settings — attach a form / a popup. */}
               {selectedElement === null ? (
-                <SectionFormControls
-                  form={section.form}
-                  onSetForm={onSetForm}
-                  selectedElement={null}
-                  onSelectElement={onSelectElement}
-                  isFunnel={isFunnel}
-                  pageLinks={pageLinks}
-                />
+                <>
+                  <SectionFormControls
+                    form={section.form}
+                    onSetForm={onSetForm}
+                    selectedElement={null}
+                    onSelectElement={onSelectElement}
+                    isFunnel={isFunnel}
+                    pageLinks={pageLinks}
+                  />
+                  {brand ? (
+                    <SectionPopupControls
+                      popup={section.popup}
+                      onSetPopup={onSetPopup}
+                      pageLinks={pageLinks}
+                      brand={brand}
+                    />
+                  ) : null}
+                </>
               ) : null}
             </>
           )}

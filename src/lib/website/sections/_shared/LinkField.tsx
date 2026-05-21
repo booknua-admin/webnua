@@ -11,11 +11,13 @@ import type { ReactNode } from 'react';
 
 import { BuilderField, BuilderInput } from '@/components/shared/builder/BuilderField';
 import { CapabilityGate } from '@/components/shared/CapabilityGate';
+import { POPUP_HREF } from '@/lib/website/popup-config';
 import type { PageLink } from '@/lib/website/types';
 
 import { useSectionFieldContext } from './field-context';
 
 const CUSTOM = '__custom';
+const POPUP = '__popup';
 
 const SELECT_CLASS =
   'block w-full rounded-[7px] border border-rule bg-card px-3.5 py-[11px] ' +
@@ -34,7 +36,9 @@ export type LinkFieldProps = {
 export function LinkField({ label, value, onChange, pageLinks = [], helper }: LinkFieldProps) {
   const { sectionLabel } = useSectionFieldContext();
   const selectedPage = pageLinks.find((p) => p.href === value);
-  const isCustom = !selectedPage;
+  const isPopup = value.trim() === POPUP_HREF;
+  const isCustom = !selectedPage && !isPopup;
+  const selectValue = selectedPage ? selectedPage.href : isPopup ? POPUP : CUSTOM;
 
   return (
     <BuilderField label={label} helper={helper}>
@@ -48,26 +52,36 @@ export function LinkField({ label, value, onChange, pageLinks = [], helper }: Li
         }}
       >
         <div className="flex flex-col gap-2">
-          {pageLinks.length > 0 ? (
-            <select
-              value={selectedPage ? selectedPage.href : CUSTOM}
-              onChange={(e) => onChange(e.target.value === CUSTOM ? '' : e.target.value)}
-              className={SELECT_CLASS}
-            >
-              {pageLinks.map((p) => (
-                <option key={p.href} value={p.href}>
-                  {p.label} ({p.href})
-                </option>
-              ))}
-              <option value={CUSTOM}>Custom link…</option>
-            </select>
-          ) : null}
-          {isCustom || pageLinks.length === 0 ? (
+          <select
+            value={selectValue}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === CUSTOM) onChange('');
+              else if (v === POPUP) onChange(POPUP_HREF);
+              else onChange(v);
+            }}
+            className={SELECT_CLASS}
+          >
+            {pageLinks.map((p) => (
+              <option key={p.href} value={p.href}>
+                {p.label} ({p.href})
+              </option>
+            ))}
+            <option value={CUSTOM}>Custom link…</option>
+            <option value={POPUP}>Open a popup…</option>
+          </select>
+          {isCustom ? (
             <BuilderInput
               value={value}
               placeholder="https://…  ·  /path  ·  tel:…  ·  #section"
               onChange={(e) => onChange(e.target.value)}
             />
+          ) : null}
+          {isPopup ? (
+            <p className="text-[12px] leading-[1.5] text-ink-quiet">
+              Opens this section&apos;s popup. Set it up in the{' '}
+              <strong className="font-semibold text-ink">Popup</strong> panel below.
+            </p>
           ) : null}
         </div>
       </CapabilityGate>
