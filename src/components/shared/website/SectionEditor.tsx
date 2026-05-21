@@ -18,11 +18,11 @@
 //       (the singleton is always the selected section — no other choice).
 //
 //   { kind: 'funnelStep', funnel, steps, step }
-//     → Session 7. Step tabs in toolbar ("01 · Landing", "02 · Schedule",
-//       "03 · Thanks"), multi-row rail driven by step.sections. Autosave
-//       writes to a funnel-keyed draft slot. Publish/Submit buttons hide —
-//       funnel publish lands in a later session. Pending-submission lock
-//       (Lane B) doesn't apply to funnels yet either.
+//     → Step tabs in toolbar ("01 · Landing", "02 · Schedule", "03 ·
+//       Thanks"), multi-row rail driven by step.sections. Autosave writes
+//       to a funnel-keyed draft slot. Publish routes through the funnel
+//       review surface (/funnels/[id]/review — A3); the Lane B pending-
+//       submission lock applies via `useUserPendingFunnelSubmission`.
 //
 // Brand comes from the client — websites resolve via `website.clientId`;
 // funnels resolve via `funnel.clientId`. Same `getBrandForClient` either way
@@ -30,11 +30,11 @@
 // =============================================================================
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
 
 import { useCan, useUser } from '@/lib/auth/user-stub';
 import { useClientId } from '@/lib/clients/queries';
-import { publishFunnelDraft, saveSeoForSteps } from '@/lib/funnel/mutations';
+import { saveSeoForSteps } from '@/lib/funnel/mutations';
+import { useUserPendingFunnelSubmission } from '@/lib/funnel/queries';
 import type { Funnel, FunnelStep } from '@/lib/funnel/types';
 import type { DraftSlot } from '@/lib/website/content-drafts';
 import { defaultFormConfig, type FormConfig, type FormPageLink } from '@/lib/website/form-config';
@@ -155,16 +155,21 @@ export function SectionEditor({ mode }: SectionEditorProps) {
   // the client UUID, so resolve it.
   const clientUuidQuery = useClientId(clientId);
   const user = useUser();
-  const router = useRouter();
-  const canPublish = useCan('publish');
   const canEditSeo = useCan('editSEO');
   const [seoOpen, setSeoOpen] = useState(false);
 
-  // Lane B lock applies only to websites. Funnel-step editing has no
-  // approval queue yet (Session 7 is the shell; mechanics later).
+  // Lane B lock — a submitter waiting on operator review. Websites resolve
+  // through useUserPendingSubmission; funnels through
+  // useUserPendingFunnelSubmission (A3). Whichever resolves a pending
+  // submission for this user locks the editor.
   const websiteIdForLock = mode.kind === 'funnelStep' ? null : mode.website.id;
+  const funnelIdForLock = mode.kind === 'funnelStep' ? mode.funnel.id : null;
   const pendingForUser = useUserPendingSubmission(websiteIdForLock, user?.id ?? null);
-  const locked = pendingForUser != null;
+  const pendingFunnelForUser = useUserPendingFunnelSubmission(
+    funnelIdForLock,
+    user?.id ?? null,
+  );
+  const locked = pendingForUser != null || pendingFunnelForUser != null;
 
   // Seed from the mode's sections. The page-level query already merges the
   // content_drafts autosave buffer into these before passing them down.
@@ -300,17 +305,6 @@ export function SectionEditor({ mode }: SectionEditorProps) {
     });
   };
 
-  // Funnel publish (Lane A — funnels have no approval queue). The funnel
-  // editor publishes directly; websites route through /website/review.
-  const handleFunnelPublish = async () => {
-    if (mode.kind !== 'funnelStep' || !user) return;
-    const result = await publishFunnelDraft(mode.funnel.id, {
-      id: user.id,
-      displayName: user.displayName,
-    });
-    if (result) router.push(`/funnels/${mode.funnel.id}`);
-  };
-
   // ---- SEO — every page (website mode) / every step (funnel mode) --------
   // The currently-edited page/step uses the live section state so the AI
   // auto-fill reads unsaved copy; the rest use their snapshot sections.
@@ -428,7 +422,14 @@ export function SectionEditor({ mode }: SectionEditorProps) {
 
   return (
     <div className="flex h-svh flex-col bg-paper">
-      {pendingForUser ? <WebsiteEditorPendingBanner submission={pendingForUser} /> : null}
+      {pendingForUser ? (
+        <WebsiteEditorPendingBanner submission={pendingForUser} surface="website" />
+      ) : pendingFunnelForUser ? (
+        <WebsiteEditorPendingBanner
+          submission={pendingFunnelForUser}
+          surface="funnel"
+        />
+      ) : null}
       <EditorToolbar
         domain={domainForMode(mode, websiteForHost.data?.domain.primary ?? null)}
         mode={toolbarMode}
@@ -438,11 +439,15 @@ export function SectionEditor({ mode }: SectionEditorProps) {
           lastSavedAt: autosave.lastSavedAt,
           onRetry: autosave.retry,
         }}
-        publishDisabled={isFunnelStep ? !canPublish : locked}
-        // Website editing routes publish through the review surface
-        // (preflight is the gate); the funnel editor publishes directly.
-        reviewHref={isFunnelStep ? undefined : '/website/review'}
-        onPublish={isFunnelStep ? handleFunnelPublish : undefined}
+        publishDisabled={locked}
+        // Both lanes route publish through a review surface — preflight is
+        // the gate (design §7). Websites → /website/review; funnels →
+        // /funnels/[id]/review (A3).
+        reviewHref={
+          isFunnelStep
+            ? `/funnels/${mode.funnel.id}/review`
+            : '/website/review'
+        }
         publishMenu={
           mode.kind === 'funnelStep' ? null : (
             <ForcePublishMenu websiteId={mode.website.id} hidden={locked} />

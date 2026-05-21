@@ -62,26 +62,29 @@ operators if a paying client landed today.
 - **Effort.** Small if the answer is "leave create-client as-is and
   remove the line"; medium if Q&A surfaces in create-client.
 
-### A3. Funnel publish + approval lane is not built
-- **Current state.** Per CLAUDE.md ("Funnel publish / autosave /
-  approval — DEFERRED past Session 7") and build-roadmap.md Phase 4
-  ("Funnel publish/approval still deferred"). The funnel-step editor
-  saves drafts via `useAutosave` against a funnel-keyed `DraftSlot`,
-  but `EditorToolbar` hides both Publish actions when
-  `mode.kind === 'funnelStep'`. `useUserPendingSubmission` short-
-  circuits to null for funnel mode. A funnel cannot be published
-  inside the app today; if a client edits their funnel, the changes
-  cannot reach the published version through normal UI flow.
-- **What would need to ship.** A `funnel-publish-stub.ts` (or, given
-  Phase 4 happened, a `funnel/mutations.ts` extension) parallel to
-  the website publish lanes, a `useUserPendingFunnelSubmission` hook,
-  a `FunnelApprovalSubmission` type, a funnel-shaped `runPreflight`
-  (the rule engine is website-snapshot-shaped today), a
-  `/funnels/[id]/review` surface, and routing the funnel editor's
-  toolbar `reviewHref` through it. Shapes are intentionally aligned
-  with the website lanes per CLAUDE.md.
-- **Effort.** Medium — most of the architecture is mirror-ready;
-  preflight rule adaptation is the open piece.
+### A3. Funnel publish + approval lane — ✅ DONE
+- **Shipped.** The funnel publish lane is wired in parity with the
+  website lane: `lib/funnel/mutations.ts` extended with Lane A
+  (`publishFunnelDraft`, already present — now also resolves any
+  in-flight pending submission) + Lane B (`submitFunnelForApproval`,
+  `approveFunnelSubmission`, `rejectFunnelSubmission`,
+  `recallFunnelSubmission`); `lib/funnel/queries.tsx` gained
+  `useUserPendingFunnelSubmission` + `useAllPendingFunnelApprovals`;
+  `lib/funnel/approval.ts` carries the `FunnelApprovalSubmission` type
+  + the pure `diffFunnelSnapshots` summary; `lib/funnel/preflight.ts`
+  is the funnel-shaped rule engine; `/funnels/[id]/review` is the
+  funnel review surface; the funnel editor's toolbar routes
+  `reviewHref` through it; the `/tickets` approvals queue renders
+  funnel submissions (`FunnelApprovalRow`) alongside website ones;
+  Realtime is wired via migration `0046`. The `funnel_approval_
+  submissions` table already existed (pre-aligned in migration 0015).
+- **Three deliberate divergences from the website lane** (each a
+  structural difference, not an omission — see the CLAUDE.md parked
+  decision "Funnel publish + approval lane — DONE"): (1) no
+  force-publish — `force_publish_audit_log` is website-keyed; (2) one
+  shared "Approvals" tab, not a separate funnel queue page; (3) no
+  commit-message / scheduled-publish fields (the website lane has
+  none either — it's a review *surface*, not a modal).
 
 ### A4. Real public-site hosting (the "are clients actually live?" gap)
 - **Current state.** Per the analytics-audit §1.9 #1 and CLAUDE.md
@@ -513,7 +516,7 @@ CLAUDE.md parked decisions.
 | Phase | Status | Notes |
 |---|---|---|
 | **3b — Booking-write flows** | ✅ DONE | All three flows (reschedule / new booking / recurring) wired to live Supabase per CLAUDE.md. SMS preview is still a display stub (no messaging backend — depends on Phase 7/8). |
-| **4 — Builder family backend** | ✅ DONE (PR #41 / merge `534de96`) | localStorage `publish-stub` + `draft-stub` deleted; `queries.tsx` + `mutations.ts` + `content-drafts.ts` + `snapshot.ts` + `builder-events.ts` live. **Funnel publish/approval explicitly deferred — see A3.** |
+| **4 — Builder family backend** | ✅ DONE (PR #41 / merge `534de96`) | localStorage `publish-stub` + `draft-stub` deleted; `queries.tsx` + `mutations.ts` + `content-drafts.ts` + `snapshot.ts` + `builder-events.ts` live. **Funnel publish/approval lane shipped in A3** (`lib/funnel/mutations.ts` + `queries.tsx` + `approval.ts` + `preflight.ts`, `/funnels/[id]/review`, migration `0046`). |
 | **5 — Real auth + capability + agency + billing** | ✅ DONE (PR #43 / merge `1a4705e`) | Sign-in is real, nine stores hydrate via `DataHydrationProvider`, `DevRoleSwitcher` + most `/dev/*` deleted. **Owed: systematic cross-tenant RLS validation pass — see A1.** |
 | **6 — AI generation** | ✅ DONE (PR #47) — polish in progress | Website + funnel generators wired to real Claude. `generation_log` writes. Server/client metadata boundary resolved. **Owed: wizard Q&A → real `GenerationContext` — see A2.** Polish items deferred per B7. |
 | **7 — Integrations** | ⏸ NOT STARTED | Largest remaining work. Owned by human dev with real creds. Unblocks reviews / campaigns / billing / messaging — see A5. |
@@ -579,12 +582,11 @@ roadmap. Either way it's small. **User impact:** closes Phase 6 on
 the books and removes the implicit "we're going to fix the
 create-client flow" tension.
 
-### 4. Funnel publish + approval lane (A3)
-**Ship fourth.** The architecture mirrors the website lanes; medium
-session. **User impact:** removes the silent "your funnel changes
-can't actually be published" trap. A client who edits their funnel
-expects publish to work the same way it does for their website. Today
-it doesn't.
+### 4. Funnel publish + approval lane (A3) — ✅ DONE
+Shipped — the funnel publish + approval lane is wired in parity with
+the website lane. The "your funnel changes can't actually be
+published" trap is closed: a client who edits their funnel now gets
+the same Publish / Submit-for-review flow as their website.
 
 ### 5. Pick A4 OR begin Phase 7 (A5) — operator/business call
 **Ship fifth — needs an operator decision before scheduling.**

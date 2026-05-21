@@ -30,7 +30,14 @@ already exist (`website_versions`, `funnel_versions`, `content_drafts`,
   `mutations.ts` + `content-drafts.ts` + `snapshot.ts` +
   `builder-events.ts`. `publish-stub.ts` + `draft-stub.ts` deleted;
   `audit-stub.ts` + `website-approval-stub.ts` collapsed to type-only.
-- Funnel publish/approval still deferred — see CLAUDE.md parked entry.
+- ✅ Funnel publish + approval lane shipped (A3) in parity with the
+  website lane — `lib/funnel/mutations.ts` Lane A + Lane B,
+  `lib/funnel/queries.tsx` publish-state hooks, `lib/funnel/preflight.ts`,
+  the `/funnels/[id]/review` surface, the shared `/tickets` approvals
+  queue, and approval-lane Realtime (migration `0046`). Three deliberate
+  divergences from the website lane (no force-publish, one shared
+  Approvals tab, no commit-message field) — see the CLAUDE.md parked
+  decision "Funnel publish + approval lane — DONE".
 
 ## Phase 5 — Real auth + capability/workspace/agency/billing ✅ DONE (PR #43 / merge `1a4705e`)
 

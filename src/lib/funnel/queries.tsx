@@ -11,9 +11,10 @@
 // as the slug so brand resolution (`getBrandForClient`, slug-keyed) still
 // works for either editor mode.
 //
-// Funnel *publish/approval* is still unbuilt (CLAUDE.md parked decision) — the
-// editor autosaves to a localStorage draft slot; there is no write path here.
-// `data-stub.tsx` is retained: the onboarding generation stub still reads it.
+// Funnel *publish/approval* (A3) is wired: the write path is `mutations.ts`;
+// this module carries the reactive read hooks (`useUserPendingFunnelSubmission`,
+// `useAllPendingFunnelApprovals`). `data-stub.tsx` is retained: the onboarding
+// generation stub still reads it.
 //
 // queryFn throws `AppError`; a funnel outside the caller's tenant — or a slug
 // with no client row — resolves as `not_found`.
@@ -28,6 +29,11 @@ import { subscribeBuilder } from '@/lib/website/builder-events';
 import { loadDraftsForFunnel } from '@/lib/website/content-drafts';
 import type { DomainSSLStatus } from '@/lib/website/types';
 
+import type {
+  FunnelApprovalDiff,
+  FunnelApprovalStatus,
+  FunnelApprovalSubmission,
+} from './approval';
 import type {
   Funnel,
   FunnelVersion,
@@ -218,4 +224,103 @@ export function useFunnelWithDraft(funnelId: string | null) {
   const { refetch } = query;
   useEffect(() => subscribeBuilder(() => void refetch()), [refetch]);
   return query;
+}
+
+// ---- Funnel approval submissions (A3 · publish + approval lane) ------------
+
+type FunnelApprovalSubmissionRow = {
+  id: string;
+  funnel_id: string;
+  pending_funnel_version_id: string;
+  submitter_id: string;
+  submitted_at: string;
+  status: FunnelApprovalStatus;
+  note: string | null;
+  diff: unknown;
+  rejection_reason: string | null;
+  resolved_at: string | null;
+  resolved_by: string | null;
+  submitter?: { display_name: string } | null;
+  resolver?: { display_name: string } | null;
+  funnel?: { name: string; clients: { name: string } | null } | null;
+};
+
+const FUNNEL_APPROVAL_SELECT =
+  '*, submitter:users!funnel_approval_submissions_submitter_id_fkey(display_name), resolver:users!funnel_approval_submissions_resolved_by_fkey(display_name), funnel:funnels!funnel_approval_submissions_funnel_id_fkey(name, clients(name))';
+
+function mapFunnelApproval(
+  row: FunnelApprovalSubmissionRow,
+): FunnelApprovalSubmission {
+  return {
+    id: row.id,
+    funnelId: row.funnel_id,
+    pendingVersionId: row.pending_funnel_version_id,
+    submitterId: row.submitter_id,
+    submitterName: row.submitter?.display_name ?? 'A teammate',
+    submittedAt: row.submitted_at,
+    status: row.status,
+    note: row.note ?? undefined,
+    diff: row.diff as FunnelApprovalDiff,
+    funnelName: row.funnel?.name ?? undefined,
+    clientName: row.funnel?.clients?.name ?? undefined,
+    rejectionReason: row.rejection_reason ?? undefined,
+    resolvedAt: row.resolved_at ?? undefined,
+    resolvedByName: row.resolver?.display_name ?? undefined,
+  };
+}
+
+async function fetchPendingFunnelForUser(
+  funnelId: string,
+  userId: string,
+): Promise<FunnelApprovalSubmission | null> {
+  const { data, error } = await supabase
+    .from('funnel_approval_submissions')
+    .select(FUNNEL_APPROVAL_SELECT)
+    .eq('funnel_id', funnelId)
+    .eq('submitter_id', userId)
+    .eq('status', 'pending')
+    .maybeSingle();
+  if (error) throw normalizeError(error);
+  return data ? mapFunnelApproval(data as FunnelApprovalSubmissionRow) : null;
+}
+
+/** The pending funnel submission this user owns, if any — drives the
+ *  funnel-step editor's Lane B lock (mirror of `useUserPendingSubmission`). */
+export function useUserPendingFunnelSubmission(
+  funnelId: string | null,
+  userId: string | null,
+): FunnelApprovalSubmission | null {
+  const enabled = Boolean(funnelId && userId);
+  const query = useQuery({
+    queryKey: ['funnels', 'pending-for-user', funnelId, userId],
+    queryFn: () =>
+      fetchPendingFunnelForUser(funnelId as string, userId as string),
+    enabled,
+  });
+  const { refetch } = query;
+  useEffect(() => subscribeBuilder(() => void refetch()), [refetch]);
+  return query.data ?? null;
+}
+
+async function fetchAllPendingFunnelApprovals(): Promise<
+  FunnelApprovalSubmission[]
+> {
+  const { data, error } = await supabase
+    .from('funnel_approval_submissions')
+    .select(FUNNEL_APPROVAL_SELECT)
+    .eq('status', 'pending')
+    .order('submitted_at', { ascending: true });
+  if (error) throw normalizeError(error);
+  return (data as FunnelApprovalSubmissionRow[]).map(mapFunnelApproval);
+}
+
+/** Every pending funnel approval across the workspace — the /tickets queue. */
+export function useAllPendingFunnelApprovals(): FunnelApprovalSubmission[] {
+  const query = useQuery({
+    queryKey: ['funnels', 'pending-all'],
+    queryFn: fetchAllPendingFunnelApprovals,
+  });
+  const { refetch } = query;
+  useEffect(() => subscribeBuilder(() => void refetch()), [refetch]);
+  return query.data ?? [];
 }
