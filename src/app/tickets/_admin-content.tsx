@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 
+import { FunnelApprovalRow } from '@/components/admin/funnels/FunnelApprovalRow';
 import { WebsiteApprovalRow } from '@/components/admin/tickets/WebsiteApprovalRow';
 import { ClientMultiSelect } from '@/components/shared/ClientMultiSelect';
 import { TicketRow } from '@/components/shared/tickets/TicketRow';
@@ -20,9 +21,12 @@ import {
 } from '@/lib/tickets/admin-tickets';
 import { useAdminTicketsInbox } from '@/lib/tickets/queries';
 import type { TicketStatus, TicketTab } from '@/lib/tickets/types';
+import type { FunnelApprovalSubmission } from '@/lib/funnel/approval';
+import { useAllPendingFunnelApprovals } from '@/lib/funnel/queries';
+import type { WebsiteApprovalSubmission } from '@/lib/tickets/website-approval-stub';
 import { useAllPendingApprovals } from '@/lib/website/use-publish-state';
 
-const APPROVALS_TAB_ID = 'website-approvals';
+const APPROVALS_TAB_ID = 'approvals';
 
 // Status-tab ids → TicketStatus. `all` matches everything.
 const TAB_STATUS: Record<string, TicketStatus | 'all'> = {
@@ -49,6 +53,7 @@ function matchesSearch(ticket: AdminTicketRow, query: string): boolean {
 
 function AdminTicketsContent() {
   const pendingApprovals = useAllPendingApprovals();
+  const pendingFunnelApprovals = useAllPendingFunnelApprovals();
   const { data: tickets, isLoading, error } = useAdminTicketsInbox();
 
   const [activeTabId, setActiveTabId] = useState<string>('all');
@@ -84,11 +89,11 @@ function AdminTicketsContent() {
     }));
     const approvalsTab: TicketTab = {
       id: APPROVALS_TAB_ID,
-      label: 'Website approvals',
-      count: pendingApprovals.length,
+      label: 'Approvals',
+      count: pendingApprovals.length + pendingFunnelApprovals.length,
     };
     return [withCounts[0], approvalsTab, ...withCounts.slice(1)];
-  }, [clientPool, pendingApprovals.length]);
+  }, [clientPool, pendingApprovals.length, pendingFunnelApprovals.length]);
 
   const visibleTickets = useMemo(
     () =>
@@ -151,7 +156,10 @@ function AdminTicketsContent() {
         </div>
 
         {onApprovalsTab ? (
-          <ApprovalsList submissions={pendingApprovals} />
+          <ApprovalsList
+            website={pendingApprovals}
+            funnel={pendingFunnelApprovals}
+          />
         ) : (
           <RegularTicketsList
             tickets={visibleTickets}
@@ -220,21 +228,23 @@ function ListNotice({ children }: { children: React.ReactNode }) {
 }
 
 function ApprovalsList({
-  submissions,
+  website,
+  funnel,
 }: {
-  submissions: ReturnType<typeof useAllPendingApprovals>;
+  website: WebsiteApprovalSubmission[];
+  funnel: FunnelApprovalSubmission[];
 }) {
-  if (submissions.length === 0) {
+  if (website.length + funnel.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-rule bg-paper px-10 py-12 text-center">
         <p className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust">
           {'// QUEUE EMPTY'}
         </p>
         <p className="mx-auto max-w-[440px] text-[14px] text-ink-soft">
-          No website changes awaiting approval. Submissions land here when a
-          client editor without publish capability hits{' '}
-          <strong className="text-ink">Submit for review →</strong> in the
-          page editor.
+          No website or funnel changes awaiting approval. Submissions land
+          here when an editor without publish capability hits{' '}
+          <strong className="text-ink">Submit for review →</strong> on the
+          review surface.
         </p>
       </div>
     );
@@ -248,8 +258,11 @@ function ApprovalsList({
         <div className="text-right">{'// Age'}</div>
         <div>{'// Actions'}</div>
       </div>
-      {submissions.map((sub) => (
+      {website.map((sub) => (
         <WebsiteApprovalRow key={sub.id} submission={sub} />
+      ))}
+      {funnel.map((sub) => (
+        <FunnelApprovalRow key={sub.id} submission={sub} />
       ))}
     </div>
   );

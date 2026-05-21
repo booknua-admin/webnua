@@ -6,17 +6,20 @@
 // review. Design doc §3.3 + the Session 5 plan message (decision 4).
 //
 // The banner is per-user — operators never see it, since they're the one
-// expected to act on the pending submission. Logic for "who is the
-// submitter" lives in the page-level wrappers (header / footer / [pageId])
-// via `useUserPendingSubmission`.
+// expected to act on the pending submission. Logic for "who is the submitter"
+// lives in `SectionEditor` (`useUserPendingSubmission` for websites,
+// `useUserPendingFunnelSubmission` for funnels — A3).
+//
+// `surface` discriminates the recall write: a website submission recalls via
+// `recallSubmission`, a funnel submission via `recallFunnelSubmission`. The
+// banner reads only the shared fields (`id` / `submittedAt` / `diff`), so one
+// component serves both lanes.
 //
 // Affordances:
-//   - "Recall submission →"  pulls the pending back to draft state. The
+//   - "Recall submission ↩"  pulls the pending back to draft state. The
 //                            submitter resumes editing from where they left
 //                            off (their draft was retained — see §3.3).
-//   - "Open ticket →"        deep-links to the website-approvals tab so the
-//                            submitter can see the queue position / op
-//                            commentary.
+//   - "Open ticket →"        deep-links to the shared /tickets approvals tab.
 // =============================================================================
 
 import Link from 'next/link';
@@ -24,8 +27,9 @@ import { useRouter } from 'next/navigation';
 import { useCallback } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { recallFunnelSubmission } from '@/lib/funnel/mutations';
 import { recallSubmission } from '@/lib/website/mutations';
-import type { WebsiteApprovalSubmission } from '@/lib/tickets/website-approval-stub';
+import type { WebsiteApprovalDiff } from '@/lib/tickets/website-approval-stub';
 
 const TIME_FORMAT = new Intl.DateTimeFormat('en-AU', {
   day: '2-digit',
@@ -41,8 +45,18 @@ function formatSubmittedAt(iso: string): string {
   return TIME_FORMAT.format(date);
 }
 
+/** The shared fields the banner reads — `WebsiteApprovalSubmission` and
+ *  `FunnelApprovalSubmission` both satisfy this. */
+export type PendingBannerSubmission = {
+  id: string;
+  submittedAt: string;
+  diff: WebsiteApprovalDiff;
+};
+
 export type WebsiteEditorPendingBannerProps = {
-  submission: WebsiteApprovalSubmission;
+  submission: PendingBannerSubmission;
+  /** Which lane the submission belongs to — drives the recall write path. */
+  surface?: 'website' | 'funnel';
   /** Who'll review — currently "Craig" since the stub layer has one admin.
    *  When real auth ships this comes from the workspace operator-of-record. */
   reviewerName?: string;
@@ -50,6 +64,7 @@ export type WebsiteEditorPendingBannerProps = {
 
 export function WebsiteEditorPendingBanner({
   submission,
+  surface = 'website',
   reviewerName = 'Craig',
 }: WebsiteEditorPendingBannerProps) {
   const router = useRouter();
@@ -59,10 +74,14 @@ export function WebsiteEditorPendingBanner({
       'Pull this submission back to draft? Your edits stay; the review queue entry is cancelled.',
     );
     if (!ok) return;
-    await recallSubmission(submission.id);
+    if (surface === 'funnel') {
+      await recallFunnelSubmission(submission.id);
+    } else {
+      await recallSubmission(submission.id);
+    }
     // The builder event refetches the lock query; refresh keeps RSC in sync.
     router.refresh();
-  }, [submission.id, router]);
+  }, [submission.id, surface, router]);
 
   return (
     <div

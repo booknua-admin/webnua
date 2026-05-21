@@ -1,14 +1,15 @@
 'use client';
 
 // =============================================================================
-// /funnels/[id]/edit/[stepId] — funnel-step editor (Session 7 · wired Phase 4).
+// /funnels/[id]/edit/[stepId] — funnel-step editor (Session 7 · publish A3).
 //
 // Mounts SectionEditor in `funnelStep` mode. The funnel + its draft version
 // resolve live from Supabase (`lib/funnel/queries`); the [stepId] segment
 // picks the step out of the draft snapshot. Toolbar surfaces one tab per step.
-// Publish/Submit hide for funnel mode — funnel publish + approval mechanics
-// are still unbuilt (CLAUDE.md parked decision); the editor autosaves to a
-// localStorage draft slot.
+// Publish routes through the funnel review surface (/funnels/[id]/review — A3):
+// the toolbar's "Review & publish →" link is the gate, the review surface owns
+// the Lane A publish / Lane B submit-for-approval calls. The editor autosaves
+// to a funnel-keyed content_drafts slot.
 // =============================================================================
 
 import Link from 'next/link';

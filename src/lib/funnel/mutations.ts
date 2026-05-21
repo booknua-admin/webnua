@@ -1,13 +1,22 @@
 // =============================================================================
-// Funnel publish — write operations (Phase 4 · builder family).
+// Funnel publish — write operations (Phase 4 · builder family; A3 · lanes).
 //
-// Lane A only: a funnel publish promotes the effective draft (draft
-// funnel_version snapshot + content_drafts overlay) into a new published
-// funnel_version, archives the prior published, moves the funnel pointer,
-// re-bases the draft, and clears the content_drafts buffer.
+// The publish lanes mirror `lib/website/mutations.ts` (design doc §3.3):
+//   publishFunnelDraft       Lane A — promote draft → new published version.
+//   submitFunnelForApproval  Lane B — write a pending_approval funnel_version
+//                            + a funnel_approval_submissions row.
+//   approveFunnelSubmission  operator promotes a pending version → published.
+//   rejectFunnelSubmission / archive the pending version, resolve the
+//   recallFunnelSubmission   submission (operator rejects / submitter recalls).
 //
-// Funnels are operator-managed (CLAUDE.md) — there is no Lane B approval
-// queue for funnels; `publishFunnelDraft` is the whole publish path.
+// A funnel publish promotes the effective draft (draft funnel_version snapshot
+// + content_drafts overlay) into a new published funnel_version, archives the
+// prior published, moves the funnel pointer, re-bases the draft, and clears
+// the content_drafts buffer — the same correctness contract as the website.
+//
+// Funnels publish as a unit — the whole step sequence (snapshot.steps) goes
+// live together; there is no partial-step publish. A multi-step funnel that
+// threads a lead across steps would break if one step lagged the others.
 // =============================================================================
 
 import type { Json } from '@/lib/types/database';
@@ -15,11 +24,42 @@ import { supabase } from '@/lib/supabase/client';
 import { notifyBuilder } from '@/lib/website/builder-events';
 import { clearDraftsForFunnel } from '@/lib/website/content-drafts';
 
+import { diffFunnelSnapshots, type FunnelApprovalDiff } from './approval';
 import { fetchFunnelWithDraft } from './queries';
 import type { FunnelStepSEO, FunnelVersionSnapshot } from './types';
 
 export type FunnelPublishActor = { id: string; displayName: string };
 export type FunnelPublishResult = { newVersionId: string };
+
+// ---- Internal helpers ------------------------------------------------------
+
+async function getFunnelPointers(
+  funnelId: string,
+): Promise<{ draftVersionId: string | null; publishedVersionId: string | null } | null> {
+  const { data, error } = await supabase
+    .from('funnels')
+    .select('draft_version_id, published_version_id')
+    .eq('id', funnelId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return {
+    draftVersionId: data.draft_version_id,
+    publishedVersionId: data.published_version_id,
+  };
+}
+
+async function getPublishedFunnelSnapshot(
+  publishedVersionId: string | null,
+): Promise<FunnelVersionSnapshot | null> {
+  if (!publishedVersionId) return null;
+  const { data, error } = await supabase
+    .from('funnel_versions')
+    .select('snapshot')
+    .eq('id', publishedVersionId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data.snapshot as FunnelVersionSnapshot;
+}
 
 export async function publishFunnelDraft(
   funnelId: string,
@@ -65,10 +105,202 @@ export async function publishFunnelDraft(
     .update({ snapshot: snapshotJson })
     .eq('id', funnel.draftVersionId);
 
+  // A pending submission on this funnel is now fulfilled / bypassed by a
+  // direct Lane A publish — resolve it so the queue + the submitter's lock
+  // clear (mirrors `publishDraft`).
+  await supabase
+    .from('funnel_approval_submissions')
+    .update({ status: 'approved', resolved_at: now, resolved_by: actor.id })
+    .eq('funnel_id', funnelId)
+    .eq('status', 'pending');
+
   await clearDraftsForFunnel(funnelId);
 
   notifyBuilder();
   return { newVersionId };
+}
+
+// ---- Lane B · submit for review --------------------------------------------
+
+export async function submitFunnelForApproval(
+  funnelId: string,
+  submitter: { id: string; displayName: string },
+  note?: string,
+): Promise<{ submissionId: string } | null> {
+  const { funnel, draft } = await fetchFunnelWithDraft(funnelId);
+  if (!funnel.draftVersionId) return null;
+
+  const now = new Date().toISOString();
+  const snapshotJson = draft.snapshot as unknown as Json;
+
+  // The pending version holds the canonical snapshot — no duplicated blob.
+  const { data: pendingVersion, error: versionError } = await supabase
+    .from('funnel_versions')
+    .insert({
+      funnel_id: funnelId,
+      status: 'pending_approval',
+      snapshot: snapshotJson,
+      created_by: submitter.id,
+      created_at: now,
+      notes: note ?? null,
+      parent_version_id: funnel.publishedVersionId,
+    })
+    .select('id')
+    .single();
+  if (versionError || !pendingVersion) return null;
+
+  const publishedSnapshot = await getPublishedFunnelSnapshot(
+    funnel.publishedVersionId,
+  );
+  const diff: FunnelApprovalDiff = diffFunnelSnapshots(
+    draft.snapshot,
+    publishedSnapshot,
+  );
+
+  const { data: submission, error: submissionError } = await supabase
+    .from('funnel_approval_submissions')
+    .insert({
+      funnel_id: funnelId,
+      pending_funnel_version_id: pendingVersion.id,
+      submitter_id: submitter.id,
+      submitted_at: now,
+      status: 'pending',
+      note: note ?? null,
+      diff: diff as unknown as Json,
+    })
+    .select('id')
+    .single();
+  if (submissionError || !submission) return null;
+
+  notifyBuilder();
+  return { submissionId: submission.id };
+}
+
+// ---- Approve / reject / recall ---------------------------------------------
+
+type FunnelSubmissionRow = {
+  id: string;
+  funnel_id: string;
+  pending_funnel_version_id: string;
+  status: string;
+};
+
+async function fetchPendingFunnelSubmission(
+  submissionId: string,
+): Promise<FunnelSubmissionRow | null> {
+  const { data, error } = await supabase
+    .from('funnel_approval_submissions')
+    .select('id, funnel_id, pending_funnel_version_id, status')
+    .eq('id', submissionId)
+    .maybeSingle();
+  if (error || !data || data.status !== 'pending') return null;
+  return data as FunnelSubmissionRow;
+}
+
+export async function approveFunnelSubmission(
+  submissionId: string,
+  approver: FunnelPublishActor,
+): Promise<FunnelPublishResult | null> {
+  const submission = await fetchPendingFunnelSubmission(submissionId);
+  if (!submission) return null;
+
+  const { data: pendingVersion } = await supabase
+    .from('funnel_versions')
+    .select('snapshot')
+    .eq('id', submission.pending_funnel_version_id)
+    .maybeSingle();
+  if (!pendingVersion) return null;
+
+  const pointers = await getFunnelPointers(submission.funnel_id);
+  if (!pointers) return null;
+
+  const now = new Date().toISOString();
+  const snapshotJson = pendingVersion.snapshot as unknown as Json;
+
+  await supabase
+    .from('funnel_versions')
+    .update({ status: 'published', published_at: now, published_by: approver.id })
+    .eq('id', submission.pending_funnel_version_id);
+
+  if (
+    pointers.publishedVersionId &&
+    pointers.publishedVersionId !== submission.pending_funnel_version_id
+  ) {
+    await supabase
+      .from('funnel_versions')
+      .update({ status: 'archived' })
+      .eq('id', pointers.publishedVersionId);
+  }
+
+  await supabase
+    .from('funnels')
+    .update({ published_version_id: submission.pending_funnel_version_id })
+    .eq('id', submission.funnel_id);
+  if (pointers.draftVersionId) {
+    await supabase
+      .from('funnel_versions')
+      .update({ snapshot: snapshotJson })
+      .eq('id', pointers.draftVersionId);
+  }
+
+  await supabase
+    .from('funnel_approval_submissions')
+    .update({ status: 'approved', resolved_at: now, resolved_by: approver.id })
+    .eq('id', submissionId);
+
+  await clearDraftsForFunnel(submission.funnel_id);
+
+  notifyBuilder();
+  return { newVersionId: submission.pending_funnel_version_id };
+}
+
+export async function rejectFunnelSubmission(
+  submissionId: string,
+  approver: FunnelPublishActor,
+  reason: string,
+): Promise<boolean> {
+  const submission = await fetchPendingFunnelSubmission(submissionId);
+  if (!submission) return false;
+
+  const now = new Date().toISOString();
+  // Archive the pending version; the draft is untouched so the submitter
+  // resumes editing from where they left off.
+  await supabase
+    .from('funnel_versions')
+    .update({ status: 'archived' })
+    .eq('id', submission.pending_funnel_version_id);
+  await supabase
+    .from('funnel_approval_submissions')
+    .update({
+      status: 'rejected',
+      rejection_reason: reason,
+      resolved_at: now,
+      resolved_by: approver.id,
+    })
+    .eq('id', submissionId);
+
+  notifyBuilder();
+  return true;
+}
+
+export async function recallFunnelSubmission(
+  submissionId: string,
+): Promise<boolean> {
+  const submission = await fetchPendingFunnelSubmission(submissionId);
+  if (!submission) return false;
+
+  const now = new Date().toISOString();
+  await supabase
+    .from('funnel_versions')
+    .update({ status: 'archived' })
+    .eq('id', submission.pending_funnel_version_id);
+  await supabase
+    .from('funnel_approval_submissions')
+    .update({ status: 'recalled', resolved_at: now })
+    .eq('id', submissionId);
+
+  notifyBuilder();
+  return true;
 }
 
 // ---- URL slug --------------------------------------------------------------
