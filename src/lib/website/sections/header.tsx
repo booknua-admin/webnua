@@ -233,13 +233,18 @@ function HeaderPreview({
   const d = withDefaults(data);
   const resolved = resolveTheme(d.theme, brandThemeDefaults(brand), HEADER_HARDCODED_THEME);
 
-  // The live site provides the real Website.nav through the slot; the editor
-  // (no provider) falls back to the representative sample links.
-  const realNav = useWebsiteNav();
-  const navItems: readonly HeaderNavItem[] = realNav && realNav.length > 0 ? realNav : SAMPLE_NAV;
-  // null only in the editor (no provider) — drives whether the mobile-menu
-  // CTA navigates (live) or stays decorative (editor preview).
-  const live = realNav != null;
+  // The real Website.nav arrives through the slot: the public site provides
+  // it `live` (links navigate); the header editor provides it inert (`live:
+  // false` — real labels show, but clicks select the element). With no
+  // provider at all the header falls back to representative sample links.
+  const navCtx = useWebsiteNav();
+  const live = navCtx != null && navCtx.live;
+  const navItems: readonly HeaderNavItem[] =
+    navCtx && navCtx.links.length > 0
+      ? live
+        ? navCtx.links
+        : navCtx.links.map((l) => ({ label: l.label, href: null }))
+      : SAMPLE_NAV;
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (

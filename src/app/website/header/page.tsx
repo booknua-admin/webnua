@@ -12,6 +12,10 @@ import { SectionEditor } from '@/components/shared/website/SectionEditor';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/lib/auth/user-stub';
 import { useEffectiveDraft, useWebsiteForClient } from '@/lib/website/queries';
+import {
+  WebsiteNavProvider,
+  resolveNavLinks,
+} from '@/lib/website/sections/_shared/website-nav-slot';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 export default function WebsiteHeaderEditorPage() {
@@ -46,15 +50,24 @@ export default function WebsiteHeaderEditorPage() {
     return <NotFoundState message={`No draft version on ${website.name}.`} />;
   }
 
+  const snapshot = draftQuery.data.snapshot;
+  // Feed the real Website.nav into the header preview (inert — the editor's
+  // links select the element, they don't navigate). The preview then shows
+  // the actual menu labels, not the placeholder sample links.
   return (
-    <SectionEditor
-      mode={{
-        kind: 'singleton',
-        website,
-        section: draftQuery.data.snapshot.header,
-        label: 'Header',
-      }}
-    />
+    <WebsiteNavProvider
+      links={resolveNavLinks(snapshot.nav, snapshot.pages)}
+      live={false}
+    >
+      <SectionEditor
+        mode={{
+          kind: 'singleton',
+          website,
+          section: snapshot.header,
+          label: 'Header',
+        }}
+      />
+    </WebsiteNavProvider>
   );
 }
 

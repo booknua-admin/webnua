@@ -29,7 +29,7 @@ import { notifyBuilder } from './builder-events';
 import { clearDraftsForWebsite } from './content-drafts';
 import { fetchEffectiveDraft } from './queries';
 import { diffSnapshots } from './snapshot';
-import type { PageSEO, VersionSnapshot } from './types';
+import { MAX_NAV_LINKS, type NavLink, type PageSEO, type VersionSnapshot } from './types';
 
 export type PublishActor = {
   id: string;
@@ -408,6 +408,93 @@ export async function saveSeoForPages(
     .update({ snapshot: next as unknown as Json })
     .eq('id', pointers.draftVersionId);
   if (writeError) return false;
+
+  notifyBuilder();
+  return true;
+}
+
+// -- navigation + page names --------------------------------------------------
+// Nav links and page titles are snapshot-level fields — not part of the
+// content_drafts section buffer — so, like SEO, they write straight to the
+// draft version's snapshot. `mergeDraftsIntoSnapshot` preserves `nav` and
+// each `page.title` verbatim, so buffered section edits survive these writes.
+
+/** Read the draft version's snapshot, or null when there is none. */
+async function getDraftSnapshot(
+  websiteId: string,
+): Promise<{ draftVersionId: string; snapshot: VersionSnapshot } | null> {
+  const pointers = await getWebsitePointers(websiteId);
+  if (!pointers?.draftVersionId) return null;
+  const { data, error } = await supabase
+    .from('website_versions')
+    .select('snapshot')
+    .eq('id', pointers.draftVersionId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return {
+    draftVersionId: pointers.draftVersionId,
+    snapshot: data.snapshot as VersionSnapshot,
+  };
+}
+
+/** Persist the website's header navigation (label, order, membership) onto
+ *  the draft snapshot. Capped at MAX_NAV_LINKS — extra links are dropped. */
+export async function saveNavLinks(
+  websiteId: string,
+  nav: NavLink[],
+): Promise<boolean> {
+  const draft = await getDraftSnapshot(websiteId);
+  if (!draft) return false;
+
+  const next: VersionSnapshot = {
+    ...draft.snapshot,
+    nav: nav.slice(0, MAX_NAV_LINKS),
+  };
+
+  const { error } = await supabase
+    .from('website_versions')
+    .update({ snapshot: next as unknown as Json })
+    .eq('id', draft.draftVersionId);
+  if (error) return false;
+
+  notifyBuilder();
+  return true;
+}
+
+/** Rename pages on the draft snapshot. Renaming a page also re-syncs the
+ *  matching page-target nav link's label, so the header menu tracks the
+ *  page name — the operator edits the two together (the "rename a page,
+ *  the header updates" behaviour). Blank titles are ignored. */
+export async function renamePages(
+  websiteId: string,
+  titlesByPageId: Record<string, string>,
+): Promise<boolean> {
+  const draft = await getDraftSnapshot(websiteId);
+  if (!draft) return false;
+
+  const trimmed: Record<string, string> = {};
+  for (const [id, title] of Object.entries(titlesByPageId)) {
+    const t = title.trim();
+    if (t) trimmed[id] = t;
+  }
+
+  const next: VersionSnapshot = {
+    ...draft.snapshot,
+    pages: draft.snapshot.pages.map((page) =>
+      trimmed[page.id] ? { ...page, title: trimmed[page.id] } : page,
+    ),
+    nav: draft.snapshot.nav.map((link) => {
+      if (link.target.kind !== 'page') return link;
+      const title = trimmed[link.target.pageId];
+      return title ? { ...link, label: title } : link;
+    }),
+  };
+
+  const { error } = await supabase
+    .from('website_versions')
+    .update({ snapshot: next as unknown as Json })
+    .eq('id', draft.draftVersionId);
+  if (error) return false;
 
   notifyBuilder();
   return true;

@@ -21,15 +21,9 @@ import { getSectionDefinition } from '@/lib/website/sections';
 import { SectionFormSlotProvider } from '@/lib/website/sections/_shared/section-form-slot';
 import {
   WebsiteNavProvider,
-  type ResolvedNavLink,
+  resolveNavLinks,
 } from '@/lib/website/sections/_shared/website-nav-slot';
-import type {
-  BrandObject,
-  NavLink,
-  NavLinkTarget,
-  Page,
-  Section,
-} from '@/lib/website/types';
+import type { BrandObject, NavLink, Page, Section } from '@/lib/website/types';
 
 type Props =
   | {
@@ -97,13 +91,6 @@ function RenderedSection({
   );
 }
 
-function navHref(target: NavLinkTarget, pages: Page[]): string {
-  if (target.kind === 'href') return target.href || '#';
-  const page = pages.find((p) => p.id === target.pageId);
-  if (!page) return '#';
-  return page.slug === 'home' ? '/' : `/${page.slug}`;
-}
-
 export function PublicSiteRenderer(props: Props) {
   if (props.kind === 'funnel') {
     return (
@@ -126,12 +113,8 @@ export function PublicSiteRenderer(props: Props) {
   const { brand, clientId, header, footer, nav, pages, page } = props;
   // Resolve Website.nav into real links and hand them to the header section
   // through the nav slot — the header renders the site's one navigation bar.
-  const navLinks: ResolvedNavLink[] = nav.map((link) => ({
-    label: link.label,
-    href: navHref(link.target, pages),
-  }));
   return (
-    <WebsiteNavProvider links={navLinks}>
+    <WebsiteNavProvider links={resolveNavLinks(nav, pages)}>
       <RenderedSection
         section={header}
         brand={brand}
