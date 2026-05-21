@@ -22,6 +22,7 @@ import {
   type SectionTheme,
 } from '../section-theme';
 import { CopyField } from './_shared/CopyField';
+import { SurfaceLink } from './_shared/live-surface';
 import { IconField } from './_shared/IconField';
 import { MediaField } from './_shared/MediaField';
 import { SectionShell } from './_shared/SectionShell';
@@ -871,13 +872,14 @@ function AboutExtraBlock({
 
   if (data.extra === 'button') {
     return (
-      <span
+      <SurfaceLink
+        href={data.buttonHref}
         className="inline-flex items-center gap-2 rounded-lg px-6 py-3 text-[14px] font-semibold"
         style={{ backgroundColor: accent, color: '#ffffff' }}
       >
         {data.buttonLabel || 'Learn more'}
         <span aria-hidden>→</span>
-      </span>
+      </SurfaceLink>
     );
   }
 

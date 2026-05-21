@@ -22,6 +22,7 @@ import {
 } from '../section-theme';
 import { ColumnsField } from './_shared/ColumnsField';
 import { CopyField } from './_shared/CopyField';
+import { SurfaceLink } from './_shared/live-surface';
 import { gridColumnsClass, masonryColumnsClass } from './_shared/grid';
 import { MediaField } from './_shared/MediaField';
 import { SectionShell } from './_shared/SectionShell';
@@ -698,21 +699,23 @@ function GalleryPreview({
                   className={ctaShown ? undefined : 'opacity-40'}
                 >
                   {d.ctaStyle === 'outline' ? (
-                    <span
+                    <SurfaceLink
+                      href={d.ctaHref}
                       className="inline-flex items-center gap-2 rounded-lg border-2 px-6 py-3 text-[14px] font-semibold"
                       style={{ borderColor: theme.heading, color: theme.heading }}
                     >
                       {d.ctaLabel}
                       <span aria-hidden>→</span>
-                    </span>
+                    </SurfaceLink>
                   ) : (
-                    <span
+                    <SurfaceLink
+                      href={d.ctaHref}
                       className="inline-flex items-center gap-2 rounded-lg px-6 py-3 text-[14px] font-semibold"
                       style={{ backgroundColor: accent, color: '#ffffff' }}
                     >
                       {d.ctaLabel}
                       <span aria-hidden>→</span>
-                    </span>
+                    </SurfaceLink>
                   )}
                 </SelectableElement>
               </div>

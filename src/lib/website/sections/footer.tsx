@@ -22,6 +22,7 @@ import {
   type SectionTheme,
 } from '../section-theme';
 import { CopyField } from './_shared/CopyField';
+import { SurfaceLink } from './_shared/live-surface';
 import { IconField } from './_shared/IconField';
 import { MediaField } from './_shared/MediaField';
 import { SectionShell } from './_shared/SectionShell';
@@ -876,13 +877,14 @@ function CtaCard({
         </p>
       ) : null}
       {data.ctaLabel ? (
-        <span
+        <SurfaceLink
+          href={data.ctaHref}
           className="mt-3.5 inline-flex items-center gap-2 rounded-lg px-4 py-2 text-[13px] font-semibold"
           style={{ backgroundColor: accent, color: '#ffffff' }}
         >
           {data.ctaLabel}
           <span aria-hidden>→</span>
-        </span>
+        </SurfaceLink>
       ) : null}
     </div>
   );

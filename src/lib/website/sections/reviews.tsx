@@ -22,6 +22,7 @@ import {
 } from '../section-theme';
 import { ColumnsField } from './_shared/ColumnsField';
 import { CopyField } from './_shared/CopyField';
+import { SurfaceLink } from './_shared/live-surface';
 import { gridColumnsClass } from './_shared/grid';
 import { MediaField } from './_shared/MediaField';
 import { RangeField } from './_shared/RangeField';
@@ -607,7 +608,12 @@ function ReviewsPreview({
             display="inline-block"
             className={ctaShown ? undefined : 'opacity-40'}
           >
-            <ReviewsCta label={d.ctaLabel} style={d.ctaStyle} accent={accent} />
+            <ReviewsCta
+              label={d.ctaLabel}
+              href={d.ctaHref}
+              style={d.ctaStyle}
+              accent={accent}
+            />
           </SelectableElement>
         ) : null;
 
@@ -874,41 +880,46 @@ function Avatar({
 
 function ReviewsCta({
   label,
+  href,
   style,
   accent,
 }: {
   label: string;
+  href?: string;
   style: ReviewsCtaStyle;
   accent: string;
 }) {
   if (style === 'solid') {
     return (
-      <span
+      <SurfaceLink
+        href={href}
         className="inline-flex items-center rounded-lg px-6 py-3 text-[14px] font-semibold"
         style={{ backgroundColor: accent, color: '#ffffff' }}
       >
         {label}
-      </span>
+      </SurfaceLink>
     );
   }
   if (style === 'outline') {
     return (
-      <span
+      <SurfaceLink
+        href={href}
         className="inline-flex items-center rounded-lg border-2 px-6 py-3 text-[14px] font-semibold"
         style={{ borderColor: accent, color: accent }}
       >
         {label}
-      </span>
+      </SurfaceLink>
     );
   }
   return (
-    <span
+    <SurfaceLink
+      href={href}
       className="inline-flex items-center gap-1.5 text-[14px] font-semibold"
       style={{ color: accent }}
     >
       {label}
       <span aria-hidden>→</span>
-    </span>
+    </SurfaceLink>
   );
 }
 

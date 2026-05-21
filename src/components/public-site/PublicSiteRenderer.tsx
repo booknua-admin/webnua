@@ -18,6 +18,7 @@
 
 import type { FunnelStep } from '@/lib/funnel/types';
 import { getSectionDefinition } from '@/lib/website/sections';
+import { LiveSurfaceProvider } from '@/lib/website/sections/_shared/live-surface';
 import { SectionFormSlotProvider } from '@/lib/website/sections/_shared/section-form-slot';
 import {
   WebsiteNavProvider,
@@ -94,19 +95,21 @@ function RenderedSection({
 export function PublicSiteRenderer(props: Props) {
   if (props.kind === 'funnel') {
     return (
-      <main>
-        {props.step.sections.map((section) => (
-          <RenderedSection
-            key={section.id}
-            section={section}
-            brand={props.brand}
-            clientId={props.clientId}
-            surfaceKind="funnel"
-            funnelId={props.funnelId}
-            nextStepHref={props.nextStepHref}
-          />
-        ))}
-      </main>
+      <LiveSurfaceProvider>
+        <main>
+          {props.step.sections.map((section) => (
+            <RenderedSection
+              key={section.id}
+              section={section}
+              brand={props.brand}
+              clientId={props.clientId}
+              surfaceKind="funnel"
+              funnelId={props.funnelId}
+              nextStepHref={props.nextStepHref}
+            />
+          ))}
+        </main>
+      </LiveSurfaceProvider>
     );
   }
 
@@ -114,30 +117,32 @@ export function PublicSiteRenderer(props: Props) {
   // Resolve Website.nav into real links and hand them to the header section
   // through the nav slot — the header renders the site's one navigation bar.
   return (
-    <WebsiteNavProvider links={resolveNavLinks(nav, pages)}>
-      <RenderedSection
-        section={header}
-        brand={brand}
-        clientId={clientId}
-        surfaceKind="website"
-      />
-      <main>
-        {page.sections.map((section) => (
-          <RenderedSection
-            key={section.id}
-            section={section}
-            brand={brand}
-            clientId={clientId}
-            surfaceKind="website"
-          />
-        ))}
-      </main>
-      <RenderedSection
-        section={footer}
-        brand={brand}
-        clientId={clientId}
-        surfaceKind="website"
-      />
-    </WebsiteNavProvider>
+    <LiveSurfaceProvider>
+      <WebsiteNavProvider links={resolveNavLinks(nav, pages)}>
+        <RenderedSection
+          section={header}
+          brand={brand}
+          clientId={clientId}
+          surfaceKind="website"
+        />
+        <main>
+          {page.sections.map((section) => (
+            <RenderedSection
+              key={section.id}
+              section={section}
+              brand={brand}
+              clientId={clientId}
+              surfaceKind="website"
+            />
+          ))}
+        </main>
+        <RenderedSection
+          section={footer}
+          brand={brand}
+          clientId={clientId}
+          surfaceKind="website"
+        />
+      </WebsiteNavProvider>
+    </LiveSurfaceProvider>
   );
 }
