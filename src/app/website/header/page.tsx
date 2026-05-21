@@ -11,8 +11,10 @@ import Link from 'next/link';
 import { SectionEditor } from '@/components/shared/website/SectionEditor';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/lib/auth/user-stub';
+import { saveNavLinks } from '@/lib/website/mutations';
 import { useEffectiveDraft, useWebsiteForClient } from '@/lib/website/queries';
 import {
+  WebsiteNavEditProvider,
   WebsiteNavProvider,
   resolveNavLinks,
 } from '@/lib/website/sections/_shared/website-nav-slot';
@@ -52,21 +54,33 @@ export default function WebsiteHeaderEditorPage() {
 
   const snapshot = draftQuery.data.snapshot;
   // Feed the real Website.nav into the header preview (inert — the editor's
-  // links select the element, they don't navigate). The preview then shows
-  // the actual menu labels, not the placeholder sample links.
+  // links don't navigate) so the preview shows the actual menu labels. The
+  // edit provider hands the menu editor the editable nav + pages + saver.
   return (
     <WebsiteNavProvider
       links={resolveNavLinks(snapshot.nav, snapshot.pages)}
       live={false}
     >
-      <SectionEditor
-        mode={{
-          kind: 'singleton',
-          website,
-          section: snapshot.header,
-          label: 'Header',
+      <WebsiteNavEditProvider
+        value={{
+          pages: snapshot.pages.map((p) => ({
+            id: p.id,
+            title: p.title,
+            slug: p.slug,
+          })),
+          nav: snapshot.nav,
+          onSave: (nav) => saveNavLinks(website.id, nav),
         }}
-      />
+      >
+        <SectionEditor
+          mode={{
+            kind: 'singleton',
+            website,
+            section: snapshot.header,
+            label: 'Header',
+          }}
+        />
+      </WebsiteNavEditProvider>
     </WebsiteNavProvider>
   );
 }

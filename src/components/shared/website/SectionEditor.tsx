@@ -38,12 +38,8 @@ import { publishFunnelDraft, saveSeoForSteps } from '@/lib/funnel/mutations';
 import type { Funnel, FunnelStep } from '@/lib/funnel/types';
 import type { DraftSlot } from '@/lib/website/content-drafts';
 import { defaultFormConfig, type FormConfig, type FormPageLink } from '@/lib/website/form-config';
-import { saveNavLinks, saveSeoForPages } from '@/lib/website/mutations';
-import {
-  useBrandForClient,
-  useEffectiveDraft,
-  useWebsiteForClient,
-} from '@/lib/website/queries';
+import { saveSeoForPages } from '@/lib/website/mutations';
+import { useBrandForClient, useWebsiteForClient } from '@/lib/website/queries';
 import { applyCtaDefaults } from '@/lib/website/cta-defaults';
 import { getSectionDefinition } from '@/lib/website/sections';
 import type {
@@ -66,7 +62,6 @@ import { EditorToolbar, type EditorToolbarTab } from './EditorToolbar';
 import { ForcePublishMenu } from './ForcePublishMenu';
 import { PagePreviewPane, type DevicePreview } from './PagePreviewPane';
 import { SectionFieldsPanel } from './SectionFieldsPanel';
-import { NavLinksPanel } from './NavLinksPanel';
 import { SeoPanel, type SeoPanelTarget } from './SeoPanel';
 import { SiteFontsMenu } from './SiteFontsMenu';
 
@@ -162,20 +157,7 @@ export function SectionEditor({ mode }: SectionEditorProps) {
   const router = useRouter();
   const canPublish = useCan('publish');
   const canEditSeo = useCan('editSEO');
-  const canEditPages = useCan('editPages');
   const [seoOpen, setSeoOpen] = useState(false);
-  const [navOpen, setNavOpen] = useState(false);
-
-  // The header singleton editor edits the site's nav menu (labels / order /
-  // visibility) through the NavLinksPanel. Nav + pages live on the draft
-  // snapshot, which the header route already fetched — React Query dedups
-  // this second read against that cache, and it stays fresh after a save.
-  const headerWebsiteId =
-    mode.kind === 'singleton' && mode.section.type === 'header'
-      ? mode.website.id
-      : null;
-  const navDraftQuery = useEffectiveDraft(headerWebsiteId);
-  const navSnapshot = navDraftQuery.data?.snapshot ?? null;
 
   // Lane B lock applies only to websites. Funnel-step editing has no
   // approval queue yet (Session 7 is the shell; mechanics later).
@@ -471,17 +453,6 @@ export function SectionEditor({ mode }: SectionEditorProps) {
             </button>
           ) : undefined
         }
-        nav={
-          headerWebsiteId && canEditPages && !locked && navSnapshot ? (
-            <button
-              type="button"
-              onClick={() => setNavOpen(true)}
-              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-rule bg-card px-3 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-mid transition-colors hover:border-rust hover:text-rust"
-            >
-              ✦ Menu
-            </button>
-          ) : undefined
-        }
         history={{ onUndo: undo, onRedo: redo, canUndo, canRedo }}
         device={{ value: device, onChange: setDevice }}
       />
@@ -540,20 +511,6 @@ export function SectionEditor({ mode }: SectionEditorProps) {
           business={seoBusiness}
           scopeLabel={mode.kind === 'funnelStep' ? 'funnel' : 'website'}
           onSave={handleSaveSeo}
-        />
-      ) : null}
-      {headerWebsiteId && navSnapshot ? (
-        <NavLinksPanel
-          open={navOpen}
-          onOpenChange={setNavOpen}
-          pages={navSnapshot.pages.map((p) => ({
-            id: p.id,
-            title: p.title,
-            type: p.type,
-            slug: p.slug,
-          }))}
-          nav={navSnapshot.nav}
-          onSave={(links) => saveNavLinks(headerWebsiteId, links)}
         />
       ) : null}
     </div>

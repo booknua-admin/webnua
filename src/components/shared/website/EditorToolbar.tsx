@@ -102,9 +102,6 @@ export type EditorToolbarProps = {
   /** Site-wide SEO control (the SEO panel trigger). Rendered in the right
    *  cluster; omit to hide. */
   seo?: React.ReactNode;
-  /** Header-menu control (the nav panel trigger). Rendered in the right
-   *  cluster; omit to hide — set only in singleton header mode. */
-  nav?: React.ReactNode;
   /** Undo / redo controls. Omit to hide. */
   history?: {
     onUndo: () => void;
@@ -131,7 +128,6 @@ export function EditorToolbar({
   publishMenu,
   siteStyles,
   seo,
-  nav,
   history,
   device,
 }: EditorToolbarProps) {
@@ -239,7 +235,6 @@ export function EditorToolbar({
             ))}
           </div>
         ) : null}
-        {nav}
         {seo}
         {siteStyles}
         <a

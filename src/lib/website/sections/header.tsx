@@ -4,6 +4,16 @@ import { Menu, X } from 'lucide-react';
 import { useState } from 'react';
 
 import { BuilderFormSection } from '@/components/shared/builder/BuilderField';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { useCan } from '@/lib/auth/user-stub';
 
 import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
@@ -14,6 +24,7 @@ import {
   type ResolvedTheme,
   type SectionTheme,
 } from '../section-theme';
+import { MAX_NAV_LINKS, type NavLink } from '../types';
 import { CopyField } from './_shared/CopyField';
 import { LinkField } from './_shared/LinkField';
 import { MediaField } from './_shared/MediaField';
@@ -22,7 +33,7 @@ import { SelectableElement } from './_shared/SelectableElement';
 import { ColorField, ThemePresetField } from './_shared/ThemeField';
 import { ToggleField } from './_shared/ToggleField';
 import { VariantField, type VariantOption } from './_shared/VariantField';
-import { useWebsiteNav } from './_shared/website-nav-slot';
+import { useWebsiteNav, useWebsiteNavEditing } from './_shared/website-nav-slot';
 
 // =============================================================================
 // Header — website-level singleton. Logo + navigation + an optional global
@@ -214,11 +225,275 @@ function HeaderFields({
           options={LAYOUT_OPTIONS}
           onChange={(v) => set('layout', v)}
         />
-        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
-          Nav links are set on the website (capped at 6). The preview shows representative links.
-        </p>
+      </BuilderFormSection>
+      <BuilderFormSection>
+        <MenuEditor />
       </BuilderFormSection>
     </>
+  );
+}
+
+// -- Menu editor ------------------------------------------------------------
+// The header navigation, edited inline in the header editor's sidebar. Reads
+// the editable nav + pages from the WebsiteNavEditing slot (the header editor
+// route provides it). Each item: a label, a target (an existing page or a
+// custom URL), reorder, remove. Edits debounce-save to the draft snapshot.
+
+type MenuRow = {
+  rowId: string;
+  label: string;
+  targetKind: 'page' | 'href';
+  pageId: string;
+  href: string;
+};
+
+let menuRowSeq = 0;
+function newRowId(): string {
+  menuRowSeq += 1;
+  return `mrow-${menuRowSeq}`;
+}
+
+function navToRows(nav: NavLink[], fallbackPageId: string): MenuRow[] {
+  return nav.map((link) => ({
+    rowId: newRowId(),
+    label: link.label,
+    targetKind: link.target.kind,
+    pageId: link.target.kind === 'page' ? link.target.pageId : fallbackPageId,
+    href: link.target.kind === 'href' ? link.target.href : '',
+  }));
+}
+
+function rowsToNav(rows: MenuRow[], pageById: Map<string, { title: string }>): NavLink[] {
+  return rows.map((r) => ({
+    label: r.label.trim() || (r.targetKind === 'page' ? pageById.get(r.pageId)?.title ?? 'Page' : 'Link'),
+    target:
+      r.targetKind === 'page'
+        ? { kind: 'page' as const, pageId: r.pageId }
+        : { kind: 'href' as const, href: r.href.trim() },
+  }));
+}
+
+function MenuEditor() {
+  const ctx = useWebsiteNavEditing();
+  const canEdit = useCan('editPages');
+
+  // Seed once on mount — the editor re-mounts whenever the header editor is
+  // re-opened, so it always seeds from the latest saved nav.
+  const [rows, setRows] = useState<MenuRow[]>(() =>
+    ctx ? navToRows(ctx.nav, ctx.pages[0]?.id ?? '') : [],
+  );
+
+  if (!ctx) {
+    return (
+      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
+        Menu editing is available in the header editor.
+      </p>
+    );
+  }
+
+  const pages = ctx.pages;
+  const fallbackPageId = pages[0]?.id ?? '';
+  const pageById = new Map(pages.map((p) => [p.id, { title: p.title }]));
+
+  // Structural edits (reorder / add / remove / target) persist immediately;
+  // text fields (label, URL) persist on blur — saving per keystroke would
+  // round-trip the whole snapshot on every character.
+  const persist = (next: MenuRow[]) => {
+    void ctx.onSave(rowsToNav(next, pageById));
+  };
+  const patchRow = (i: number, patch: Partial<MenuRow>): MenuRow[] =>
+    rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r));
+  /** Local-only update — used while typing; the field's onBlur persists. */
+  const editText = (i: number, patch: Partial<MenuRow>) => setRows(patchRow(i, patch));
+  /** Update + persist now — used for discrete structural changes. */
+  const apply = (next: MenuRow[]) => {
+    setRows(next);
+    persist(next);
+  };
+  const move = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= rows.length) return;
+    const next = [...rows];
+    [next[i], next[j]] = [next[j], next[i]];
+    apply(next);
+  };
+  const remove = (i: number) => apply(rows.filter((_, idx) => idx !== i));
+  const add = () =>
+    apply([
+      ...rows,
+      {
+        rowId: newRowId(),
+        label: pages[0]?.title ?? 'New item',
+        targetKind: 'page',
+        pageId: fallbackPageId,
+        href: '',
+      },
+    ]);
+
+  if (!canEdit) {
+    return (
+      <div>
+        <MenuEditorHeading count={rows.length} />
+        <ul className="mt-2 flex flex-col gap-1">
+          {rows.map((r) => (
+            <li
+              key={r.rowId}
+              className="rounded-md border border-rule bg-paper px-3 py-2 text-[13px] text-ink"
+            >
+              {r.label || '(untitled)'}
+            </li>
+          ))}
+        </ul>
+        <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
+          You don&rsquo;t have access to edit the menu.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <MenuEditorHeading count={rows.length} />
+      <div className="mt-2 flex flex-col gap-2">
+        {rows.map((row, i) => (
+          <div
+            key={row.rowId}
+            className="rounded-lg border border-rule bg-card px-3 py-2.5"
+          >
+            <div className="flex items-center gap-1.5">
+              <Input
+                value={row.label}
+                onChange={(e) => editText(i, { label: e.target.value })}
+                onBlur={() => persist(rows)}
+                placeholder="Menu label"
+                className="h-8 flex-1 text-[13px]"
+              />
+              <MenuIconBtn glyph="↑" label="Move up" disabled={i === 0} onClick={() => move(i, -1)} />
+              <MenuIconBtn
+                glyph="↓"
+                label="Move down"
+                disabled={i === rows.length - 1}
+                onClick={() => move(i, 1)}
+              />
+              <MenuIconBtn glyph="×" label="Remove" disabled={false} onClick={() => remove(i)} />
+            </div>
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <div className="flex shrink-0 overflow-hidden rounded-md border border-rule">
+                <MenuTargetTab
+                  active={row.targetKind === 'page'}
+                  onClick={() => apply(patchRow(i, { targetKind: 'page' }))}
+                >
+                  Page
+                </MenuTargetTab>
+                <MenuTargetTab
+                  active={row.targetKind === 'href'}
+                  onClick={() => apply(patchRow(i, { targetKind: 'href' }))}
+                >
+                  Link
+                </MenuTargetTab>
+              </div>
+              {row.targetKind === 'page' ? (
+                <Select
+                  value={pages.some((p) => p.id === row.pageId) ? row.pageId : undefined}
+                  onValueChange={(v) => apply(patchRow(i, { pageId: v }))}
+                >
+                  <SelectTrigger size="sm" className="flex-1 text-[13px]">
+                    <SelectValue placeholder="Pick a page" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pages.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  value={row.href}
+                  onChange={(e) => editText(i, { href: e.target.value })}
+                  onBlur={() => persist(rows)}
+                  placeholder="https://… or tel:…"
+                  className="h-8 flex-1 text-[13px]"
+                />
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        className="mt-2 w-full"
+        disabled={rows.length >= MAX_NAV_LINKS}
+        onClick={add}
+      >
+        {rows.length >= MAX_NAV_LINKS
+          ? `Menu is full (${MAX_NAV_LINKS} max)`
+          : '+ Add menu item'}
+      </Button>
+    </div>
+  );
+}
+
+function MenuEditorHeading({ count }: { count: number }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink">
+        Header menu
+      </span>
+      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
+        {count} / {MAX_NAV_LINKS}
+      </span>
+    </div>
+  );
+}
+
+function MenuTargetTab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.1em] transition-colors ${
+        active ? 'bg-ink text-paper' : 'bg-card text-ink-quiet hover:text-ink'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MenuIconBtn({
+  glyph,
+  label,
+  disabled,
+  onClick,
+}: {
+  glyph: string;
+  label: string;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      title={label}
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-rule bg-card text-[14px] leading-none text-ink-mid transition-colors hover:border-rust hover:text-rust disabled:opacity-35 disabled:hover:border-rule disabled:hover:text-ink-mid"
+    >
+      {glyph}
+    </button>
   );
 }
 

@@ -66,3 +66,42 @@ function navHref(target: NavLinkTarget, pages: Page[]): string {
   if (!page) return '#';
   return page.slug === 'home' ? '/' : `/${page.slug}`;
 }
+
+// =============================================================================
+// Nav EDITING slot — carries the editable nav + the site's pages + a save
+// handler into the header section's Fields component, so the menu editor can
+// live in the header editor's sidebar without widening the section-registry
+// `Fields(data, …)` contract. The header editor route provides it; the menu
+// editor reads it via `useWebsiteNavEditing`. Null outside the header editor.
+// =============================================================================
+
+export type WebsiteNavEditPage = { id: string; title: string; slug: string };
+
+export type WebsiteNavEditing = {
+  pages: WebsiteNavEditPage[];
+  nav: NavLink[];
+  /** Persist the full nav array to the draft snapshot. */
+  onSave: (nav: NavLink[]) => Promise<boolean>;
+};
+
+const WebsiteNavEditContext = createContext<WebsiteNavEditing | null>(null);
+
+export function WebsiteNavEditProvider({
+  value,
+  children,
+}: {
+  value: WebsiteNavEditing;
+  children: ReactNode;
+}) {
+  return (
+    <WebsiteNavEditContext.Provider value={value}>
+      {children}
+    </WebsiteNavEditContext.Provider>
+  );
+}
+
+/** The editable site nav + pages + save handler, or null outside the header
+ *  editor. */
+export function useWebsiteNavEditing(): WebsiteNavEditing | null {
+  return useContext(WebsiteNavEditContext);
+}
