@@ -17,15 +17,32 @@ import { uploadSectionImage } from '@/lib/website/upload-image';
 import { cn } from '@/lib/utils';
 
 import { useSectionFieldContext } from './field-context';
+import { coerceImageDisplay, imageBoxClasses, type ImageDisplay } from './image-display';
+import { ImageDisplayControls, type ImageDisplayControl } from './ImageDisplayControls';
 
 export type MediaFieldProps = {
   label: ReactNode;
   value: string;
   onChange: (next: string) => void;
   helper?: ReactNode;
+  /** Optional per-image display controls (fit / aspect / focal point). When
+   *  both `display` and `onDisplayChange` are passed, the controls render
+   *  under the thumbnail — inside the same `editMedia` gate as the field. */
+  display?: ImageDisplay;
+  onDisplayChange?: (next: ImageDisplay) => void;
+  /** Which display controls to show. Default: all three. */
+  displayControls?: readonly ImageDisplayControl[];
 };
 
-export function MediaField({ label, value, onChange, helper }: MediaFieldProps) {
+export function MediaField({
+  label,
+  value,
+  onChange,
+  helper,
+  display,
+  onDisplayChange,
+  displayControls,
+}: MediaFieldProps) {
   const { sectionLabel } = useSectionFieldContext();
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -67,27 +84,43 @@ export function MediaField({ label, value, onChange, helper }: MediaFieldProps) 
           }}
         />
         {value ? (
-          <div className="overflow-hidden rounded-md border border-rule">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={value} alt="" className="h-32 w-full bg-paper-2 object-cover" />
-            <div className="flex items-center gap-3 border-t border-rule bg-card px-3 py-2">
-              <button
-                type="button"
-                onClick={() => inputRef.current?.click()}
-                disabled={uploading}
-                className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-rust transition-colors hover:text-rust-deep disabled:opacity-50"
-              >
-                {uploading ? 'Uploading…' : 'Replace'}
-              </button>
-              <button
-                type="button"
-                onClick={() => onChange('')}
-                className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet transition-colors hover:text-warn"
-              >
-                Remove
-              </button>
+          <>
+            <div className="overflow-hidden rounded-md border border-rule">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={value}
+                alt=""
+                className={cn(
+                  'h-32 w-full bg-paper-2',
+                  display ? imageBoxClasses(display).fitClass : 'object-cover',
+                )}
+              />
+              <div className="flex items-center gap-3 border-t border-rule bg-card px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => inputRef.current?.click()}
+                  disabled={uploading}
+                  className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-rust transition-colors hover:text-rust-deep disabled:opacity-50"
+                >
+                  {uploading ? 'Uploading…' : 'Replace'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onChange('')}
+                  className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet transition-colors hover:text-warn"
+                >
+                  Remove
+                </button>
+              </div>
             </div>
-          </div>
+            {display && onDisplayChange ? (
+              <ImageDisplayControls
+                value={coerceImageDisplay(display)}
+                onChange={onDisplayChange}
+                controls={displayControls}
+              />
+            ) : null}
+          </>
         ) : (
           <button
             type="button"

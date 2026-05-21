@@ -11,11 +11,15 @@ import type { ReactNode } from 'react';
 
 import { BuilderField, BuilderInput } from '@/components/shared/builder/BuilderField';
 import { CapabilityGate } from '@/components/shared/CapabilityGate';
+import { SectionPopupControls } from '@/components/shared/website/SectionPopupControls';
+import { POPUP_HREF } from '@/lib/website/popup-config';
 import type { PageLink } from '@/lib/website/types';
 
 import { useSectionFieldContext } from './field-context';
+import { useSectionPopupEdit } from './section-popup-edit';
 
 const CUSTOM = '__custom';
+const POPUP = '__popup';
 
 const SELECT_CLASS =
   'block w-full rounded-[7px] border border-rule bg-card px-3.5 py-[11px] ' +
@@ -33,8 +37,11 @@ export type LinkFieldProps = {
 
 export function LinkField({ label, value, onChange, pageLinks = [], helper }: LinkFieldProps) {
   const { sectionLabel } = useSectionFieldContext();
+  const popupEdit = useSectionPopupEdit();
   const selectedPage = pageLinks.find((p) => p.href === value);
-  const isCustom = !selectedPage;
+  const isPopup = value.trim() === POPUP_HREF;
+  const isCustom = !selectedPage && !isPopup;
+  const selectValue = selectedPage ? selectedPage.href : isPopup ? POPUP : CUSTOM;
 
   return (
     <BuilderField label={label} helper={helper}>
@@ -48,21 +55,25 @@ export function LinkField({ label, value, onChange, pageLinks = [], helper }: Li
         }}
       >
         <div className="flex flex-col gap-2">
-          {pageLinks.length > 0 ? (
-            <select
-              value={selectedPage ? selectedPage.href : CUSTOM}
-              onChange={(e) => onChange(e.target.value === CUSTOM ? '' : e.target.value)}
-              className={SELECT_CLASS}
-            >
-              {pageLinks.map((p) => (
-                <option key={p.href} value={p.href}>
-                  {p.label} ({p.href})
-                </option>
-              ))}
-              <option value={CUSTOM}>Custom link…</option>
-            </select>
-          ) : null}
-          {isCustom || pageLinks.length === 0 ? (
+          <select
+            value={selectValue}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === CUSTOM) onChange('');
+              else if (v === POPUP) onChange(POPUP_HREF);
+              else onChange(v);
+            }}
+            className={SELECT_CLASS}
+          >
+            {pageLinks.map((p) => (
+              <option key={p.href} value={p.href}>
+                {p.label} ({p.href})
+              </option>
+            ))}
+            <option value={CUSTOM}>Custom link…</option>
+            <option value={POPUP}>Open a popup…</option>
+          </select>
+          {isCustom ? (
             <BuilderInput
               value={value}
               placeholder="https://…  ·  /path  ·  tel:…  ·  #section"
@@ -71,6 +82,23 @@ export function LinkField({ label, value, onChange, pageLinks = [], helper }: Li
           ) : null}
         </div>
       </CapabilityGate>
+      {/* "Open a popup" → the popup is configured right here, next to the
+          button that opens it. Outside the editCopy gate above: choosing the
+          link target is editCopy; the popup contents are editForms. */}
+      {isPopup ? (
+        popupEdit ? (
+          <SectionPopupControls
+            popup={popupEdit.popup}
+            onSetPopup={popupEdit.onSetPopup}
+            pageLinks={popupEdit.pageLinks}
+            brand={popupEdit.brand}
+          />
+        ) : (
+          <p className="mt-2 text-[12px] leading-[1.5] text-ink-quiet">
+            This button opens a popup.
+          </p>
+        )
+      ) : null}
     </BuilderField>
   );
 }

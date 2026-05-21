@@ -116,6 +116,7 @@ export const heroMeta: SectionMeta = {
     'ctaSecondaryHref',
     'ctaSecondaryVisible',
     'heroImageUrl',
+    'heroImageDisplay',
   ],
 };
 
@@ -170,6 +171,7 @@ export const offerMeta: SectionMeta = {
     'inclusions',
     'scarcityCopy',
     'imageUrl',
+    'imageDisplay',
     'items',
     'stackStyle',
     'columns',
@@ -322,6 +324,9 @@ export const aboutMeta: SectionMeta = {
     'imageUrl',
     'imageUrl2',
     'imageUrl3',
+    'imageDisplay',
+    'imageDisplay2',
+    'imageDisplay3',
     'overlay',
     'badgeIcon',
     'badgeValue',
@@ -432,6 +437,7 @@ export const reviewsMeta: SectionMeta = {
     'ctaLabel',
     'ctaHref',
     'spotlightImageUrl',
+    'spotlightImageDisplay',
   ],
 };
 
@@ -539,6 +545,7 @@ export const ctaMeta: SectionMeta = {
     'showSignals',
     'signals',
     'imageUrl',
+    'imageDisplay',
     'imageSide',
     'overlayOpacity',
     'panelA',
@@ -590,6 +597,8 @@ export const contactMeta: SectionMeta = {
     'showPhoneField',
     'imageUrl',
     'mapImageUrl',
+    'imageDisplay',
+    'mapImageDisplay',
   ],
 };
 

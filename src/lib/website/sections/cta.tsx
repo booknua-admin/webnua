@@ -23,6 +23,12 @@ import { LinkField } from './_shared/LinkField';
 import { SurfaceLink } from './_shared/live-surface';
 import { IconField } from './_shared/IconField';
 import { MediaField } from './_shared/MediaField';
+import {
+  coerceImageDisplay,
+  defaultImageDisplay,
+  imageBoxClasses,
+  type ImageDisplay,
+} from './_shared/image-display';
 import { RangeField } from './_shared/RangeField';
 import { SectionShell } from './_shared/SectionShell';
 import { SelectableElement } from './_shared/SelectableElement';
@@ -72,6 +78,8 @@ export type CtaPanel = {
   /** Colour background. Empty = the auto tint (soft / accent by side). */
   bgColor: string;
   imageUrl: string;
+  /** Per-image fit / focal point for the panel background. */
+  display: ImageDisplay;
   /** Scrim colour layered over the background image. */
   overlayColor: string;
   /** Scrim strength 0–100. */
@@ -97,6 +105,7 @@ export type CTAData = {
   showSignals: boolean;
   signals: CtaSignal[];
   imageUrl: string;
+  imageDisplay: ImageDisplay;
   imageSide: 'left' | 'right';
   overlayOpacity: number;
   panelA: CtaPanel;
@@ -139,6 +148,7 @@ const DEFAULTS: CTAData = {
   showSignals: true,
   signals: SEED_SIGNALS.map((s) => ({ ...s, id: makeId() })),
   imageUrl: '',
+  imageDisplay: defaultImageDisplay(),
   imageSide: 'right',
   overlayOpacity: 72,
   panelA: {
@@ -150,6 +160,7 @@ const DEFAULTS: CTAData = {
     bgType: 'colour',
     bgColor: '',
     imageUrl: '',
+    display: defaultImageDisplay(),
     overlayColor: '#0a0a0a',
     overlayOpacity: 55,
   },
@@ -162,6 +173,7 @@ const DEFAULTS: CTAData = {
     bgType: 'colour',
     bgColor: '',
     imageUrl: '',
+    display: defaultImageDisplay(),
     overlayColor: '#0a0a0a',
     overlayOpacity: 55,
   },
@@ -519,6 +531,9 @@ function CTAFields({
                 label="Panel image"
                 value={panel.imageUrl}
                 onChange={(v) => upd({ imageUrl: v })}
+                display={coerceImageDisplay(panel.display)}
+                onDisplayChange={(v) => upd({ display: v })}
+                displayControls={['fit', 'focal']}
               />
               <ColorField
                 label="Overlay colour"
@@ -600,6 +615,11 @@ function CTAFields({
             label={d.layout === 'split' ? 'Side image' : 'Background image'}
             value={d.imageUrl}
             onChange={(v) => set('imageUrl', v)}
+            display={coerceImageDisplay(d.imageDisplay)}
+            onDisplayChange={(v) => set('imageDisplay', v)}
+            displayControls={
+              d.layout === 'split' ? ['fit', 'aspect', 'focal'] : ['fit', 'focal']
+            }
           />
         </BuilderFormSection>
       ) : null}
@@ -644,6 +664,7 @@ function CTAPreview({
             url={d.imageUrl}
             scrim={resolved.background}
             opacity={d.overlayOpacity / 100}
+            display={d.imageDisplay}
           />
         ) : undefined
       }
@@ -753,7 +774,9 @@ function CTAPreview({
         );
 
         if (d.layout === 'split') {
-          const imageCell = <SplitImage key="img" url={d.imageUrl} theme={theme} />;
+          const imageCell = (
+            <SplitImage key="img" url={d.imageUrl} theme={theme} display={d.imageDisplay} />
+          );
           const copyCell = (
             <div key="copy" className="flex flex-col justify-center">
               {copy}
@@ -868,7 +891,7 @@ function DualPanel({
           <img
             src={panel.imageUrl}
             alt=""
-            className="absolute inset-0 h-full w-full object-cover"
+            className={`absolute inset-0 h-full w-full ${imageBoxClasses(panel.display).fitClass}`}
           />
           <div
             className="absolute inset-0"
@@ -1001,15 +1024,36 @@ function SignalRow({
   );
 }
 
-function SplitImage({ url, theme }: { url: string; theme: ResolvedTheme }) {
+function SplitImage({
+  url,
+  theme,
+  display,
+}: {
+  url: string;
+  theme: ResolvedTheme;
+  display: ImageDisplay;
+}) {
+  const box = imageBoxClasses(display);
+  if (url && box.isOriginal) {
+    return (
+      <div
+        className="relative w-full overflow-hidden rounded-2xl"
+        style={{ backgroundColor: theme.card }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt="" className="block h-auto w-full" />
+      </div>
+    );
+  }
+  const ratio = box.aspectClass ?? 'aspect-[4/3]';
   return (
     <div
-      className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl"
+      className={`relative ${ratio} w-full overflow-hidden rounded-2xl`}
       style={{ backgroundColor: theme.card }}
     >
       {url ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        <img src={url} alt="" className={`absolute inset-0 h-full w-full ${box.fitClass}`} />
       ) : (
         <div className="absolute inset-0 flex items-center justify-center">
           <span
@@ -1024,7 +1068,17 @@ function SplitImage({ url, theme }: { url: string; theme: ResolvedTheme }) {
   );
 }
 
-function BackgroundLayer({ url, scrim, opacity }: { url: string; scrim: string; opacity: number }) {
+function BackgroundLayer({
+  url,
+  scrim,
+  opacity,
+  display,
+}: {
+  url: string;
+  scrim: string;
+  opacity: number;
+  display: ImageDisplay;
+}) {
   const a = (multiplier: number) => {
     const v = Math.round(Math.max(0, Math.min(1, opacity * multiplier)) * 255);
     return v.toString(16).padStart(2, '0');
@@ -1033,7 +1087,11 @@ function BackgroundLayer({ url, scrim, opacity }: { url: string; scrim: string; 
     <>
       {url ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        <img
+          src={url}
+          alt=""
+          className={`absolute inset-0 h-full w-full ${imageBoxClasses(display).fitClass}`}
+        />
       ) : null}
       <div
         className="absolute inset-0"

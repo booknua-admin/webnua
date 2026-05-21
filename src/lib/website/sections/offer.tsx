@@ -28,6 +28,12 @@ import { SurfaceLink } from './_shared/live-surface';
 import { gridColumnsClass } from './_shared/grid';
 import { IconField } from './_shared/IconField';
 import { MediaField } from './_shared/MediaField';
+import {
+  coerceImageDisplay,
+  defaultImageDisplay,
+  imageBoxClasses,
+  type ImageDisplay,
+} from './_shared/image-display';
 import { SectionShell } from './_shared/SectionShell';
 import { SelectableElement } from './_shared/SelectableElement';
 import { ColorField, ThemePresetField } from './_shared/ThemeField';
@@ -80,6 +86,7 @@ export type OfferData = {
   inclusions: OfferInclusion[];
   scarcityCopy: string;
   imageUrl: string;
+  imageDisplay: ImageDisplay;
   // -- stack mode --
   items: OfferValueItem[];
   stackStyle: OfferStackStyle;
@@ -164,6 +171,7 @@ const DEFAULTS: OfferData = {
   inclusions: SEED_INCLUSIONS.map((text) => ({ id: makeId('inc'), text })),
   scarcityCopy: 'Limited to 5 emergency slots per day.',
   imageUrl: '',
+  imageDisplay: defaultImageDisplay(),
   items: SEED_ITEMS.map((it) => ({ ...it, id: makeId('val') })),
   stackStyle: 'grid',
   columns: 2,
@@ -484,7 +492,13 @@ function OfferFields({
   if (selectedElement === 'media') {
     return (
       <BuilderFormSection>
-        <MediaField label="Offer image" value={d.imageUrl} onChange={(v) => set('imageUrl', v)} />
+        <MediaField
+          label="Offer image"
+          value={d.imageUrl}
+          onChange={(v) => set('imageUrl', v)}
+          display={coerceImageDisplay(d.imageDisplay)}
+          onDisplayChange={(v) => set('imageDisplay', v)}
+        />
       </BuilderFormSection>
     );
   }
@@ -806,7 +820,7 @@ function OfferPreview({
                 {signals ? <div className="mt-6">{signals}</div> : null}
               </div>
               <SelectableElement {...sel('media')}>
-                <OfferImage url={d.imageUrl} theme={theme} />
+                <OfferImage url={d.imageUrl} theme={theme} display={d.imageDisplay} />
               </SelectableElement>
             </div>
           );
@@ -1051,15 +1065,36 @@ function SignalRow({
   );
 }
 
-function OfferImage({ url, theme }: { url: string; theme: ResolvedTheme }) {
+function OfferImage({
+  url,
+  theme,
+  display,
+}: {
+  url: string;
+  theme: ResolvedTheme;
+  display: ImageDisplay;
+}) {
+  const box = imageBoxClasses(display);
+  if (url && box.isOriginal) {
+    return (
+      <div
+        className="relative w-full overflow-hidden rounded-2xl"
+        style={{ backgroundColor: theme.card }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt="" className="block h-auto w-full" />
+      </div>
+    );
+  }
+  const ratio = box.aspectClass ?? 'aspect-[4/3]';
   return (
     <div
-      className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl"
+      className={`relative ${ratio} w-full overflow-hidden rounded-2xl`}
       style={{ backgroundColor: theme.card }}
     >
       {url ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        <img src={url} alt="" className={`absolute inset-0 h-full w-full ${box.fitClass}`} />
       ) : (
         <div className="absolute inset-0 flex items-center justify-center">
           <span

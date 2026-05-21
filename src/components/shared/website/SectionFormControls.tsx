@@ -55,6 +55,10 @@ export type SectionFormControlsProps = {
   isFunnel: boolean;
   /** The site's pages — the after-submit redirect picks from these. */
   pageLinks: FormPageLink[];
+  /** When false the form-manager "Remove form" action is hidden. Default
+   *  true. Set false where the form is intrinsic to its host (a popup whose
+   *  content IS the form — removing it is done by removing the popup). */
+  allowRemove?: boolean;
 };
 
 /** True when the selected element belongs to the form (not the section). */
@@ -120,6 +124,7 @@ export function SectionFormControls({
   onSelectElement,
   isFunnel,
   pageLinks,
+  allowRemove = true,
 }: SectionFormControlsProps) {
   const canEdit = useCan('editForms');
 
@@ -133,6 +138,7 @@ export function SectionFormControls({
           onSetForm={onSetForm}
           onSelectElement={onSelectElement}
           canEdit={canEdit}
+          allowRemove={allowRemove}
         />
       );
     }
@@ -206,11 +212,13 @@ function FormManager({
   onSetForm,
   onSelectElement,
   canEdit,
+  allowRemove,
 }: {
   form: FormConfig;
   onSetForm: (form: FormConfig | undefined) => void;
   onSelectElement: (id: string | null) => void;
   canEdit: boolean;
+  allowRemove: boolean;
 }) {
   const [picking, setPicking] = useState(false);
 
@@ -235,7 +243,7 @@ function FormManager({
         <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
           {'// Lead form'}
         </p>
-        {canEdit ? (
+        {canEdit && allowRemove ? (
           <button
             type="button"
             onClick={() => {

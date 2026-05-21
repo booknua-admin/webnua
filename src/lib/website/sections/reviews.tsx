@@ -25,6 +25,12 @@ import { CopyField } from './_shared/CopyField';
 import { SurfaceLink } from './_shared/live-surface';
 import { gridColumnsClass } from './_shared/grid';
 import { MediaField } from './_shared/MediaField';
+import {
+  coerceImageDisplay,
+  defaultImageDisplay,
+  imageBoxClasses,
+  type ImageDisplay,
+} from './_shared/image-display';
 import { RangeField } from './_shared/RangeField';
 import { SectionShell } from './_shared/SectionShell';
 import { SelectableElement } from './_shared/SelectableElement';
@@ -62,6 +68,8 @@ export type ReviewItem = {
   authorName: string;
   authorRole: string;
   avatarUrl: string;
+  /** Per-avatar fit / focal point. Absent on old data — coerced on read. */
+  avatarDisplay?: ImageDisplay;
   /** 1–5 filled stars; 0 hides the star row. */
   rating: number;
 };
@@ -89,6 +97,7 @@ export type ReviewsData = {
   ctaLabel: string;
   ctaHref: string;
   spotlightImageUrl: string;
+  spotlightImageDisplay: ImageDisplay;
 };
 
 /** The reviews band's own colours — last link in the resolve chain. */
@@ -148,6 +157,7 @@ const DEFAULTS: ReviewsData = {
   ctaLabel: 'See more reviews',
   ctaHref: '#',
   spotlightImageUrl: '',
+  spotlightImageDisplay: defaultImageDisplay(),
 };
 
 function defaultData(): ReviewsData {
@@ -496,6 +506,9 @@ function ReviewsFields({
                 value={item.avatarUrl}
                 onChange={(v) => setItem(i, { ...item, avatarUrl: v })}
                 helper={<>Optional — falls back to the author's initials.</>}
+                display={coerceImageDisplay(item.avatarDisplay)}
+                onDisplayChange={(v) => setItem(i, { ...item, avatarDisplay: v })}
+                displayControls={['fit', 'focal']}
               />
               <RangeField
                 label="Star rating"
@@ -567,6 +580,8 @@ function ReviewsFields({
             label="Spotlight image"
             value={d.spotlightImageUrl}
             onChange={(v) => set('spotlightImageUrl', v)}
+            display={coerceImageDisplay(d.spotlightImageDisplay)}
+            onDisplayChange={(v) => set('spotlightImageDisplay', v)}
           />
         </BuilderFormSection>
       ) : null}
@@ -673,28 +688,11 @@ function ReviewsPreview({
                 {ctaNode ? <div className="mt-7">{ctaNode}</div> : null}
               </div>
               <div>
-                <div
-                  className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl"
-                  style={{ backgroundColor: theme.card }}
-                >
-                  {d.spotlightImageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={d.spotlightImageUrl}
-                      alt=""
-                      className="absolute inset-0 h-full w-full object-cover"
-                    />
-                  ) : (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <span
-                        className="text-[12px] font-semibold uppercase tracking-[0.16em]"
-                        style={{ color: theme.muted }}
-                      >
-                        Spotlight image
-                      </span>
-                    </div>
-                  )}
-                </div>
+                <SpotlightImage
+                  url={d.spotlightImageUrl}
+                  theme={theme}
+                  display={d.spotlightImageDisplay}
+                />
                 {first ? (
                   <div className="relative z-10 -mt-16 mr-6 @sm:mr-12">
                     <SelectableElement {...sel('items')}>
@@ -814,7 +812,13 @@ function ReviewCard({
         {item.quote || 'Review quote'}
       </p>
       <div className="mt-5 flex items-center gap-3">
-        <Avatar name={item.authorName} url={item.avatarUrl} accent={accent} theme={theme} />
+        <Avatar
+          name={item.authorName}
+          url={item.avatarUrl}
+          accent={accent}
+          theme={theme}
+          display={item.avatarDisplay}
+        />
         <div className="min-w-0">
           <p
             className="text-[14px] font-bold leading-tight"
@@ -838,16 +842,62 @@ function ReviewCard({
   );
 }
 
+function SpotlightImage({
+  url,
+  theme,
+  display,
+}: {
+  url: string;
+  theme: ResolvedTheme;
+  display: ImageDisplay;
+}) {
+  const box = imageBoxClasses(display);
+  if (url && box.isOriginal) {
+    return (
+      <div
+        className="relative w-full overflow-hidden rounded-2xl"
+        style={{ backgroundColor: theme.card }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt="" className="block h-auto w-full" />
+      </div>
+    );
+  }
+  const ratio = box.aspectClass ?? 'aspect-[4/3]';
+  return (
+    <div
+      className={`relative ${ratio} w-full overflow-hidden rounded-2xl`}
+      style={{ backgroundColor: theme.card }}
+    >
+      {url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt="" className={`absolute inset-0 h-full w-full ${box.fitClass}`} />
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span
+            className="text-[12px] font-semibold uppercase tracking-[0.16em]"
+            style={{ color: theme.muted }}
+          >
+            Spotlight image
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Avatar({
   name,
   url,
   accent,
   theme,
+  display,
 }: {
   name: string;
   url: string;
   accent: string;
   theme: ResolvedTheme;
+  display?: ImageDisplay;
 }) {
   if (url) {
     return (
@@ -855,7 +905,7 @@ function Avatar({
       <img
         src={url}
         alt={name}
-        className="h-10 w-10 shrink-0 rounded-full object-cover"
+        className={`h-10 w-10 shrink-0 rounded-full ${imageBoxClasses(display).fitClass}`}
       />
     );
   }

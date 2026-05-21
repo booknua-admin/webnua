@@ -24,6 +24,12 @@ import {
 import { CopyField } from './_shared/CopyField';
 import { IconField } from './_shared/IconField';
 import { MediaField } from './_shared/MediaField';
+import {
+  coerceImageDisplay,
+  defaultImageDisplay,
+  imageBoxClasses,
+  type ImageDisplay,
+} from './_shared/image-display';
 import { SectionShell } from './_shared/SectionShell';
 import { SelectableElement } from './_shared/SelectableElement';
 import { ColorField, ThemePresetField } from './_shared/ThemeField';
@@ -79,6 +85,8 @@ export type ContactData = {
   showPhoneField: boolean;
   imageUrl: string;
   mapImageUrl: string;
+  imageDisplay: ImageDisplay;
+  mapImageDisplay: ImageDisplay;
 };
 
 /** The contact block's own colours — last link in the resolve chain. */
@@ -115,6 +123,8 @@ const DEFAULTS: ContactData = {
   showPhoneField: true,
   imageUrl: '',
   mapImageUrl: '',
+  imageDisplay: defaultImageDisplay(),
+  mapImageDisplay: defaultImageDisplay(),
 };
 
 function defaultData(): ContactData {
@@ -406,6 +416,8 @@ function ContactFields({
             value={d.mapImageUrl}
             onChange={(v) => set('mapImageUrl', v)}
             helper={<>A static map image. A live embed lands with the maps integration.</>}
+            display={coerceImageDisplay(d.mapImageDisplay)}
+            onDisplayChange={(v) => set('mapImageDisplay', v)}
           />
         </BuilderFormSection>
       );
@@ -417,6 +429,8 @@ function ContactFields({
             label="Image"
             value={d.imageUrl}
             onChange={(v) => set('imageUrl', v)}
+            display={coerceImageDisplay(d.imageDisplay)}
+            onDisplayChange={(v) => set('imageDisplay', v)}
           />
         </BuilderFormSection>
       );
@@ -464,6 +478,12 @@ function ContactFields({
             label={d.layout === 'map' ? 'Map image' : 'Image'}
             value={d.layout === 'map' ? d.mapImageUrl : d.imageUrl}
             onChange={(v) => set(d.layout === 'map' ? 'mapImageUrl' : 'imageUrl', v)}
+            display={coerceImageDisplay(
+              d.layout === 'map' ? d.mapImageDisplay : d.imageDisplay,
+            )}
+            onDisplayChange={(v) =>
+              set(d.layout === 'map' ? 'mapImageDisplay' : 'imageDisplay', v)
+            }
           />
         </BuilderFormSection>
       ) : null}
@@ -558,7 +578,12 @@ function ContactPreview({
             <div className="flex flex-col gap-9">
               <div className="grid items-center gap-9 @3xl:grid-cols-2">
                 <SelectableElement {...sel('media')}>
-                  <MapBox url={d.mapImageUrl} theme={theme} accent={accent} />
+                  <MapBox
+                    url={d.mapImageUrl}
+                    theme={theme}
+                    accent={accent}
+                    display={d.mapImageDisplay}
+                  />
                 </SelectableElement>
                 <div className="flex flex-col gap-6">
                   {header(d.headerAlign)}
@@ -578,7 +603,7 @@ function ContactPreview({
               <div className="mb-9">{detailItems}</div>
               <div className="grid items-stretch gap-6 @3xl:grid-cols-2">
                 <SelectableElement {...sel('media')} className="hidden @3xl:block">
-                  <ImageBox url={d.imageUrl} theme={theme} />
+                  <ImageBox url={d.imageUrl} theme={theme} display={d.imageDisplay} />
                 </SelectableElement>
                 {form}
               </div>
@@ -817,15 +842,36 @@ function FormFieldBox({
 
 // -- media boxes ------------------------------------------------------------
 
-function ImageBox({ url, theme }: { url: string; theme: ResolvedTheme }) {
+function ImageBox({
+  url,
+  theme,
+  display,
+}: {
+  url: string;
+  theme: ResolvedTheme;
+  display: ImageDisplay;
+}) {
+  const box = imageBoxClasses(display);
+  if (url && box.isOriginal) {
+    return (
+      <div
+        className="relative w-full overflow-hidden rounded-2xl"
+        style={{ backgroundColor: theme.card }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt="" className="block h-auto w-full" />
+      </div>
+    );
+  }
+  const sizing = box.aspectClass ?? 'h-full min-h-[280px]';
   return (
     <div
-      className="relative h-full min-h-[280px] w-full overflow-hidden rounded-2xl"
+      className={`relative ${sizing} w-full overflow-hidden rounded-2xl`}
       style={{ backgroundColor: theme.card }}
     >
       {url ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        <img src={url} alt="" className={`absolute inset-0 h-full w-full ${box.fitClass}`} />
       ) : (
         <div className="absolute inset-0 flex items-center justify-center">
           <span
@@ -844,19 +890,34 @@ function MapBox({
   url,
   theme,
   accent,
+  display,
 }: {
   url: string;
   theme: ResolvedTheme;
   accent: string;
+  display: ImageDisplay;
 }) {
+  const box = imageBoxClasses(display);
+  if (url && box.isOriginal) {
+    return (
+      <div
+        className="relative w-full overflow-hidden rounded-2xl"
+        style={{ backgroundColor: mixHex(theme.card, theme.heading, 0.05) }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt="" className="block h-auto w-full" />
+      </div>
+    );
+  }
+  const ratio = box.aspectClass ?? 'aspect-[4/3]';
   return (
     <div
-      className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl"
+      className={`relative ${ratio} w-full overflow-hidden rounded-2xl`}
       style={{ backgroundColor: mixHex(theme.card, theme.heading, 0.05) }}
     >
       {url ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        <img src={url} alt="" className={`absolute inset-0 h-full w-full ${box.fitClass}`} />
       ) : (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
           <span
