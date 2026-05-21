@@ -9,8 +9,10 @@
 // the surfaces refetch and reflow without a poll.
 //
 // Covered: notifications (the bell feed), tickets + ticket_messages (both
-// inboxes + every detail thread). Website-approval realtime is deferred — the
-// approval store is still localStorage (see CLAUDE.md remaining-phases).
+// inboxes + every detail thread), and website_approval_submissions (the
+// operator approvals queue + every editor publish-state surface — B1: the
+// approval write path is Supabase, so a second operator approving from
+// another session now propagates without a manual refresh).
 //
 // The provider holds no context — it only runs the subscription effect and
 // passes children straight through.
@@ -56,6 +58,20 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'ticket_messages' },
         () => invalidate(['tickets']),
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'website_approval_submissions' },
+        () => {
+          // One approval write touches three reader hooks — the operator
+          // queue, the per-website publish state, and the per-user pending
+          // submission. Each is keyed under ['website', …]; invalidate the
+          // three prefixes (not the broad ['website'] prefix, which would
+          // also refetch unrelated builder queries).
+          invalidate(['website', 'pending-all']);
+          invalidate(['website', 'publish-state']);
+          invalidate(['website', 'pending-for-user']);
+        },
       )
       .subscribe();
 

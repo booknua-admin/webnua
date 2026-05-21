@@ -25,6 +25,7 @@ import type { HeroData } from './sections/hero';
 import type { OfferData } from './sections/offer';
 import type { ReviewsData } from './sections/reviews';
 import type { TrustData } from './sections/trust';
+import { uneditedPlaceholderCount } from './placeholder-testimonials';
 import type { Page, Section, VersionSnapshot } from './types';
 
 // ---- Result + rule types --------------------------------------------------
@@ -305,6 +306,35 @@ const reviewsPopulatedRule: PreflightRule = {
   },
 };
 
+const reviewsPlaceholderRule: PreflightRule = {
+  id: 'reviews-ai-placeholder',
+  title: 'Reviews are real customer testimonials, not AI placeholders',
+  run(snapshot, { websiteId }) {
+    const results: PreflightResult[] = [];
+    for (const page of snapshot.pages) {
+      for (const section of enabledSectionsByType(page, 'reviews')) {
+        const count = uneditedPlaceholderCount(section);
+        if (count > 0) {
+          results.push({
+            ruleId: 'reviews-ai-placeholder',
+            status: 'warn',
+            title: 'AI-drafted placeholder testimonials',
+            message: `Reviews section on ${page.title || page.slug} still has ${count} AI-drafted placeholder testimonial${
+              count === 1 ? '' : 's'
+            }. Replace ${
+              count === 1 ? 'it' : 'them'
+            } with real customer reviews — publishing invented testimonials may damage credibility.`,
+            pageId: page.id,
+            sectionId: section.id,
+            fixHref: pageEditorHref(websiteId, page.id),
+          });
+        }
+      }
+    }
+    return results;
+  },
+};
+
 const faqPopulatedRule: PreflightRule = {
   id: 'faq-populated',
   title: 'FAQ sections have at least one entry',
@@ -530,6 +560,7 @@ export const PREFLIGHT_RULES: readonly PreflightRule[] = [
   ctaSectionRule,
   trustEvidenceRule,
   reviewsPopulatedRule,
+  reviewsPlaceholderRule,
   faqPopulatedRule,
   formNoFieldsRule,
   formNextStepOnPageRule,
