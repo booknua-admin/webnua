@@ -1,17 +1,15 @@
 'use client';
 
 // =============================================================================
-// SectionPopupControls — the popup editor entry point inside the section
-// fields panel. Sibling of SectionFormControls; rendered at section level
-// (no element selected).
+// SectionPopupControls — the popup editor entry point. Rendered by LinkField,
+// directly beneath a button whose link target is "Open a popup" — so the
+// popup is configured next to the button that opens it.
 //
 //   no popup    → an "+ Add a popup" button.
 //   popup set   → a summary + "Edit popup →" (opens PopupEditorDialog) and a
 //                 "Remove popup" action.
 //
-// A popup is opened by a button in the section whose link target is set to
-// "Open a popup" (the POPUP_HREF sentinel) — see LinkField. Gated on the
-// `editForms` capability, the same as the lead-form builder.
+// Gated on the `editForms` capability, the same as the lead-form builder.
 // =============================================================================
 
 import { useState } from 'react';
@@ -49,9 +47,7 @@ export function SectionPopupControls({
       {!popup ? (
         <>
           <p className="mb-3 text-[13px] leading-[1.5] text-ink-mid">
-            Add a popup, then set a button&apos;s link to{' '}
-            <strong className="font-semibold text-ink">Open a popup</strong> — it opens the
-            popup instead of navigating away.
+            Add the popup this button opens — a lead form shown in a modal.
           </p>
           <button
             type="button"
@@ -62,16 +58,13 @@ export function SectionPopupControls({
             }}
             className="w-full rounded-md border border-dashed border-rule bg-card py-2.5 text-[13px] font-bold text-ink-mid transition-colors hover:border-rust hover:text-rust disabled:cursor-not-allowed disabled:opacity-55"
           >
-            + Add a popup to this section
+            + Add a popup
           </button>
           {!canEdit ? <LockNote /> : null}
         </>
       ) : (
         <>
-          <p className="mb-3 text-[13px] leading-[1.5] text-ink-mid">
-            {popupSummary(popup)} Set a button&apos;s link to{' '}
-            <strong className="font-semibold text-ink">Open a popup</strong> to trigger it.
-          </p>
+          <p className="mb-3 text-[13px] leading-[1.5] text-ink-mid">{popupSummary(popup)}</p>
           <button
             type="button"
             onClick={() => setDialogOpen(true)}
@@ -108,9 +101,9 @@ export function SectionPopupControls({
 function popupSummary(popup: PopupConfig): string {
   if (popup.content.kind === 'form') {
     const n = popup.content.form.fields.length;
-    return `This section has a popup with a lead form (${n} ${n === 1 ? 'field' : 'fields'}).`;
+    return `Opens a popup with a lead form (${n} ${n === 1 ? 'field' : 'fields'}).`;
   }
-  return 'This section has a popup showing section content.';
+  return 'Opens a popup with section content.';
 }
 
 function LockNote() {

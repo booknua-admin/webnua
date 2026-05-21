@@ -11,10 +11,12 @@ import type { ReactNode } from 'react';
 
 import { BuilderField, BuilderInput } from '@/components/shared/builder/BuilderField';
 import { CapabilityGate } from '@/components/shared/CapabilityGate';
+import { SectionPopupControls } from '@/components/shared/website/SectionPopupControls';
 import { POPUP_HREF } from '@/lib/website/popup-config';
 import type { PageLink } from '@/lib/website/types';
 
 import { useSectionFieldContext } from './field-context';
+import { useSectionPopupEdit } from './section-popup-edit';
 
 const CUSTOM = '__custom';
 const POPUP = '__popup';
@@ -35,6 +37,7 @@ export type LinkFieldProps = {
 
 export function LinkField({ label, value, onChange, pageLinks = [], helper }: LinkFieldProps) {
   const { sectionLabel } = useSectionFieldContext();
+  const popupEdit = useSectionPopupEdit();
   const selectedPage = pageLinks.find((p) => p.href === value);
   const isPopup = value.trim() === POPUP_HREF;
   const isCustom = !selectedPage && !isPopup;
@@ -77,14 +80,25 @@ export function LinkField({ label, value, onChange, pageLinks = [], helper }: Li
               onChange={(e) => onChange(e.target.value)}
             />
           ) : null}
-          {isPopup ? (
-            <p className="text-[12px] leading-[1.5] text-ink-quiet">
-              Opens this section&apos;s popup. Set it up in the{' '}
-              <strong className="font-semibold text-ink">Popup</strong> panel below.
-            </p>
-          ) : null}
         </div>
       </CapabilityGate>
+      {/* "Open a popup" → the popup is configured right here, next to the
+          button that opens it. Outside the editCopy gate above: choosing the
+          link target is editCopy; the popup contents are editForms. */}
+      {isPopup ? (
+        popupEdit ? (
+          <SectionPopupControls
+            popup={popupEdit.popup}
+            onSetPopup={popupEdit.onSetPopup}
+            pageLinks={popupEdit.pageLinks}
+            brand={popupEdit.brand}
+          />
+        ) : (
+          <p className="mt-2 text-[12px] leading-[1.5] text-ink-quiet">
+            This button opens a popup.
+          </p>
+        )
+      ) : null}
     </BuilderField>
   );
 }

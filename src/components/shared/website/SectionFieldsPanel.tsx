@@ -17,9 +17,9 @@ import type { PopupConfig } from '@/lib/website/popup-config';
 import type { BrandObject, Section } from '@/lib/website/types';
 import { getSectionDefinition } from '@/lib/website/sections';
 import { SectionFieldContextProvider } from '@/lib/website/sections/_shared/field-context';
+import { SectionPopupEditProvider } from '@/lib/website/sections/_shared/section-popup-edit';
 
 import { SectionFormControls, formElementLabel, isFormElement } from './SectionFormControls';
-import { SectionPopupControls } from './SectionPopupControls';
 
 export type SectionFieldsPanelProps = {
   section: Section;
@@ -126,29 +126,39 @@ export function SectionFieldsPanel({
             is typed against its specific data shape; the registry stores
             them as unknown. defaultData() guarantees the shape on creation. */}
         <SectionFieldContextProvider sectionLabel={def.label}>
-          {formSelected ? (
-            <SectionFormControls
-              form={section.form}
-              onSetForm={onSetForm}
-              selectedElement={selectedElement}
-              onSelectElement={onSelectElement}
-              isFunnel={isFunnel}
-              pageLinks={pageLinks}
-            />
-          ) : (
-            <>
-              <Fields
-                data={section.data as never}
-                onChange={onChange as never}
+          {/* The popup envelope is exposed to the section's LinkField(s) — a
+              button set to "Open a popup" configures the popup right there.
+              Provided only with a brand (the popup editor needs it). */}
+          <SectionPopupEditProvider
+            value={
+              brand
+                ? { popup: section.popup, onSetPopup, pageLinks, brand }
+                : null
+            }
+          >
+            {formSelected ? (
+              <SectionFormControls
+                form={section.form}
+                onSetForm={onSetForm}
                 selectedElement={selectedElement}
+                onSelectElement={onSelectElement}
+                isFunnel={isFunnel}
                 pageLinks={pageLinks}
-                clientId={clientId}
-                brand={brand}
               />
-              {/* At section level the form + popup managers sit below the
-                  section's own settings — attach a form / a popup. */}
-              {selectedElement === null ? (
-                <>
+            ) : (
+              <>
+                <Fields
+                  data={section.data as never}
+                  onChange={onChange as never}
+                  selectedElement={selectedElement}
+                  pageLinks={pageLinks}
+                  clientId={clientId}
+                  brand={brand}
+                />
+                {/* At section level the form manager sits below the section's
+                    own settings — attach a form. The popup manager is not
+                    here: it lives next to the button that opens it (LinkField). */}
+                {selectedElement === null ? (
                   <SectionFormControls
                     form={section.form}
                     onSetForm={onSetForm}
@@ -157,18 +167,10 @@ export function SectionFieldsPanel({
                     isFunnel={isFunnel}
                     pageLinks={pageLinks}
                   />
-                  {brand ? (
-                    <SectionPopupControls
-                      popup={section.popup}
-                      onSetPopup={onSetPopup}
-                      pageLinks={pageLinks}
-                      brand={brand}
-                    />
-                  ) : null}
-                </>
-              ) : null}
-            </>
-          )}
+                ) : null}
+              </>
+            )}
+          </SectionPopupEditProvider>
         </SectionFieldContextProvider>
       </div>
 
