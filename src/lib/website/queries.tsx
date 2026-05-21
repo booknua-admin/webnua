@@ -23,6 +23,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { normalizeError } from '@/lib/errors';
 import { supabase } from '@/lib/supabase/client';
+import type { Json } from '@/lib/types/database';
 import type {
   WebsiteApprovalDiff,
   WebsiteApprovalStatus,
@@ -33,7 +34,7 @@ import type { ForcePublishEntry } from '@/lib/auth/audit-stub';
 import { subscribeBuilder } from './builder-events';
 import { loadDraftsForWebsite } from './content-drafts';
 import { mergeGeneratedPages } from './generated-pages-stub';
-import { mergeDraftsIntoSnapshot } from './snapshot';
+import { mergeDraftsIntoSnapshot, normalizeSnapshotPageIds } from './snapshot';
 import type {
   BrandObject,
   DomainSSLStatus,
@@ -277,7 +278,18 @@ export async function fetchEffectiveDraft(
     .single();
   if (versionError) throw normalizeError(versionError);
 
-  const base = versionData.snapshot as VersionSnapshot;
+  let base = versionData.snapshot as VersionSnapshot;
+  // Self-heal: older generated sites gave every page the shared
+  // generation_id (a collision that breaks page tabs, the content_drafts
+  // buffer, and nav targeting). Re-id once on read and persist.
+  const repaired = normalizeSnapshotPageIds(base);
+  if (repaired.changed) {
+    base = repaired.snapshot;
+    await supabase
+      .from('website_versions')
+      .update({ snapshot: base as unknown as Json })
+      .eq('id', draftVersionId);
+  }
   const drafts = await loadDraftsForWebsite(websiteId);
   const merged = mergeDraftsIntoSnapshot(base, drafts);
   // Generated pages (the /website/new stub flow) overlay at read time.

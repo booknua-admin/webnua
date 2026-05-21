@@ -657,7 +657,7 @@ const WORKED_EXAMPLE_BODY = `Here is a complete, well-formed output for a Voltli
 
 \`\`\`json
 {
-  "title": "Voltline Electrical · Cottesloe, Mosman Park, Claremont",
+  "title": "Home",
   "slug": "home",
   "seo": {
     "title": "Residential electrician — Cottesloe & Perth coast | Voltline",

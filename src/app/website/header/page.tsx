@@ -11,7 +11,13 @@ import Link from 'next/link';
 import { SectionEditor } from '@/components/shared/website/SectionEditor';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/lib/auth/user-stub';
+import { saveNavLinks } from '@/lib/website/mutations';
 import { useEffectiveDraft, useWebsiteForClient } from '@/lib/website/queries';
+import {
+  WebsiteNavEditProvider,
+  WebsiteNavProvider,
+  resolveNavLinks,
+} from '@/lib/website/sections/_shared/website-nav-slot';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 export default function WebsiteHeaderEditorPage() {
@@ -46,15 +52,36 @@ export default function WebsiteHeaderEditorPage() {
     return <NotFoundState message={`No draft version on ${website.name}.`} />;
   }
 
+  const snapshot = draftQuery.data.snapshot;
+  // Feed the real Website.nav into the header preview (inert — the editor's
+  // links don't navigate) so the preview shows the actual menu labels. The
+  // edit provider hands the menu editor the editable nav + pages + saver.
   return (
-    <SectionEditor
-      mode={{
-        kind: 'singleton',
-        website,
-        section: draftQuery.data.snapshot.header,
-        label: 'Header',
-      }}
-    />
+    <WebsiteNavProvider
+      links={resolveNavLinks(snapshot.nav, snapshot.pages)}
+      live={false}
+    >
+      <WebsiteNavEditProvider
+        value={{
+          pages: snapshot.pages.map((p) => ({
+            id: p.id,
+            title: p.title,
+            slug: p.slug,
+          })),
+          nav: snapshot.nav,
+          onSave: (nav) => saveNavLinks(website.id, nav),
+        }}
+      >
+        <SectionEditor
+          mode={{
+            kind: 'singleton',
+            website,
+            section: snapshot.header,
+            label: 'Header',
+          }}
+        />
+      </WebsiteNavEditProvider>
+    </WebsiteNavProvider>
   );
 }
 

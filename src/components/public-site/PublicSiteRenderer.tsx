@@ -18,18 +18,13 @@
 
 import type { FunnelStep } from '@/lib/funnel/types';
 import { getSectionDefinition } from '@/lib/website/sections';
+import { LiveSurfaceProvider } from '@/lib/website/sections/_shared/live-surface';
 import { SectionFormSlotProvider } from '@/lib/website/sections/_shared/section-form-slot';
 import {
   WebsiteNavProvider,
-  type ResolvedNavLink,
+  resolveNavLinks,
 } from '@/lib/website/sections/_shared/website-nav-slot';
-import type {
-  BrandObject,
-  NavLink,
-  NavLinkTarget,
-  Page,
-  Section,
-} from '@/lib/website/types';
+import type { BrandObject, NavLink, Page, Section } from '@/lib/website/types';
 
 type Props =
   | {
@@ -97,64 +92,91 @@ function RenderedSection({
   );
 }
 
-function navHref(target: NavLinkTarget, pages: Page[]): string {
-  if (target.kind === 'href') return target.href || '#';
-  const page = pages.find((p) => p.id === target.pageId);
-  if (!page) return '#';
-  return page.slug === 'home' ? '/' : `/${page.slug}`;
-}
-
 export function PublicSiteRenderer(props: Props) {
   if (props.kind === 'funnel') {
     return (
-      <main>
-        {props.step.sections.map((section) => (
-          <RenderedSection
-            key={section.id}
-            section={section}
-            brand={props.brand}
-            clientId={props.clientId}
-            surfaceKind="funnel"
-            funnelId={props.funnelId}
-            nextStepHref={props.nextStepHref}
-          />
-        ))}
-      </main>
+      <LiveSurfaceProvider>
+        <main>
+          {props.step.sections.map((section) => (
+            <RenderedSection
+              key={section.id}
+              section={section}
+              brand={props.brand}
+              clientId={props.clientId}
+              surfaceKind="funnel"
+              funnelId={props.funnelId}
+              nextStepHref={props.nextStepHref}
+            />
+          ))}
+        </main>
+      </LiveSurfaceProvider>
     );
   }
 
   const { brand, clientId, header, footer, nav, pages, page } = props;
   // Resolve Website.nav into real links and hand them to the header section
   // through the nav slot — the header renders the site's one navigation bar.
-  const navLinks: ResolvedNavLink[] = nav.map((link) => ({
-    label: link.label,
-    href: navHref(link.target, pages),
-  }));
+
+  // Header placement (HeaderData.overlayHero / .sticky):
+  //   overlay + sticky → fixed   (overlaps the hero AND pins on scroll)
+  //   overlay only     → absolute (overlaps the hero, scrolls away)
+  //   sticky only      → sticky  (solid bar, pins on scroll)
+  //   neither          → normal flow
+  const hd = header.data as { overlayHero?: boolean; sticky?: boolean };
+  const overlay = hd.overlayHero === true;
+  const sticky = hd.sticky === true;
+  const headerWrapClass =
+    overlay && sticky
+      ? 'fixed inset-x-0 top-0 z-50'
+      : overlay
+        ? 'absolute inset-x-0 top-0 z-50'
+        : sticky
+          ? 'sticky top-0 z-50'
+          : null;
+
+  const headerNode = (
+    <RenderedSection section={header} brand={brand} clientId={clientId} surfaceKind="website" />
+  );
+  const mainNode = (
+    <main>
+      {page.sections.map((section) => (
+        <RenderedSection
+          key={section.id}
+          section={section}
+          brand={brand}
+          clientId={clientId}
+          surfaceKind="website"
+        />
+      ))}
+    </main>
+  );
+  const footerNode = (
+    <RenderedSection section={footer} brand={brand} clientId={clientId} surfaceKind="website" />
+  );
+
   return (
-    <WebsiteNavProvider links={navLinks}>
-      <RenderedSection
-        section={header}
-        brand={brand}
-        clientId={clientId}
-        surfaceKind="website"
-      />
-      <main>
-        {page.sections.map((section) => (
-          <RenderedSection
-            key={section.id}
-            section={section}
-            brand={brand}
-            clientId={clientId}
-            surfaceKind="website"
-          />
-        ))}
-      </main>
-      <RenderedSection
-        section={footer}
-        brand={brand}
-        clientId={clientId}
-        surfaceKind="website"
-      />
-    </WebsiteNavProvider>
+    <LiveSurfaceProvider>
+      <WebsiteNavProvider links={resolveNavLinks(nav, pages)}>
+        {overlay && !sticky ? (
+          // Absolute header needs a positioned ancestor; main sits inside it
+          // so the header overlays the hero at the top.
+          <div className="relative">
+            <div className="absolute inset-x-0 top-0 z-50">{headerNode}</div>
+            {mainNode}
+          </div>
+        ) : headerWrapClass ? (
+          <>
+            <div className={headerWrapClass}>{headerNode}</div>
+            {mainNode}
+          </>
+        ) : (
+          <>
+            {headerNode}
+            {mainNode}
+          </>
+        )}
+        {footerNode}
+      </WebsiteNavProvider>
+    </LiveSurfaceProvider>
   );
 }

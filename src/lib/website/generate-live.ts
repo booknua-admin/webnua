@@ -50,9 +50,9 @@ Your job is not to fill in a template. It is to write a page that turns a visito
 Return ONLY a single JSON object — no markdown fences, no commentary, no prose before or after. The exact shape:
 
 {
-  "title": string,                       // human page title
+  "title": string,                       // SHORT page name — the header-menu / browser-tab label. 1-3 plain words ("Home", "Services", "About", "Contact"). NOT an SEO sentence.
   "slug": string,                        // kebab-case URL slug
-  "seo": { "title": string, "description": string },
+  "seo": { "title": string, "description": string },  // the LONG keyword-rich SEO meta title goes in seo.title — never in "title"
   "sections": [                          // 5-8 sections, ordered top to bottom
     { "type": string, "data": { ... } }  // type from the listed section types;
                                          // data keys = that type's field keys
@@ -60,6 +60,7 @@ Return ONLY a single JSON object — no markdown fences, no commentary, no prose
 }
 
 Rules:
+- "title" is the short page name shown in the header menu and the browser tab — keep it to 1-3 plain words ("Home", "Services", "About", "Contact"). The long, keyword-rich SEO title belongs in "seo.title". Never put SEO phrasing, the business name, or a location list in "title".
 - Use ONLY section types from "Available section types". Lead with a hero; close with a cta (or a contact section on a contact page).
 - Each section type lists its fields split into two buckets: COPY fields and LAYOUT fields.
 - Populate every COPY field with real, specific, on-brand content built from the business details provided. Never placeholders, never lorem ipsum, never "[business name]"-style tokens.

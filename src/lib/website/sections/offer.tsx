@@ -24,6 +24,7 @@ import {
 import { ColumnsField } from './_shared/ColumnsField';
 import { CopyField } from './_shared/CopyField';
 import { LinkField } from './_shared/LinkField';
+import { SurfaceLink } from './_shared/live-surface';
 import { gridColumnsClass } from './_shared/grid';
 import { IconField } from './_shared/IconField';
 import { MediaField } from './_shared/MediaField';
@@ -710,13 +711,14 @@ function OfferPreview({
             display="inline-block"
             className={ctaShown ? undefined : 'opacity-40'}
           >
-            <span
+            <SurfaceLink
+              href={d.ctaHref}
               className="inline-flex items-center gap-2 rounded-lg px-6 py-3 text-[14px] font-semibold"
               style={{ backgroundColor: accent, color: '#ffffff' }}
             >
               {d.ctaLabel}
               <span aria-hidden>→</span>
-            </span>
+            </SurfaceLink>
           </SelectableElement>
         ) : null;
 

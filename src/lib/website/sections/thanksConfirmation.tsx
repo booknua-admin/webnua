@@ -15,6 +15,7 @@ import {
   type SectionTheme,
 } from '../section-theme';
 import { CopyField } from './_shared/CopyField';
+import { SurfaceLink } from './_shared/live-surface';
 import { IconField } from './_shared/IconField';
 import { SectionShell } from './_shared/SectionShell';
 import { SelectableElement } from './_shared/SelectableElement';
@@ -338,13 +339,14 @@ function ThanksConfirmationPreview({
                     </p>
                   ) : null}
                   {d.referralCtaLabel ? (
-                    <span
+                    <SurfaceLink
+                      href={d.referralCtaHref}
                       className="mt-4 inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-[13.5px] font-semibold"
                       style={{ backgroundColor: accent, color: '#ffffff' }}
                     >
                       {d.referralCtaLabel}
                       <span aria-hidden>→</span>
-                    </span>
+                    </SurfaceLink>
                   ) : null}
                 </div>
               </SelectableElement>

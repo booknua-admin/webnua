@@ -47,6 +47,41 @@ export function mergeDraftsIntoSnapshot(
   };
 }
 
+// ---- Page-id repair -------------------------------------------------------
+
+/** Re-id pages when a snapshot has duplicate page ids — a generation-era bug
+ *  where every page of a site was given the shared `generation_id`. The
+ *  collision breaks page tabs, the per-page content_drafts buffer, and nav
+ *  targeting (every menu link resolves to the first page).
+ *
+ *  `nav` and `pageOrder` were built in page order at creation, so position
+ *  is the only reliable correspondence — page-target nav links are remapped
+ *  by index. Returns `changed: false` (and the snapshot untouched) when the
+ *  ids are already unique. */
+export function normalizeSnapshotPageIds(
+  snapshot: VersionSnapshot,
+): { snapshot: VersionSnapshot; changed: boolean } {
+  const ids = snapshot.pages.map((p) => p.id);
+  if (new Set(ids).size === ids.length) {
+    return { snapshot, changed: false };
+  }
+
+  const pages: Page[] = snapshot.pages.map((page) => ({
+    ...page,
+    id: `page-${Math.random().toString(36).slice(2, 11)}`,
+  }));
+  const nav = snapshot.nav.map((link, i) => {
+    if (link.target.kind !== 'page' || pages.length === 0) return link;
+    const page = pages[Math.min(i, pages.length - 1)];
+    return { ...link, target: { kind: 'page' as const, pageId: page.id } };
+  });
+
+  return {
+    snapshot: { ...snapshot, pages, nav, pageOrder: pages.map((p) => p.id) },
+    changed: true,
+  };
+}
+
 // ---- Diff -----------------------------------------------------------------
 
 function countSectionFieldsChanged(

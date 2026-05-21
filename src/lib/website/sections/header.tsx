@@ -1,9 +1,19 @@
 'use client';
 
 import { Menu, X } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { BuilderFormSection } from '@/components/shared/builder/BuilderField';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { useCan } from '@/lib/auth/user-stub';
 
 import { setBrandStyleValue } from '../brand-style-stub';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
@@ -14,6 +24,7 @@ import {
   type ResolvedTheme,
   type SectionTheme,
 } from '../section-theme';
+import { MAX_NAV_LINKS, type NavLink } from '../types';
 import { CopyField } from './_shared/CopyField';
 import { LinkField } from './_shared/LinkField';
 import { MediaField } from './_shared/MediaField';
@@ -22,7 +33,7 @@ import { SelectableElement } from './_shared/SelectableElement';
 import { ColorField, ThemePresetField } from './_shared/ThemeField';
 import { ToggleField } from './_shared/ToggleField';
 import { VariantField, type VariantOption } from './_shared/VariantField';
-import { useWebsiteNav } from './_shared/website-nav-slot';
+import { useWebsiteNav, useWebsiteNavEditing } from './_shared/website-nav-slot';
 
 // =============================================================================
 // Header — website-level singleton. Logo + navigation + an optional global
@@ -52,6 +63,12 @@ export type HeaderData = {
   ctaLabel: string;
   ctaHref: string;
   ctaStyle: HeaderCtaStyle;
+  /** Sit the header over the first section with a transparent background. */
+  overlayHero: boolean;
+  /** Pin the header to the top of the viewport on scroll. */
+  sticky: boolean;
+  /** Nav-link colour. Empty = inherit the theme body colour. */
+  navColor: string;
 };
 
 /** The header's own colours — last link in the resolve chain. */
@@ -84,6 +101,9 @@ const DEFAULTS: HeaderData = {
   ctaLabel: 'Get a quote',
   ctaHref: '/contact',
   ctaStyle: 'solid',
+  overlayHero: false,
+  sticky: false,
+  navColor: '',
 };
 
 function defaultData(): HeaderData {
@@ -98,6 +118,16 @@ function omitThemeKey(theme: SectionTheme, key: keyof SectionTheme): SectionThem
   const next = { ...theme };
   delete next[key];
   return next;
+}
+
+/** Append an alpha channel to a 6-digit hex (`#rrggbb` → `#rrggbbaa`) for the
+ *  frosted-header translucent fill. Non-hex values pass through unchanged. */
+function withAlpha(hex: string, alpha: number): string {
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return hex;
+  const a = Math.round(Math.max(0, Math.min(1, alpha)) * 255)
+    .toString(16)
+    .padStart(2, '0');
+  return `${hex}${a}`;
 }
 
 const LAYOUT_OPTIONS: readonly VariantOption<HeaderLayout>[] = [
@@ -214,11 +244,304 @@ function HeaderFields({
           options={LAYOUT_OPTIONS}
           onChange={(v) => set('layout', v)}
         />
-        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
-          Nav links are set on the website (capped at 6). The preview shows representative links.
-        </p>
+      </BuilderFormSection>
+      <BuilderFormSection>
+        <ToggleField
+          label="Overlay the hero"
+          value={d.overlayHero}
+          onChange={(v) => set('overlayHero', v)}
+          helper={
+            <>Sit the header over the first section with a transparent background.</>
+          }
+        />
+        <ToggleField
+          label="Sticky on scroll"
+          value={d.sticky}
+          onChange={(v) => set('sticky', v)}
+          helper={<>Pin the header to the top of the page as visitors scroll.</>}
+        />
+        <ColorField
+          label="Nav link colour"
+          value={d.navColor || resolved.body}
+          inherited={d.navColor === ''}
+          onChange={(v) => set('navColor', v)}
+          onReset={() => set('navColor', '')}
+        />
+        {d.overlayHero && d.sticky ? (
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
+            Sticky + overlay — the bar gets a translucent blur so menu items stay
+            legible over page content.
+          </p>
+        ) : null}
+      </BuilderFormSection>
+      <BuilderFormSection>
+        <MenuEditor />
       </BuilderFormSection>
     </>
+  );
+}
+
+// -- Menu editor ------------------------------------------------------------
+// The header navigation, edited inline in the header editor's sidebar. Reads
+// the editable nav + pages from the WebsiteNavEditing slot (the header editor
+// route provides it). Each item: a label, a target (an existing page or a
+// custom URL), reorder, remove. Edits debounce-save to the draft snapshot.
+
+type MenuRow = {
+  rowId: string;
+  label: string;
+  targetKind: 'page' | 'href';
+  pageId: string;
+  href: string;
+};
+
+let menuRowSeq = 0;
+function newRowId(): string {
+  menuRowSeq += 1;
+  return `mrow-${menuRowSeq}`;
+}
+
+function navToRows(nav: NavLink[], fallbackPageId: string): MenuRow[] {
+  return nav.map((link) => ({
+    rowId: newRowId(),
+    label: link.label,
+    targetKind: link.target.kind,
+    pageId: link.target.kind === 'page' ? link.target.pageId : fallbackPageId,
+    href: link.target.kind === 'href' ? link.target.href : '',
+  }));
+}
+
+function rowsToNav(rows: MenuRow[], pageById: Map<string, { title: string }>): NavLink[] {
+  return rows.map((r) => ({
+    label: r.label.trim() || (r.targetKind === 'page' ? pageById.get(r.pageId)?.title ?? 'Page' : 'Link'),
+    target:
+      r.targetKind === 'page'
+        ? { kind: 'page' as const, pageId: r.pageId }
+        : { kind: 'href' as const, href: r.href.trim() },
+  }));
+}
+
+function MenuEditor() {
+  const ctx = useWebsiteNavEditing();
+  const canEdit = useCan('editPages');
+
+  // Seed once on mount — the editor re-mounts whenever the header editor is
+  // re-opened, so it always seeds from the latest saved nav.
+  const [rows, setRows] = useState<MenuRow[]>(() =>
+    ctx ? navToRows(ctx.nav, ctx.pages[0]?.id ?? '') : [],
+  );
+
+  if (!ctx) {
+    return (
+      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
+        Menu editing is available in the header editor.
+      </p>
+    );
+  }
+
+  const pages = ctx.pages;
+  const fallbackPageId = pages[0]?.id ?? '';
+  const pageById = new Map(pages.map((p) => [p.id, { title: p.title }]));
+
+  // Structural edits (reorder / add / remove / target) persist immediately;
+  // text fields (label, URL) persist on blur — saving per keystroke would
+  // round-trip the whole snapshot on every character.
+  const persist = (next: MenuRow[]) => {
+    void ctx.onSave(rowsToNav(next, pageById));
+  };
+  const patchRow = (i: number, patch: Partial<MenuRow>): MenuRow[] =>
+    rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r));
+  /** Local-only update — used while typing; the field's onBlur persists. */
+  const editText = (i: number, patch: Partial<MenuRow>) => setRows(patchRow(i, patch));
+  /** Update + persist now — used for discrete structural changes. */
+  const apply = (next: MenuRow[]) => {
+    setRows(next);
+    persist(next);
+  };
+  const move = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= rows.length) return;
+    const next = [...rows];
+    [next[i], next[j]] = [next[j], next[i]];
+    apply(next);
+  };
+  const remove = (i: number) => apply(rows.filter((_, idx) => idx !== i));
+  const add = () =>
+    apply([
+      ...rows,
+      {
+        rowId: newRowId(),
+        label: pages[0]?.title ?? 'New item',
+        targetKind: 'page',
+        pageId: fallbackPageId,
+        href: '',
+      },
+    ]);
+
+  if (!canEdit) {
+    return (
+      <div>
+        <MenuEditorHeading count={rows.length} />
+        <ul className="mt-2 flex flex-col gap-1">
+          {rows.map((r) => (
+            <li
+              key={r.rowId}
+              className="rounded-md border border-rule bg-paper px-3 py-2 text-[13px] text-ink"
+            >
+              {r.label || '(untitled)'}
+            </li>
+          ))}
+        </ul>
+        <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
+          You don&rsquo;t have access to edit the menu.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <MenuEditorHeading count={rows.length} />
+      <div className="mt-2 flex flex-col gap-2">
+        {rows.map((row, i) => (
+          <div
+            key={row.rowId}
+            className="rounded-lg border border-rule bg-card px-3 py-2.5"
+          >
+            <div className="flex items-center gap-1.5">
+              <Input
+                value={row.label}
+                onChange={(e) => editText(i, { label: e.target.value })}
+                onBlur={() => persist(rows)}
+                placeholder="Menu label"
+                className="h-8 flex-1 text-[13px]"
+              />
+              <MenuIconBtn glyph="↑" label="Move up" disabled={i === 0} onClick={() => move(i, -1)} />
+              <MenuIconBtn
+                glyph="↓"
+                label="Move down"
+                disabled={i === rows.length - 1}
+                onClick={() => move(i, 1)}
+              />
+              <MenuIconBtn glyph="×" label="Remove" disabled={false} onClick={() => remove(i)} />
+            </div>
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <div className="flex shrink-0 overflow-hidden rounded-md border border-rule">
+                <MenuTargetTab
+                  active={row.targetKind === 'page'}
+                  onClick={() => apply(patchRow(i, { targetKind: 'page' }))}
+                >
+                  Page
+                </MenuTargetTab>
+                <MenuTargetTab
+                  active={row.targetKind === 'href'}
+                  onClick={() => apply(patchRow(i, { targetKind: 'href' }))}
+                >
+                  Link
+                </MenuTargetTab>
+              </div>
+              {row.targetKind === 'page' ? (
+                <Select
+                  value={pages.some((p) => p.id === row.pageId) ? row.pageId : undefined}
+                  onValueChange={(v) => apply(patchRow(i, { pageId: v }))}
+                >
+                  <SelectTrigger size="sm" className="flex-1 text-[13px]">
+                    <SelectValue placeholder="Pick a page" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pages.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  value={row.href}
+                  onChange={(e) => editText(i, { href: e.target.value })}
+                  onBlur={() => persist(rows)}
+                  placeholder="https://… or tel:…"
+                  className="h-8 flex-1 text-[13px]"
+                />
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        className="mt-2 w-full"
+        disabled={rows.length >= MAX_NAV_LINKS}
+        onClick={add}
+      >
+        {rows.length >= MAX_NAV_LINKS
+          ? `Menu is full (${MAX_NAV_LINKS} max)`
+          : '+ Add menu item'}
+      </Button>
+    </div>
+  );
+}
+
+function MenuEditorHeading({ count }: { count: number }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink">
+        Header menu
+      </span>
+      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
+        {count} / {MAX_NAV_LINKS}
+      </span>
+    </div>
+  );
+}
+
+function MenuTargetTab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.1em] transition-colors ${
+        active ? 'bg-ink text-paper' : 'bg-card text-ink-quiet hover:text-ink'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MenuIconBtn({
+  glyph,
+  label,
+  disabled,
+  onClick,
+}: {
+  glyph: string;
+  label: string;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      title={label}
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-rule bg-card text-[14px] leading-none text-ink-mid transition-colors hover:border-rust hover:text-rust disabled:opacity-35 disabled:hover:border-rule disabled:hover:text-ink-mid"
+    >
+      {glyph}
+    </button>
   );
 }
 
@@ -233,17 +556,38 @@ function HeaderPreview({
   const d = withDefaults(data);
   const resolved = resolveTheme(d.theme, brandThemeDefaults(brand), HEADER_HARDCODED_THEME);
 
-  // The live site provides the real Website.nav through the slot; the editor
-  // (no provider) falls back to the representative sample links.
-  const realNav = useWebsiteNav();
-  const navItems: readonly HeaderNavItem[] = realNav && realNav.length > 0 ? realNav : SAMPLE_NAV;
-  // null only in the editor (no provider) — drives whether the mobile-menu
-  // CTA navigates (live) or stays decorative (editor preview).
-  const live = realNav != null;
+  // The real Website.nav arrives through the slot: the public site provides
+  // it `live` (links navigate); the header editor provides it inert (`live:
+  // false` — real labels show, but clicks select the element). With no
+  // provider at all the header falls back to representative sample links.
+  const navCtx = useWebsiteNav();
+  const live = navCtx != null && navCtx.live;
+  const navItems: readonly HeaderNavItem[] =
+    navCtx && navCtx.links.length > 0
+      ? live
+        ? navCtx.links
+        : navCtx.links.map((l) => ({ label: l.label, href: null }))
+      : SAMPLE_NAV;
   const [menuOpen, setMenuOpen] = useState(false);
 
-  return (
-    <SectionShell theme={resolved} brand={brand} inset="flush" pad="none">
+  // Header surface — overlay (transparent over the hero) / overlay + sticky
+  // (translucent + blur so menu items stay legible while pinned) / solid.
+  const frosted = d.overlayHero && d.sticky;
+  const barBackground = frosted
+    ? withAlpha(resolved.background, 0.5)
+    : d.overlayHero
+      ? 'transparent'
+      : resolved.background;
+  const shellTheme: ResolvedTheme = { ...resolved, background: barBackground };
+
+  const bar = (
+    <SectionShell
+      theme={shellTheme}
+      brand={brand}
+      inset="flush"
+      pad="none"
+      className={frosted ? 'backdrop-blur-md' : undefined}
+    >
       {({ theme, headingFont, accent }) => {
         const sel = (id: HeaderElement) => ({
           id,
@@ -294,11 +638,17 @@ function HeaderPreview({
                     items={navItems.slice(0, 2)}
                     theme={theme}
                     accent={accent}
+                    navColor={d.navColor}
                     className="hidden flex-1 @2xl:flex"
                   />
                   {logo}
                   <div className="hidden flex-1 items-center justify-end gap-6 @2xl:flex">
-                    <NavLinks items={navItems.slice(2)} theme={theme} accent={accent} />
+                    <NavLinks
+                      items={navItems.slice(2)}
+                      theme={theme}
+                      accent={accent}
+                      navColor={d.navColor}
+                    />
                     {cta}
                   </div>
                   {hamburger}
@@ -307,7 +657,12 @@ function HeaderPreview({
                 <>
                   {logo}
                   <div className="hidden flex-1 items-center justify-end gap-7 @2xl:flex">
-                    <NavLinks items={navItems} theme={theme} accent={accent} />
+                    <NavLinks
+                      items={navItems}
+                      theme={theme}
+                      accent={accent}
+                      navColor={d.navColor}
+                    />
                     {cta}
                   </div>
                   {hamburger}
@@ -319,6 +674,7 @@ function HeaderPreview({
                     items={navItems}
                     theme={theme}
                     accent={accent}
+                    navColor={d.navColor}
                     className="hidden flex-1 justify-center @2xl:flex"
                   />
                   <span className="hidden @2xl:inline-block">{cta}</span>
@@ -330,6 +686,7 @@ function HeaderPreview({
               <MobileMenu
                 items={navItems}
                 theme={theme}
+                surface={resolved.background}
                 accent={accent}
                 cta={
                   d.showCta && d.ctaLabel
@@ -344,6 +701,85 @@ function HeaderPreview({
       }}
     </SectionShell>
   );
+
+  // The editor previews the header in isolation — overlay / sticky / blur are
+  // page-composition effects with nothing behind them. When either is on,
+  // wrap the bar in a scrollable mock page so the operator can see and test
+  // it without publishing. The live site uses PublicSiteRenderer's real
+  // positioning instead (live === true → skip the demo).
+  if (!live && (d.overlayHero || d.sticky)) {
+    return (
+      <HeaderOverlayDemo overlay={d.overlayHero} sticky={d.sticky}>
+        {bar}
+      </HeaderOverlayDemo>
+    );
+  }
+  return bar;
+}
+
+/** Editor-only — wraps the header bar in a scrollable mock page (faux hero +
+ *  content) so the overlay / sticky / blur settings are visible and testable
+ *  without publishing. */
+function HeaderOverlayDemo({
+  overlay,
+  sticky,
+  children,
+}: {
+  overlay: boolean;
+  sticky: boolean;
+  children: ReactNode;
+}) {
+  // sticky → the bar pins inside the scroll box; overlay-only → absolute so it
+  // overlaps the hero and scrolls away. overlay + sticky pulls the content up
+  // under the pinned bar so it genuinely overlaps.
+  const headerPos = sticky ? 'sticky top-0' : 'absolute inset-x-0 top-0';
+  return (
+    <div>
+      <p className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
+        {'// Live preview — scroll to test'}
+      </p>
+      <div className="relative h-[440px] overflow-y-auto rounded-lg border border-rule">
+        <div className={`${headerPos} z-20`}>{children}</div>
+        <div className={overlay && sticky ? '-mt-[72px]' : ''}>
+          <DemoHero />
+          <DemoBody />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DemoHero() {
+  return (
+    <div
+      className="flex h-[320px] flex-col justify-center gap-3 px-10"
+      style={{
+        background:
+          'linear-gradient(135deg, #1b1d24 0%, #2d3040 55%, #3c2f4e 100%)',
+      }}
+    >
+      <div className="h-2 w-20 rounded-full bg-white/30" />
+      <div className="h-6 w-3/5 rounded bg-white/85" />
+      <div className="h-6 w-2/5 rounded bg-white/85" />
+      <div className="mt-1 h-2.5 w-1/2 rounded-full bg-white/35" />
+      <div className="mt-2 h-8 w-32 rounded-lg bg-white/90" />
+    </div>
+  );
+}
+
+function DemoBody() {
+  return (
+    <div className="bg-paper px-10 py-9">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="mb-7 last:mb-0">
+          <div className="mb-2.5 h-4 w-40 rounded bg-ink/15" />
+          <div className="mb-1.5 h-2.5 w-full rounded-full bg-ink/[0.08]" />
+          <div className="mb-1.5 h-2.5 w-5/6 rounded-full bg-ink/[0.08]" />
+          <div className="h-2.5 w-2/3 rounded-full bg-ink/[0.08]" />
+        </div>
+      ))}
+    </div>
+  );
 }
 
 /** The mobile nav panel — drops below the header bar when the toggle is open.
@@ -351,12 +787,16 @@ function HeaderPreview({
 function MobileMenu({
   items,
   theme,
+  surface,
   accent,
   cta,
   live,
 }: {
   items: readonly HeaderNavItem[];
   theme: ResolvedTheme;
+  /** Solid panel background — the bar can be transparent / frosted, but the
+   *  dropdown panel always needs an opaque surface. */
+  surface: string;
   accent: string;
   cta: { label: string; href: string; style: HeaderCtaStyle } | null;
   live: boolean;
@@ -364,7 +804,7 @@ function MobileMenu({
   return (
     <div
       className="flex flex-col gap-1 border-t px-8 py-3 @2xl:hidden"
-      style={{ borderColor: theme.border, backgroundColor: theme.background }}
+      style={{ borderColor: theme.border, backgroundColor: surface }}
     >
       {items.map((item, i) =>
         item.href ? (
@@ -450,17 +890,21 @@ function NavLinks({
   items,
   theme,
   accent,
+  navColor,
   className,
 }: {
   items: readonly HeaderNavItem[];
   theme: ResolvedTheme;
   accent: string;
+  /** Operator-set nav-link colour. Empty → the first link pops in the
+   *  accent, the rest use the theme body colour. Set → all links use it. */
+  navColor?: string;
   className?: string;
 }) {
   return (
     <nav className={`flex items-center gap-7 ${className ?? ''}`} aria-label="Site navigation">
       {items.map((item, i) => {
-        const color = i === 0 ? accent : theme.body;
+        const color = navColor || (i === 0 ? accent : theme.body);
         return item.href ? (
           <a
             key={`${item.label}-${i}`}

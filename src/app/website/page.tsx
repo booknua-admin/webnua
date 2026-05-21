@@ -17,11 +17,13 @@
 // =============================================================================
 
 import Link from 'next/link';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { CapabilityGate } from '@/components/shared/CapabilityGate';
 import { ConnectDomainButton } from '@/components/shared/website/ConnectDomainButton';
 import { DomainStatusIndicator } from '@/components/shared/website/DomainStatusIndicator';
+import { ManagePagesPanel } from '@/components/shared/website/ManagePagesPanel';
 import { NewPageEntry } from '@/components/shared/website/NewPageEntry';
 import { OpenRequestsCard } from '@/components/shared/website/OpenRequestsCard';
 import { PageGridCard } from '@/components/shared/website/PageGridCard';
@@ -36,6 +38,7 @@ import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/lib/auth/user-stub';
 import { useAdminClients } from '@/lib/clients/clients-store';
+import { renamePages } from '@/lib/website/mutations';
 import { useEffectiveDraft, useWebsiteForClient, useWebsiteVersions } from '@/lib/website/queries';
 import { type Page, type Version, type Website } from '@/lib/website/types';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
@@ -106,6 +109,7 @@ function WebsiteHub({ website }: { website: Website }) {
     queryKey: ['analytics', 'page-totals', website.id],
     queryFn: () => fetchPageTotalsByRef(website.id, 30),
   });
+  const [pagesPanelOpen, setPagesPanelOpen] = useState(false);
 
   if (draftQuery.isLoading || versionsQuery.isLoading) {
     return (
@@ -206,7 +210,18 @@ function WebsiteHub({ website }: { website: Website }) {
             {pages.length === 1 ? 'page' : 'pages'} ·{' '}
             {isLive ? 'live' : 'unpublished draft'}
           </p>
-          <NewPageEntry />
+          <div className="flex items-center gap-2">
+            <CapabilityGate capability="editPages" mode="hide">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => setPagesPanelOpen(true)}
+              >
+                Manage pages
+              </Button>
+            </CapabilityGate>
+            <NewPageEntry />
+          </div>
         </div>
         {pages.length === 0 ? (
           <p className="rounded-lg border border-dashed border-rule bg-paper px-4 py-6 text-center text-[13px] text-ink-quiet">
@@ -227,6 +242,18 @@ function WebsiteHub({ website }: { website: Website }) {
             ))}
           </div>
         )}
+
+        <ManagePagesPanel
+          open={pagesPanelOpen}
+          onOpenChange={setPagesPanelOpen}
+          pages={pages.map((p) => ({
+            id: p.id,
+            title: p.title,
+            type: p.type,
+            slug: p.slug,
+          }))}
+          onSave={(titles) => renamePages(website.id, titles)}
+        />
 
         {/* Footer strip — wraps every page below */}
         <div className="mt-4">

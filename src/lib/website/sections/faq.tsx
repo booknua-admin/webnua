@@ -23,6 +23,7 @@ import {
 } from '../section-theme';
 import { ColumnsField } from './_shared/ColumnsField';
 import { CopyField } from './_shared/CopyField';
+import { SurfaceLink } from './_shared/live-surface';
 import { gridColumnsClass } from './_shared/grid';
 import { IconField } from './_shared/IconField';
 import { SectionShell } from './_shared/SectionShell';
@@ -800,9 +801,13 @@ function FaqFooter({
         <span className="text-[14px]" style={{ color: theme.body }}>
           {data.footerText}
         </span>
-        <span className="text-[14px] font-semibold" style={{ color: accent }}>
+        <SurfaceLink
+          href={data.footerLinkHref}
+          className="text-[14px] font-semibold"
+          style={{ color: accent }}
+        >
           {data.footerLinkLabel || 'Contact us'}
-        </span>
+        </SurfaceLink>
       </div>
     );
   }
@@ -840,13 +845,14 @@ function FaqFooter({
           ) : null}
         </div>
         {data.footerLinkLabel ? (
-          <span
+          <SurfaceLink
+            href={data.footerLinkHref}
             className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-semibold"
             style={{ backgroundColor: accent, color: '#ffffff' }}
           >
             {data.footerLinkLabel}
             <span aria-hidden>→</span>
-          </span>
+          </SurfaceLink>
         ) : null}
       </div>
     );

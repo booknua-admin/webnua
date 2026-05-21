@@ -23,6 +23,7 @@ import {
 import { DEFAULT_SECTION_ICON, getSectionIcon } from '../section-icons';
 import { ColumnsField } from './_shared/ColumnsField';
 import { CopyField } from './_shared/CopyField';
+import { SurfaceLink } from './_shared/live-surface';
 import { gridColumnsClass } from './_shared/grid';
 import { IconField } from './_shared/IconField';
 import { MediaField } from './_shared/MediaField';
@@ -681,7 +682,12 @@ function FeaturesPreview({
                   display="inline-block"
                   className={ctaShown ? undefined : 'opacity-40'}
                 >
-                  <CtaButton label={d.ctaLabel} style={d.ctaStyle} accent={accent} />
+                  <CtaButton
+                    label={d.ctaLabel}
+                    href={d.ctaHref}
+                    style={d.ctaStyle}
+                    accent={accent}
+                  />
                 </SelectableElement>
               </div>
             ) : null}
@@ -700,30 +706,34 @@ const ROW_JUSTIFY: Record<FeaturesAlign, string> = {
 
 function CtaButton({
   label,
+  href,
   style,
   accent,
 }: {
   label: string;
+  href?: string;
   style: CtaStyle;
   accent: string;
 }) {
   if (style === 'outline') {
     return (
-      <span
+      <SurfaceLink
+        href={href}
         className="inline-flex items-center rounded-lg border-2 px-6 py-3 text-[14px] font-semibold"
         style={{ borderColor: accent, color: accent }}
       >
         {label}
-      </span>
+      </SurfaceLink>
     );
   }
   return (
-    <span
+    <SurfaceLink
+      href={href}
       className="inline-flex items-center rounded-lg px-6 py-3 text-[14px] font-semibold"
       style={{ backgroundColor: accent, color: '#ffffff' }}
     >
       {label}
-    </span>
+    </SurfaceLink>
   );
 }
 
@@ -830,13 +840,14 @@ function FeatureCard({
         </p>
       ) : null}
       {data.showItemLinks && item.linkLabel ? (
-        <span
+        <SurfaceLink
+          href={item.linkHref}
           className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-semibold"
           style={{ color: accent }}
         >
           {item.linkLabel}
           <span aria-hidden>→</span>
-        </span>
+        </SurfaceLink>
       ) : null}
     </div>
   );

@@ -20,6 +20,7 @@ import {
 } from '../section-theme';
 import { CopyField } from './_shared/CopyField';
 import { LinkField } from './_shared/LinkField';
+import { SurfaceLink } from './_shared/live-surface';
 import { IconField } from './_shared/IconField';
 import { MediaField } from './_shared/MediaField';
 import { RangeField } from './_shared/RangeField';
@@ -718,6 +719,7 @@ function CTAPreview({
                   >
                     <CtaButton
                       label={d.primaryLabel}
+                      href={d.primaryHref}
                       tone={background ? 'light' : 'solid'}
                       accent={accent}
                       theme={theme}
@@ -733,6 +735,7 @@ function CTAPreview({
                   >
                     <CtaButton
                       label={d.secondaryLabel}
+                      href={d.secondaryHref}
                       tone="outline"
                       accent={accent}
                       theme={theme}
@@ -904,7 +907,8 @@ function DualPanel({
           </p>
         ) : null}
         {panel.buttonLabel ? (
-          <span
+          <SurfaceLink
+            href={panel.buttonHref}
             className="mt-5 inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-[13.5px] font-semibold"
             style={{
               backgroundColor: dark ? '#ffffff' : accent,
@@ -913,7 +917,7 @@ function DualPanel({
           >
             {panel.buttonLabel}
             <span aria-hidden>→</span>
-          </span>
+          </SurfaceLink>
         ) : null}
       </div>
     </div>
@@ -922,12 +926,14 @@ function DualPanel({
 
 function CtaButton({
   label,
+  href,
   tone,
   accent,
   theme,
   arrow = false,
 }: {
   label: string;
+  href?: string;
   tone: 'solid' | 'outline' | 'light';
   accent: string;
   theme: ResolvedTheme;
@@ -936,27 +942,28 @@ function CtaButton({
   const base = 'inline-flex items-center gap-2 rounded-lg px-6 py-3 text-[14px] font-semibold';
   if (tone === 'outline') {
     return (
-      <span
+      <SurfaceLink
+        href={href}
         className={`${base} border-2`}
         style={{ borderColor: theme.heading, color: theme.heading }}
       >
         {label}
-      </span>
+      </SurfaceLink>
     );
   }
   if (tone === 'light') {
     return (
-      <span className={base} style={{ backgroundColor: '#ffffff', color: '#0f1115' }}>
+      <SurfaceLink href={href} className={base} style={{ backgroundColor: '#ffffff', color: '#0f1115' }}>
         {label}
         {arrow ? <span aria-hidden>→</span> : null}
-      </span>
+      </SurfaceLink>
     );
   }
   return (
-    <span className={base} style={{ backgroundColor: accent, color: '#ffffff' }}>
+    <SurfaceLink href={href} className={base} style={{ backgroundColor: accent, color: '#ffffff' }}>
       {label}
       {arrow ? <span aria-hidden>→</span> : null}
-    </span>
+    </SurfaceLink>
   );
 }
 
