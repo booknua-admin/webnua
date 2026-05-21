@@ -285,7 +285,10 @@ export function assembleResult(
   const title = overrides?.title?.trim() || inferPageTitle(ctx);
   const slug = overrides?.slug?.trim() || inferSlug(title);
   const page: Page = {
-    id: generationId,
+    // A unique id per page — NOT the generationId. A site-generation run
+    // shares one generationId across all its pages (for generation_log
+    // grouping); reusing it as the page id collided every page of a site.
+    id: `page-${rid()}`,
     websiteId: '__pending__',
     slug,
     title,
