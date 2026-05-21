@@ -27,6 +27,7 @@ import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
 import { useCan, useCanAny, useUser } from '@/lib/auth/user-stub';
 import { publishDraft, submitForApproval } from '@/lib/website/mutations';
+import { countUneditedPlaceholderTestimonials } from '@/lib/website/placeholder-testimonials';
 import { useEffectiveDraft, useWebsiteForClient } from '@/lib/website/queries';
 import { groupResultsByPage, runPreflight } from '@/lib/website/preflight';
 import type { Website } from '@/lib/website/types';
@@ -112,6 +113,13 @@ function ReviewSurface({ website }: { website: Website }) {
   const report = useMemo(
     () => (snapshot ? runPreflight(snapshot, { websiteId: website.id }) : null),
     [snapshot, website.id],
+  );
+
+  // Unedited AI-drafted placeholder testimonials get their own confirm copy —
+  // a credibility risk distinct from a generic preflight warning (B16).
+  const placeholderCount = useMemo(
+    () => (snapshot ? countUneditedPlaceholderTestimonials(snapshot) : 0),
+    [snapshot],
   );
 
   if (draftQuery.isLoading) {
@@ -305,18 +313,33 @@ function ReviewSurface({ website }: { website: Website }) {
       <ConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
-        title="Publish with warnings?"
-        description={
-          <>
-            There {report.counts.warn === 1 ? 'is' : 'are'}{' '}
-            <strong>{report.counts.warn}</strong>{' '}
-            {report.counts.warn === 1 ? 'warning' : 'warnings'} on this draft.
-            Warnings don’t block publishing — you can ship now and fix them
-            later.
-          </>
+        title={
+          placeholderCount > 0
+            ? 'Publish with placeholder testimonials?'
+            : 'Publish with warnings?'
         }
-        confirmLabel="Publish anyway"
-        cancelLabel="Keep editing"
+        description={
+          placeholderCount > 0 ? (
+            <>
+              Your site contains <strong>{placeholderCount}</strong> AI-drafted
+              placeholder testimonial{placeholderCount === 1 ? '' : 's'}.
+              Publishing with placeholder testimonials may damage your
+              credibility. Continue anyway?
+            </>
+          ) : (
+            <>
+              There {report.counts.warn === 1 ? 'is' : 'are'}{' '}
+              <strong>{report.counts.warn}</strong>{' '}
+              {report.counts.warn === 1 ? 'warning' : 'warnings'} on this draft.
+              Warnings don’t block publishing — you can ship now and fix them
+              later.
+            </>
+          )
+        }
+        confirmLabel={placeholderCount > 0 ? 'Continue anyway' : 'Publish anyway'}
+        cancelLabel={
+          placeholderCount > 0 ? 'Review testimonials first' : 'Keep editing'
+        }
         onConfirm={() => {
           setConfirmOpen(false);
           void runPublish();

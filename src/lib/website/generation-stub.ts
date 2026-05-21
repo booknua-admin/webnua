@@ -34,6 +34,7 @@ import type {
   PageSEO,
   PageType,
   Section,
+  SectionAIMeta,
   SectionType,
 } from './types';
 
@@ -376,12 +377,29 @@ function runValidationPipeline(
 }
 
 function toSection(g: GeneratedSection): Section {
+  const ai: SectionAIMeta = {
+    draftedFields: g.populatedFields,
+    lastRegenAt: nowIso(),
+  };
+  // Reviews are AI-invented testimonials — snapshot them verbatim so the
+  // editor nudge + the pre-publish preflight can tell whether the operator
+  // has since replaced them with real customer reviews (B16; see
+  // lib/website/placeholder-testimonials.ts).
+  if (g.type === 'reviews' && Array.isArray(g.data.items)) {
+    ai.placeholderSnapshot = {
+      reviews: (g.data.items as Array<Record<string, unknown>>).map((it) => ({
+        quote: typeof it.quote === 'string' ? it.quote : '',
+        authorName: typeof it.authorName === 'string' ? it.authorName : '',
+        authorRole: typeof it.authorRole === 'string' ? it.authorRole : '',
+      })),
+    };
+  }
   return {
     id: `sec-${Math.random().toString(36).slice(2, 9)}`,
     type: g.type,
     enabled: true,
     data: g.data,
-    ai: { draftedFields: g.populatedFields, lastRegenAt: nowIso() },
+    ai,
   };
 }
 

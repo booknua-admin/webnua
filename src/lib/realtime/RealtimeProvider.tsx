@@ -11,11 +11,16 @@
 // Covered:
 //   - notifications (the bell feed), tickets + ticket_messages (both inboxes
 //     + every detail thread) — invalidate the matching query keys.
-//   - website / funnel approval submissions + version tables (A3) — fan a
+//   - website / funnel approval submissions + version tables — fan a
 //     BUILDER_EVENT via `notifyBuilder`, which every builder query subscribes
 //     to. This is both editor-side liveness (a submitter's lock banner clears
 //     when an operator resolves) and publication-side (a newly-published
 //     version surfacing on the detail / roster surfaces).
+//
+// B1 first wired website_approval_submissions with targeted query-key
+// invalidations; A3 unified all four builder tables under one BUILDER_EVENT
+// fan, which subsumes B1's targeting because the affected hooks (operator
+// queue, publish-state, pending submissions) are all useBuilderQuery-based.
 //
 // The tables are added to the supabase_realtime publication by migration 0032
 // (notifications / tickets) + 0046 (approval + version tables).

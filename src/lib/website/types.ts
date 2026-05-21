@@ -43,9 +43,28 @@ export type ContainerKind =
   | 'websiteHeader' // Section IS Website.header (singleton)
   | 'websiteFooter'; // Section IS Website.footer (singleton)
 
+/** Verbatim snapshot of one AI-drafted review item, captured at generation
+ *  time. Only the text fields a human would edit are stored — the detection
+ *  in `lib/website/placeholder-testimonials.ts` compares a live review item
+ *  against these to decide whether it is still an untouched AI placeholder. */
+export type PlaceholderReviewSnapshot = {
+  quote: string;
+  authorName: string;
+  authorRole: string;
+};
+
 export type SectionAIMeta = {
   draftedFields: string[];
   lastRegenAt?: string;
+  /** Verbatim snapshot of AI-drafted placeholder content, captured when the
+   *  section was generated. Today only `reviews` sections populate it (the
+   *  AI-invented testimonials). A live review item that still EXACTLY matches
+   *  a snapshot entry is treated as an unedited placeholder; the moment the
+   *  operator changes the text it counts as a real review. Exact-content
+   *  comparison (not a dirty flag) means changes to the AI generator never
+   *  break detection — the snapshot is whatever was generated for THIS
+   *  section. See `lib/website/placeholder-testimonials.ts`. */
+  placeholderSnapshot?: { reviews?: PlaceholderReviewSnapshot[] };
 };
 
 export type Section = {

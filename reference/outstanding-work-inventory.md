@@ -222,7 +222,7 @@ operators if a paying client landed today.
 Items that meaningfully affect product quality but won't break the
 platform for early users.
 
-### B1. Approvals Realtime is not in the publication
+### B1. Approvals Realtime is not in the publication — ✅ DONE
 - **Current state.** Per CLAUDE.md ("Approvals Realtime is not wired —
   the approval write path is Supabase but the table is not in the
   publication") and build-roadmap.md Phase 9 update. The approvals tab
@@ -235,6 +235,23 @@ platform for early users.
   `RealtimeProvider` channel + an invalidate handler for the
   `['approvals']` query keys.
 - **Effort.** Small.
+- **✅ Resolved.** `website_approval_submissions` is in the
+  `supabase_realtime` publication and `RealtimeProvider` subscribes to it
+  via `postgres_changes`, so a cross-session approve / reject / submit
+  propagates to the `/tickets` approvals queue and every editor
+  publish-state surface without a manual refresh.
+- **Merge note (B1 ↔ A3).** B1 originally shipped this as
+  `0046_realtime_website_approvals.sql` + a `RealtimeProvider` handler
+  doing targeted invalidations of the three approval query-key prefixes.
+  A3 (funnel publish lane) landed a same-numbered superset migration
+  `0046_funnel_publish_realtime.sql` (all four builder tables) and a
+  unified `notifyBuilder()` fan. The B1↔A3 merge kept A3's superset
+  migration (B1's duplicate-numbered file was deleted) and A3's fan —
+  which **subsumes** B1's targeting, because the three reader hooks
+  (`useWebsitePublishState` / `useUserPendingSubmission` /
+  `useAllPendingApprovals`) are all `useBuilderQuery`-based and so
+  already refetch on `BUILDER_EVENT`. B1's outcome is unchanged; only
+  the mechanism merged.
 
 ### B2. Operator-facing notification surface is not built
 - **Current state.** Per CLAUDE.md `client/notifications/`
@@ -362,7 +379,7 @@ platform for early users.
   raw-event retention window, no migration needed.
 - **Effort.** Small.
 
-### B12. `leads.submission_id` is written but never read (reconciliation deferred)
+### B12. `leads.submission_id` is written but never read (reconciliation deferred) — ✅ DONE
 - **Current state.** Per analytics-audit §1.7 + §2.3. The column is
   populated by `/api/forms/submit`; no query consumes it. The
   intended reconciler ("match tracked `form_submit` count against
@@ -372,6 +389,15 @@ platform for early users.
   submission ids against `leads.submission_id` and flagging
   drift. Within the 90-day raw-event window.
 - **Effort.** Small.
+- **✅ Resolved (UI-read scope).** `useLeadDetail` now selects
+  `leads.submission_id` and the lead-detail `// LEAD DETAILS` rail card
+  surfaces it as a copyable monospace "Submission ID" row (via the new
+  `components/shared/CopyableId.tsx`), shown only for form-captured
+  leads. An operator can copy the exact id and reconcile a lead back to
+  the public-form submission that created it. A *background* reconciler
+  (scheduled drift check across `analytics_events`) was not built — the
+  operator-facing read closes the day-to-day need; an automated job
+  remains a Phase-10 observability item if drift monitoring is wanted.
 
 ### B13. `funnel_testimonials` AI-pull fallback (post-GBP integration)
 - **Current state.** Per CLAUDE.md parked decision (deferred until
@@ -395,6 +421,33 @@ platform for early users.
   `FormTestSubmitContext` + `submitLead`. Trigger to revisit per
   CLAUDE.md: only if test traffic starts polluting the count.
 - **Effort.** Small.
+
+### B16. AI-generated placeholder testimonials have no editor / preflight signal — ✅ DONE
+- **Note.** Not in the original 2026-05-20 diagnostic; identified and
+  closed in the B1/B12/B16 verify-and-finish cluster. (No B15 — the
+  cluster's internal numbering.)
+- **Current state (before).** The website generator emits `reviews`
+  sections with AI-invented testimonials — plausible-but-fake quotes +
+  author names. Nothing in the editor flagged them as AI-drafted
+  placeholders, and the pre-publish preflight did not warn. Operators
+  could (and did) ship sites with invented testimonials live — a
+  credibility / consumer-trust risk.
+- **What shipped.** (1) `lib/website/placeholder-testimonials.ts` —
+  detection layer: `toSection` (`generation-stub.ts`) snapshots the
+  AI-drafted review items onto `section.ai.placeholderSnapshot`
+  (`SectionAIMeta` extended in `types.ts`); a live review item is an
+  "unedited placeholder" when its `quote` + `authorName` +
+  `authorRole` still EXACTLY match a snapshot entry. (2)
+  `PlaceholderTestimonialBanner` — an amber editor nudge in
+  `SectionFieldsPanel`, dismissable per-section. (3) A
+  `reviews-ai-placeholder` preflight `warn` rule. (4) `/website/review`
+  publish-confirm shows testimonial-specific copy + "Continue anyway" /
+  "Review testimonials first" when unedited placeholders remain.
+- **Scope note.** Website generation only — the funnel generator is a
+  separate path and per the CLAUDE.md parked decision never AI-generates
+  testimonials, so funnel reviews carry no snapshot and the detection
+  safely no-ops on them.
+- **Effort.** Small (~closed in cluster).
 
 ---
 
@@ -521,7 +574,7 @@ CLAUDE.md parked decisions.
 | **6 — AI generation** | ✅ DONE (PR #47) — polish in progress | Website + funnel generators wired to real Claude. `generation_log` writes. Server/client metadata boundary resolved. **Owed: wizard Q&A → real `GenerationContext` — see A2.** Polish items deferred per B7. |
 | **7 — Integrations** | ⏸ NOT STARTED | Largest remaining work. Owned by human dev with real creds. Unblocks reviews / campaigns / billing / messaging — see A5. |
 | **8 — Automation execution engine** | ⏸ NOT STARTED | Depends on Phase 7 (needs Resend/Twilio). See A6. |
-| **9 — Realtime + notification writes** | ✅ DONE (mostly) | Triggers fan notifications on leads / bookings / reviews / operator ticket replies (migration 0032). `notifications` / `tickets` / `ticket_messages` in publication. **Approvals Realtime not yet in publication — see B1.** |
+| **9 — Realtime + notification writes** | ✅ DONE | Triggers fan notifications on leads / bookings / reviews / operator ticket replies (migration 0032). `notifications` / `tickets` / `ticket_messages` in publication. Approvals Realtime now also wired — `website_approval_submissions` in publication (migration 0046, B1). |
 | **10 — Production hardening** | ⏸ NOT STARTED | Domain management V2, error monitoring, security review, E2E pass — see A4 + A7. |
 | **11 — Proof Page prospecting tool** | ⏸ DEFERRED INDEFINITELY | Per CLAUDE.md: deferred until full platform working. C4. |
 
