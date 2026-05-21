@@ -1,7 +1,7 @@
 'use client';
 
 import { Menu, X } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { BuilderFormSection } from '@/components/shared/builder/BuilderField';
 import { Button } from '@/components/ui/button';
@@ -574,13 +574,13 @@ function HeaderPreview({
   // (translucent + blur so menu items stay legible while pinned) / solid.
   const frosted = d.overlayHero && d.sticky;
   const barBackground = frosted
-    ? withAlpha(resolved.background, 0.72)
+    ? withAlpha(resolved.background, 0.5)
     : d.overlayHero
       ? 'transparent'
       : resolved.background;
   const shellTheme: ResolvedTheme = { ...resolved, background: barBackground };
 
-  return (
+  const bar = (
     <SectionShell
       theme={shellTheme}
       brand={brand}
@@ -700,6 +700,85 @@ function HeaderPreview({
         );
       }}
     </SectionShell>
+  );
+
+  // The editor previews the header in isolation — overlay / sticky / blur are
+  // page-composition effects with nothing behind them. When either is on,
+  // wrap the bar in a scrollable mock page so the operator can see and test
+  // it without publishing. The live site uses PublicSiteRenderer's real
+  // positioning instead (live === true → skip the demo).
+  if (!live && (d.overlayHero || d.sticky)) {
+    return (
+      <HeaderOverlayDemo overlay={d.overlayHero} sticky={d.sticky}>
+        {bar}
+      </HeaderOverlayDemo>
+    );
+  }
+  return bar;
+}
+
+/** Editor-only — wraps the header bar in a scrollable mock page (faux hero +
+ *  content) so the overlay / sticky / blur settings are visible and testable
+ *  without publishing. */
+function HeaderOverlayDemo({
+  overlay,
+  sticky,
+  children,
+}: {
+  overlay: boolean;
+  sticky: boolean;
+  children: ReactNode;
+}) {
+  // sticky → the bar pins inside the scroll box; overlay-only → absolute so it
+  // overlaps the hero and scrolls away. overlay + sticky pulls the content up
+  // under the pinned bar so it genuinely overlaps.
+  const headerPos = sticky ? 'sticky top-0' : 'absolute inset-x-0 top-0';
+  return (
+    <div>
+      <p className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
+        {'// Live preview — scroll to test'}
+      </p>
+      <div className="relative h-[440px] overflow-y-auto rounded-lg border border-rule">
+        <div className={`${headerPos} z-20`}>{children}</div>
+        <div className={overlay && sticky ? '-mt-[72px]' : ''}>
+          <DemoHero />
+          <DemoBody />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DemoHero() {
+  return (
+    <div
+      className="flex h-[320px] flex-col justify-center gap-3 px-10"
+      style={{
+        background:
+          'linear-gradient(135deg, #1b1d24 0%, #2d3040 55%, #3c2f4e 100%)',
+      }}
+    >
+      <div className="h-2 w-20 rounded-full bg-white/30" />
+      <div className="h-6 w-3/5 rounded bg-white/85" />
+      <div className="h-6 w-2/5 rounded bg-white/85" />
+      <div className="mt-1 h-2.5 w-1/2 rounded-full bg-white/35" />
+      <div className="mt-2 h-8 w-32 rounded-lg bg-white/90" />
+    </div>
+  );
+}
+
+function DemoBody() {
+  return (
+    <div className="bg-paper px-10 py-9">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="mb-7 last:mb-0">
+          <div className="mb-2.5 h-4 w-40 rounded bg-ink/15" />
+          <div className="mb-1.5 h-2.5 w-full rounded-full bg-ink/[0.08]" />
+          <div className="mb-1.5 h-2.5 w-5/6 rounded-full bg-ink/[0.08]" />
+          <div className="h-2.5 w-2/3 rounded-full bg-ink/[0.08]" />
+        </div>
+      ))}
+    </div>
   );
 }
 
