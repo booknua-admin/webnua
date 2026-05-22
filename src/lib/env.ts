@@ -96,12 +96,24 @@ const envSchema = z.object({
   EMAIL_SENDING_DOMAIN: withDefault('mail.webnua.com'),
 
   // --- per-tenant OAuth integrations (customer owns the account) ------------
-  // Slots defined now; the OAuth flows themselves land in Phase 7 Session 2.
-  GOOGLE_ADS_DEVELOPER_TOKEN: optionalStr,
-  GOOGLE_ADS_CLIENT_ID: optionalStr,
-  GOOGLE_ADS_CLIENT_SECRET: optionalStr,
-  GBP_CLIENT_ID: optionalStr,
-  GBP_CLIENT_SECRET: optionalStr,
+  // Phase 7 Session 2. The customer grants OAuth access to their own account;
+  // Webnua stores per-tenant tokens (encrypted in Vault). Google Ads is NOT
+  // here — operator decision: not building it.
+  //
+  // Google (Business Profile). One Google Cloud OAuth 2.0 client. The
+  // redirect-URI base is optional — it falls back to {app origin}/api/
+  // integrations; set it to pin the exact URI registered with Google.
+  GOOGLE_OAUTH_CLIENT_ID: optionalStr,
+  GOOGLE_OAUTH_CLIENT_SECRET: optionalStr,
+  GOOGLE_OAUTH_REDIRECT_URI_BASE: optionalStr,
+  // Meta (Ads). Placeholders until the Meta app exists — the OAuth flow is
+  // scaffolded but Meta connect is deferred to the Meta business session.
+  META_APP_ID: optionalStr,
+  META_APP_SECRET: optionalStr,
+  META_OAUTH_REDIRECT_URI_BASE: optionalStr,
+  // HMAC key for signing the OAuth `state` token. Optional — falls back to
+  // SUPABASE_SERVICE_ROLE_KEY (always present server-side, high entropy).
+  OAUTH_STATE_SECRET: optionalStr,
 });
 
 /** The validated, typed environment. Optional keys are `string | undefined`. */
