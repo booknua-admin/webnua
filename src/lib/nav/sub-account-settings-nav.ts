@@ -11,6 +11,7 @@ export const subAccountSettingsNav: SettingsNavItem[] = [
   { label: 'Team', href: '/settings/team', icon: '⌥' },
   { label: 'Integrations', href: '/settings/integrations', icon: '⊠' },
   { label: 'Notifications', href: '/settings/notifications', icon: '🔔' },
+  { label: 'SMS', href: '/settings/sms', icon: '✉' },
   { label: 'Billing', href: '/settings/billing', icon: '$' },
   { label: 'Danger zone', href: '/settings/danger', icon: '⤬' },
 ];

@@ -94,6 +94,9 @@ const envSchema = z.object({
   TWILIO_ACCOUNT_SID: optionalStr,
   TWILIO_AUTH_TOKEN: optionalStr,
   TWILIO_MESSAGING_SERVICE_SID: optionalStr,
+  // ISO-3166 alpha-2 country used to expand national-form phone numbers to
+  // E.164 before sending (src/lib/sms/phone.ts). Defaults to Ireland.
+  TWILIO_DEFAULT_COUNTRY: withDefault('IE'),
   // Resend: transactional email. Customer slug sub-addresses are composed
   // against EMAIL_SENDING_DOMAIN (locked: mail.webnua.com).
   RESEND_API_KEY: optionalStr,

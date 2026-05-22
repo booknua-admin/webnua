@@ -1,0 +1,103 @@
+// =============================================================================
+// Twilio SMS — shared types.
+//
+// Two kinds of type live here:
+//   • The slices of Twilio API objects this integration reads. Twilio objects
+//     are large; only the fields actually consumed are typed (defensively —
+//     most optional, so a Twilio API shift cannot crash a handler).
+//   • The row shapes for the three SMS tables (client_sms_senders extended by
+//     0058, sms_messages 0059, sms_templates 0060). Those tables are not in
+//     the generated Database type yet, so they are hand-written here — same
+//     rationale as _shared/db-types.ts.
+//
+// Phase 7 Twilio SMS session.
+// =============================================================================
+
+import type { SegmentEncoding } from '@/lib/sms/character-validator';
+import type { SmsTemplateKey } from '@/lib/sms/default-templates';
+
+// --- Twilio API object slices ------------------------------------------------
+
+/** A Twilio Message resource (SM…) — the send response + status reads. */
+export type TwilioMessageResource = {
+  sid: string;
+  /** Twilio's own status enum: accepted/queued/sending/sent/delivered/
+   *  undelivered/failed/receiving/received. */
+  status: string;
+  num_segments?: string;
+  error_code?: number | null;
+  error_message?: string | null;
+};
+
+/** A Twilio Messaging Service AlphaSender resource — the alphanumeric sender
+ *  registration. */
+export type TwilioAlphaSenderResource = {
+  sid: string;
+  alpha_sender: string;
+  capabilities?: string[];
+};
+
+// --- our row shapes ----------------------------------------------------------
+
+/** client_sms_senders.status — the carrier-registration lifecycle. */
+export type SmsSenderStatus = 'pending_approval' | 'approved' | 'rejected' | 'suspended';
+
+/** A client_sms_senders row (migration 0050 + 0058). */
+export type ClientSmsSenderRow = {
+  id: string;
+  client_id: string;
+  sender_id: string;
+  registered_at: string;
+  status: SmsSenderStatus;
+  notes: string | null;
+  twilio_registration_sid: string | null;
+};
+
+/** sms_messages.status — the delivery lifecycle. */
+export type SmsMessageStatus = 'queued' | 'sent' | 'delivered' | 'failed' | 'undelivered';
+
+/** An sms_messages row (migration 0059). */
+export type SmsMessageRow = {
+  id: string;
+  sent_at: string;
+  client_id: string;
+  sender_id: string;
+  recipient_phone: string;
+  message_body: string;
+  segments_count: number;
+  encoding: SegmentEncoding;
+  twilio_message_sid: string | null;
+  status: SmsMessageStatus;
+  error_code: string | null;
+  error_message: string | null;
+  related_lead_id: string | null;
+  cost_eur: number | null;
+};
+
+/** The insert shape for a new sms_messages row. */
+export type SmsMessageInsert = {
+  client_id: string;
+  sender_id: string;
+  recipient_phone: string;
+  message_body: string;
+  segments_count: number;
+  encoding: SegmentEncoding;
+  twilio_message_sid: string | null;
+  status: SmsMessageStatus;
+  error_code?: string | null;
+  error_message?: string | null;
+  related_lead_id?: string | null;
+  cost_eur?: number | null;
+};
+
+/** An sms_templates row (migration 0060). */
+export type SmsTemplateRow = {
+  id: string;
+  client_id: string;
+  template_key: SmsTemplateKey;
+  body: string;
+  is_default: boolean;
+  last_edited_at: string;
+  last_edited_by: string | null;
+  created_at: string;
+};
