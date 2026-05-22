@@ -17,6 +17,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { getServiceClient } from '@/lib/supabase/server';
+import type {
+  IntegrationConnectionStatus,
+  OAuthProviderId,
+  TokenModel,
+} from '@/lib/integrations/connections';
 
 // --- integration_call_log ----------------------------------------------------
 
@@ -75,6 +80,40 @@ export type IntegrationJobInsert = {
   max_attempts: number;
   client_id: string | null;
   correlation_id: string | null;
+};
+
+// --- integration_connections (Session 2) -------------------------------------
+
+/** An integration_connections row as read back from the database. */
+export type IntegrationConnectionRow = {
+  id: string;
+  client_id: string;
+  provider: OAuthProviderId;
+  provider_account_id: string;
+  token_secret_id: string | null;
+  access_token_cached: string | null;
+  access_token_expires_at: string | null;
+  token_model: TokenModel;
+  scopes: string[];
+  status: IntegrationConnectionStatus;
+  connected_at: string;
+  last_used_at: string | null;
+  last_refreshed_at: string | null;
+  last_error: string | null;
+  last_failure_notified_at: string | null;
+};
+
+/** The insert shape for a new integration_connections row. */
+export type IntegrationConnectionInsert = {
+  client_id: string;
+  provider: OAuthProviderId;
+  provider_account_id: string;
+  token_secret_id: string;
+  access_token_cached: string | null;
+  access_token_expires_at: string | null;
+  token_model: TokenModel;
+  scopes: string[];
+  status?: IntegrationConnectionStatus;
 };
 
 // --- accessor ----------------------------------------------------------------

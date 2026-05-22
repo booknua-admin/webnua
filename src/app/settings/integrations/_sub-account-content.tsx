@@ -17,6 +17,7 @@
 // integration bundle differs from the agency default.
 // =============================================================================
 
+import { IntegrationConnectionsSection } from '@/components/shared/settings/IntegrationConnectionsSection';
 import { PolicyOverrideRow } from '@/components/shared/settings/PolicyOverrideRow';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
@@ -87,6 +88,7 @@ export function SubAccountIntegrationsContent({
           </>
         }
       >
+        <IntegrationConnectionsSection clientSlug={clientId} clientName={clientName} />
         <SettingsPanel>
           <SettingsSection
             heading={

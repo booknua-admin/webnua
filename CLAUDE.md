@@ -401,16 +401,42 @@ Components for the operator's cross-client integrations matrix — workspace-wid
 
 ### `lib/env.ts` + `lib/integrations/_shared/` — Phase 7 integration foundation
 
-> The shared spine every Phase 7 integration is built on (Session 1). Two integration architectures exist — **platform-level** (Webnua owns the account: Stripe / Twilio / Resend / Vercel; one API key in env, per-customer state is "which sub-identity is assigned") and **per-tenant OAuth** (the customer owns it: Google Ads / GBP — Session 2, not built yet). Full status + Session 2 hand-off: `reference/integration-foundation-audit.md`. Everything here is SERVER-ONLY (reads server secrets / the service-role client).
+> The shared spine every Phase 7 integration is built on. Two integration architectures exist — **platform-level** (Webnua owns the account: Stripe / Twilio / Resend / Vercel; one API key in env, per-customer state is "which sub-identity is assigned" — Session 1) and **per-tenant OAuth** (the customer owns the account: GBP / Meta; Webnua OAuths in and stores per-tenant tokens — Session 2). Google Ads is NOT built (operator decision). Full status: `reference/integration-foundation-audit.md`. Everything here is SERVER-ONLY (reads server secrets / the service-role client) — the one client-safe exception is `lib/integrations/connections.ts`.
 
 - **`lib/env.ts`** — typed, zod-validated, boot-validated env module. Exports `env` — a lazy `Proxy` that validates on first property access (lazy so `next build` doesn't trip; a missing *required* key throws a clear, actionable boot error), `validateEnv()` (called by `src/instrumentation.ts`'s `register()` hook to force validation at server boot), and `getAppBaseUrl()` (resolves `APP_BASE_URL` → `VERCEL_URL` → `https://{APP_HOST}`). The schema has a slot for every Phase 7 provider; integration keys are `.optional()` (a feature degrades gracefully when unset). **New server code reads `env.X` instead of `process.env.X`** — existing accesses were deliberately not refactored, this just sets the pattern. `zod` is the one dependency Phase 7 adds (utility tier — not a stack expansion).
 - **`integrations/_shared/call.ts`** — **`callExternal()`**, the single wrapper for every outbound integration call. Timeout (30s default), retry on 5xx + network errors with exponential backoff (3 attempts default), structured logging of every attempt to `integration_call_log`, error classification (`retryable` / `non_retryable` / `auth_failed` / `rate_limited`), returns a typed `IntegrationResult<T>` discriminated union (`{ ok, data, status } | { ok:false, error: IntegrationError }`). JSON-in/JSON-out by default; `rawBody` / `parseResponse` escape hatches for the non-JSON 20%. Request *headers* are never logged (auth tokens); body shapes are redacted (secret-looking keys blanked).
 - **`integrations/_shared/retry.ts`** — exponential-backoff helper. `computeBackoffDelay` + `sleep` (consumed by `callExternal`'s own loop), `withRetry` (the ad-hoc throwing-fn wrapper), `DEFAULT_RETRY_CONFIG` (3 attempts / 500ms base / 10s cap / full jitter).
 - **`integrations/_shared/jobs.ts`** — the async-jobs API over `integration_jobs`. `enqueueJob` (insert, returns id), `enqueueJobImmediate` (enqueue + fire-and-forget self-POST to the executor for near-instant runs; `pg_cron` is the safety net if that POST fails), `registerJobHandler` (an integration registers what processes a `job_type`), `runJob` (the executor body — atomic claim `UPDATE … WHERE status='pending'` → handler → terminal status; requeues with backoff while attempts remain).
-- **`integrations/_shared/db-types.ts`** — hand-written row/insert types for the integration tables (`0047`–`0053` are not yet in the generated `Database` type) + `getIntegrationDb()` (an untyped view of the service-role client). Drop once `src/lib/types/database.ts` is regenerated post-deploy.
-- **`integrations/job-handler-manifest.ts`** — side-effect manifest the executor route imports so handler registrations land in its module graph. Empty in Session 1 (no concrete handlers yet); each future integration adds one `import` line.
+- **`integrations/_shared/db-types.ts`** — hand-written row/insert types for the integration tables (`0047`–`0055` are not yet in the generated `Database` type) + `getIntegrationDb()` (an untyped view of the service-role client). Includes `IntegrationConnectionRow`/`Insert` (Session 2). Drop once `src/lib/types/database.ts` is regenerated post-deploy.
+- **`integrations/job-handler-manifest.ts`** — side-effect manifest the executor route imports so handler registrations land in its module graph. Each integration adds one `import` line; Session 2 added the first — `_shared/job-handlers.ts` (the `token_refresh_check` handler).
 - **`app/api/internal/job-executor/route.ts`** — `POST` route running one job by id. Internal-only: verifies the `x-webnua-internal-secret` header against `INTERNAL_JOB_SECRET` (constant-time compare); `503` when the secret is unset. Called by the `pg_cron` poller (migration `0049`) and by `enqueueJobImmediate`.
 - **`lib/website/vercel.ts`** — refactored in Session 1 to route every Vercel call through `callExternal()` (the foundation's first validation against a real integration). Reads creds via `env`; public behaviour (domain provisioning, 409/404 idempotency, `{ configured:false }` degradation) unchanged.
+
+#### Per-tenant OAuth foundation (Phase 7 · Session 2)
+
+> The scaffolding both the GBP and Meta business sessions build on — no business logic, just the OAuth layer. Two registered providers: `google_business_profile` (refresh_access token model) and `meta_ads` (long_lived model — written but unverified against a live Meta app, `TODO(meta)` flagged). Migrations `0054`–`0056`. **`callWithToken()` is the call path for every per-tenant API call.**
+
+- **`lib/integrations/connections.ts`** — the ONE client-safe module: `OAuthProviderId` (`google_business_profile` | `meta_ads`), `TokenModel`, `IntegrationConnectionStatus`, `isOAuthProviderId`, and `OAUTH_PROVIDER_DISPLAY` (operator-facing name / blurb / logo tone per provider). Imported by both the operator UI and the server registry.
+- **`integrations/_shared/oauth-providers.ts`** — server-only provider registry. Each provider declares its endpoints + `exchangeCode` / `refreshToken` / `revoke` / `fetchAccountId` (all through `callExternal()`). `getOAuthProvider(id)`, `isOAuthProviderConfigured(id)`.
+- **`integrations/_shared/oauth.ts`** — generic helpers: `generateAuthorizationUrl`, `exchangeCodeForTokens`, `buildRedirectUri`, and the HMAC-signed `state` token (`signOAuthState` / `verifyOAuthState` — 15-min TTL; the OAuth CSRF defence + the only authenticated context carried into the callback).
+- **`integrations/_shared/tokens.ts`** — token management. Vault RPC wrappers; `storeConnection` (Vault-encrypt then write the row — **Vault failure is fatal, no plaintext fallback**), `getAccessToken` (on-demand refresh, forked on `token_model` — `refresh_access` re-mints from the Vault refresh token, `long_lived` extends the Vault secret in place), `revokeConnection`, `notifyTokenRefreshFailure` (throttled operator alert). Typed errors: `VaultUnavailableError` / `ConnectionNotFoundError` / `TokenExpiredError` / `TokenRefreshFailedError` / `TokenRevokedError`.
+- **`integrations/_shared/api-call-with-token.ts`** — **`callWithToken(clientId, provider, fetchFn)`** — every per-tenant API call goes through this: fresh access token in, 401 → refresh-and-retry-once, marks the connection `refresh_failed` + throws `TokenRefreshFailedError` on a dead token. `fetchFn` itself uses `callExternal()`.
+- **`integrations/_shared/operator-auth.ts`** — `requireOperatorForClient(request, clientId)` for the connect/disconnect routes: bearer-token → operator role + client-access check (a token-scoped client so the `clients` RLS scopes a junior operator). Integration management is operator governance, NOT a builder capability.
+- **`integrations/_shared/job-handlers.ts`** — registers `token_refresh_check` (daily cron, migration `0056`): proactively refreshes `long_lived` connections within 14 days of expiry; `refresh_access` connections need none (on-demand re-mint).
+- **`integrations/use-connections.ts`** — `'use client'` operator-UI data layer: `useClientConnections` (reads `integration_connections`, RLS-scoped), `connectIntegration` (POST connect → navigate to consent), `useDisconnectIntegration`.
+- **`app/api/integrations/[provider]/connect|callback|disconnect/route.ts`** — `connect` (POST, operator-only, returns `{ authorizationUrl }` JSON — not a 302, since it is `fetch`-ed with a bearer token), `callback` (GET, verified by the signed state — a provider redirect carries no auth header), `disconnect` (POST, operator-only, revokes).
+- **`components/shared/settings/IntegrationConnectionsSection.tsx`** — operator "Connected accounts" panel on sub-account `/settings/integrations` — per-provider status + Connect / Disconnect / Reconnect.
+
+#### Per-tenant OAuth — Google Business Profile setup
+
+> Operator steps to make GBP connect work in a deployment. Meta setup is deferred to the Meta business session (no Meta app exists yet).
+
+1. Create a Google Cloud project (or reuse one) at console.cloud.google.com.
+2. Enable the **Google My Business / Business Profile APIs** (Account Management API + Business Information API) for the project.
+3. Create an **OAuth 2.0 Client ID** (type: Web application). Register the authorized redirect URI: `{app origin}/api/integrations/google_business_profile/callback` (e.g. `https://app.webnua.com/api/integrations/google_business_profile/callback`) — it must match byte-for-byte.
+4. Apply for **OAuth app verification** — the `business.manage` scope is a sensitive/restricted scope; production OAuth with it requires Google's verified-app review (configure the OAuth consent screen, submit for verification; allow weeks). Until verified, the app works only for test users added on the consent screen.
+5. Set `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` in the deployment env (and `.env.local` for dev). `GOOGLE_OAUTH_REDIRECT_URI_BASE` is optional (defaults to `{app origin}/api/integrations`); `OAUTH_STATE_SECRET` is optional (falls back to the service-role key).
+6. Meta: deferred — leave the `META_*` env slots blank.
 
 ### `shared/website/` — website hub + section editor shell (Phase 6 · Cluster 5 · Session 3 → 3.5)
 
@@ -1011,6 +1037,9 @@ The Phase 6 generator pair, called via the `/api/generate-site` route. See the p
 - **`0051_client_email_senders.sql`** — Phase 7 Session 1. Per-client Resend email sub-address slug (the sending address `[slug]@mail.webnua.com` is composed in app code, not stored). Operator-only RLS; service-role writes.
 - **`0052_client_stripe_customers.sql`** — Phase 7 Session 1. Per-client Stripe Customer mapping (standard scope, no Connect). Operator-only RLS; service-role writes.
 - **`0053_notifications_outbound.sql`** — Phase 7 Session 1. Audit log of operator-facing notification emails sent (throttle + audit; carries the Resend message id). Operator-only tenant-scoped RLS.
+- **`0054_vault_setup.sql`** — Phase 7 Session 2. Supabase Vault (`supabase_vault`) + four `public` SECURITY DEFINER wrapper functions (`webnua_vault_create_secret` / `_read_secret` / `_update_secret` / `_delete_secret`) so server code can mint/read/rotate/delete encrypted secrets — EXECUTE revoked from `public` / `anon` / `authenticated`, granted to `service_role` only. The `vault` schema is not PostgREST-reachable; the wrappers bridge it. Fallback (pgsodium) documented in the migration comment.
+- **`0055_integration_connections.sql`** — Phase 7 Session 2. The per-tenant OAuth connection table — one row per customer account per provider. Generic across providers; supports both token models (`token_model`: `refresh_access` / `long_lived`). The persistent secret lives in Vault (`token_secret_id`); only the short-lived Google access token is plain (`access_token_cached`). Operator-only tenant-scoped RLS; service-role writes; clients get no access.
+- **`0056_token_refresh_cron.sql`** — Phase 7 Session 2. Daily `pg_cron` schedule that enqueues a `token_refresh_check` job onto the Session 1 jobs spine — the handler proactively refreshes `long_lived` (Meta) connections before expiry.
 
 ---
 
@@ -1027,12 +1056,15 @@ The Phase 6 generator pair, called via the `/api/generate-site` route. See the p
   built: `lib/env.ts` (typed/boot-validated env), `callExternal()`, the
   retry helper, the `integration_jobs` queue + `pg_cron` poller + executor
   route, `integration_call_log`, the three client-assignment tables, and
-  `notifications_outbound` (migrations `0047`–`0053`). See
-  `reference/integration-foundation-audit.md`. **Session 2 (per-tenant OAuth
-  foundation)** — token storage + Supabase Vault + the OAuth flow + token-
-  refresh jobs — is next; no `integration_connections` / OAuth-token tables
-  exist yet, and `ConnectIntegrationModal` is still a stub. The concrete
-  per-provider integrations (Stripe / Twilio / Resend wiring) follow.
+  `notifications_outbound` (migrations `0047`–`0053`).
+  **Session 2 (per-tenant OAuth foundation) — DONE.** Supabase Vault
+  (token encryption), the `integration_connections` table, the OAuth provider
+  registry (GBP fully implemented; Meta written but unverified — `TODO(meta)`),
+  the connect / callback / disconnect routes, `callWithToken()`, the daily
+  token-refresh job, and the operator connections UI (migrations `0054`–`0056`).
+  See `reference/integration-foundation-audit.md`. The concrete per-provider
+  business logic — GBP review pull, Meta campaign metrics, Stripe / Twilio /
+  Resend wiring — follows.
 - **Phase 8 — Automation / messaging execution engine.** Automations are
   definitions only — nothing sends. Needs a scheduler (edge function + cron),
   a `messaging_events` send-log table, and the suppression / anti-spam rules
