@@ -85,6 +85,11 @@ const envSchema = z.object({
   STRIPE_SECRET_KEY: optionalStr,
   STRIPE_WEBHOOK_SECRET: optionalStr,
   STRIPE_PUBLISHABLE_KEY: optionalStr,
+  // The Stripe Price id for the standard plan (€299/month recurring), created
+  // once in the Stripe dashboard. Optional like the other integration keys —
+  // "Set up billing" returns a not-configured error when it (or
+  // STRIPE_SECRET_KEY) is unset, rather than blocking boot.
+  STRIPE_PRICE_ID_STANDARD: optionalStr,
   // Twilio: one-way alphanumeric senders, no per-customer numbers in V1.
   TWILIO_ACCOUNT_SID: optionalStr,
   TWILIO_AUTH_TOKEN: optionalStr,

@@ -15,8 +15,12 @@
 //
 // Phase 7 Session 2 (per-tenant OAuth foundation) registers the first handler
 // — token_refresh_check, the daily long-lived-token refresh sweep.
+//
+// Phase 7 Stripe billing adds stripe_payment_failed_notify — the operator
+// payment-failure email.
 // =============================================================================
 
 import '@/lib/integrations/_shared/job-handlers';
+import '@/lib/integrations/stripe/job-handlers';
 
 export {};

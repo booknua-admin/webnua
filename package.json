@@ -9,7 +9,8 @@
     "lint": "eslint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test:rls": "node tests/rls/run.mjs"
+    "test:rls": "node tests/rls/run.mjs",
+    "test:stripe": "node integration-tests/stripe.test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",

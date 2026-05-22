@@ -17,6 +17,7 @@ import { InvoiceList, type Invoice } from '@/components/shared/settings/InvoiceL
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
+import { StripeSubscriptionSection } from '@/components/shared/settings/StripeSubscriptionSection';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import {
   Select,
@@ -154,6 +155,8 @@ export function SubAccountBillingContent({
         }
       >
         <SettingsPanel>
+          <StripeSubscriptionSection clientSlug={clientId} clientName={clientName} />
+
           <SettingsSection
             heading={
               <>
