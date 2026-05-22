@@ -101,3 +101,30 @@ export type ClientStripeCustomerRow = {
   created_at: string;
   updated_at: string;
 };
+
+// --- live plan info (Stripe is the source of truth) --------------------------
+
+/**
+ * The plan's display details, resolved LIVE from the Stripe Price object — the
+ * UI reads this, never a hardcoded constant, so the displayed price always
+ * matches what Stripe charges at checkout. Produced by getPlanInfo() and served
+ * to the browser by GET /api/integrations/stripe/plan-info.
+ */
+export type PlanInfo = {
+  priceId: string;
+  /** The Price nickname, falling back to the product name. */
+  displayName: string;
+  /** The recurring amount in the currency's minor unit (e.g. cents). */
+  amount: number;
+  /** ISO currency code, lower-case as Stripe returns it (e.g. 'eur'). */
+  currency: string;
+  /** Billing interval — 'month' / 'year' / 'week' / 'day'. */
+  interval: string;
+  /** Intervals per billing cycle (usually 1). */
+  intervalCount: number;
+  productName: string;
+  productDescription: string | null;
+  /** Optional "what's included" list, sourced from the Stripe Price's
+   *  `features` metadata key (a JSON array of strings). Empty when unset. */
+  features: string[];
+};

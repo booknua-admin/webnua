@@ -13,7 +13,8 @@
 // Distinct concern from the plan-assignment section below it: that is the
 // agency POLICY plan (the resolved capability / seat / integration bundle);
 // THIS is the real money — the Stripe subscription that actually charges the
-// client €299/month.
+// client. The plan price / name / interval are resolved LIVE from Stripe via
+// usePlanInfo() — never hardcoded.
 // =============================================================================
 
 import { useState, useSyncExternalStore } from 'react';
@@ -23,8 +24,10 @@ import { Button } from '@/components/ui/button';
 import { useClientId } from '@/lib/clients/queries';
 import type { StripeBillingStatus } from '@/lib/integrations/stripe/types';
 import {
+  formatPlanPrice,
   openStripePortal,
   startStripeCheckout,
+  usePlanInfo,
   useStripeBilling,
   type StripeBillingView,
 } from '@/lib/integrations/stripe/use-billing';
@@ -139,11 +142,22 @@ export function StripeSubscriptionSection({
 }: StripeSubscriptionSectionProps) {
   const { data: clientId } = useClientId(clientSlug);
   const billing = useStripeBilling(clientId ?? null);
+  const planInfo = usePlanInfo();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const view = billing.data ?? null;
   const live = hasLiveSubscription(view);
+
+  // The plan price is resolved LIVE from Stripe — never hardcoded. Loading and
+  // error states fall back to honest labels rather than a (possibly wrong)
+  // fixed price.
+  const planData = planInfo.data ?? null;
+  const priceLabel = planData
+    ? formatPlanPrice(planData)
+    : planInfo.isLoading
+      ? 'Loading…'
+      : 'Pricing unavailable';
 
   async function run(action: (id: string) => Promise<void>) {
     if (!clientId) return;
@@ -167,10 +181,10 @@ export function StripeSubscriptionSection({
       }
       description={
         <>
-          <strong>{clientName}&apos;s Stripe subscription.</strong> The platform fee is{' '}
-          <strong>€299/month</strong>. The first month is €99 to Webnua plus €200 spent as Meta ad
-          credit on the client&apos;s behalf; from month two it is €299/month, with the
-          client&apos;s own Meta ad spend billed separately. Stripe charges a flat €299 every month.
+          <strong>{clientName}&apos;s Stripe subscription.</strong> The recurring platform fee,
+          billed through Stripe. The first month is split as €99 to Webnua plus €200 spent as Meta
+          ad credit on the client&apos;s behalf; from month two the full fee goes to Webnua, with
+          the client&apos;s own Meta ad spend billed separately.
         </>
       }
     >
@@ -188,7 +202,7 @@ export function StripeSubscriptionSection({
           </div>
 
           <div className="flex flex-col">
-            <DetailRow label="Plan">€299 / month</DetailRow>
+            <DetailRow label="Plan">{priceLabel}</DetailRow>
             <DetailRow label="Next renewal">{formatDate(view.currentPeriodEnd)}</DetailRow>
             <DetailRow label="Last payment">
               {view.lastPaymentAt ? (
@@ -243,8 +257,22 @@ export function StripeSubscriptionSection({
           <p className="mb-4 text-[13px] leading-[1.5] text-ink-quiet">
             {view?.status === 'cancelled'
               ? `${clientName}'s subscription has been cancelled. Start a new subscription to resume billing.`
-              : `${clientName} is not being billed yet. Set up the €299/month subscription — the client completes payment on Stripe's secure checkout.`}
+              : `${clientName} is not being billed yet. Set up the subscription${
+                  planData ? ` (${formatPlanPrice(planData)})` : ''
+                } — the client completes payment on Stripe's secure checkout.`}
           </p>
+          {planData && planData.features.length > 0 ? (
+            <ul className="mb-4 flex flex-col gap-1.5">
+              {planData.features.map((feature) => (
+                <li key={feature} className="flex gap-2 text-[13px] leading-[1.4] text-ink-soft">
+                  <span className="text-good" aria-hidden>
+                    ✓
+                  </span>
+                  <span>{feature}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <Button size="sm" disabled={busy || !clientId} onClick={() => run(startStripeCheckout)}>
             {busy ? 'Starting…' : 'Set up billing →'}
           </Button>
