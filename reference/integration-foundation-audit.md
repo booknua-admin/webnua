@@ -135,22 +135,56 @@ any specific integration.
 
 ### Operator action required post-deploy
 
-1. Apply migrations `0047`–`0053`.
-2. Set the `INTERNAL_JOB_SECRET` env var (a long random value).
+1. ✅ **DONE** — Migrations `0047`–`0053` applied to the live `webnua` Supabase
+   project (`ynfnjskylwlbmgyeeiot`) and schema-verified (see Verification).
+2. Set the `INTERNAL_JOB_SECRET` env var (a long random value) in the
+   deployment environment (and `.env.local` for local dev).
 3. Run the one-time `UPDATE private.integration_runtime_config` from migration
    `0049`'s table comment — set `app_base_url` and `job_executor_secret` (the
    latter equal to `INTERNAL_JOB_SECRET`). Until then the poller can reclaim
    stale jobs but cannot dispatch new ones.
 
-### Verification checklist (post-deploy)
+### Verification
 
-- [ ] Boot the app with a missing required env var → clear error naming it.
+Applied and verified against the live project:
+
+- ✅ All six tables created with RLS enabled and the right policy counts —
+  the five readable tables have one operator-scoped `SELECT` policy;
+  `integration_jobs` intentionally has zero policies (service-role-only).
+- ✅ `webnua-integration-jobs-poll` cron job scheduled (`* * * * *`) and active;
+  `pg_cron` + `pg_net` installed; `private.dispatch_integration_jobs()` runs
+  without error.
+- ✅ `private.integration_runtime_config` single row present (empty — awaits
+  operator step 3).
+- ✅ Privilege lockdown: `integration_jobs` is fully invisible to
+  `authenticated`; the five readable tables expose `SELECT` only (RLS-gated) —
+  `INSERT/UPDATE/DELETE` revoked.
+
+Still needs a deployed app + the operator steps above:
+
+- [ ] Boot with a missing required env var → clear error naming it.
 - [ ] `callExternal()` against a failing endpoint → retries fire, one
       `integration_call_log` row per attempt with the right `error_class`.
-- [ ] Enqueue a job → `pg_cron` picks it up within ~1 minute → handler runs →
-      job row → `completed`.
+- [ ] Enqueue a job → `pg_cron` dispatches → executor runs → job `completed`
+      (also needs a registered handler — Session 1 ships none).
 - [ ] `enqueueJobImmediate` → job processes within ~2 seconds.
 - [ ] Existing Vercel subdomain provisioning still works through the wrapper.
+
+### Advisor notes (post-apply security lint)
+
+- **`integration_jobs` — "RLS enabled, no policy" (INFO).** Intentional: the
+  table is service-role-only internal infrastructure. RLS on + zero policies +
+  `authenticated` revoked = invisible to every signed-in session.
+- **`pg_net` installed in the `public` schema (WARN).** Introduced by migration
+  `0049`'s `create extension`. Hygiene-level — `net.http_post` lives in the
+  `net` schema and is unaffected. Recommend relocating `pg_net` (and `pg_cron`)
+  to the `extensions` schema in a project-wide extension-hygiene pass.
+- **Pre-existing, project-wide:** `authenticated` holds `TRUNCATE` / `REFERENCES`
+  / `TRIGGER` on every `public` table (Supabase's default `GRANT ALL`) — and
+  `TRUNCATE` is not gated by RLS. The integration tables inherit this baseline
+  (and are stricter than most — `integration_jobs` revokes it entirely). The
+  honest fix is one project-wide `REVOKE` + `ALTER DEFAULT PRIVILEGES`, out of
+  scope for this session — flagged for the RLS-hardening workstream.
 
 ---
 
