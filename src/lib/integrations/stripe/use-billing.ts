@@ -21,7 +21,11 @@ import { useQuery } from '@tanstack/react-query';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { normalizeError } from '@/lib/errors';
-import type { StripeBillingStatus, StripePaymentStatus } from '@/lib/integrations/stripe/types';
+import type {
+  PlanInfo,
+  StripeBillingStatus,
+  StripePaymentStatus,
+} from '@/lib/integrations/stripe/types';
 import { supabase } from '@/lib/supabase/client';
 
 /** A client's billing posture as the operator UI consumes it. `null` from the
@@ -90,6 +94,45 @@ export function useStripeBilling(clientId: string | null) {
     queryFn: () => fetchBilling(clientId as string),
     enabled: clientId != null && clientId.length > 0,
   });
+}
+
+// --- live plan info ----------------------------------------------------------
+
+async function fetchPlanInfo(): Promise<PlanInfo> {
+  const response = await fetch('/api/integrations/stripe/plan-info');
+  if (!response.ok) {
+    throw new Error('Plan pricing is unavailable right now.');
+  }
+  return (await response.json()) as PlanInfo;
+}
+
+/** The live plan details from Stripe (name / price / currency / interval).
+ *  The UI reads this instead of hardcoding the price; `staleTime` matches the
+ *  server-side 5-minute cache window. */
+export function usePlanInfo() {
+  return useQuery({
+    queryKey: ['stripe-plan-info'],
+    queryFn: fetchPlanInfo,
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  });
+}
+
+/** Format a PlanInfo as a price label — e.g. "€299.00/month". */
+export function formatPlanPrice(info: PlanInfo): string {
+  const major = (info.amount ?? 0) / 100;
+  let money: string;
+  try {
+    money = new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: info.currency.toUpperCase(),
+    }).format(major);
+  } catch {
+    // Unknown currency code — fall back to a plain amount + code.
+    money = `${major.toFixed(2)} ${info.currency.toUpperCase()}`;
+  }
+  const period = info.intervalCount > 1 ? `${info.intervalCount} ${info.interval}s` : info.interval;
+  return `${money}/${period}`;
 }
 
 async function accessToken(): Promise<string> {
