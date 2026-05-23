@@ -67,8 +67,15 @@ async function accessToken(): Promise<string> {
   return token;
 }
 
-/** Map a route error code to an operator-facing message. */
-function smsErrorMessage(code: string | undefined, status: number): string {
+/** Map a route error code to an operator-facing message. Passes through the
+ *  raw provider `detail` for the Twilio-side failures the operator needs to
+ *  see verbatim (e.g. "AlphaSender already exists in this messaging service",
+ *  "Alphanumeric Sender ID is not supported in the destination country"). */
+function smsErrorMessage(
+  code: string | undefined,
+  status: number,
+  detail?: string,
+): string {
   switch (code) {
     case 'twilio-not-configured':
       return 'SMS is not configured yet — add the Twilio credentials to the deployment.';
@@ -81,7 +88,9 @@ function smsErrorMessage(code: string | undefined, status: number): string {
     case 'no-sender':
       return 'No sender id has been registered for this client yet.';
     case 'twilio-register-failed':
-      return 'Twilio rejected the sender id. Try a different one, or check the Twilio account.';
+      return detail
+        ? `Twilio rejected the sender id — ${detail}`
+        : 'Twilio rejected the sender id. Check the Twilio account (alphanumeric senders need live credentials, may already exist in the pool, or may not be enabled for the destination country).';
     case 'forbidden':
     case 'forbidden-client':
       return 'You do not have access to this client.';
@@ -101,7 +110,13 @@ async function postJson(path: string, body: unknown): Promise<unknown> {
   });
   const json = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   if (!response.ok) {
-    throw new Error(smsErrorMessage(json.error as string | undefined, response.status));
+    throw new Error(
+      smsErrorMessage(
+        json.error as string | undefined,
+        response.status,
+        typeof json.detail === 'string' ? json.detail : undefined,
+      ),
+    );
   }
   return json;
 }
