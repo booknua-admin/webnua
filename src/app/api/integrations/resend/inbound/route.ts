@@ -30,13 +30,16 @@ import { NextResponse } from 'next/server';
 
 import { env } from '@/lib/env';
 import {
+  isValidThreadTokenShape,
   looksLikeAutoResponder,
   parseInboundAddress,
-  parseThreadToken,
 } from '@/lib/email/threading';
 import { getIntegrationDb } from '@/lib/integrations/_shared/db-types';
 import { isInboundWebhookConfigured } from '@/lib/integrations/resend/client';
-import { insertEmailMessage } from '@/lib/integrations/resend/messages';
+import {
+  findOutboundByThreadToken,
+  insertEmailMessage,
+} from '@/lib/integrations/resend/messages';
 import { findSenderByClientSlug } from '@/lib/integrations/resend/senders';
 import type {
   EmailAttachment,
@@ -161,36 +164,84 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ received: true });
   }
 
-  // --- 4. Verify thread token + lead ----------------------------------------
-  const tokenResult = parseThreadToken(parsed.threadToken);
-  if (!tokenResult) {
+  // --- 4. Resolve thread token via the DB -----------------------------------
+  // Syntactic guard first — a malformed shape is rejected without a query.
+  if (!isValidThreadTokenShape(parsed.threadToken)) {
     logInbound(
       'rejected_inbound',
       sender.client_id,
-      { to: toAddress, reason: 'invalid-token' },
+      { to: toAddress, reason: 'invalid-token-shape' },
       200,
       'auth_failed',
-      'invalid-thread-token',
+      'invalid-thread-token-shape',
     );
     return NextResponse.json({ received: true });
   }
 
+  // The token was minted by us when an outbound send recorded a row on
+  // email_messages with this thread_token. Look that row up.
+  const originRow = await findOutboundByThreadToken(parsed.threadToken);
+  if (!originRow) {
+    // Unknown token — could be a stale forwarded reply, or a forged guess.
+    // The 72-bit random space makes guessing infeasible; treat as junk.
+    logInbound(
+      'rejected_inbound',
+      sender.client_id,
+      { to: toAddress, reason: 'unknown-token' },
+      200,
+      'auth_failed',
+      'unknown-thread-token',
+    );
+    return NextResponse.json({ received: true });
+  }
+
+  // Cross-tenant guard — the row the token resolves to must belong to the
+  // same client the recipient slug resolves to. A malicious correspondent
+  // who somehow obtained a token from a different client's email cannot
+  // smuggle it in via this client's slug.
+  if (originRow.client_id !== sender.client_id) {
+    logInbound(
+      'rejected_inbound',
+      sender.client_id,
+      { to: toAddress, reason: 'cross-tenant-token' },
+      200,
+      'auth_failed',
+      'cross-tenant-token',
+    );
+    return NextResponse.json({ received: true });
+  }
+  if (!originRow.related_lead_id) {
+    // A thread-tokened outbound without a lead is malformed; nothing to
+    // route the reply to.
+    logInbound(
+      'rejected_inbound',
+      sender.client_id,
+      { to: toAddress, reason: 'token-no-lead' },
+      200,
+      'auth_failed',
+      'thread-token-no-lead',
+    );
+    return NextResponse.json({ received: true });
+  }
+  const resolvedLeadId = originRow.related_lead_id;
+
+  // Belt-and-braces: confirm the lead row itself still exists (handles a
+  // lead deleted after the outbound was sent — FK is set-null, so
+  // related_lead_id may now be stale on a re-read; if it is, refuse).
   const svc = getServiceClient();
   const { data: leadRow } = await svc
     .from('leads')
     .select('id, client_id')
-    .eq('id', tokenResult.leadId)
+    .eq('id', resolvedLeadId)
     .maybeSingle();
   if (!leadRow || (leadRow as { client_id: string }).client_id !== sender.client_id) {
-    // Either no such lead, or the token's leadId belongs to a different
-    // client — refuse to insert. This is the cross-tenant guard.
     logInbound(
       'rejected_inbound',
       sender.client_id,
-      { to: toAddress, reason: 'cross-tenant-or-missing-lead' },
+      { to: toAddress, reason: 'lead-deleted-or-cross-tenant' },
       200,
       'auth_failed',
-      'cross-tenant-or-missing-lead',
+      'lead-deleted-or-cross-tenant',
     );
     return NextResponse.json({ received: true });
   }
@@ -204,7 +255,7 @@ export async function POST(request: Request): Promise<Response> {
   // --- 6. Attachment re-upload ---------------------------------------------
   const attachments = await reuploadAttachments(
     parsed.clientSlug,
-    tokenResult.leadId,
+    resolvedLeadId,
     email.attachments ?? [],
   );
 
@@ -222,7 +273,7 @@ export async function POST(request: Request): Promise<Response> {
       resend_message_id: email.id ?? null,
       in_reply_to_message_id: email.in_reply_to ?? null,
       status: 'received',
-      related_lead_id: tokenResult.leadId,
+      related_lead_id: resolvedLeadId,
       thread_token: parsed.threadToken,
       attachments,
       is_auto_responder: isAuto,
@@ -232,7 +283,7 @@ export async function POST(request: Request): Promise<Response> {
     // surfaces the reply without needing to query email_messages.
     if (!isAuto) {
       await svc.from('lead_events').insert({
-        lead_id: tokenResult.leadId,
+        lead_id: resolvedLeadId,
         kind: 'email_in',
         occurred_at: new Date().toISOString(),
         actor_user_id: null,

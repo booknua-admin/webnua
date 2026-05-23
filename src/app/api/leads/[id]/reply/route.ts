@@ -191,7 +191,7 @@ export async function POST(
     return NextResponse.json({ error: 'no-active-sender' }, { status: 409 });
   }
 
-  const threadToken = generateThreadToken(leadId);
+  const threadToken = generateThreadToken();
   const replyTo = composeReplyToAddress(sender.slug, threadToken);
   const from = `${sender.display_name} <${sender.slug}@${env.EMAIL_SENDING_DOMAIN}>`;
 
