@@ -100,6 +100,22 @@ export async function findOutboundByResendId(
   return (data as EmailMessageRow | null) ?? null;
 }
 
+/** Look up an inbound row by its resend_message_id. The inbound webhook
+ *  uses this for replay-dedup — the Resend dashboard's "Replay" button
+ *  re-POSTs the original payload, and we don't want to double-insert. */
+export async function findInboundByResendId(
+  resendMessageId: string,
+): Promise<EmailMessageRow | null> {
+  const { data, error } = await getIntegrationDb()
+    .from(TABLE)
+    .select(COLUMNS)
+    .eq('resend_message_id', resendMessageId)
+    .eq('direction', 'inbound')
+    .maybeSingle();
+  if (error) throw new Error(`findInboundByResendId: ${error.message}`);
+  return (data as EmailMessageRow | null) ?? null;
+}
+
 /** Look up the outbound email_messages row that minted a thread token. The
  *  inbound webhook calls this to resolve (clientSlug, token) back to the
  *  lead — the row's `related_lead_id` is the answer, and the caller

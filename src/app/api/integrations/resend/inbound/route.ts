@@ -39,9 +39,12 @@ import {
 import { getIntegrationDb } from '@/lib/integrations/_shared/db-types';
 import {
   getInboundEmailSecret,
+  getMessage,
   isInboundEmailWebhookConfigured,
+  isResendConfigured,
 } from '@/lib/integrations/resend/client';
 import {
+  findInboundByResendId,
   findOutboundByThreadToken,
   insertEmailMessage,
 } from '@/lib/integrations/resend/messages';
@@ -257,26 +260,12 @@ export async function POST(request: Request): Promise<Response> {
     headers: email.headers,
   });
 
-  // --- 5a. Body extraction (Resend's field names vary by API version) ------
-  // Defensive: try the common aliases. Records show plain `text` / `html`
-  // sometimes come back empty even when the email has content — typically
-  // because Resend nests the body under `parsed.*` or `body_*` / `*Body`
-  // / `*Plain`. The raw payload structure is captured below for diagnosis.
-  const bodyText = pickStringField(payload.data as Record<string, unknown>, [
-    'text',
-    'body_text',
-    'bodyText',
-    'plain',
-    'text_body',
-    'plainBody',
-  ]);
-  const bodyHtml = pickStringField(payload.data as Record<string, unknown>, [
-    'html',
-    'body_html',
-    'bodyHtml',
-    'html_body',
-    'htmlBody',
-  ]);
+  // --- 5a. Body extraction --------------------------------------------------
+  // Resend's `email.received` webhook payload OMITS the body entirely in the
+  // current API version — it only delivers metadata (subject, from, to,
+  // email_id, attachments). The body must be fetched separately via
+  // `GET /emails/{email_id}`. We still try the historical aliases first in
+  // case a future API version starts including the body inline.
   const resendId = pickStringField(payload.data as Record<string, unknown>, [
     'id',
     'email_id',
@@ -286,6 +275,61 @@ export async function POST(request: Request): Promise<Response> {
     payload.data as Record<string, unknown>,
     ['in_reply_to', 'inReplyTo'],
   );
+  let bodyText = pickStringField(payload.data as Record<string, unknown>, [
+    'text',
+    'body_text',
+    'bodyText',
+    'plain',
+    'text_body',
+    'plainBody',
+  ]);
+  let bodyHtml = pickStringField(payload.data as Record<string, unknown>, [
+    'html',
+    'body_html',
+    'bodyHtml',
+    'html_body',
+    'htmlBody',
+  ]);
+  // Webhook payload didn't carry the body — fetch the full message via the
+  // Resend API. This is the standard pattern in their current API version.
+  // Best-effort: a fetch failure leaves the body empty (we still record the
+  // event with subject so the operator at least sees a reply landed).
+  if (!bodyText && !bodyHtml && resendId && isResendConfigured()) {
+    const fetched = await getMessage(resendId, sender.client_id);
+    if (fetched.ok) {
+      if (typeof fetched.data.text === 'string') bodyText = fetched.data.text;
+      if (typeof fetched.data.html === 'string') bodyHtml = fetched.data.html;
+    } else {
+      console.warn(
+        '[resend/inbound] body fetch failed',
+        fetched.error.message,
+      );
+    }
+  }
+
+  // --- 5b. Idempotency — skip if we already recorded this Resend message ---
+  // The Resend dashboard's Replay button re-POSTs the original payload;
+  // without this guard a Replay double-inserts the email_messages row + the
+  // email_in lead_event. (No DB unique constraint on resend_message_id — an
+  // index only — so this is the cheapest dedup that does the job.)
+  if (resendId) {
+    const existing = await findInboundByResendId(resendId);
+    if (existing) {
+      logInbound(
+        'inbound_email_received',
+        sender.client_id,
+        { messageId: existing.id, deduped: true, resendId },
+        200,
+        null,
+        'dedup-replay',
+      );
+      return NextResponse.json({
+        received: true,
+        messageId: existing.id,
+        deduped: true,
+      });
+    }
+  }
 
   // --- 6. Attachment re-upload ---------------------------------------------
   const attachments = await reuploadAttachments(

@@ -33,6 +33,11 @@ type LeadConversationComposerProps = {
   /** Visible helper chips (insert-variable / booking-link / etc.) — visual
    *  affordances from the existing conversation stub. */
   helpers?: string[];
+  /** Controlled channel id (`'SMS'` | `'Email'`) — when provided, the
+   *  composer mirrors the parent's choice. The conversation page lifts
+   *  this state so the header tabs + composer tabs stay in lockstep. */
+  activeChannelId?: string;
+  onChannelChange?: (id: string) => void;
 };
 
 function LeadConversationComposer({
@@ -40,6 +45,8 @@ function LeadConversationComposer({
   firstName,
   hasEmail,
   helpers,
+  activeChannelId,
+  onChannelChange,
 }: LeadConversationComposerProps) {
   const reply = useReplyToLead();
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -81,6 +88,8 @@ function LeadConversationComposer({
     <ConversationComposer
       channels={channels}
       defaultChannelId={defaultChannel}
+      activeChannelId={activeChannelId}
+      onChannelChange={onChannelChange}
       subjectChannels={['Email']}
       placeholder={`Reply to ${firstName}…`}
       helpers={helpers}

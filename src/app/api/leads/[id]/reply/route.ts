@@ -271,7 +271,12 @@ export async function POST(
   return NextResponse.json({ ok: true, messageId: row.id, resendId: result.data.id });
 }
 
+/** Auto-advance a `new` lead to `contacted` once the operator replies.
+ *  Does NOT write a status_changed lead_event — the email_out event the
+ *  reply already wrote carries the action, and the operator obviously
+ *  knows they replied. Same discipline as the inbound auto-flip. */
 async function maybeAdvanceToContacted(leadId: string, actorUserId: string): Promise<void> {
+  void actorUserId; // attribution will return when status_changed lives elsewhere
   try {
     const svc = getServiceClient();
     const { data } = await svc
@@ -287,15 +292,7 @@ async function maybeAdvanceToContacted(leadId: string, actorUserId: string): Pro
       .eq('id', leadId);
     if (updateError) {
       console.warn('[leads/reply] auto-status update failed', updateError.message);
-      return;
     }
-    await svc.from('lead_events').insert({
-      lead_id: leadId,
-      kind: 'status_changed',
-      occurred_at: new Date().toISOString(),
-      actor_user_id: actorUserId,
-      payload: { from: 'New', to: 'Contacted', auto: 'reply-sent' },
-    });
   } catch (error) {
     console.warn('[leads/reply] auto-status threw', error);
   }

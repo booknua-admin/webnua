@@ -902,9 +902,12 @@ function buildLeadConversation(row: LeadDetailJoinRow): LeadConversation {
         {suburb ? ` · ${suburb}` : ''} · lead
       </>
     ),
+    // Tab ids match the composer's channel vocab so the conversation
+    // page can lift one piece of state to both — picking SMS in the
+    // header also picks SMS in the composer (and vice versa).
     channelTabs: [
-      { id: 'sms', label: 'SMS' },
-      { id: 'email', label: 'Email' },
+      { id: 'SMS', label: 'SMS' },
+      { id: 'Email', label: 'Email' },
     ],
     headerActions: ['☏', '⌄', '⋯'],
     days,
