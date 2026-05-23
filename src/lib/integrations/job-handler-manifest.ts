@@ -20,9 +20,18 @@
 // payment-failure email.
 //
 // Phase 7 Twilio SMS adds send_sms — the outbound transactional SMS handler.
+//
+// Phase 7 Resend adds:
+//   • send_email                — the workhorse template-rendered email send.
+//   • send_lead_notification    — fan out a new-lead notification to operators
+//                                  configured on notification_preferences, with
+//                                  throttling against the digest worker.
+//   • batch_notification_digest — hourly digest of throttled notifications.
+//   • send_test_notification    — operator test-send from the settings UI.
 // =============================================================================
 
 import '@/lib/integrations/_shared/job-handlers';
+import '@/lib/integrations/resend/job-handlers';
 import '@/lib/integrations/stripe/job-handlers';
 import '@/lib/integrations/twilio/job-handlers';
 
