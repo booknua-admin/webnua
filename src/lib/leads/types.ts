@@ -205,6 +205,11 @@ export type LeadConversation = {
   tag: string;
   title: ReactNode;
   subtitle: ReactNode;
+  /** The lead's display first name (the textarea placeholder reads it). */
+  firstName: string;
+  /** True when an email address is on file — drives whether the composer's
+   *  Email channel is available. */
+  hasEmail: boolean;
   // Header block
   avatar: string;
   name: string;

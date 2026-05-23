@@ -530,6 +530,204 @@ Components for the operator's cross-client integrations matrix — workspace-wid
 5. Set the env vars (`.env.local` for dev, the deployment env for production): `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_MESSAGING_SERVICE_SID`, and optionally `TWILIO_DEFAULT_COUNTRY` (ISO-3166 alpha-2, default `IE`). Use `AC…` test credentials + a test Messaging Service for development.
 6. Per client: an operator submits the client's alphanumeric sender id on sub-account `/settings/sms`, then completes any regulated-country registration in the Twilio Console, and uses "Refresh status" to confirm the sender is approved. SMS only sends once the sender is `approved`.
 
+#### Resend email (Phase 7)
+
+> Transactional email + an inbound-reply pipeline for Webnua clients. The same
+> two-way conversation surface as SMS, but unlike one-way alphanumeric senders
+> the customer can reply by email; replies route back to the Webnua lead
+> inbox via plus-addressed thread tokens (`{clientSlug}+lead-{token}@mail.
+> webnua.com`) that an HMAC binds to the lead so addresses are unforgeable.
+> Built on the Session 1 platform-integration spine: every Resend call goes
+> through `callExternal()`, every transactional send runs on the
+> `integration_jobs` queue (so retries + observability are automatic), the
+> message log is `email_messages` (migration 0061). Webnua owns the Resend
+> account — customers do NOT connect their own. SERVER-ONLY for the lib;
+> `use-email.ts` is the one `'use client'` UI layer.
+>
+> **Three flow paths from one integration:**
+> 1. **Customer-facing email** (lead_followup / review_request /
+>    quote_followup) — fired by the public form-submit route and by future
+>    automations. The thread carries a Reply-To with a plus-addressed token
+>    so any reply lands in the inbox.
+> 2. **Operator notification** (lead_notification / lead_digest) — fanned
+>    automatically by a DB trigger on `leads` (migration 0063). The
+>    `send_lead_notification` job resolves the configured operator recipients
+>    on `notification_preferences`, runs the 5-minute throttle, and either
+>    dispatches immediately OR defers the lead to the hourly digest worker.
+> 3. **Operator-typed reply** (the lead inbox "Reply" button) — POSTs the
+>    body to `/api/leads/[id]/reply`, which sends through Resend, threads
+>    via `In-Reply-To`, and writes the `email_messages` row + `email_out`
+>    `lead_events` entry.
+
+- **`lib/integrations/resend/client.ts`** — typed Resend wrapper.
+  `isResendConfigured()`, `isInboundWebhookConfigured()`, `sendEmail`,
+  `getMessage`, `mapResendEventToStatus`. Every call routes through
+  `callExternal()` (timeout / retry / `integration_call_log`). HTTP Bearer
+  auth on `RESEND_API_KEY`. Resend takes JSON, returns JSON.
+- **`lib/integrations/resend/types.ts`** — slices of the Resend API objects
+  this integration reads + the four row shapes (`client_email_senders` 0051
+  via this session, `email_messages` 0061, `email_templates` 0062,
+  `notification_preferences` 0063). Hand-written until the generated
+  `Database` type is regenerated.
+- **`lib/integrations/resend/webhook-verify.ts`** — Svix-style signature
+  verification (`HMAC-SHA256` over `{id}.{timestamp}.{rawBody}`, 5-minute
+  timestamp tolerance). Pure node:crypto, no Svix SDK. Used by both the
+  inbound webhook (whole emails) and the delivery webhook (status events) —
+  same signing secret, route discriminates on the JSON `type` field.
+- **`lib/integrations/resend/{senders,messages,templates,preferences}.ts`**
+  — typed data access against the four new tables. `senders.ts` includes
+  the global-unique `slug` check + `getSenderBySlug` / `findSenderByClientSlug`
+  the inbound webhook uses to resolve the plus-addressed recipient back to a
+  client. `messages.ts` carries `findOutboundByResendId` for In-Reply-To
+  fallback. `preferences.ts` exposes the throttle query
+  `lastSentAtForRecipient` against `notifications_outbound`.
+- **`lib/email/threading.ts`** — `generateThreadToken(leadId)` /
+  `parseThreadToken` (HMAC-SHA256 base64url-encoded payload with version +
+  leadId + iat); `composeReplyToAddress(clientSlug, token)` /
+  `parseInboundAddress(addr)`. HMAC key resolves `OAUTH_STATE_SECRET` →
+  `SUPABASE_SERVICE_ROLE_KEY` — same fallback chain as the OAuth state token.
+  `looksLikeAutoResponder(email)` — RFC 3834 `Auto-Submitted` + the older
+  `X-Autoreply` family + subject-pattern fallback (Out of Office /
+  Auto-Reply / On Vacation / On Holiday).
+- **`lib/email/templates.ts`** — pure renderer (`renderEmail({subject,
+  body_html, body_text}, context) → {subject, html, text, variablesUsed[],
+  missingVariables[]}`). `{{placeholder}}` substitution; a missing variable
+  renders empty (never the literal `{{…}}` — a customer must not receive an
+  un-substituted placeholder) and is reported. Plus the HTML↔plain helpers
+  `wrapPlainAsHtml(plain)` and `htmlToPlain(html)` the operator-reply path
+  uses to fill in whichever body the operator did not type.
+- **`lib/email/default-templates.ts`** — `DEFAULT_EMAIL_TEMPLATES` — the five
+  default bodies. **Must stay in lockstep with the seed bodies in migration
+  0062** (the constant is the send_email job's runtime fallback when a
+  template row is somehow absent; the migration is the source of truth an
+  operator edits).
+- **`lib/email/template-variables.ts`** — closed catalogue of
+  `{{placeholders}}` extending the SMS set with `{{review.link}}`,
+  `{{platform.inboxLink}}`, `{{lead.email}}` / `phone` / `fullName` /
+  `lastNameSuffix` / `preview`, and the digest variables. Drives a future
+  editor's variable picker (deferred, same precedent as SMS).
+- **`lib/integrations/resend/job-types.ts`** + **`job-handlers.ts`** — four
+  registered handlers via `job-handler-manifest.ts`:
+  - **`send_email`** — the workhorse. Loads the template (db row, falling
+    back to `DEFAULT_EMAIL_TEMPLATES`), renders against a context built from
+    the client + the related lead, sends via Resend, writes the
+    `email_messages` row. Customer-facing templates carry a Reply-To with
+    a freshly-minted thread token; operator-facing templates do not.
+    Retryable failures with attempts left re-throw so the job requeues;
+    terminal failures record a `failed` row (no duplicate per-retry rows —
+    same discipline as `send_sms`).
+  - **`send_lead_notification`** — fan-out triggered by the AFTER INSERT
+    trigger on `leads` (0063). Looks up recipients via
+    `listNewLeadRecipients`, checks each against the 5-minute throttle on
+    `notifications_outbound`, then dispatches `send_email` for immediates
+    or sets `leads.notification_pending_at` for everyone throttled / on the
+    hourly+daily frequency tiers.
+  - **`batch_notification_digest`** — hourly worker (scheduled by `pg_cron`
+    in 0063). Finds leads with `notification_pending_at` set, groups by
+    client, sends one `lead_digest` send_email per (client, recipient),
+    clears the flags.
+  - **`send_test_notification`** — operator-triggered test send from the
+    settings UI; renders a synthetic lead_notification.
+- **`lib/integrations/resend/use-email.ts`** — `'use client'`. Browser
+  hooks: `useClientEmailSender(clientId)`, `useNotificationPreferences`,
+  plus the matching `useRegisterEmailSender` /
+  `useUpdateEmailSender` / `useCreateNotificationPreference` /
+  `useUpdateNotificationPreference` / `useDeleteNotificationPreference` /
+  `useTestNotification` mutation hooks.
+- **`app/api/integrations/resend/sender/route.ts`** — `POST`, operator-only.
+  `action: 'register'` provisions the per-client slug + display name (the
+  slug is globally unique — a pre-check returns a friendlier 409 than the
+  constraint violation); `action: 'update'` edits the display name or
+  toggles `status` between `active` / `suspended`.
+- **`app/api/integrations/resend/preferences/route.ts`** — `POST`,
+  operator-only. `create` / `update` / `delete` against
+  `notification_preferences` (per-client recipient configuration).
+- **`app/api/integrations/resend/test-notification/route.ts`** — `POST`,
+  operator-only. Enqueues `send_test_notification` for the "Test send"
+  button on the settings UI.
+- **`app/api/integrations/resend/inbound/route.ts`** — `POST`,
+  signature-authenticated (Svix). Resend POSTs every inbound email here.
+  Parses the plus-addressing back to (clientSlug, token); verifies the
+  thread token's HMAC; cross-tenant guards that the lead belongs to the
+  resolved client; detects auto-responders; re-uploads attachments to the
+  email-attachments Storage bucket (0064); inserts the inbound
+  `email_messages` row + an `email_in` `lead_events` event (skipped for
+  auto-responders). Returns 200 once verified (even on a routing failure —
+  returning non-200 would make Resend retry indefinitely; an inbound to a
+  bad address is operator-debug territory, logged to `integration_call_log`
+  with `operation='rejected_inbound'`).
+- **`app/api/integrations/resend/webhook/route.ts`** — `POST`,
+  signature-authenticated. Resend's delivery status callback —
+  updates outbound rows' status by `resend_message_id` as Resend reports
+  `email.sent` → `delivered` (or `bounced` / `complained` / `failed`).
+- **`app/api/leads/[id]/reply/route.ts`** — `POST`, lead-access-gated. The
+  body of the lead inbox's reply composer POSTs here. Resolves the most-
+  recent outbound to set `In-Reply-To` (so mail clients thread the
+  conversation), sends through Resend with a freshly-minted thread token
+  (so the next inbound from the customer reaches the right lead), writes
+  the `email_messages` row + the `email_out` `lead_event`.
+- **`components/shared/leads/LeadConversationComposer.tsx`** — `'use client'`.
+  Wraps the visual `ConversationComposer` and wires the **Email** channel
+  to `useReplyToLead`. The SMS channel stays inert ("sending SMS from the
+  inbox is a Phase 8 concern" — the automation execution engine, see the
+  "Automation overlap / anti-spam suppression rules" parked decision below).
+  Channel availability follows what's on file: a lead with no email locks
+  the composer to SMS, a lead with no phone locks to email, both available
+  defaults to Email.
+- **`components/shared/settings/EmailSenderSection.tsx`** — `'use client'`.
+  The slug + display-name provisioning panel on sub-account `/settings/email`,
+  with the address preview `{slug}@mail.webnua.com` + a pause/resume affordance.
+- **`components/shared/settings/NotificationPreferencesSection.tsx`** —
+  `'use client'`. The operator-recipient list on sub-account
+  `/settings/notifications`. Add / remove recipients, per-event toggles
+  (`notify_on_new_lead` / `_payment_failure` / `_review_received`), the
+  digest-frequency select (immediate / hourly / daily), and a Test send
+  button.
+- **`app/settings/email/page.tsx`** — the new sub-account-only settings
+  tab (added to `subAccountSettingsNav` + the layout's `SUB_ACCOUNT_ONLY`
+  guard). Composes `EmailSenderSection` only — template editing is deferred
+  to a future Automations editor session.
+- **`app/settings/notifications/page.tsx`** — now a `'use client'` role
+  dispatcher. Operator + sub-account → `NotificationPreferencesSection`;
+  client-role → the existing channel-preferences stub (preserved). The
+  layout's `SUB_ACCOUNT_ONLY` guard keeps an operator in agency mode away.
+- **Lead-followup email trigger** — `app/api/forms/submit/route.ts`
+  enqueues a `send_email` (`lead_followup`) job alongside the SMS-acknowledgment
+  enqueue, when the public form captured a customer email. Best-effort —
+  a job-enqueue failure never fails the lead capture. The operator
+  **new-lead notification** is fanned by a DB trigger on `leads`
+  (migration 0063), so the public route stays minimal.
+
+#### Resend email — operator setup
+
+> One-time steps to make email work in a deployment.
+
+1. Create a Resend account (resend.com).
+2. Add and verify the **sending domain** (default: `mail.webnua.com`). Resend's
+   dashboard issues DNS records — add the **DKIM** CNAMEs, the **SPF**
+   `include`/`v=spf1` TXT, and a **DMARC** TXT (`v=DMARC1; p=quarantine; …`)
+   at the registrar. Resend's dashboard shows verification status; do not
+   send until all three are green.
+3. Set up **inbound email**: in the Resend dashboard, configure inbound
+   routing on the same domain (or a subdomain) to POST every inbound message
+   to `{app origin}/api/integrations/resend/inbound`. This requires MX
+   records pointing to Resend.
+4. Create a **webhook** in the Resend dashboard pointing at the SAME
+   endpoint for delivery events: `{app origin}/api/integrations/resend/webhook`,
+   subscribed to `email.sent`, `email.delivered`, `email.bounced`,
+   `email.complained`, `email.failed`. (Or one webhook subscribed to
+   everything including `email.received` — the two routes discriminate on
+   the JSON `type`.) Copy the signing secret (`whsec_…`) into
+   `RESEND_WEBHOOK_SECRET`.
+5. Set the env vars (`.env.local` for dev, the deployment env for production):
+   `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, optionally `EMAIL_SENDING_DOMAIN`
+   (default `mail.webnua.com`). The threading HMAC reads `OAUTH_STATE_SECRET`
+   if set, falling back to `SUPABASE_SERVICE_ROLE_KEY`.
+6. Per client: an operator provisions a sender slug on sub-account
+   `/settings/email`. The sending address becomes `{slug}@mail.webnua.com`.
+   Adds notification recipients on `/settings/notifications` (sub-account
+   mode) — typically the operator's own email + the client's own.
+
 ### `shared/website/` — website hub + section editor shell (Phase 6 · Cluster 5 · Session 3 → 3.5)
 
 > **Architectural note — `/website` is shared between roles.** Lives at top-level `app/website/` (moved out of `(client)/` in Session 3) with its own `layout.tsx` ('use client', reads `useRole()`, picks `ClientSidebar` vs `AdminSidebar`, mounts `DevRoleSwitcher`). The hub page (`app/website/page.tsx`) renders header/footer/nav cards + page grid for the active workspace's website. The page editor lives at `app/website/[pageId]/page.tsx`; two reserved sibling routes `app/website/header/page.tsx` and `app/website/footer/page.tsx` take precedence over `[pageId]` and mount the editor in singleton mode (design doc §2.6). The agency-level cross-client matrix lives separately at `app/(admin)/websites/` (admin-only).
@@ -1136,6 +1334,10 @@ The Phase 6 generator pair, called via the `/api/generate-site` route. See the p
 - **`0058_client_sms_sender_registration.sql`** — Phase 7 Twilio SMS. Adds `twilio_registration_sid` to `client_sms_senders` (from `0050`) — the Twilio AlphaSender resource SID `registerSenderID()` writes and `getSenderIDStatus()` polls. NULL until the operator submits a sender id. RLS / grants unchanged (the column inherits the table's operator-SELECT / service-role-write policy).
 - **`0059_sms_messages.sql`** — Phase 7 Twilio SMS. The SMS send log — one row per outbound send: `client_id`, `sender_id` (the alphanumeric value snapshot), `recipient_phone`, `message_body`, `segments_count` + `encoding` (computed by the SMS validator at send), `twilio_message_sid`, `status` (queued/sent/delivered/failed/undelivered), `error_code`/`error_message`, `related_lead_id`, `cost_eur`. Indexed by client+sent_at and by Twilio SID (the status-webhook lookup). RLS: SELECT for `accessible_client_ids()` (operators see their clients' messages, a client sees its own); writes service-role only.
 - **`0060_sms_templates.sql`** — Phase 7 Twilio SMS. Per-client SMS templates — `(client_id, template_key)` unique, `body`, `is_default`, `last_edited_at`/`by`. `template_key` check-constrained to the closed 4 (`lead_acknowledgment` / `job_confirmation` / `arrival_notification` / `review_request`). A `private.seed_sms_templates()` helper + an `AFTER INSERT` trigger on `clients` seed the four defaults for every new client (SECURITY DEFINER — a seed is a system event); existing clients are backfilled. The default bodies here must stay in lockstep with `DEFAULT_SMS_TEMPLATES` (`lib/sms/default-templates.ts`). RLS: SELECT for `accessible_client_ids()`; writes service-role only. Editor UI is deferred to the Automations feature — until then the `send_sms` job reads the seeded body straight from the row.
+- **`0061_email_messages.sql`** — Phase 7 Resend. The email conversation log — one row per outbound send + per inbound reply, discriminated by `direction`. Columns: `client_id`, `sender_address` / `recipient_address` / `reply_to_address` snapshots, `subject` + `body_text` + `body_html`, `resend_message_id` (status webhook lookup), `in_reply_to_message_id` (RFC 2822 threading), `status` (queued/sent/delivered/bounced/complained/failed/received), `related_lead_id`, `thread_token`, `attachments` jsonb, `is_auto_responder`, `sent_by`. Indexed by `(related_lead_id, occurred_at)` for the conversation read, by `resend_message_id` for the delivery webhook, by `thread_token` for inbound routing debug. RLS: SELECT for `accessible_client_ids()` (operators see their clients' messages, a client sees their own); writes service-role only.
+- **`0062_email_templates.sql`** — Phase 7 Resend. Per-client email templates — `(client_id, template_key)` unique. `template_key` check-constrained to the closed 5 (`lead_followup` / `review_request` / `quote_followup` / `lead_notification` / `lead_digest`). Each row carries `subject` + `body_html` + `body_text` (Resend sends both; mail clients pick). A `private.seed_email_templates()` helper + AFTER INSERT trigger on `clients` seed all five defaults per client (SECURITY DEFINER, same pattern as 0060); existing clients are backfilled. **Default bodies stay in lockstep with `DEFAULT_EMAIL_TEMPLATES`** (`lib/email/default-templates.ts`) — editing the defaults means BOTH files. Operator template editor is deferred (same precedent as SMS templates).
+- **`0063_notification_preferences.sql`** — Phase 7 Resend. Per-client operator notification recipients. `(client_id, operator_email)` unique, with per-event flags (`notify_on_new_lead` / `notify_on_payment_failure` / `notify_on_review_received`, all default true) + `digest_frequency` (`immediate` / `hourly` / `daily`). Adds `leads.notification_pending_at` (timestamptz, NULL when no notification has been deferred — set by the throttle path of `send_lead_notification`, cleared by the digest worker). AFTER INSERT trigger on `leads` enqueues a `send_lead_notification` job. `pg_cron` schedule enqueues `batch_notification_digest` hourly. RLS: operators see their accessible clients' preferences; writes service-role only.
+- **`0064_email_attachments_bucket.sql`** — Phase 7 Resend. Supabase Storage bucket for email attachments (outbound: operator-attached files on a reply; inbound: re-uploaded from the inbound MIME so the conversation view can display them). Private bucket; reads gated on `accessible_client_ids()` via the path's first segment (the client slug). Writes service-role only. Path convention: `{client_slug}/{direction}/{email_message_id}/{filename}`.
 
 ---
 
@@ -1171,8 +1373,23 @@ The Phase 6 generator pair, called via the `/api/generate-site` route. See the p
   the lead-acknowledgment auto-trigger on the public form-submit flow. See the
   "Twilio SMS" inventory + the "Twilio SMS — operator setup" steps above;
   migrations `0058`–`0060`.
-  The remaining per-provider business logic — GBP review pull, Meta campaign
-  metrics, Resend email wiring — follows.
+  **Resend email — DONE.** Two-way email integration with inbound reply
+  routing: the Resend wrapper, HMAC-signed plus-addressed thread tokens
+  (`{clientSlug}+lead-{token}@mail.webnua.com`), per-client sender slug
+  + display name provisioning UI, the five seeded templates (`lead_followup`
+  / `review_request` / `quote_followup` / `lead_notification` /
+  `lead_digest`), the inbound webhook (signature-verified, cross-tenant-
+  guarded, auto-responder-detecting, attachment-reuploading), the delivery
+  webhook (status reconciliation by Resend message id), the operator-side
+  reply flow from inside the lead inbox, and operator notification
+  preferences with per-client recipients, per-event flags, and an
+  immediate/hourly/daily digest model. The lead-followup customer email is
+  enqueued from the public form-submit route when an email is captured;
+  the operator new-lead notification fans automatically via the migration
+  0063 trigger. See the "Resend email" inventory + the "Resend email —
+  operator setup" steps above; migrations `0061`–`0064`. The remaining
+  per-provider business logic — GBP review pull, Meta campaign metrics —
+  follows.
 - **Phase 8 — Automation / messaging execution engine.** Automations are
   definitions only — nothing sends. Needs a scheduler (edge function + cron),
   a `messaging_events` send-log table, and the suppression / anti-spam rules

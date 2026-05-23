@@ -20,7 +20,12 @@ const AGENCY_ONLY = [
   '/settings/seats',
   '/settings/api',
 ];
-const SUB_ACCOUNT_ONLY = ['/settings/profile', '/settings/notifications', '/settings/sms'];
+const SUB_ACCOUNT_ONLY = [
+  '/settings/profile',
+  '/settings/notifications',
+  '/settings/email',
+  '/settings/sms',
+];
 
 function matches(pathname: string, prefixes: string[]): boolean {
   return prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));

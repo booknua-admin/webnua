@@ -32,6 +32,7 @@ import { NextResponse } from 'next/server';
 import { getServiceClient } from '@/lib/supabase/server';
 import { clientIp, rateLimit } from '@/lib/public-site/rate-limit';
 import { enqueueJobImmediate } from '@/lib/integrations/_shared/jobs';
+import { SEND_EMAIL_JOB } from '@/lib/integrations/resend/job-types';
 import { SEND_SMS_JOB } from '@/lib/integrations/twilio/job-types';
 
 const MAX_FIELDS = 60;
@@ -288,6 +289,30 @@ export async function POST(req: Request) {
       );
     } catch (smsError) {
       console.warn('[forms/submit] lead-acknowledgment SMS enqueue failed', smsError);
+    }
+  }
+
+  // Lead-followup email — when no phone was captured (so the SMS branch did
+  // not fire), or as a paired follow-up to the SMS. Enqueued as a send_email
+  // job; the handler skips silently when Resend is unconfigured or no email
+  // sender is provisioned. Best-effort wrapper, same pattern as the SMS
+  // enqueue. The lead-notification email to OPERATORS is fanned by the DB
+  // trigger in migration 0063 — separate concern.
+  if (email) {
+    try {
+      await enqueueJobImmediate(
+        SEND_EMAIL_JOB,
+        {
+          clientId,
+          templateKey: 'lead_followup',
+          recipientEmail: email,
+          recipientName: name,
+          relatedLeadId: lead.id,
+        },
+        { provider: 'resend', clientId, correlationId: lead.id },
+      );
+    } catch (emailError) {
+      console.warn('[forms/submit] lead-followup email enqueue failed', emailError);
     }
   }
 

@@ -1,4 +1,25 @@
+'use client';
+
+// =============================================================================
+// /settings/notifications — role-dispatched.
+//
+// Client-role users see their per-channel notification preferences (the
+// existing stub — Voltline-themed channel toggles + quiet hours).
+//
+// Operator-role users see per-client notification RECIPIENTS — the
+// NotificationPreferencesSection from Phase 7 Resend: add / edit / remove
+// the operator addresses that receive new-lead emails for this client,
+// with per-event flags and digest frequency.
+//
+// The settings layout already restricts this path to sub-account mode for
+// operators, so the operator branch always has an active client.
+// =============================================================================
+
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+
 import { NotificationRow } from '@/components/shared/settings/NotificationRow';
+import { NotificationPreferencesSection } from '@/components/shared/settings/NotificationPreferencesSection';
 import { SettingsFieldRow } from '@/components/shared/settings/SettingsFieldRow';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
@@ -6,14 +27,96 @@ import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Switch } from '@/components/ui/switch';
 import { Eyebrow } from '@/components/ui/eyebrow';
+import { useRole } from '@/lib/auth/user-stub';
+import { useClientId } from '@/lib/clients/queries';
 import { clientNotifications, clientQuietHours } from '@/lib/settings/client-notifications';
+import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
-export default function ClientSettingsNotificationsPage() {
+export default function SettingsNotificationsPage() {
+  const router = useRouter();
+  const { role, hydrated } = useRole();
+  const { activeClient, hydrated: workspaceHydrated } = useWorkspace();
+
+  // The settings layout already redirects operators in agency mode. A
+  // client-role user reaches this page through their own nav (no active
+  // client switch needed).
+  useEffect(() => {
+    if (hydrated && role === 'admin' && workspaceHydrated && !activeClient) {
+      router.replace('/settings');
+    }
+  }, [hydrated, role, workspaceHydrated, activeClient, router]);
+
+  if (!hydrated || !role) return <Resolving />;
+
+  if (role === 'admin') {
+    if (!workspaceHydrated || !activeClient) return <Resolving />;
+    return (
+      <OperatorContent clientSlug={activeClient.id} clientName={activeClient.name} />
+    );
+  }
+  return <ClientContent />;
+}
+
+function Resolving() {
+  return (
+    <div className="flex flex-1 items-center justify-center px-10 py-12">
+      <div className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+        {'// Loading notifications…'}
+      </div>
+    </div>
+  );
+}
+
+// --- operator branch ---------------------------------------------------------
+
+function OperatorContent({
+  clientSlug,
+  clientName,
+}: {
+  clientSlug: string;
+  clientName: string;
+}) {
+  const { data: clientId } = useClientId(clientSlug);
   return (
     <>
-      <Topbar breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="Notifications" />} />
+      <Topbar
+        breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="Notifications" />}
+      />
       <SettingsShell
-        eyebrow="Voltline · your account"
+        eyebrow={`Sub-account · ${clientName}`}
+        title={
+          <>
+            Who hears about <em>{clientName}</em>.
+          </>
+        }
+        subtitle={
+          <>
+            <strong>Per-client notification recipients.</strong> Add operator addresses
+            that should receive new-lead emails, payment-failure alerts, and review
+            pings. Each recipient can be set to immediate (with anti-spam throttle) or
+            digested.
+          </>
+        }
+      >
+        <NotificationPreferencesSection
+          clientId={clientId ?? null}
+          clientName={clientName}
+        />
+      </SettingsShell>
+    </>
+  );
+}
+
+// --- client branch (existing stub copy) --------------------------------------
+
+function ClientContent() {
+  return (
+    <>
+      <Topbar
+        breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="Notifications" />}
+      />
+      <SettingsShell
+        eyebrow="Your account"
         title={
           <>
             Your <em>settings</em>.
@@ -36,8 +139,8 @@ export default function ClientSettingsNotificationsPage() {
             description={
               <>
                 Toggle the channels for each notification type.{' '}
-                <strong>Critical alerts (negative reviews, missed bookings)</strong> are always sent
-                via SMS regardless of these settings.
+                <strong>Critical alerts (negative reviews, missed bookings)</strong> are
+                always sent via SMS regardless of these settings.
               </>
             }
           >
