@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { useEffect } from 'react';
 
 import { LeadDetailHeader } from '@/components/shared/leads/LeadDetailHeader';
 import { LeadQuickActions } from '@/components/shared/leads/LeadQuickActions';
@@ -12,12 +13,21 @@ import { RailCard } from '@/components/shared/RailCard';
 import { TicketDetailLayout } from '@/components/shared/tickets/TicketDetailLayout';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { normalizeError } from '@/lib/errors';
-import { useLeadDetail } from '@/lib/leads/queries';
+import { useLeadDetail, useMarkLeadRead } from '@/lib/leads/queries';
 
 function AdminLeadDetailContent() {
   const params = useParams<{ id: string }>();
   const id = params.id ?? '';
   const { data: lead, isLoading, error } = useLeadDetail(id);
+
+  // Opening the lead marks it read for the current operator (upserts
+  // lead_reads.read_at = now()). Fire-and-forget — a failed mark-read
+  // doesn't fail the page. Re-runs only when the id changes.
+  const markRead = useMarkLeadRead();
+  useEffect(() => {
+    if (id) markRead.mutate(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   return (
     <>

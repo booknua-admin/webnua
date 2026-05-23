@@ -35,6 +35,10 @@ export const LEAD_URGENCY_LABEL: Record<LeadUrgency, string> = {
 export type LeadTab = {
   id: string;
   label: string;
+  /** Unread lead count in this tab — has customer activity newer than the
+   *  operator's last view. Renders as a rust pill ONLY when > 0; the tab
+   *  is otherwise unbadged (the standard email-inbox model: the badge
+   *  represents things needing attention, not total volume). */
   count?: number;
 };
 
@@ -70,6 +74,9 @@ export type ClientLeadRow = {
   statusLabel?: string;
   urgency?: LeadUrgency;
   age: string;
+  /** Has customer activity newer than the operator's last view — show
+   *  the rust dot next to the name. Clears when the operator opens the
+   *  lead detail (the detail page upserts `lead_reads.read_at = now()`). */
   unread: boolean;
   href: string;
   completion: LeadCompletion;
@@ -92,6 +99,9 @@ export type AdminLeadRow = {
   age: string;
   meta: string;
   metaTone: 'good' | 'rust' | 'quiet';
+  /** Has customer activity newer than the operator's last view — show
+   *  the rust dot next to the name. Clears when the operator opens the
+   *  lead detail (the detail page upserts `lead_reads.read_at = now()`). */
   unread: boolean;
   href: string;
   completion: LeadCompletion;

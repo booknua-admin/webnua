@@ -57,13 +57,17 @@ function LeadTabsBar({
             )}
           >
             {tab.label}
-            {typeof tab.count === 'number' ? (
+            {/* Single rust pill = unread count for this tab. Suppressed
+             *  when 0 so caught-up tabs are unbadged (email-inbox model). */}
+            {typeof tab.count === 'number' && tab.count > 0 ? (
               <span
+                title={`${tab.count} unread`}
+                aria-label={`${tab.count} unread`}
                 className={cn(
-                  'rounded-full px-[7px] py-[1px] font-mono text-[11px]',
+                  'rounded-full px-[7px] py-[1px] font-mono text-[11px] font-medium',
                   isActive
-                    ? 'bg-paper/15 text-paper'
-                    : 'bg-ink/8 text-ink-quiet',
+                    ? 'bg-rust-light/25 text-paper'
+                    : 'bg-rust/[0.14] text-rust',
                 )}
               >
                 {tab.count}

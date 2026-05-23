@@ -257,6 +257,36 @@ export async function POST(request: Request): Promise<Response> {
     headers: email.headers,
   });
 
+  // --- 5a. Body extraction (Resend's field names vary by API version) ------
+  // Defensive: try the common aliases. Records show plain `text` / `html`
+  // sometimes come back empty even when the email has content — typically
+  // because Resend nests the body under `parsed.*` or `body_*` / `*Body`
+  // / `*Plain`. The raw payload structure is captured below for diagnosis.
+  const bodyText = pickStringField(payload.data as Record<string, unknown>, [
+    'text',
+    'body_text',
+    'bodyText',
+    'plain',
+    'text_body',
+    'plainBody',
+  ]);
+  const bodyHtml = pickStringField(payload.data as Record<string, unknown>, [
+    'html',
+    'body_html',
+    'bodyHtml',
+    'html_body',
+    'htmlBody',
+  ]);
+  const resendId = pickStringField(payload.data as Record<string, unknown>, [
+    'id',
+    'email_id',
+    'emailId',
+  ]);
+  const inReplyToHeader = pickStringField(
+    payload.data as Record<string, unknown>,
+    ['in_reply_to', 'inReplyTo'],
+  );
+
   // --- 6. Attachment re-upload ---------------------------------------------
   const attachments = await reuploadAttachments(
     parsed.clientSlug,
@@ -273,10 +303,10 @@ export async function POST(request: Request): Promise<Response> {
       recipient_address: toAddress,
       reply_to_address: null,
       subject: email.subject ?? '',
-      body_text: email.text ?? '',
-      body_html: email.html ?? '',
-      resend_message_id: email.id ?? null,
-      in_reply_to_message_id: email.in_reply_to ?? null,
+      body_text: bodyText,
+      body_html: bodyHtml,
+      resend_message_id: resendId || null,
+      in_reply_to_message_id: inReplyToHeader || null,
       status: 'received',
       related_lead_id: resolvedLeadId,
       thread_token: parsed.threadToken,
@@ -287,6 +317,7 @@ export async function POST(request: Request): Promise<Response> {
     // Also record a `email_in` lead_event so the existing lead-timeline UI
     // surfaces the reply without needing to query email_messages.
     if (!isAuto) {
+      const renderedBody = bodyText || stripHtml(bodyHtml);
       await svc.from('lead_events').insert({
         lead_id: resolvedLeadId,
         kind: 'email_in',
@@ -295,7 +326,7 @@ export async function POST(request: Request): Promise<Response> {
         payload: {
           emailMessageId: row.id,
           subject: email.subject ?? '',
-          body: email.text ?? stripHtml(email.html ?? ''),
+          body: renderedBody,
           senderName: senderNameOf(email.from ?? ''),
           fromAddress: email.from ?? '',
         },
@@ -304,14 +335,28 @@ export async function POST(request: Request): Promise<Response> {
       // Auto-status: an inbound reply on a `contacted` lead bumps it
       // back to `new` so the operator sees it as needing attention.
       // Other terminal statuses (booked / completed / lost) stay put —
-      // a reply on a completed job is not a new lead to chase.
+      // a reply on a completed job is not a new lead to chase. The
+      // status update itself moves the lead between inbox tabs;
+      // we intentionally DO NOT write a status_changed lead_event for
+      // this transition — it surfaces as timeline noise on every reply.
+      // The "needs your reply" signal lives on the inbox row (rust dot +
+      // tab count badge), derived from the latest message direction.
       // Best-effort: a status update failure does NOT fail the inbound.
       await maybeReturnToNew(resolvedLeadId);
     }
     logInbound(
       'inbound_email_received',
       sender.client_id,
-      { messageId: row.id, isAuto, attachments: attachments.length },
+      {
+        messageId: row.id,
+        isAuto,
+        attachments: attachments.length,
+        payloadKeys: Object.keys(
+          (payload.data as Record<string, unknown>) ?? {},
+        ),
+        bodyTextLen: bodyText.length,
+        bodyHtmlLen: bodyHtml.length,
+      },
       200,
       null,
       isAuto ? 'auto-responder' : null,
@@ -362,9 +407,32 @@ function stripHtml(html: string): string {
     .trim();
 }
 
+/** Pluck the first non-empty string field from a payload object, trying
+ *  each candidate key in order. Defensive against vendor field-naming
+ *  drift — Resend's inbound payload schema has used `text` / `body_text`
+ *  / `parsed.text` / etc. across API versions. */
+function pickStringField(
+  obj: Record<string, unknown> | null | undefined,
+  keys: string[],
+): string {
+  if (!obj) return '';
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === 'string' && value.length > 0) return value;
+  }
+  return '';
+}
+
 /** Move a `contacted` lead back to `new` after an inbound reply lands, so the
  *  operator sees it as needing attention again. Other statuses stay put.
- *  Best-effort: a failure does NOT fail the inbound webhook. */
+ *  Best-effort: a failure does NOT fail the inbound webhook.
+ *
+ *  This intentionally does NOT write a `status_changed` lead_event. The
+ *  status flip is plumbing (it moves the lead between inbox tabs); writing
+ *  a timeline event for every reply was too noisy and added no information
+ *  the email_in event below doesn't already carry. The "needs your reply"
+ *  signal surfaces on the inbox row + tab count badges instead.
+ */
 async function maybeReturnToNew(leadId: string): Promise<void> {
   try {
     const svc = getServiceClient();
@@ -381,15 +449,7 @@ async function maybeReturnToNew(leadId: string): Promise<void> {
       .eq('id', leadId);
     if (updateError) {
       console.warn('[resend/inbound] auto-status update failed', updateError.message);
-      return;
     }
-    await svc.from('lead_events').insert({
-      lead_id: leadId,
-      kind: 'status_changed',
-      occurred_at: new Date().toISOString(),
-      actor_user_id: null,
-      payload: { from: 'Contacted', to: 'New', auto: 'inbound-reply' },
-    });
   } catch (error) {
     console.warn('[resend/inbound] auto-status threw', error);
   }

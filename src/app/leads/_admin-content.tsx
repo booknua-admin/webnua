@@ -51,13 +51,18 @@ function AdminLeadsContent() {
     return counts;
   }, [allLeads]);
 
-  // Tab ids map 1:1 to LeadStatus. Counts recomputed from the client pool.
+  // Tab ids map 1:1 to LeadStatus. The badge represents UNREAD leads in
+  // that tab (suppressed when 0) — the email-inbox model the user asked
+  // for: the count = things that need looking at, not total volume.
   const tabs = useMemo(
     () =>
-      adminLeadsTabs.map((tab) => ({
-        ...tab,
-        count: clientPool.filter((lead) => lead.status === tab.id).length,
-      })),
+      adminLeadsTabs.map((tab) => {
+        const tabRows = clientPool.filter((lead) => lead.status === tab.id);
+        return {
+          ...tab,
+          count: tabRows.filter((lead) => lead.unread).length,
+        };
+      }),
     [clientPool],
   );
 

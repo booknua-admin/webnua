@@ -16,17 +16,20 @@ function ClientLeadsContent() {
   const [activeTab, setActiveTab] = useState('new');
   const { data: leads, isLoading, error } = useClientLeadsInbox();
 
-  // Tab ids map 1:1 to LeadStatus (plus `all`). Counts are recomputed from
-  // the live rows so the badge and the filtered list always agree.
+  // Tab ids map 1:1 to LeadStatus (plus `all`). The badge represents
+  // UNREAD leads in that tab (suppressed when 0) — the email-inbox model
+  // the user asked for: the count = things that need looking at, not
+  // total volume.
   const tabs = useMemo(() => {
     const rows = leads ?? [];
-    return clientLeadsTabs.map((tab) => ({
-      ...tab,
-      count:
-        tab.id === 'all'
-          ? rows.length
-          : rows.filter((lead) => lead.status === tab.id).length,
-    }));
+    return clientLeadsTabs.map((tab) => {
+      const tabRows =
+        tab.id === 'all' ? rows : rows.filter((lead) => lead.status === tab.id);
+      return {
+        ...tab,
+        count: tabRows.filter((lead) => lead.unread).length,
+      };
+    });
   }, [leads]);
 
   const visibleLeads = useMemo(() => {
