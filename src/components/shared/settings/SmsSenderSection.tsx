@@ -36,6 +36,14 @@ const STATUS_DISPLAY: Record<SmsSenderStatus, { label: string; className: string
 
 const SENDER_ID_RE = /^[A-Za-z0-9]{1,11}$/;
 
+/** A suggested sender id derived from the client name — strip non-alphanumeric
+ *  characters and truncate to the 11-char limit. Just a placeholder hint; the
+ *  operator types the real sender id. */
+function senderIdFromName(name: string): string {
+  const cleaned = name.replace(/[^A-Za-z0-9]/g, '').slice(0, 11);
+  return cleaned || 'Brand';
+}
+
 function senderIdProblem(value: string): string | null {
   if (value.length === 0) return null;
   if (!SENDER_ID_RE.test(value)) return 'Use 1–11 letters and digits only — no spaces.';
@@ -128,7 +136,7 @@ export function SmsSenderSection({
                 <Input
                   value={draft}
                   maxLength={11}
-                  placeholder="Voltline"
+                  placeholder={senderIdFromName(clientName)}
                   aria-invalid={problem !== null}
                   onChange={(e) => setDraft(e.target.value)}
                   className="w-[200px] font-mono"
