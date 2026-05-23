@@ -39,7 +39,7 @@ import {
 import { getIntegrationDb } from '@/lib/integrations/_shared/db-types';
 import {
   getInboundEmailSecret,
-  getMessage,
+  getReceivedEmail,
   isInboundEmailWebhookConfigured,
   isResendConfigured,
 } from '@/lib/integrations/resend/client';
@@ -261,21 +261,28 @@ export async function POST(request: Request): Promise<Response> {
   });
 
   // --- 5a. Body extraction --------------------------------------------------
-  // Resend's `email.received` webhook payload OMITS the body entirely in the
-  // current API version — it only delivers metadata (subject, from, to,
-  // email_id, attachments). The body must be fetched separately via
-  // `GET /emails/{email_id}`. We still try the historical aliases first in
-  // case a future API version starts including the body inline.
-  const resendId = pickStringField(payload.data as Record<string, unknown>, [
-    'id',
-    'email_id',
-    'emailId',
+  //
+  // Resend's `email.received` webhook payload is METADATA ONLY (confirmed
+  // against their docs + observed in integration_call_log: keys are
+  // [attachments, bcc, cc, created_at, email_id, from, message_id,
+  //  subject, to] — no body, headers, or attachment content).
+  //
+  // The body must be fetched separately via `GET /emails/receiving/{id}`
+  // (the inbound-specific path; the outbound `/emails/{id}` returns 404
+  // for inbound ids). This mirrors `emails.receiving.get` in Resend's
+  // official Node/Go SDKs.
+  //
+  // Best-effort: a fetch failure leaves the body empty (we still record
+  // the event with subject so the operator at least sees a reply landed),
+  // and the call-log row gets a diagnostic message + raw payload sample
+  // so the next-step debug doesn't need a redeploy.
+  const dataRec = (payload.data as Record<string, unknown>) ?? {};
+  const resendId = pickStringField(dataRec, ['id', 'email_id', 'emailId']);
+  const inReplyToHeader = pickStringField(dataRec, [
+    'in_reply_to',
+    'inReplyTo',
   ]);
-  const inReplyToHeader = pickStringField(
-    payload.data as Record<string, unknown>,
-    ['in_reply_to', 'inReplyTo'],
-  );
-  let bodyText = pickStringField(payload.data as Record<string, unknown>, [
+  let bodyText = pickStringField(dataRec, [
     'text',
     'body_text',
     'bodyText',
@@ -283,25 +290,21 @@ export async function POST(request: Request): Promise<Response> {
     'text_body',
     'plainBody',
   ]);
-  let bodyHtml = pickStringField(payload.data as Record<string, unknown>, [
+  let bodyHtml = pickStringField(dataRec, [
     'html',
     'body_html',
     'bodyHtml',
     'html_body',
     'htmlBody',
   ]);
-  // Webhook payload didn't carry the body — fetch the full message via the
-  // Resend API. This is the standard pattern in their current API version.
-  // Best-effort: a fetch failure leaves the body empty (we still record the
-  // event with subject so the operator at least sees a reply landed).
   if (!bodyText && !bodyHtml && resendId && isResendConfigured()) {
-    const fetched = await getMessage(resendId, sender.client_id);
+    const fetched = await getReceivedEmail(resendId, sender.client_id);
     if (fetched.ok) {
       if (typeof fetched.data.text === 'string') bodyText = fetched.data.text;
       if (typeof fetched.data.html === 'string') bodyHtml = fetched.data.html;
     } else {
       console.warn(
-        '[resend/inbound] body fetch failed',
+        '[resend/inbound] received-email fetch failed',
         fetched.error.message,
       );
     }
@@ -388,22 +391,37 @@ export async function POST(request: Request): Promise<Response> {
       // Best-effort: a status update failure does NOT fail the inbound.
       await maybeReturnToNew(resolvedLeadId);
     }
+    // Capture a payload sample for diagnosis. When the body is empty
+    // (the symptom of the wrong Resend feature being configured —
+    // "Webhooks" instead of "Inbound Endpoints"), dump a richer sample
+    // including the FULL raw payload truncated to 2KB, so the next
+    // inbound after a config change makes the new payload shape visible
+    // without re-deploying. When the body is present, just record the
+    // shape summary — no need to bloat the log.
+    const bodyMissing = bodyText.length === 0 && bodyHtml.length === 0;
+    const logShape: Record<string, unknown> = {
+      messageId: row.id,
+      isAuto,
+      attachments: attachments.length,
+      payloadKeys: Object.keys(dataRec),
+      bodyTextLen: bodyText.length,
+      bodyHtmlLen: bodyHtml.length,
+    };
+    if (bodyMissing) {
+      logShape.diagnosis = 'no-body-after-fetch';
+      logShape.rawSample = rawBody.slice(0, 2048);
+    }
     logInbound(
       'inbound_email_received',
       sender.client_id,
-      {
-        messageId: row.id,
-        isAuto,
-        attachments: attachments.length,
-        payloadKeys: Object.keys(
-          (payload.data as Record<string, unknown>) ?? {},
-        ),
-        bodyTextLen: bodyText.length,
-        bodyHtmlLen: bodyHtml.length,
-      },
+      logShape,
       200,
-      null,
-      isAuto ? 'auto-responder' : null,
+      bodyMissing ? 'non_retryable' : null,
+      isAuto
+        ? 'auto-responder'
+        : bodyMissing
+          ? 'no-body — webhook + /emails/receiving fetch both empty'
+          : null,
     );
     return NextResponse.json({ received: true, messageId: row.id });
   } catch (error) {
