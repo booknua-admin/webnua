@@ -121,8 +121,7 @@ export function SmsSenderSection({
         ) : (
           <div className="rounded-[10px] border border-dashed border-rule bg-paper px-5 py-[18px]">
             <p className="mb-3 text-[13px] leading-[1.5] text-ink-quiet">
-              {clientName} has no SMS sender id yet. Submit one to start sending — usually the
-              business&apos;s short brand name.
+              {`${clientName} has no SMS sender id yet. Submit one to start sending — usually the business's short brand name.`}
             </p>
             <div className="flex items-start gap-3">
               <div className="flex flex-col gap-1">
