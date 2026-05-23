@@ -24,9 +24,10 @@ type ClientLeadRowProps = {
   statusLabel?: string;
   urgency?: LeadUrgency;
   age: string;
+  /** Has unseen customer activity — renders the left rust rail + faint
+   *  rust bg AND the small rust dot next to the lead's name. Clears once
+   *  the operator opens the lead detail. */
   unread: boolean;
-  /** Latest message is an inbound — render the rust reply dot next to the name. */
-  needsReply?: boolean;
   href: string;
   sourceKind: LeadSourceKind;
 };
@@ -44,9 +45,10 @@ type AdminLeadRowProps = {
   age: string;
   meta: string;
   metaTone: 'good' | 'rust' | 'quiet';
+  /** Has unseen customer activity — renders the left rust rail + faint
+   *  rust bg AND the small rust dot next to the lead's name. Clears once
+   *  the operator opens the lead detail. */
   unread: boolean;
-  /** Latest message is an inbound — render the rust reply dot next to the name. */
-  needsReply?: boolean;
   href: string;
   sourceKind: LeadSourceKind;
 };
@@ -88,11 +90,11 @@ function LeadRow(props: LeadRowProps) {
         </div>
         <div className="min-w-0">
           <div className="mb-1 flex items-center gap-2 truncate text-[14px] font-semibold text-ink">
-            {props.needsReply ? (
+            {props.unread ? (
               <span
-                title="Awaiting your reply"
-                aria-label="Awaiting your reply"
-                className="inline-block size-[7px] shrink-0 animate-pulse rounded-full bg-rust"
+                title="Unread"
+                aria-label="Unread"
+                className="inline-block size-[7px] shrink-0 rounded-full bg-rust"
               />
             ) : null}
             <span className="truncate">{props.name}</span>
@@ -137,11 +139,11 @@ function LeadRow(props: LeadRowProps) {
       </div>
       <div className="min-w-0">
         <div className="mb-1 flex items-center gap-2 truncate text-[14px] font-semibold text-ink">
-          {props.needsReply ? (
+          {props.unread ? (
             <span
-              title="Awaiting your reply"
-              aria-label="Awaiting your reply"
-              className="inline-block size-[7px] shrink-0 animate-pulse rounded-full bg-rust"
+              title="Unread"
+              aria-label="Unread"
+              className="inline-block size-[7px] shrink-0 rounded-full bg-rust"
             />
           ) : null}
           <span className="truncate">{props.name}</span>

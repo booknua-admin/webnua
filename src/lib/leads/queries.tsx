@@ -63,10 +63,9 @@ export type LeadInboxRecord = {
   clientSlug: string;
   preview: string;
   activity: LeadActivity;
+  /** Has customer activity newer than the operator's last view. Drives the
+   *  rust dot on the row and the per-tab count badge. */
   unread: boolean;
-  /** Latest message on the lead is an inbound — the customer's last word.
-   *  Drives the inbox row's rust dot + the per-tab count badge. */
-  needsReply: boolean;
   completion: LeadCompletion;
   sourceKind: LeadSourceKind;
 };
@@ -171,17 +170,31 @@ function derivePreview(events: LeadEventRow[]): string {
   return 'No message yet';
 }
 
-/** True when the lead's most-recent message event is an inbound (sms_in or
- *  email_in) — i.e. the customer's last word, not ours. Drives the rust
- *  "needs your reply" dot on the inbox row and the per-tab count badge.
- *  Form submits and status changes don't count — those aren't a customer
- *  reply waiting on action. */
-function deriveNeedsReply(events: LeadEventRow[]): boolean {
-  const latestMessage = [...events]
-    .filter((e) => MESSAGE_KINDS.has(e.kind))
-    .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))[0];
-  if (!latestMessage) return false;
-  return latestMessage.kind === 'sms_in' || latestMessage.kind === 'email_in';
+/** Customer-initiated event kinds — what counts as "something to look at".
+ *  Operator-side activity (status changes, our own outbound) does NOT count;
+ *  the operator already knows about their own actions. */
+const CUSTOMER_ACTIVITY_KINDS = new Set([
+  'form_submitted',
+  'sms_in',
+  'email_in',
+]);
+
+/** True when the lead has customer activity newer than the operator's last
+ *  view (or has never been opened). Drives the rust dot on the inbox row
+ *  and the rust count badge on the tab. Opening the lead detail upserts
+ *  `lead_reads.read_at = now()` which clears the flag — same model as a
+ *  standard email inbox: see something new, open it, it stops shouting.
+ *
+ *  `readAt = null` → lead has never been opened → unread if any customer
+ *  activity exists at all. */
+function deriveUnread(events: LeadEventRow[], readAt: string | null): boolean {
+  if (readAt === null) {
+    return events.some((e) => CUSTOMER_ACTIVITY_KINDS.has(e.kind));
+  }
+  return events.some(
+    (e) =>
+      CUSTOMER_ACTIVITY_KINDS.has(e.kind) && e.occurred_at > readAt,
+  );
 }
 
 /** The admin row's last-activity blurb (design doc §5 #1 — derived, not a
@@ -244,15 +257,19 @@ async function fetchLeadInbox(): Promise<LeadInboxRecord[]> {
       .from('leads')
       .select(LEAD_SELECT)
       .order('created_at', { ascending: false }),
-    supabase.from('lead_reads').select('lead_id').eq('user_id', user.id),
+    supabase
+      .from('lead_reads')
+      .select('lead_id, read_at')
+      .eq('user_id', user.id),
   ]);
 
   if (leadsResult.error) throw normalizeError(leadsResult.error);
   if (readsResult.error) throw normalizeError(readsResult.error);
 
-  const readLeadIds = new Set(
-    (readsResult.data ?? []).map((r) => r.lead_id),
-  );
+  const readAtByLead = new Map<string, string>();
+  for (const r of (readsResult.data ?? []) as { lead_id: string; read_at: string }[]) {
+    readAtByLead.set(r.lead_id, r.read_at);
+  }
 
   return (leadsResult.data as unknown as LeadJoinRow[]).map((row) => ({
     id: row.id,
@@ -266,8 +283,7 @@ async function fetchLeadInbox(): Promise<LeadInboxRecord[]> {
     clientSlug: row.client?.slug ?? 'generic',
     preview: derivePreview(row.lead_events),
     activity: deriveActivity(row.lead_events),
-    unread: !readLeadIds.has(row.id),
-    needsReply: deriveNeedsReply(row.lead_events),
+    unread: deriveUnread(row.lead_events, readAtByLead.get(row.id) ?? null),
     completion: deriveCompletion(row.lead_events),
     sourceKind: row.source_kind ?? 'website',
   }));
@@ -286,7 +302,6 @@ function toClientLeadRow(record: LeadInboxRecord): ClientLeadRow {
     urgency: record.urgency,
     age: relativeTime(record.createdAt),
     unread: record.unread,
-    needsReply: record.needsReply,
     href: `/leads/${record.id}`,
     completion: record.completion,
     sourceKind: record.sourceKind,
@@ -308,7 +323,6 @@ function toAdminLeadRow(record: LeadInboxRecord): AdminLeadRow {
     meta: record.activity.meta,
     metaTone: record.activity.metaTone,
     unread: record.unread,
-    needsReply: record.needsReply,
     href: `/leads/${record.id}`,
     completion: record.completion,
     sourceKind: record.sourceKind,
@@ -987,6 +1001,44 @@ export function useUpdateLeadStatus() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['leads'] });
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+  });
+}
+
+// ---- Mark a lead read ------------------------------------------------------
+//
+// Upserts a `lead_reads` row at `now()` for the signed-in user, so the next
+// inbox fetch sees the lead as read (no rust dot, decremented tab badge).
+// Same shape as `useMarkNotificationsRead`. Idempotent via the
+// (lead_id, user_id) composite PK.
+
+async function markLeadRead(leadId: string): Promise<void> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw AppError.auth();
+
+  const { error } = await supabase.from('lead_reads').upsert(
+    {
+      lead_id: leadId,
+      user_id: user.id,
+      read_at: new Date().toISOString(),
+    },
+    { onConflict: 'lead_id,user_id' },
+  );
+  if (error) throw normalizeError(error);
+}
+
+/** Mark a lead read for the current user — clears the rust dot on the
+ *  inbox row + decrements the tab count badge. Mounted on the lead-detail
+ *  page so "opening the lead" is what marks it seen (the standard email
+ *  inbox model). */
+export function useMarkLeadRead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: markLeadRead,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: LEADS_INBOX_KEY });
     },
   });
 }
