@@ -3,9 +3,9 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
-import { ConversationComposer } from '@/components/shared/leads/ConversationComposer';
 import { ConversationHeader } from '@/components/shared/leads/ConversationHeader';
 import { ConversationThread } from '@/components/shared/leads/ConversationThread';
+import { LeadConversationComposer } from '@/components/shared/leads/LeadConversationComposer';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { RailCard } from '@/components/shared/RailCard';
 import { TicketDetailLayout } from '@/components/shared/tickets/TicketDetailLayout';
@@ -62,10 +62,10 @@ function AdminLeadConversationContent() {
                     defaultChannelId="all"
                   />
                   <ConversationThread days={conv.days} />
-                  <ConversationComposer
-                    channelToggle={conv.composer.channelToggle}
-                    placeholder={conv.composer.placeholder}
-                    defaultValue={conv.composer.defaultValue}
+                  <LeadConversationComposer
+                    leadId={conv.id}
+                    firstName={conv.firstName}
+                    hasEmail={conv.hasEmail}
                   />
                 </>
               }

@@ -702,18 +702,35 @@ function mapConversationMessage(
 
   if (MESSAGE_KINDS.has(e.kind)) {
     const body = typeof payload.body === 'string' ? payload.body : '';
+    const subject = typeof payload.subject === 'string' ? payload.subject : '';
     const sender =
       typeof payload.senderName === 'string' ? payload.senderName : '';
     const incoming = e.kind === 'sms_in' || e.kind === 'email_in';
+    // Email bubbles surface the subject inline above the body — the
+    // conversation view needs to know "what this thread is about" without
+    // pulling open the lead detail.
+    const bubbleBody: ReactNode = subject ? (
+      <>
+        <strong>{subject}</strong>
+        {body ? (
+          <>
+            <br />
+            {body}
+          </>
+        ) : null}
+      </>
+    ) : (
+      body
+    );
 
     if (incoming) {
-      return { id: e.id, kind: 'incoming', body, channel, time };
+      return { id: e.id, kind: 'incoming', body: bubbleBody, channel, time };
     }
 
     const message: ConversationMessage = {
       id: e.id,
       kind: e.automation_id != null ? 'auto' : 'outgoing',
-      body,
+      body: bubbleBody,
       time,
       delivered: payload.delivered === true,
     };
@@ -810,6 +827,8 @@ function buildLeadConversation(row: LeadDetailJoinRow): LeadConversation {
     backHref: `/leads/${row.id}`,
     backLabel: `Back to ${row.customer_name_snapshot}`,
     tag: `// CONVERSATION · ${row.customer_name_snapshot} · lead`,
+    firstName: first,
+    hasEmail: !!(row.customer?.email && row.customer.email.trim()),
     title: (
       <>
         Reply to <em>{first}</em>.
@@ -1057,6 +1076,88 @@ export function useCreateLead() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['leads'] });
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+  });
+}
+
+// =============================================================================
+// Reply to a lead by email — the "Reply" button on the conversation view
+// POSTs to /api/leads/[id]/reply, which sends via Resend, writes the
+// email_messages row, and adds the email_out lead_event. We invalidate the
+// conversation + detail queries so the new message appears immediately.
+// =============================================================================
+
+export type ReplyToLeadInput = {
+  leadId: string;
+  /** The email subject. Optional — the server derives "Re: …" from the
+   *  most-recent inbound if omitted. */
+  subject?: string;
+  /** Plain-text body. */
+  body: string;
+};
+
+async function postReplyToLead(input: ReplyToLeadInput): Promise<void> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw AppError.auth();
+
+  const response = await fetch(`/api/leads/${input.leadId}/reply`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      subject: input.subject ?? '',
+      body: input.body,
+    }),
+  });
+  if (!response.ok) {
+    const errorBody = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      detail?: string;
+    };
+    const message = errorBody.detail || errorBody.error || `HTTP ${response.status}`;
+    throw new Error(messageFor(errorBody.error ?? '', message));
+  }
+}
+
+function messageFor(code: string, fallback: string): string {
+  switch (code) {
+    case 'no-recipient-email':
+      return 'No email address on file for this lead — cannot reply by email.';
+    case 'no-active-sender':
+      return 'No active email sender for this client — provision one in Settings → Email first.';
+    case 'resend-not-configured':
+      return 'Email sending is not configured for this deployment.';
+    case 'empty-body':
+      return 'The reply body is empty.';
+    case 'forbidden-lead':
+      return 'You do not have access to this lead.';
+    case 'unauthenticated':
+      return 'You are signed out — sign in again.';
+    case 'lead-not-found':
+      return 'Lead not found.';
+    default:
+      return fallback;
+  }
+}
+
+/** Reply to a lead by email. Invalidates conversation + detail queries on
+ *  success so the new outbound row appears. */
+export function useReplyToLead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: postReplyToLead,
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: ['leads', 'conversation', variables.leadId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ['leads', 'detail', variables.leadId],
+      });
+      // Inbox 'meta' line is derived from latest event — refresh the inbox too.
+      void queryClient.invalidateQueries({ queryKey: ['leads', 'inbox'] });
     },
   });
 }

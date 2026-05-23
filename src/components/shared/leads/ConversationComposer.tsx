@@ -3,8 +3,15 @@
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+
+export type ConversationComposerSend = {
+  channel: string;
+  subject: string;
+  body: string;
+};
 
 type ConversationComposerProps = {
   channels?: string[];
@@ -12,9 +19,18 @@ type ConversationComposerProps = {
   defaultChannelId?: string;
   placeholder: string;
   defaultValue?: string;
+  defaultSubject?: string;
+  /** When the active channel matches a value in this set, the composer
+   *  renders a subject Input above the textarea — used for email replies. */
+  subjectChannels?: string[];
   helpers?: string[];
   sendLabel?: string;
   className?: string;
+  /** When provided, the Send button calls this with the current draft. The
+   *  caller resets the composer (or the parent unmounts it) on success. */
+  onSend?: (draft: ConversationComposerSend) => Promise<void> | void;
+  isSending?: boolean;
+  errorMessage?: string | null;
 };
 
 function ConversationComposer({
@@ -23,17 +39,40 @@ function ConversationComposer({
   defaultChannelId,
   placeholder,
   defaultValue,
+  defaultSubject,
+  subjectChannels,
   helpers,
   sendLabel = 'Send →',
   className,
+  onSend,
+  isSending,
+  errorMessage,
 }: ConversationComposerProps) {
   const [value, setValue] = useState(defaultValue ?? '');
-  const [activeChannel, setActiveChannel] = useState(
+  const [subject, setSubject] = useState(defaultSubject ?? '');
+  const [activeChannel, setActiveChannel] = useState<string | undefined>(
     defaultChannelId ?? channels?.[0],
   );
 
   const showChannelTabs = channels && channels.length > 0;
   const showChannelToggle = !!channelToggle && !showChannelTabs;
+  const showSubject =
+    !!subjectChannels &&
+    !!activeChannel &&
+    subjectChannels.includes(activeChannel);
+
+  const canSend = !isSending && (value.trim().length > 0 || subject.trim().length > 0);
+
+  async function handleSend() {
+    if (!onSend || !canSend) return;
+    await onSend({
+      channel: activeChannel ?? channels?.[0] ?? 'SMS',
+      subject: subject.trim(),
+      body: value.trim(),
+    });
+    setValue('');
+    if (showSubject) setSubject('');
+  }
 
   return (
     <div
@@ -63,6 +102,17 @@ function ConversationComposer({
         </div>
       ) : null}
 
+      {showSubject ? (
+        <div className="mb-2.5">
+          <Input
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            placeholder="Subject"
+            className="rounded-[10px] border-ink/15 bg-paper-2/40 font-sans text-[14px]"
+          />
+        </div>
+      ) : null}
+
       <div className="flex items-end gap-3">
         {showChannelToggle ? (
           <button
@@ -78,10 +128,18 @@ function ConversationComposer({
           placeholder={placeholder}
           className="min-h-[60px] flex-1 resize-y rounded-[10px] border-ink/15 bg-paper-2/40 font-sans text-[14px] leading-[1.5]"
         />
-        <Button className="bg-rust text-paper hover:bg-rust-light">
-          {sendLabel}
+        <Button
+          className="bg-rust text-paper hover:bg-rust-light"
+          onClick={onSend ? handleSend : undefined}
+          disabled={onSend ? !canSend : undefined}
+        >
+          {isSending ? 'Sending…' : sendLabel}
         </Button>
       </div>
+
+      {errorMessage ? (
+        <p className="mt-2 text-[12px] text-warn">{errorMessage}</p>
+      ) : null}
 
       {helpers && helpers.length > 0 ? (
         <div className="mt-2.5 flex flex-wrap items-center gap-2">
