@@ -12,11 +12,19 @@
 // Distinct from the policy panel below it: that is the inherit-vs-override
 // decision (does this client use agency-supplied keys); THIS is the real
 // OAuth connection — has the customer actually granted access.
+//
+// Phase 7 GBP consolidation: when the active OAuth result is a successful
+// GBP connect, the `OAuthResultBanner` auto-opens `GbpLocationPickerModal`
+// so the operator picks WHICH GBP location to manage right there. The GBP
+// connection row also carries an inline location summary (title +
+// rating + "Sync now" + "Change location") so the operational layer lives
+// on the same surface as the connection state — no dedicated GBP tab.
 // =============================================================================
 
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { GbpLocationPickerModal } from '@/components/shared/settings/GbpLocationPickerModal';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { Button } from '@/components/ui/button';
@@ -26,6 +34,10 @@ import {
   type OAuthProviderDisplay,
   type OAuthProviderId,
 } from '@/lib/integrations/connections';
+import {
+  useClientGbpLocation,
+  useSyncGbpReviews,
+} from '@/lib/integrations/gbp/use-gbp';
 import {
   connectIntegration,
   useClientConnections,
@@ -67,6 +79,23 @@ export function IntegrationConnectionsSection({
     byProvider.set(connection.provider, connection);
   }
 
+  // Post-OAuth GBP picker — when the callback redirect lands the operator
+  // back here with a successful GBP connect, auto-mount the location
+  // picker so the operational layer (which GBP location to manage) is one
+  // step away from the connection itself.
+  const search = useLocationSearch();
+  const [gbpPickerOpen, setGbpPickerOpen] = useState(false);
+  useEffect(() => {
+    const params = new URLSearchParams(search);
+    if (
+      params.get('integration') === 'google_business_profile' &&
+      params.get('integration_status') === 'connected' &&
+      clientId
+    ) {
+      setGbpPickerOpen(true);
+    }
+  }, [search, clientId]);
+
   return (
     <SettingsPanel>
       <SettingsSection
@@ -96,6 +125,11 @@ export function IntegrationConnectionsSection({
           ))}
         </div>
       </SettingsSection>
+      <GbpLocationPickerModal
+        open={gbpPickerOpen}
+        onOpenChange={setGbpPickerOpen}
+        clientId={clientId ?? null}
+      />
     </SettingsPanel>
   );
 }
@@ -182,6 +216,14 @@ function ConnectionRow({
           {error ? (
             <div className="mt-1.5 text-[12px] leading-[1.45] text-warn">{error}</div>
           ) : null}
+
+          {/* GBP-only: location summary + Sync / Change-location below the
+              connection meta. Shown only when GBP is connected — keeps the
+              operational layer co-located with the connection itself rather
+              than on a separate tab. */}
+          {provider.id === 'google_business_profile' && state === 'connected' && clientId ? (
+            <GbpConnectionFooter clientId={clientId} />
+          ) : null}
         </div>
       </div>
 
@@ -225,6 +267,103 @@ function ConnectionRow({
         confirmLabel="Disconnect"
         tone="destructive"
         onConfirm={() => disconnect.mutate(provider.id)}
+      />
+    </div>
+  );
+}
+
+// --- GBP-only footer ---------------------------------------------------------
+
+/** Surfaces the connected GBP location's title + rating + last-sync time +
+ *  the two operator affordances (Sync now, Change location). Mounted as
+ *  a footer block on the GBP connection row when state === 'connected'.
+ *  Hides itself silently if no location row exists yet — the post-OAuth
+ *  picker (auto-opened by the parent) is the trigger to create one. */
+function GbpConnectionFooter({ clientId }: { clientId: string }) {
+  const location = useClientGbpLocation(clientId);
+  const sync = useSyncGbpReviews(clientId);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const row = location.data ?? null;
+  if (location.isLoading) return null;
+  if (!row) {
+    // OAuth connected but no location picked — surface a prompt to pick.
+    return (
+      <div className="mt-2 rounded-md border border-dashed border-rule bg-paper/70 px-3 py-2">
+        <div className="text-[12px] leading-[1.5] text-ink-quiet">
+          <strong className="text-ink">Pick a location</strong> — the connect
+          is live but Webnua doesn&apos;t know which of this customer&apos;s
+          Business Profile listings to sync from.
+        </div>
+        <div className="mt-2">
+          <Button size="sm" onClick={() => setPickerOpen(true)}>
+            Choose location
+          </Button>
+        </div>
+        <GbpLocationPickerModal
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          clientId={clientId}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 rounded-md border border-rule bg-paper/70 px-3 py-2">
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <div className="min-w-0">
+          <div className="font-mono text-[9px] uppercase tracking-[0.12em] text-ink-quiet">
+            Location
+          </div>
+          <div className="text-[13px] font-bold text-ink">
+            {row.location_title || 'Untitled location'}
+          </div>
+        </div>
+        <div>
+          <div className="font-mono text-[9px] uppercase tracking-[0.12em] text-ink-quiet">
+            Rating
+          </div>
+          <div className="font-mono text-[13px] text-ink">
+            {row.current_rating != null ? `${row.current_rating.toFixed(1)} · ${row.review_count} reviews` : `${row.review_count} reviews`}
+          </div>
+        </div>
+        <div>
+          <div className="font-mono text-[9px] uppercase tracking-[0.12em] text-ink-quiet">
+            Last synced
+          </div>
+          <div className="font-mono text-[12px] text-ink">
+            {row.last_synced_at ? new Date(row.last_synced_at).toLocaleString() : 'never'}
+          </div>
+        </div>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={sync.isPending}
+          onClick={() => sync.mutate()}
+        >
+          {sync.isPending ? 'Syncing…' : 'Sync now'}
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => setPickerOpen(true)}>
+          Change location
+        </Button>
+        {sync.isSuccess ? (
+          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-good">
+            Queued
+          </span>
+        ) : null}
+        {sync.error ? (
+          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-warn">
+            {(sync.error as Error).message}
+          </span>
+        ) : null}
+      </div>
+      <GbpLocationPickerModal
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        clientId={clientId}
       />
     </div>
   );

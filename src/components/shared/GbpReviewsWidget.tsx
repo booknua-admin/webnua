@@ -8,6 +8,11 @@
 // quick numbers + a link to the full reviews surface; null when there is
 // no connected GBP location yet (so a freshly-onboarded client doesn't see
 // an empty placeholder).
+//
+// Phase 7 GBP UI consolidation: links land on `/reviews` for both contexts
+// (the operator + client review surfaces) — the dedicated GBP tab was
+// removed; the operator opens the live `/reviews` page and sees the same
+// data they used to find on a separate tab.
 // =============================================================================
 
 import Link from 'next/link';
@@ -20,9 +25,9 @@ import {
 
 export function GbpReviewsWidget({
   clientId,
-  /** Where the "Open reviews →" link goes. Defaults to the operator
-   *  surface; pass the client dashboard equivalent for the customer view. */
-  href = '/settings/google-business',
+  /** Where the "Open reviews →" link goes. Defaults to `/reviews` (the
+   *  shared reviews surface; the layout dispatches operator vs client). */
+  href = '/reviews',
 }: {
   clientId: string | null;
   href?: string;

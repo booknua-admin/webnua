@@ -25,7 +25,6 @@ const SUB_ACCOUNT_ONLY = [
   '/settings/notifications',
   '/settings/email',
   '/settings/sms',
-  '/settings/google-business',
 ];
 
 function matches(pathname: string, prefixes: string[]): boolean {

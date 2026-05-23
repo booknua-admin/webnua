@@ -3,6 +3,7 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
 
+import { GbpSendRequestButton } from '@/components/shared/gbp/GbpSendRequestButton';
 import { BookingActionBtn } from '@/components/shared/bookings/BookingActionBtn';
 import { BookingHistoryRow } from '@/components/shared/bookings/BookingHistoryRow';
 import { BookingJobGrid } from '@/components/shared/bookings/BookingJobGrid';
@@ -145,6 +146,21 @@ function ClientBookingDetailContent() {
                     })}
                   </RailCard>
                 ))}
+                <RailCard heading="// AFTER THE JOB">
+                  <GbpSendRequestButton
+                    context={{
+                      clientId: b.gbpContext.clientId,
+                      recipientName: b.gbpContext.recipientName,
+                      recipientPhone: b.gbpContext.recipientPhone,
+                      recipientEmail: b.gbpContext.recipientEmail,
+                      leadId: b.gbpContext.leadId,
+                      bookingId: b.gbpContext.bookingId,
+                    }}
+                    variant="action-row"
+                    icon="★"
+                    label="Send review request"
+                  />
+                </RailCard>
                 {b.nextNote ? (
                   <RailCard heading="// NEXT">
                     <div className="text-[13px] leading-[1.5] text-ink-soft [&_strong]:font-bold [&_strong]:text-ink">

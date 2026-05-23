@@ -1,5 +1,23 @@
-import { cn } from '@/lib/utils';
+'use client';
+
+// =============================================================================
+// ReviewItem — single review row on `/reviews` (full variant) + per-client
+// card on operator `/reviews` (compact variant).
+//
+// Phase 7 GBP consolidation: the row carries optional reply state from
+// `gbp_reviews` AND a per-row inline reply composer (gated on the parent
+// passing `clientId` via the review data — without it, the reply
+// affordance is hidden, which is how non-GBP / read-only callers opt out).
+// =============================================================================
+
+import { useState } from 'react';
+
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { useReplyToGbpReview } from '@/lib/integrations/gbp/use-gbp';
 import type { ReviewItem as ReviewItemData } from '@/lib/reviews/types';
+import { relativeTime } from '@/lib/time';
+import { cn } from '@/lib/utils';
 
 type ReviewItemProps = {
   review: ReviewItemData;
@@ -36,6 +54,7 @@ function ReviewItem({ review, variant, className }: ReviewItemProps) {
           <p className="text-[13px] leading-[1.5] text-ink-soft">
             {review.text}
           </p>
+          <ReviewReplyBlock review={review} variant="full" />
         </div>
         <div className="text-left text-[14px] font-bold leading-[1.6] text-rust">
           {'★'.repeat(review.stars)}
@@ -52,15 +71,137 @@ function ReviewItem({ review, variant, className }: ReviewItemProps) {
       data-slot="review-item"
       data-variant="compact"
       className={cn(
-        'grid grid-cols-[1fr_auto] items-center gap-2.5 border-b border-dotted border-rule py-2 last:border-b-0',
+        'grid grid-cols-[1fr_auto] items-start gap-2.5 border-b border-dotted border-rule py-2 last:border-b-0',
         className,
       )}
     >
-      <p className="line-clamp-2 text-[12px] leading-[1.4] text-ink-soft [&_strong]:font-bold [&_strong]:text-ink">
-        <strong>{review.authorName}</strong> · &ldquo;{review.text}&rdquo;
-      </p>
+      <div className="min-w-0">
+        <p className="line-clamp-2 text-[12px] leading-[1.4] text-ink-soft [&_strong]:font-bold [&_strong]:text-ink">
+          <strong>{review.authorName}</strong> · &ldquo;{review.text}&rdquo;
+        </p>
+        <ReviewReplyBlock review={review} variant="compact" />
+      </div>
       <div className="text-right text-[12px] font-bold text-rust">
         {'★'.repeat(review.stars)} · {review.age}
+      </div>
+    </div>
+  );
+}
+
+// --- inline reply block ------------------------------------------------------
+
+/** Renders the existing reply (when present) OR an inline reply composer
+ *  (when the caller passed `clientId` so a reply mutation can dispatch).
+ *  Hides entirely on a row with neither — read-only fallback for any
+ *  non-GBP caller. */
+function ReviewReplyBlock({
+  review,
+  variant,
+}: {
+  review: ReviewItemData;
+  variant: 'full' | 'compact';
+}) {
+  if (review.reply) {
+    return (
+      <div
+        className={cn(
+          'mt-2 rounded-md bg-paper-2 px-3 py-2',
+          variant === 'compact' && 'mt-1.5 px-2.5 py-1.5',
+        )}
+      >
+        <div className="font-mono text-[9px] uppercase tracking-[0.12em] text-ink-quiet">
+          Your reply · {relativeTime(review.reply.at)}
+        </div>
+        <p
+          className={cn(
+            'text-[13px] leading-[1.5] text-ink',
+            variant === 'compact' && 'text-[12px] leading-[1.4]',
+          )}
+        >
+          {review.reply.text}
+        </p>
+      </div>
+    );
+  }
+  if (!review.clientId) return null;
+  return <InlineReplyComposer review={review} variant={variant} />;
+}
+
+function InlineReplyComposer({
+  review,
+  variant,
+}: {
+  review: ReviewItemData;
+  variant: 'full' | 'compact';
+}) {
+  const reply = useReplyToGbpReview(review.clientId ?? null);
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  async function submit() {
+    const text = draft.trim();
+    if (text.length === 0) return;
+    try {
+      await reply.mutateAsync({ reviewId: review.id, replyText: text });
+      setOpen(false);
+      setDraft('');
+    } catch {
+      /* error surfaced via reply.error */
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={cn(
+          'mt-2 font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-rust transition-colors hover:text-rust-deep',
+          variant === 'compact' && 'mt-1.5 text-[9px]',
+        )}
+      >
+        Reply →
+      </button>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        'mt-2 rounded-md bg-paper-2 px-3 py-2',
+        variant === 'compact' && 'mt-1.5 px-2.5 py-1.5',
+      )}
+    >
+      <Textarea
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder="Write a reply… keep it human."
+        rows={variant === 'compact' ? 2 : 3}
+        className="bg-card text-[13px]"
+      />
+      {reply.error ? (
+        <div className="mt-1.5 text-[11px] text-warn">
+          {(reply.error as Error).message}
+        </div>
+      ) : null}
+      <div className="mt-2 flex justify-end gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setOpen(false);
+            setDraft('');
+          }}
+        >
+          Cancel
+        </Button>
+        <Button
+          size="sm"
+          disabled={draft.trim().length === 0 || reply.isPending}
+          onClick={submit}
+        >
+          {reply.isPending ? 'Sending…' : 'Reply'}
+        </Button>
       </div>
     </div>
   );

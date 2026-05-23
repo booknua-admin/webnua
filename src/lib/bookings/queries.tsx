@@ -545,6 +545,7 @@ export function useAdminCalendar(view: CalendarView, anchorIso: string) {
 
 type BookingDetailRow = {
   id: string;
+  client_id: string;
   title: string;
   service_type: string;
   status: string;
@@ -567,7 +568,7 @@ type BookingDetailRow = {
 };
 
 const DETAIL_SELECT =
-  'id, title, service_type, status, starts_at, ends_at, price, notes, ' +
+  'id, client_id, title, service_type, status, starts_at, ends_at, price, notes, ' +
   'address, customer_id, customer_name_snapshot, customer_phone_snapshot, ' +
   'lead_id, client:clients(name, slug), ' +
   'customer:customers(suburb, email, address, created_at)';
@@ -717,6 +718,14 @@ function buildClientBookingDetail(
         direct link to your Google review page.
       </>
     ),
+    gbpContext: {
+      clientId: b.client_id,
+      bookingId: b.id,
+      leadId: b.lead_id,
+      recipientName: b.customer_name_snapshot || null,
+      recipientPhone: b.customer_phone_snapshot ?? null,
+      recipientEmail: b.customer?.email ?? null,
+    },
   };
 }
 
@@ -828,6 +837,14 @@ function buildAdminBookingDetail(
       address: b.address ?? b.customer?.address ?? 'Address not recorded',
     },
     automations,
+    gbpContext: {
+      clientId: b.client_id,
+      bookingId: b.id,
+      leadId: b.lead_id,
+      recipientName: b.customer_name_snapshot || null,
+      recipientPhone: b.customer_phone_snapshot ?? null,
+      recipientEmail: b.customer?.email ?? null,
+    },
   };
 }
 

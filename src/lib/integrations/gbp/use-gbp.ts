@@ -1,12 +1,19 @@
 'use client';
 
 // =============================================================================
-// Google Business Profile — operator UI data layer.
+// Google Business Profile — operator + client UI data layer.
 //
-// Reads + mutations behind the /settings/google-business surface. Tables read
-// directly with the RLS-scoped browser client (untyped cast — gbp tables are
-// not yet in the generated Database type), same pattern as use-sms.ts /
-// use-email.ts. Mutations POST the operator routes under
+// Phase 7 GBP UI consolidation: reads + mutations behind the surfaces that
+// absorbed the GBP UI — `/reviews` (operator + client; via /lib/reviews/
+// queries.tsx for the reviews list, this module for the reply mutation),
+// `/leads/[id]` + `/bookings/[id]` (the manual review-request affordance),
+// and `/settings/integrations` (the GBP connection footer + post-OAuth
+// location picker). The /settings/google-business tab is gone — these
+// hooks are mounted from the shared surfaces.
+//
+// Tables read directly with the RLS-scoped browser client (untyped cast —
+// gbp tables are not yet in the generated Database type), same pattern as
+// use-sms.ts / use-email.ts. Mutations POST the operator routes under
 // /api/integrations/google_business_profile/*.
 // =============================================================================
 

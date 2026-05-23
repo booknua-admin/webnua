@@ -13,7 +13,6 @@ export const subAccountSettingsNav: SettingsNavItem[] = [
   { label: 'Notifications', href: '/settings/notifications', icon: '🔔' },
   { label: 'Email', href: '/settings/email', icon: '✉' },
   { label: 'SMS', href: '/settings/sms', icon: '☏' },
-  { label: 'Google Business', href: '/settings/google-business', icon: 'G' },
   { label: 'Billing', href: '/settings/billing', icon: '$' },
   { label: 'Danger zone', href: '/settings/danger', icon: '⤬' },
 ];

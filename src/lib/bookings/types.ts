@@ -82,6 +82,17 @@ type ClientBookingDetail = {
   actions: ClientBookingActionGroup[];
   /** "// NEXT" tail card — explanatory text instead of buttons */
   nextNote?: React.ReactNode;
+  /** Context for the manual GBP review-request affordance mounted in the
+   *  client booking rail (Phase 7 GBP consolidation). The button hides
+   *  itself when no clientId resolved (defensive — shouldn't happen). */
+  gbpContext: {
+    clientId: string;
+    bookingId: string;
+    leadId: string | null;
+    recipientName: string | null;
+    recipientPhone: string | null;
+    recipientEmail: string | null;
+  };
 };
 
 type AdminBookingDetail = {
@@ -118,6 +129,16 @@ type AdminBookingDetail = {
     address: string;
   };
   automations: BookingRailRow[];
+  /** Context for the manual GBP review-request affordance — operator hero
+   *  carries it as a button. Same shape as the client variant. */
+  gbpContext: {
+    clientId: string;
+    bookingId: string;
+    leadId: string | null;
+    recipientName: string | null;
+    recipientPhone: string | null;
+    recipientEmail: string | null;
+  };
 };
 
 export type {

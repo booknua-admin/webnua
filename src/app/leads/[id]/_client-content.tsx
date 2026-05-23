@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect } from 'react';
 
+import { GbpSendRequestButton } from '@/components/shared/gbp/GbpSendRequestButton';
 import { LeadDetailHeader } from '@/components/shared/leads/LeadDetailHeader';
 import { LeadQuickActions } from '@/components/shared/leads/LeadQuickActions';
 import { LeadStatusSwitcher } from '@/components/shared/leads/LeadStatusSwitcher';
@@ -80,6 +81,18 @@ function ClientLeadDetailContent() {
                 <>
                   <RailCard heading="// QUICK ACTIONS">
                     <LeadQuickActions actions={lead.quickActions} />
+                    <div className="mt-2">
+                      <GbpSendRequestButton
+                        context={{
+                          clientId: lead.gbpContext.clientId,
+                          recipientName: lead.gbpContext.recipientName,
+                          recipientPhone: lead.gbpContext.recipientPhone,
+                          recipientEmail: lead.gbpContext.recipientEmail,
+                          leadId: lead.id,
+                        }}
+                        variant="action-row"
+                      />
+                    </div>
                   </RailCard>
                   {lead.rail.map((card) => (
                     <RailCard

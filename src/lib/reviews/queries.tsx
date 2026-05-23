@@ -1,29 +1,38 @@
 // =============================================================================
-// Reviews cluster — data access (Phase 3).
+// Reviews cluster — data access (Phase 7 GBP consolidation).
 //
-// The client `/reviews` page and the admin cross-client `/reviews` grid read
-// the `reviews` table; RLS bounds the rows (a client sees only their own
-// client's reviews, an operator sees every accessible client). The client
-// view also reads `clients` so a client with zero reviews still resolves
-// (the by-RLS single client row), and the admin view reads `clients` so an
-// operator gets a card per accessible client — `empty` for the ones with no
-// reviews yet.
+// Both the client `/reviews` page and the operator cross-client `/reviews`
+// grid read **`gbp_reviews`** — the Phase 7 GBP-sync cache (migration 0067).
+// The pre-Phase-7 `public.reviews` table was designed as the canonical
+// review store but has no live writer; the GBP sync writes to its own
+// richer table (reply_text, reply_created_at, is_new_since_last_view,
+// deleted_at_google, reviewer_profile_photo_url), so the UI sources from
+// there and the old table is left untouched in the schema.
 //
-// The rating headline, the star distribution, the per-client stats and the
-// relative age labels are all computed here from `reviews.stars` /
-// `reviews.reviewed_at` per design §5 — the schema stores the raw review,
-// the front end composes the display.
+// RLS bounds the rows (a client sees only their own client's reviews; an
+// operator sees every accessible client). The rating headline, star
+// distribution, per-client stats, and relative age labels are all computed
+// here per design §5 — the schema stores the raw review, the front end
+// composes the display.
 //
 // queryFn throws `AppError`; React Query catches it into a typed `error`.
 // =============================================================================
 
 import type { ReactNode } from 'react';
 
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { useQuery } from '@tanstack/react-query';
 
 import { AppError, normalizeError } from '@/lib/errors';
 import { supabase } from '@/lib/supabase/client';
 import { relativeTime } from '@/lib/time';
+
+/** Untyped view of the browser client — `gbp_reviews` (migration 0067) is
+ *  not yet in the generated Database type. Same pattern as use-gbp.ts /
+ *  use-sms.ts / use-email.ts. */
+function db(): SupabaseClient {
+  return supabase as unknown as SupabaseClient;
+}
 
 import type {
   AdminReviewsPage,
@@ -36,15 +45,18 @@ import type {
 
 // ---- Row shapes -------------------------------------------------------------
 
+/** A row from `gbp_reviews` — the columns the UI consumes. Anonymous
+ *  reviewers come through with `reviewer_name` null; an empty `comment`
+ *  is also legal (star-only Google reviews). */
 type ReviewRow = {
   id: string;
   client_id: string;
-  author_name: string;
-  body: string;
-  stars: number;
-  job: string | null;
-  source: string;
-  reviewed_at: string;
+  reviewer_name: string | null;
+  comment: string | null;
+  rating: number;
+  created_at_google: string;
+  reply_text: string | null;
+  reply_created_at: string | null;
 };
 
 type ClientRow = {
@@ -55,7 +67,7 @@ type ClientRow = {
 };
 
 const REVIEW_SELECT =
-  'id, client_id, author_name, body, stars, job, source, reviewed_at';
+  'id, client_id, reviewer_name, comment, rating, created_at_google, reply_text, reply_created_at';
 
 // ---- Derivations ------------------------------------------------------------
 
@@ -68,7 +80,7 @@ function initials(name: string): string {
 
 function averageStars(reviews: ReviewRow[]): number {
   if (reviews.length === 0) return 0;
-  return reviews.reduce((sum, r) => sum + r.stars, 0) / reviews.length;
+  return reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
 }
 
 /** "★ ★ ★ ★ ☆" — `filled` stars then hollow, to 5. */
@@ -88,7 +100,7 @@ function ratingNode(avg: number): ReactNode {
 function distribution(reviews: ReviewRow[]): ReviewDistributionRow[] {
   const total = reviews.length;
   return [5, 4, 3, 2, 1].map((stars) => {
-    const count = reviews.filter((r) => r.stars === stars).length;
+    const count = reviews.filter((r) => r.rating === stars).length;
     return {
       stars,
       count,
@@ -98,15 +110,20 @@ function distribution(reviews: ReviewRow[]): ReviewDistributionRow[] {
 }
 
 function mapReviewItem(row: ReviewRow): ReviewItem {
+  const authorName = row.reviewer_name?.trim() || 'Anonymous';
   const item: ReviewItem = {
     id: row.id,
-    authorName: row.author_name,
-    authorInitials: initials(row.author_name),
-    text: row.body,
-    stars: row.stars,
-    age: relativeTime(row.reviewed_at),
+    authorName,
+    authorInitials: initials(authorName),
+    // Star-only Google reviews carry no comment — render a placeholder.
+    text: row.comment?.trim() || '(Star rating only — no written comment.)',
+    stars: row.rating,
+    age: relativeTime(row.created_at_google),
+    clientId: row.client_id,
   };
-  if (row.job) item.job = row.job;
+  if (row.reply_text && row.reply_created_at) {
+    item.reply = { text: row.reply_text, at: row.reply_created_at };
+  }
   return item;
 }
 
@@ -133,10 +150,11 @@ async function fetchClientReviews(): Promise<ClientReviewsPage> {
   // RLS scopes `clients` to the caller's own client; `reviews` likewise.
   const [clientResult, reviewsResult] = await Promise.all([
     supabase.from('clients').select('id, name, slug, industry'),
-    supabase
-      .from('reviews')
+    db()
+      .from('gbp_reviews')
       .select(REVIEW_SELECT)
-      .order('reviewed_at', { ascending: false }),
+      .is('deleted_at_google', null)
+      .order('created_at_google', { ascending: false }),
   ]);
 
   if (clientResult.error) throw normalizeError(clientResult.error);
@@ -209,10 +227,11 @@ async function fetchAdminReviews(): Promise<AdminReviewsPage> {
 
   const [clientsResult, reviewsResult] = await Promise.all([
     supabase.from('clients').select('id, name, slug, industry').order('name'),
-    supabase
-      .from('reviews')
+    db()
+      .from('gbp_reviews')
       .select(REVIEW_SELECT)
-      .order('reviewed_at', { ascending: false }),
+      .is('deleted_at_google', null)
+      .order('created_at_google', { ascending: false }),
   ]);
 
   if (clientsResult.error) throw normalizeError(clientsResult.error);
@@ -243,7 +262,7 @@ async function fetchAdminReviews(): Promise<AdminReviewsPage> {
         cta: { label: 'Connect Google Business', href: '/settings/integrations' },
       };
     }
-    const fiveStar = list.filter((r) => r.stars === 5).length;
+    const fiveStar = list.filter((r) => r.rating === 5).length;
     return {
       kind: 'connected',
       id: client.slug,
@@ -266,10 +285,10 @@ async function fetchAdminReviews(): Promise<AdminReviewsPage> {
   // Workspace-wide stat row.
   const total = reviews.length;
   const avg = averageStars(reviews);
-  const fiveStar = reviews.filter((r) => r.stars === 5).length;
+  const fiveStar = reviews.filter((r) => r.rating === 5).length;
   const monthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
   const newThisMonth = reviews.filter(
-    (r) => new Date(r.reviewed_at).getTime() >= monthAgo,
+    (r) => new Date(r.created_at_google).getTime() >= monthAgo,
   ).length;
 
   const filters = [

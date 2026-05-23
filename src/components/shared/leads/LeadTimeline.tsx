@@ -14,6 +14,8 @@ const DOT_STYLES: Record<LeadTimelineDot, string> = {
   email: 'bg-info/[0.14] text-info border-info/30',
   'scheduled-sms': 'bg-paper-2 text-ink-quiet border-rule',
   'scheduled-email': 'bg-paper-2 text-ink-quiet border-rule',
+  // Review-request sends — amber to evoke the GBP star.
+  'review-request': 'bg-amber/[0.14] text-amber border-amber/30',
 };
 
 const DOT_GLYPH: Record<LeadTimelineDot, string> = {
@@ -24,6 +26,7 @@ const DOT_GLYPH: Record<LeadTimelineDot, string> = {
   email: '✉',
   'scheduled-sms': '◷',
   'scheduled-email': '◷',
+  'review-request': '★',
 };
 
 type LeadTimelineProps = {
