@@ -717,11 +717,25 @@ export function useLeadDetail(id: string) {
 // form events fold in as `system` bubbles for context.
 // =============================================================================
 
+/** Bubble-meta timestamp. `Today · 3:07 PM` when the message is from
+ *  today, `21/05/26 · 3:07 PM` otherwise. The day-prefix surfaces in the
+ *  meta row alongside the channel pill so operators can scan threads
+ *  spanning multiple days without expanding each bubble. */
 function clockTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('en-AU', {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString('en-AU', {
     hour: 'numeric',
     minute: '2-digit',
   });
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  if (isToday) return `Today · ${time}`;
+  const date = d.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+  });
+  return `${date} · ${time}`;
 }
 
 function conversationDayLabel(iso: string): string {

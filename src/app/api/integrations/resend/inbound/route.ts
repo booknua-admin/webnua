@@ -31,6 +31,7 @@
 
 import { NextResponse } from 'next/server';
 
+import { stripQuotedReply } from '@/lib/email/reply-strip';
 import {
   isValidThreadTokenShape,
   looksLikeAutoResponder,
@@ -364,7 +365,11 @@ export async function POST(request: Request): Promise<Response> {
     // Also record a `email_in` lead_event so the existing lead-timeline UI
     // surfaces the reply without needing to query email_messages.
     if (!isAuto) {
-      const renderedBody = bodyText || stripHtml(bodyHtml);
+      // Strip the quoted reply history (Gmail-style `> > >` blocks +
+      // "On <date>, <name> wrote:" delimiter, etc.) so the timeline bubble
+      // shows ONLY what the customer actually typed. The full body stays
+      // in email_messages.body_text/html for archival.
+      const renderedBody = stripQuotedReply(bodyText || stripHtml(bodyHtml));
       await svc.from('lead_events').insert({
         lead_id: resolvedLeadId,
         kind: 'email_in',
