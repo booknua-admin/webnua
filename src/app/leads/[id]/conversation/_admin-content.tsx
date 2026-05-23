@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { useState } from 'react';
 
 import { ConversationHeader } from '@/components/shared/leads/ConversationHeader';
 import { ConversationThread } from '@/components/shared/leads/ConversationThread';
@@ -17,6 +18,13 @@ function AdminLeadConversationContent() {
   const params = useParams<{ id: string }>();
   const id = params.id ?? '';
   const { data: conv, isLoading, error } = useLeadConversation(id);
+
+  // Lift channel selection so the conversation header tabs and the
+  // composer's channel pills can't get out of sync. Both are bound to
+  // this single value — picking one updates the other.
+  const [activeChannel, setActiveChannel] = useState<string>(
+    conv?.hasEmail ? 'Email' : 'SMS',
+  );
 
   return (
     <>
@@ -59,13 +67,16 @@ function AdminLeadConversationContent() {
                     name={conv.name}
                     meta={conv.headerMeta}
                     channelTabs={conv.channelTabs}
-                    defaultChannelId="all"
+                    activeChannelId={activeChannel}
+                    onChannelChange={setActiveChannel}
                   />
                   <ConversationThread days={conv.days} />
                   <LeadConversationComposer
                     leadId={conv.id}
                     firstName={conv.firstName}
                     hasEmail={conv.hasEmail}
+                    activeChannelId={activeChannel}
+                    onChannelChange={setActiveChannel}
                   />
                 </>
               }

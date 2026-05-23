@@ -20,7 +20,10 @@ export type ResendSendResponse = {
   id: string;
 };
 
-/** Resend's response to GET /emails/{id} — defensive subset. */
+/** Resend's response to GET /emails/{id} — defensive subset. Resend uses
+ *  the same endpoint for outbound + inbound, so the body fields are
+ *  populated for inbound retrievals even when the `email.received` webhook
+ *  itself omitted them. */
 export type ResendMessageResource = {
   id: string;
   /** delivered / bounced / complained / sent / queued / etc. */
@@ -28,6 +31,8 @@ export type ResendMessageResource = {
   to?: string[] | string;
   from?: string;
   subject?: string;
+  text?: string;
+  html?: string;
   created_at?: string;
 };
 

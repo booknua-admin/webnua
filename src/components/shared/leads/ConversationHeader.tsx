@@ -11,6 +11,11 @@ type ConversationHeaderProps = {
   meta: ReactNode;
   channelTabs?: ConversationChannelTab[];
   defaultChannelId?: string;
+  /** Controlled active channel id — when provided, the header surrenders
+   *  its local state. Lets the parent link the header and the composer so
+   *  both reflect the same channel (they can't both be true). */
+  activeChannelId?: string;
+  onChannelChange?: (id: string) => void;
   actions?: string[];
   className?: string;
 };
@@ -21,12 +26,20 @@ function ConversationHeader({
   meta,
   channelTabs,
   defaultChannelId,
+  activeChannelId,
+  onChannelChange,
   actions,
   className,
 }: ConversationHeaderProps) {
-  const [activeChannel, setActiveChannel] = useState(
+  const [internalChannel, setInternalChannel] = useState(
     defaultChannelId ?? channelTabs?.[0]?.id,
   );
+  const isControlled = activeChannelId !== undefined;
+  const activeChannel = isControlled ? activeChannelId : internalChannel;
+  const setActiveChannel = (id: string) => {
+    if (!isControlled) setInternalChannel(id);
+    onChannelChange?.(id);
+  };
 
   return (
     <div
