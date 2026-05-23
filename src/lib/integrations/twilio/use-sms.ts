@@ -3,38 +3,39 @@
 // =============================================================================
 // Twilio SMS — operator UI data layer.
 //
-// Phase 7 Twilio SMS session. Reads + mutations behind the SMS settings
-// surface (the sender provisioning section + the template editors).
+// Phase 7 Twilio SMS session. Reads + mutations behind the sender provisioning
+// section on /settings/sms.
 //
-//   • useClientSmsSender    — the client's client_sms_senders row.
-//   • useClientSmsTemplates — the client's sms_templates rows.
-//     Both read straight from the browser Supabase client; the tables' RLS
-//     scopes them to operators + their accessible clients, so no API route is
-//     needed for the reads.
-//   • useRegisterSmsSender / useRefreshSmsSender / useSaveSmsTemplate — POST
-//     the operator-only API routes (writes go through service-role there).
+//   • useClientSmsSender   — the client's client_sms_senders row. Read straight
+//     from the browser Supabase client; the table's RLS scopes it to operators
+//     + their accessible clients, so no API route is needed for the read.
+//   • useRegisterSmsSender / useRefreshSmsSender — POST the operator-only API
+//     routes (writes go through service-role there).
 //
-// The three SMS tables are not in the generated Database type yet (their
-// migrations ship in this PR), so the browser client is cast to untyped for
-// these reads — same pattern as use-billing.ts / use-connections.ts.
+// Template editing lives with the Automations feature (deferred until that
+// feature is fully built); the per-client SMS templates are still seeded by
+// migration 0060 so the send_sms job has a body to render, but there is no
+// editor UI here.
+//
+// client_sms_senders is not in the generated Database type yet, so the browser
+// client is cast to untyped for this read — same pattern as use-billing.ts /
+// use-connections.ts.
 // =============================================================================
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { normalizeError } from '@/lib/errors';
-import type { SmsTemplateKey } from '@/lib/sms/default-templates';
 import { supabase } from '@/lib/supabase/client';
 
-import type { ClientSmsSenderRow, SmsTemplateRow } from './types';
+import type { ClientSmsSenderRow } from './types';
 
-/** The browser client, untyped for the not-yet-generated tables. */
+/** The browser client, untyped for the not-yet-generated table. */
 function db(): SupabaseClient {
   return supabase as unknown as SupabaseClient;
 }
 
 const senderKey = (clientId: string | null) => ['sms-sender', clientId] as const;
-const templatesKey = (clientId: string | null) => ['sms-templates', clientId] as const;
 
 // --- reads -------------------------------------------------------------------
 
@@ -53,26 +54,6 @@ export function useClientSmsSender(clientId: string | null) {
   return useQuery({
     queryKey: senderKey(clientId),
     queryFn: () => fetchSender(clientId as string),
-    enabled: clientId != null && clientId.length > 0,
-  });
-}
-
-async function fetchTemplates(clientId: string): Promise<SmsTemplateRow[]> {
-  const { data, error } = await db()
-    .from('sms_templates')
-    .select(
-      'id, client_id, template_key, body, is_default, last_edited_at, last_edited_by, created_at',
-    )
-    .eq('client_id', clientId);
-  if (error) throw normalizeError(error);
-  return (data as SmsTemplateRow[] | null) ?? [];
-}
-
-/** A client's SMS templates. Disabled (idle) until a client UUID is set. */
-export function useClientSmsTemplates(clientId: string | null) {
-  return useQuery({
-    queryKey: templatesKey(clientId),
-    queryFn: () => fetchTemplates(clientId as string),
     enabled: clientId != null && clientId.length > 0,
   });
 }
@@ -101,12 +82,6 @@ function smsErrorMessage(code: string | undefined, status: number): string {
       return 'No sender id has been registered for this client yet.';
     case 'twilio-register-failed':
       return 'Twilio rejected the sender id. Try a different one, or check the Twilio account.';
-    case 'too-long':
-      return 'The template is over the 320-character limit.';
-    case 'empty-body':
-      return 'The template body cannot be empty.';
-    case 'invalid-templateKey':
-      return 'Unknown template.';
     case 'forbidden':
     case 'forbidden-client':
       return 'You do not have access to this client.';
@@ -150,22 +125,6 @@ export function useRefreshSmsSender(clientId: string | null) {
     mutationFn: () => postJson('/api/integrations/twilio/sender', { clientId, action: 'refresh' }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: senderKey(clientId) });
-    },
-  });
-}
-
-/** Save an edited SMS template body. */
-export function useSaveSmsTemplate(clientId: string | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (input: { templateKey: SmsTemplateKey; body: string }) =>
-      postJson('/api/integrations/twilio/templates', {
-        clientId,
-        templateKey: input.templateKey,
-        body: input.body,
-      }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: templatesKey(clientId) });
     },
   });
 }

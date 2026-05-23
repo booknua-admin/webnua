@@ -30,8 +30,7 @@ import { validateTemplate } from '@/lib/sms/character-validator';
 import { DEFAULT_SMS_TEMPLATES } from '@/lib/sms/default-templates';
 import { normalizePhone } from '@/lib/sms/phone';
 import { segmentCost } from '@/lib/sms/pricing';
-import { render } from '@/lib/sms/template-renderer';
-import type { RenderContext } from '@/lib/sms/template-variables';
+import { render, type RenderContext } from '@/lib/sms/template-renderer';
 
 import { isTwilioConfigured, mapTwilioMessageStatus, sendSMS } from './client';
 import { insertSmsMessage } from './messages';

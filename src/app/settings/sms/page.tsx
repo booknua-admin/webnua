@@ -1,11 +1,18 @@
 'use client';
 
 // =============================================================================
-// /settings/sms — the per-client SMS settings surface (sub-account mode).
+// /settings/sms — the per-client SMS sender provisioning surface
+// (sub-account mode).
 //
 // Phase 7 Twilio SMS session. Operator-facing, sub-account only — the operator
-// has drilled into one client. Two sections: the alphanumeric sender
-// provisioning panel, and the four editable SMS templates.
+// has drilled into one client. Single section: the alphanumeric sender
+// provisioning panel.
+//
+// SMS template editing lives with the Automations feature (not yet fully
+// built) — the message bodies are tied to the automations that fire them, so
+// managing them in isolation here would be misleading. The four per-client
+// templates are still seeded by migration 0060 so the send_sms job has a body
+// to render; an operator-facing editor surfaces once Automations is wired.
 //
 // Agency mode is bounced to /settings by the settings layout guard
 // (/settings/sms is in its SUB_ACCOUNT_ONLY list); a client-role user has no
@@ -16,13 +23,10 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { SmsSenderSection } from '@/components/shared/settings/SmsSenderSection';
-import { SmsTemplateEditor } from '@/components/shared/settings/SmsTemplateEditor';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { useRole } from '@/lib/auth/user-stub';
 import { useClientId } from '@/lib/clients/queries';
-import { DEFAULT_SMS_TEMPLATES, SMS_TEMPLATE_KEYS } from '@/lib/sms/default-templates';
-import { useClientSmsTemplates } from '@/lib/integrations/twilio/use-sms';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 export default function SettingsSmsPage() {
@@ -81,66 +85,14 @@ function SmsSettingsContent({
         }
         subtitle={
           <>
-            <strong>One-way transactional texts.</strong> The sender id customers see, and the
-            message templates Webnua sends on {clientName}&apos;s behalf — lead acknowledgments,
-            confirmations, arrival notices and review requests.
+            <strong>The alphanumeric sender id customers see</strong> when {clientName} sends a
+            transactional text. Message bodies live with the automations that fire them — manage
+            them from the Automations feature.
           </>
         }
       >
-        <div className="flex flex-col gap-7">
-          <SmsSenderSection clientId={clientId ?? null} clientName={clientName} />
-          <TemplatesPanel clientId={clientId ?? null} />
-        </div>
+        <SmsSenderSection clientId={clientId ?? null} clientName={clientName} />
       </SettingsShell>
     </>
-  );
-}
-
-// --- templates panel ---------------------------------------------------------
-
-function TemplatesPanel({ clientId }: { clientId: string | null }) {
-  const templates = useClientSmsTemplates(clientId);
-
-  if (templates.isLoading || clientId == null) {
-    return (
-      <div className="rounded-xl border border-rule bg-card px-6 py-5 text-[13px] text-ink-quiet">
-        Loading templates…
-      </div>
-    );
-  }
-  if (templates.isError) {
-    return (
-      <div className="rounded-xl border border-rule bg-card px-6 py-5 text-[13px] text-warn">
-        Could not load the SMS templates. Refresh to try again.
-      </div>
-    );
-  }
-
-  const rows = templates.data ?? [];
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h2 className="text-[16px] font-bold text-ink">Message templates</h2>
-        <p className="mt-0.5 text-[13px] leading-[1.5] text-ink-quiet">
-          Edit the body of each transactional SMS. Variables like{' '}
-          <span className="font-mono text-[12px]">{'{{lead.firstName}}'}</span> are filled in at
-          send time.
-        </p>
-      </div>
-      {SMS_TEMPLATE_KEYS.map((key) => {
-        const row = rows.find((r) => r.template_key === key);
-        return (
-          <SmsTemplateEditor
-            key={key}
-            clientId={clientId}
-            templateKey={key}
-            body={row?.body ?? DEFAULT_SMS_TEMPLATES[key]}
-            isDefault={row?.is_default ?? true}
-            lastEditedAt={row?.last_edited_at ?? null}
-          />
-        );
-      })}
-    </div>
   );
 }

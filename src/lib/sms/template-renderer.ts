@@ -3,17 +3,17 @@
 //
 // render(template, context) walks the template, swapping every {{group.name}}
 // for its value in the context. It reports which variables it used and which
-// were referenced but missing — the editor surfaces the missing list as a
-// warning (a typo'd variable would otherwise ship an empty gap to a customer).
+// were referenced but missing.
 //
 // A referenced-but-missing variable renders as an empty string, NOT as the
 // literal {{...}} — a customer must never receive an un-substituted
 // placeholder.
 //
-// SERVER + CLIENT safe — pure, no imports beyond the variable types.
+// SERVER + CLIENT safe — pure, no imports.
 // =============================================================================
 
-import type { RenderContext } from './template-variables';
+/** A flat render context — dotted variable key → string value. */
+export type RenderContext = Record<string, string>;
 
 export type RenderResult = {
   /** The template with every {{variable}} substituted. */
