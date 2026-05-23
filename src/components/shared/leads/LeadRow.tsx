@@ -25,6 +25,8 @@ type ClientLeadRowProps = {
   urgency?: LeadUrgency;
   age: string;
   unread: boolean;
+  /** Latest message is an inbound — render the rust reply dot next to the name. */
+  needsReply?: boolean;
   href: string;
   sourceKind: LeadSourceKind;
 };
@@ -43,6 +45,8 @@ type AdminLeadRowProps = {
   meta: string;
   metaTone: 'good' | 'rust' | 'quiet';
   unread: boolean;
+  /** Latest message is an inbound — render the rust reply dot next to the name. */
+  needsReply?: boolean;
   href: string;
   sourceKind: LeadSourceKind;
 };
@@ -83,8 +87,15 @@ function LeadRow(props: LeadRowProps) {
           {props.initial}
         </div>
         <div className="min-w-0">
-          <div className="mb-1 truncate text-[14px] font-semibold text-ink">
-            {props.name}
+          <div className="mb-1 flex items-center gap-2 truncate text-[14px] font-semibold text-ink">
+            {props.needsReply ? (
+              <span
+                title="Awaiting your reply"
+                aria-label="Awaiting your reply"
+                className="inline-block size-[7px] shrink-0 animate-pulse rounded-full bg-rust"
+              />
+            ) : null}
+            <span className="truncate">{props.name}</span>
           </div>
           <div className="truncate text-[13px] text-ink-quiet">
             <span className="font-mono text-[11px] font-medium uppercase tracking-[0.06em] text-ink/55">
@@ -125,8 +136,15 @@ function LeadRow(props: LeadRowProps) {
         {props.initial}
       </div>
       <div className="min-w-0">
-        <div className="mb-1 truncate text-[14px] font-semibold text-ink">
-          {props.name}
+        <div className="mb-1 flex items-center gap-2 truncate text-[14px] font-semibold text-ink">
+          {props.needsReply ? (
+            <span
+              title="Awaiting your reply"
+              aria-label="Awaiting your reply"
+              className="inline-block size-[7px] shrink-0 animate-pulse rounded-full bg-rust"
+            />
+          ) : null}
+          <span className="truncate">{props.name}</span>
         </div>
         <LeadClientPill
           name={props.clientName}

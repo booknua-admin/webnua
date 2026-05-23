@@ -52,12 +52,18 @@ function AdminLeadsContent() {
   }, [allLeads]);
 
   // Tab ids map 1:1 to LeadStatus. Counts recomputed from the client pool.
+  // `needsReplyCount` is the subset awaiting an operator reply — surfaces
+  // as a rust accent on the tab.
   const tabs = useMemo(
     () =>
-      adminLeadsTabs.map((tab) => ({
-        ...tab,
-        count: clientPool.filter((lead) => lead.status === tab.id).length,
-      })),
+      adminLeadsTabs.map((tab) => {
+        const tabRows = clientPool.filter((lead) => lead.status === tab.id);
+        return {
+          ...tab,
+          count: tabRows.length,
+          needsReplyCount: tabRows.filter((lead) => lead.needsReply).length,
+        };
+      }),
     [clientPool],
   );
 
@@ -142,6 +148,7 @@ function AdminLeadsContent() {
                 meta={lead.meta}
                 metaTone={lead.metaTone}
                 unread={lead.unread}
+                needsReply={lead.needsReply}
                 href={lead.href}
                 sourceKind={lead.sourceKind}
               />

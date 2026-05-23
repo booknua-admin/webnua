@@ -69,6 +69,20 @@ function LeadTabsBar({
                 {tab.count}
               </span>
             ) : null}
+            {typeof tab.needsReplyCount === 'number' && tab.needsReplyCount > 0 ? (
+              <span
+                title={`${tab.needsReplyCount} awaiting your reply`}
+                aria-label={`${tab.needsReplyCount} awaiting your reply`}
+                className={cn(
+                  'rounded-full px-[7px] py-[1px] font-mono text-[11px] font-medium',
+                  isActive
+                    ? 'bg-rust-light/25 text-paper'
+                    : 'bg-rust/[0.14] text-rust',
+                )}
+              >
+                ● {tab.needsReplyCount}
+              </span>
+            ) : null}
           </button>
         );
       })}

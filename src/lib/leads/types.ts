@@ -36,6 +36,10 @@ export type LeadTab = {
   id: string;
   label: string;
   count?: number;
+  /** Subset of `count` that is awaiting an operator reply (the lead's
+   *  most-recent message event is an inbound). Surfaces as a rust accent
+   *  on the tab's count badge. */
+  needsReplyCount?: number;
 };
 
 export type LeadFilterChip = {
@@ -71,6 +75,8 @@ export type ClientLeadRow = {
   urgency?: LeadUrgency;
   age: string;
   unread: boolean;
+  /** Latest message on this lead is an inbound — show the rust reply dot. */
+  needsReply: boolean;
   href: string;
   completion: LeadCompletion;
   sourceKind: LeadSourceKind;
@@ -93,6 +99,8 @@ export type AdminLeadRow = {
   meta: string;
   metaTone: 'good' | 'rust' | 'quiet';
   unread: boolean;
+  /** Latest message on this lead is an inbound — show the rust reply dot. */
+  needsReply: boolean;
   href: string;
   completion: LeadCompletion;
   sourceKind: LeadSourceKind;

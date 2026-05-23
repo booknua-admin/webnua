@@ -64,6 +64,9 @@ export type LeadInboxRecord = {
   preview: string;
   activity: LeadActivity;
   unread: boolean;
+  /** Latest message on the lead is an inbound — the customer's last word.
+   *  Drives the inbox row's rust dot + the per-tab count badge. */
+  needsReply: boolean;
   completion: LeadCompletion;
   sourceKind: LeadSourceKind;
 };
@@ -168,6 +171,19 @@ function derivePreview(events: LeadEventRow[]): string {
   return 'No message yet';
 }
 
+/** True when the lead's most-recent message event is an inbound (sms_in or
+ *  email_in) — i.e. the customer's last word, not ours. Drives the rust
+ *  "needs your reply" dot on the inbox row and the per-tab count badge.
+ *  Form submits and status changes don't count — those aren't a customer
+ *  reply waiting on action. */
+function deriveNeedsReply(events: LeadEventRow[]): boolean {
+  const latestMessage = [...events]
+    .filter((e) => MESSAGE_KINDS.has(e.kind))
+    .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))[0];
+  if (!latestMessage) return false;
+  return latestMessage.kind === 'sms_in' || latestMessage.kind === 'email_in';
+}
+
 /** The admin row's last-activity blurb (design doc §5 #1 — derived, not a
  *  stored `meta` column). */
 function deriveActivity(events: LeadEventRow[]): LeadActivity {
@@ -251,6 +267,7 @@ async function fetchLeadInbox(): Promise<LeadInboxRecord[]> {
     preview: derivePreview(row.lead_events),
     activity: deriveActivity(row.lead_events),
     unread: !readLeadIds.has(row.id),
+    needsReply: deriveNeedsReply(row.lead_events),
     completion: deriveCompletion(row.lead_events),
     sourceKind: row.source_kind ?? 'website',
   }));
@@ -269,6 +286,7 @@ function toClientLeadRow(record: LeadInboxRecord): ClientLeadRow {
     urgency: record.urgency,
     age: relativeTime(record.createdAt),
     unread: record.unread,
+    needsReply: record.needsReply,
     href: `/leads/${record.id}`,
     completion: record.completion,
     sourceKind: record.sourceKind,
@@ -290,6 +308,7 @@ function toAdminLeadRow(record: LeadInboxRecord): AdminLeadRow {
     meta: record.activity.meta,
     metaTone: record.activity.metaTone,
     unread: record.unread,
+    needsReply: record.needsReply,
     href: `/leads/${record.id}`,
     completion: record.completion,
     sourceKind: record.sourceKind,
@@ -466,8 +485,26 @@ function mapTimelineEvent(
   };
 
   if (MESSAGE_KINDS.has(e.kind)) {
-    const body = payload.body;
-    if (typeof body === 'string' && body.length > 0) event.snippet = `"${body}"`;
+    const body = typeof payload.body === 'string' ? payload.body : '';
+    const subject = typeof payload.subject === 'string' ? payload.subject : '';
+    // Email events carry both subject + body; render subject as a bold lead
+    // line above the snippet so the timeline is scannable even when (rare)
+    // the body extraction came up empty. SMS events have no subject and
+    // fall through to the body-only path.
+    const hasSubject = (e.kind === 'email_in' || e.kind === 'email_out') && subject.length > 0;
+    if (hasSubject && body.length > 0) {
+      event.snippet = (
+        <>
+          <strong>{subject}</strong>
+          <br />
+          {body}
+        </>
+      );
+    } else if (hasSubject) {
+      event.snippet = <strong>{subject}</strong>;
+    } else if (body.length > 0) {
+      event.snippet = `"${body}"`;
+    }
     return event;
   }
 

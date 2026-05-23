@@ -18,15 +18,18 @@ function ClientLeadsContent() {
 
   // Tab ids map 1:1 to LeadStatus (plus `all`). Counts are recomputed from
   // the live rows so the badge and the filtered list always agree.
+  // `needsReplyCount` is the subset awaiting an operator reply — surfaces
+  // as a rust accent on the tab.
   const tabs = useMemo(() => {
     const rows = leads ?? [];
-    return clientLeadsTabs.map((tab) => ({
-      ...tab,
-      count:
-        tab.id === 'all'
-          ? rows.length
-          : rows.filter((lead) => lead.status === tab.id).length,
-    }));
+    return clientLeadsTabs.map((tab) => {
+      const tabRows = tab.id === 'all' ? rows : rows.filter((lead) => lead.status === tab.id);
+      return {
+        ...tab,
+        count: tabRows.length,
+        needsReplyCount: tabRows.filter((lead) => lead.needsReply).length,
+      };
+    });
   }, [leads]);
 
   const visibleLeads = useMemo(() => {
@@ -84,6 +87,7 @@ function ClientLeadsContent() {
                 urgency={lead.urgency}
                 age={lead.age}
                 unread={lead.unread}
+                needsReply={lead.needsReply}
                 href={lead.href}
                 sourceKind={lead.sourceKind}
               />
