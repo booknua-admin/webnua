@@ -28,9 +28,17 @@
 //                                  throttling against the digest worker.
 //   • batch_notification_digest — hourly digest of throttled notifications.
 //   • send_test_notification    — operator test-send from the settings UI.
+//
+// Phase 7 Google Business Profile adds:
+//   • gbp_sync_reviews          — daily review-pull from Google + upsert into
+//                                  gbp_reviews (also called on demand).
+//   • gbp_send_review_request   — picks an SMS or email channel and enqueues
+//                                  the underlying send job, with a row on
+//                                  gbp_review_requests for the audit log.
 // =============================================================================
 
 import '@/lib/integrations/_shared/job-handlers';
+import '@/lib/integrations/gbp/job-handlers';
 import '@/lib/integrations/resend/job-handlers';
 import '@/lib/integrations/stripe/job-handlers';
 import '@/lib/integrations/twilio/job-handlers';
