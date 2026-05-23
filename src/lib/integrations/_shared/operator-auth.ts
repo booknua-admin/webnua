@@ -84,3 +84,70 @@ export async function requireOperatorForClient(
 
   return { ok: true, userId };
 }
+
+/**
+ * Require the request to come from EITHER an operator who can act on
+ * `clientId` (delegated path — the operator acts on behalf of the client)
+ * OR the client themselves (the signed-in client-role user whose
+ * `client_id` matches `clientId`). Use for tenant-scoped integrations
+ * where the client owns the integration in question (eg. Google Business
+ * Profile — the customer's own GBP listing).
+ *
+ * Returns the calling user's id on success, or an HTTP status + error
+ * code.
+ */
+export async function requireClientAccess(
+  request: Request,
+  clientId: string,
+): Promise<OperatorAuthResult> {
+  const token = bearerToken(request);
+  if (!token) return { ok: false, status: 401, error: 'unauthenticated' };
+
+  const svc = getServiceClient();
+  const { data: userData, error: userError } = await svc.auth.getUser(token);
+  if (userError || !userData.user) {
+    return { ok: false, status: 401, error: 'unauthenticated' };
+  }
+  const userId = userData.user.id;
+
+  const { data: profile } = await svc
+    .from('users')
+    .select('role, client_id')
+    .eq('id', userId)
+    .single();
+  if (!profile) {
+    return { ok: false, status: 403, error: 'forbidden' };
+  }
+
+  // A client-role user may act on their OWN client only.
+  if (profile.role === 'client') {
+    if (profile.client_id !== clientId) {
+      return { ok: false, status: 403, error: 'forbidden-client' };
+    }
+    return { ok: true, userId };
+  }
+
+  // The operator (`admin`) path mirrors requireOperatorForClient — verify
+  // accessible_client_ids via a token-scoped Supabase client so RLS does
+  // the scoping (junior operators stay bounded to their assignment).
+  if (profile.role !== 'admin') {
+    return { ok: false, status: 403, error: 'forbidden' };
+  }
+  const asOperator = createClient(
+    env.NEXT_PUBLIC_SUPABASE_URL,
+    env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+      auth: { persistSession: false, autoRefreshToken: false },
+    },
+  );
+  const { data: client } = await asOperator
+    .from('clients')
+    .select('id')
+    .eq('id', clientId)
+    .maybeSingle();
+  if (!client) {
+    return { ok: false, status: 403, error: 'forbidden-client' };
+  }
+  return { ok: true, userId };
+}

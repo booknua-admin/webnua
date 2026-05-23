@@ -137,6 +137,16 @@ function summaryFor(reviews: ReviewRow[]): ReviewSummaryData {
   };
 }
 
+/** Tolerate PGRST205 (table missing from PostgREST's schema cache) — a
+ *  deployment where the GBP migrations (0066–0069) have not yet been
+ *  applied should show a clean empty state with a Connect CTA, not a
+ *  raw error. Treat the missing table as "no reviews yet". */
+function isMissingTableError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const code = (error as { code?: unknown }).code;
+  return code === 'PGRST205';
+}
+
 // =============================================================================
 // Client `/reviews` — the signed-in client's own reviews.
 // =============================================================================
@@ -147,7 +157,7 @@ async function fetchClientReviews(): Promise<ClientReviewsPage> {
   } = await supabase.auth.getUser();
   if (!user) throw AppError.auth();
 
-  // RLS scopes `clients` to the caller's own client; `reviews` likewise.
+  // RLS scopes `clients` to the caller's own client; `gbp_reviews` likewise.
   const [clientResult, reviewsResult] = await Promise.all([
     supabase.from('clients').select('id, name, slug, industry'),
     db()
@@ -158,10 +168,12 @@ async function fetchClientReviews(): Promise<ClientReviewsPage> {
   ]);
 
   if (clientResult.error) throw normalizeError(clientResult.error);
-  if (reviewsResult.error) throw normalizeError(reviewsResult.error);
+  if (reviewsResult.error && !isMissingTableError(reviewsResult.error)) {
+    throw normalizeError(reviewsResult.error);
+  }
 
   const client = (clientResult.data as ClientRow[])[0];
-  const reviews = reviewsResult.data as ReviewRow[];
+  const reviews = (reviewsResult.data as ReviewRow[] | null) ?? [];
   const clientName = client?.name ?? 'Your business';
 
   return {
@@ -235,10 +247,12 @@ async function fetchAdminReviews(): Promise<AdminReviewsPage> {
   ]);
 
   if (clientsResult.error) throw normalizeError(clientsResult.error);
-  if (reviewsResult.error) throw normalizeError(reviewsResult.error);
+  if (reviewsResult.error && !isMissingTableError(reviewsResult.error)) {
+    throw normalizeError(reviewsResult.error);
+  }
 
   const clients = clientsResult.data as ClientRow[];
-  const reviews = reviewsResult.data as ReviewRow[];
+  const reviews = (reviewsResult.data as ReviewRow[] | null) ?? [];
 
   const byClient = new Map<string, ReviewRow[]>();
   for (const r of reviews) {

@@ -1,7 +1,7 @@
 // =============================================================================
 // /api/integrations/google_business_profile/review-request
 //
-// Operator-only manual review-request send. The booking-completion trigger
+// Client-or-operator manual review-request send. The booking-completion trigger
 // fires automatically; this route is the override for the cases the trigger
 // misses — a job done off-platform, a customer who wasn't entered as a
 // booking, a re-send. Same job handler (gbp_send_review_request) does the
@@ -21,7 +21,7 @@
 import { NextResponse } from 'next/server';
 
 import { enqueueJobImmediate } from '@/lib/integrations/_shared/jobs';
-import { requireOperatorForClient } from '@/lib/integrations/_shared/operator-auth';
+import { requireClientAccess } from '@/lib/integrations/_shared/operator-auth';
 import {
   GBP_SEND_REVIEW_REQUEST_JOB,
   type GbpSendReviewRequestPayload,
@@ -46,7 +46,7 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: 'missing-clientId' }, { status: 400 });
   }
 
-  const auth = await requireOperatorForClient(request, clientId);
+  const auth = await requireClientAccess(request, clientId);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

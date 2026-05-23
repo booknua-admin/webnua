@@ -1,7 +1,8 @@
 // =============================================================================
 // /api/integrations/google_business_profile/locations
 //
-// The post-OAuth location-picker surface. Two operator-only actions:
+// The post-OAuth location-picker surface. Client-or-operator (the customer's
+// own GBP listing).
 //
 //   POST { clientId, action: 'list' }
 //     Hits Google's account + location APIs to surface every GBP location
@@ -14,9 +15,8 @@
 //     so the headline metrics + review_link populate without waiting for
 //     the daily cron.
 //
-// Both require an operator session for the target client. Returns 503
-// when the OAuth provider is unconfigured (which would otherwise produce
-// confusing 500s in the consent step before any of this).
+// Returns 503 when the OAuth provider is unconfigured (which would
+// otherwise produce confusing 500s in the consent step before any of this).
 // =============================================================================
 
 import { NextResponse } from 'next/server';
@@ -36,7 +36,7 @@ import {
   type GbpSyncReviewsPayload,
 } from '@/lib/integrations/gbp/job-types';
 import { enqueueJobImmediate } from '@/lib/integrations/_shared/jobs';
-import { requireOperatorForClient } from '@/lib/integrations/_shared/operator-auth';
+import { requireClientAccess } from '@/lib/integrations/_shared/operator-auth';
 
 type ListAction = { action: 'list'; clientId: string };
 type SelectAction = {
@@ -60,7 +60,7 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: 'missing-clientId' }, { status: 400 });
   }
 
-  const auth = await requireOperatorForClient(request, clientId);
+  const auth = await requireClientAccess(request, clientId);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

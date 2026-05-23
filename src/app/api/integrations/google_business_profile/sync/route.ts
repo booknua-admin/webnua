@@ -1,10 +1,10 @@
 // =============================================================================
 // /api/integrations/google_business_profile/sync
 //
-// Operator-only "Sync now" — manually enqueues a gbp_sync_reviews job. The
-// daily cron already runs (migration 0069) so this is the impatient path:
-// pull recent reviews + refresh the location's headline metrics without
-// waiting for tomorrow's tick.
+// "Sync now" — manually enqueues a gbp_sync_reviews job. The daily cron
+// already runs (migration 0069) so this is the impatient path: pull
+// recent reviews + refresh the location's headline metrics without
+// waiting for tomorrow's tick. Client-or-operator.
 //
 //   POST { clientId } — refreshLocation always true on the manual path.
 // =============================================================================
@@ -12,7 +12,7 @@
 import { NextResponse } from 'next/server';
 
 import { enqueueJobImmediate } from '@/lib/integrations/_shared/jobs';
-import { requireOperatorForClient } from '@/lib/integrations/_shared/operator-auth';
+import { requireClientAccess } from '@/lib/integrations/_shared/operator-auth';
 import { isGbpConfigured } from '@/lib/integrations/gbp/client';
 import {
   GBP_SYNC_REVIEWS_JOB,
@@ -31,7 +31,7 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: 'missing-clientId' }, { status: 400 });
   }
 
-  const auth = await requireOperatorForClient(request, clientId);
+  const auth = await requireClientAccess(request, clientId);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

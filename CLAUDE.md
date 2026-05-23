@@ -421,10 +421,10 @@ Components for the operator's cross-client integrations matrix — workspace-wid
 - **`integrations/_shared/oauth.ts`** — generic helpers: `generateAuthorizationUrl`, `exchangeCodeForTokens`, `buildRedirectUri`, and the HMAC-signed `state` token (`signOAuthState` / `verifyOAuthState` — 15-min TTL; the OAuth CSRF defence + the only authenticated context carried into the callback).
 - **`integrations/_shared/tokens.ts`** — token management. Vault RPC wrappers; `storeConnection` (Vault-encrypt then write the row — **Vault failure is fatal, no plaintext fallback**), `getAccessToken` (on-demand refresh, forked on `token_model` — `refresh_access` re-mints from the Vault refresh token, `long_lived` extends the Vault secret in place), `revokeConnection`, `notifyTokenRefreshFailure` (throttled operator alert). Typed errors: `VaultUnavailableError` / `ConnectionNotFoundError` / `TokenExpiredError` / `TokenRefreshFailedError` / `TokenRevokedError`.
 - **`integrations/_shared/api-call-with-token.ts`** — **`callWithToken(clientId, provider, fetchFn)`** — every per-tenant API call goes through this: fresh access token in, 401 → refresh-and-retry-once, marks the connection `refresh_failed` + throws `TokenRefreshFailedError` on a dead token. `fetchFn` itself uses `callExternal()`.
-- **`integrations/_shared/operator-auth.ts`** — `requireOperatorForClient(request, clientId)` for the connect/disconnect routes: bearer-token → operator role + client-access check (a token-scoped client so the `clients` RLS scopes a junior operator). Integration management is operator governance, NOT a builder capability.
+- **`integrations/_shared/operator-auth.ts`** — two helpers. `requireOperatorForClient(request, clientId)`: bearer-token → operator role + accessible-client check (token-scoped client so the `clients` RLS scopes a junior operator); integration management as operator governance. **`requireClientAccess(request, clientId)`** (Phase 7 GBP UI consolidation): the looser variant — accepts EITHER an operator path (same check) OR a client-role user whose `client_id` matches. Used for the GBP routes + GBP's connect/disconnect leg, because the GBP listing belongs to the customer — they may connect their own without operator delegation. Meta Ads stays on `requireOperatorForClient` because the ad-account contract is operator governance.
 - **`integrations/_shared/job-handlers.ts`** — registers `token_refresh_check` (daily cron, migration `0056`): proactively refreshes `long_lived` connections within 14 days of expiry; `refresh_access` connections need none (on-demand re-mint).
 - **`integrations/use-connections.ts`** — `'use client'` operator-UI data layer: `useClientConnections` (reads `integration_connections`, RLS-scoped), `connectIntegration` (POST connect → navigate to consent), `useDisconnectIntegration`.
-- **`app/api/integrations/[provider]/connect|callback|disconnect/route.ts`** — `connect` (POST, operator-only, returns `{ authorizationUrl }` JSON — not a 302, since it is `fetch`-ed with a bearer token), `callback` (GET, verified by the signed state — a provider redirect carries no auth header), `disconnect` (POST, operator-only, revokes).
+- **`app/api/integrations/[provider]/connect|callback|disconnect/route.ts`** — `connect` (POST, returns `{ authorizationUrl }` JSON — not a 302, since it is `fetch`-ed with a bearer token; auth dispatches on the provider — GBP is client-or-operator via `requireClientAccess`, Meta is operator-only via `requireOperatorForClient`), `callback` (GET, verified by the signed state — a provider redirect carries no auth header), `disconnect` (POST, same per-provider auth split, revokes).
 - **`components/shared/settings/IntegrationConnectionsSection.tsx`** — operator "Connected accounts" panel on sub-account `/settings/integrations` — per-provider status + Connect / Disconnect / Reconnect.
 
 #### Per-tenant OAuth — Google Business Profile setup
@@ -742,11 +742,16 @@ Components for the operator's cross-client integrations matrix — workspace-wid
 > local SEO rankings, so this is one of the highest-leverage automations in
 > the acquisition machine. Three end-to-end flows:
 >
-> 1. **Connect + pick location.** The customer OAuths through the per-tenant
->    foundation on sub-account `/settings/integrations`; on callback
->    return, the `GbpLocationPickerModal` auto-opens on that same page so
->    the operator picks WHICH location to manage. The selection lands in
->    `client_gbp_locations` (one row per client, migration `0066`).
+> 1. **Connect + pick location.** GBP belongs to the customer's own
+>    business, so the **client** can connect their own listing directly
+>    (the "Connect Google Business →" CTA on `/reviews` when no location
+>    is wired up yet) — the operator can also do it on their behalf from
+>    sub-account `/settings/integrations`. On callback return, the
+>    `GbpLocationPickerModal` auto-opens so they pick WHICH location to
+>    manage. The selection lands in `client_gbp_locations` (one row per
+>    client, migration `0066`). The connect/disconnect routes accept
+>    EITHER role for GBP via `requireClientAccess` (Meta Ads stays
+>    operator-only — different governance axis).
 > 2. **Review-request automation.** When a booking transitions to
 >    `completed`, the migration `0069` `AFTER UPDATE` trigger enqueues a
 >    `gbp_send_review_request` job with a **2-hour delay**. The handler
@@ -841,7 +846,7 @@ Components for the operator's cross-client integrations matrix — workspace-wid
   `useSendGbpReviewRequest` (POST the operator routes), plus the cheap
   derived `useNewGbpReviewsCount(clientId)` used by the dashboard widget.
 - **`app/api/integrations/google_business_profile/locations/route.ts`** —
-  `POST`, operator-only. Two actions: `list` calls
+  `POST`, client-or-operator (the customer's own listing). Two actions: `list` calls
   `listAccounts` + `listLocations` for every account in parallel,
   returning a bucketed list the picker UI groups under the parent Google
   account; `select` upserts the chosen location, fetches its detail to
@@ -849,19 +854,19 @@ Components for the operator's cross-client integrations matrix — workspace-wid
   `gbp_sync_reviews` job with `refreshLocation=true`. Returns 503 when GBP
   isn't configured so the consent error is meaningful.
 - **`app/api/integrations/google_business_profile/sync/route.ts`** —
-  `POST`, operator-only. Manual "Sync now" — enqueues a sync with
+  `POST`, client-or-operator (the customer's own listing). Manual "Sync now" — enqueues a sync with
   `refreshLocation=true` so the location detail + reviews refresh together.
 - **`app/api/integrations/google_business_profile/reply/route.ts`** —
-  `POST`, operator-only. Validates the reply (≤ 4096 chars), resolves the
+  `POST`, client-or-operator (the customer's own listing). Validates the reply (≤ 4096 chars), resolves the
   `gbp_review_id` (the API path) from the DB row id, calls `replyToReview`
   via `callWithToken`, then caches the reply locally via
   `recordReviewReply` so the inbox refresh shows the reply immediately
   (the next daily sync would otherwise be the source of truth).
 - **`app/api/integrations/google_business_profile/review-request/route.ts`** —
-  `POST`, operator-only. Manual review-request send (off-platform jobs,
+  `POST`, client-or-operator (the customer's own listing). Manual review-request send (off-platform jobs,
   re-sends). Same job handler the trigger uses — `gbp_send_review_request`.
 - **`app/api/integrations/google_business_profile/mark-seen/route.ts`** —
-  `POST`, operator-only. Clears `is_new_since_last_view` for every unseen
+  `POST`, client-or-operator (the customer's own listing). Clears `is_new_since_last_view` for every unseen
   review for a client (badge-clear).
 - **`components/shared/settings/GbpLocationPickerModal.tsx`** —
   `'use client'`. Post-OAuth location picker. Calls the `list` action on
@@ -893,6 +898,15 @@ Components for the operator's cross-client integrations matrix — workspace-wid
   dot type (amber star — the GBP echo). Review-request sends fold into
   the same chronological timeline as the other lead events; no separate
   audit section.
+- **`components/shared/gbp/GbpConnectPanel.tsx`** — `'use client'`.
+  Empty-state "Connect Google Business Profile →" CTA mounted on
+  `/reviews` (client view) when the client has no GBP location
+  connected. Fires the OAuth flow via the shared `connectIntegration`
+  helper; the underlying `/connect` route accepts a client-role user
+  for GBP. Self-hides once a location is connected. Also offers an
+  "Already connected? Pick a location" link that opens
+  `GbpLocationPickerModal` directly — for the case the operator
+  pre-OAuth'd on behalf and the client just needs to pick.
 - **`components/shared/gbp/GbpSendRequestButton.tsx`** — `'use client'`.
   The manual review-request affordance. Three render variants:
   `'button'` (default; outline button), `'action-row'` (full-width
@@ -918,9 +932,12 @@ Components for the operator's cross-client integrations matrix — workspace-wid
    `https://www.googleapis.com/auth/business.manage` scope, and (for
    production use) the OAuth app has passed Google's verified-app review.
    Until verified, only test users added to the consent screen can connect.
-2. With the customer present, navigate to sub-account `/settings/integrations`
-   and click **Connect** on the Google Business Profile row. The customer
-   signs in to their own Google account and grants consent.
+2. Either path is supported: (a) the **client** signs into their own
+   Webnua account and clicks **"Connect Google Business →"** on `/reviews`
+   (the empty-state CTA when no GBP location is connected), OR (b) with
+   the customer present, the operator navigates to sub-account
+   `/settings/integrations` and clicks **Connect** on the GBP row. Either
+   way the customer signs in to their own Google account + grants consent.
 3. The callback redirects to `/settings/integrations?integration=google_business_profile&integration_status=connected`.
    The `GbpLocationPickerModal` opens automatically on landing — pick the
    Business Profile location Webnua should manage; the modal stores the

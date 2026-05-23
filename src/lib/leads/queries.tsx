@@ -814,10 +814,12 @@ async function fetchReviewRequestsForLead(
     .eq('lead_id', leadId)
     .order('sent_at', { ascending: false });
   // Don't surface a query error as a lead-detail failure — the GBP table
-  // is optional and a fetch failure (RLS denial, network) shouldn't break
-  // the page. Log + fall back to no review-request events.
+  // is optional. PGRST205 = the table doesn't exist (migrations not yet
+  // applied); other errors (RLS denial, network) also degrade silently.
   if (error) {
-    console.warn('[lead-detail] gbp_review_requests fetch failed', error.message);
+    if (error.code !== 'PGRST205') {
+      console.warn('[lead-detail] gbp_review_requests fetch failed', error.message);
+    }
     return [];
   }
   return (data as GbpReviewRequestRow[] | null) ?? [];

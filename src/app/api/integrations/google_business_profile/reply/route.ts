@@ -1,10 +1,11 @@
 // =============================================================================
 // /api/integrations/google_business_profile/reply
 //
-// Operator-only — replies to a GBP review through the Webnua UI. Reply text
-// is sent to Google's v4 reply endpoint via callWithToken, then cached on
-// the gbp_reviews row so the inbox refresh shows the reply immediately
-// (the next daily sync would otherwise be the source of truth).
+// Client-or-operator — the customer's own GBP listing, so a client-role
+// user (acting on their own account) OR an operator (delegated) can post a
+// reply. Reply text is sent to Google's v4 reply endpoint via callWithToken,
+// then cached on the gbp_reviews row so the inbox refresh shows the reply
+// immediately (the next daily sync would otherwise be the source of truth).
 //
 //   POST { clientId, reviewId, replyText }
 //     reviewId is the gbp_reviews.id (DB primary key — the UI passes it).
@@ -15,7 +16,7 @@
 
 import { NextResponse } from 'next/server';
 
-import { requireOperatorForClient } from '@/lib/integrations/_shared/operator-auth';
+import { requireClientAccess } from '@/lib/integrations/_shared/operator-auth';
 import { isGbpConfigured, replyToReview } from '@/lib/integrations/gbp/client';
 import { findReviewById, recordReviewReply } from '@/lib/integrations/gbp/reviews';
 
@@ -48,7 +49,7 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: 'reply-too-long' }, { status: 400 });
   }
 
-  const auth = await requireOperatorForClient(request, clientId);
+  const auth = await requireClientAccess(request, clientId);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

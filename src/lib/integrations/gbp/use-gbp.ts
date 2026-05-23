@@ -33,6 +33,14 @@ function db(): SupabaseClient {
   return supabase as unknown as SupabaseClient;
 }
 
+/** PostgREST schema-cache error when the GBP tables (migrations
+ *  0066–0069) have not yet been applied. We treat it as "no data yet" so
+ *  the UI shows the Connect CTA instead of a raw error. */
+function isMissingTableError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  return (error as { code?: unknown }).code === 'PGRST205';
+}
+
 const locationKey = (clientId: string | null) => ['gbp-location', clientId] as const;
 const reviewsKey = (clientId: string | null) => ['gbp-reviews', clientId] as const;
 const requestsKey = (clientId: string | null) => ['gbp-review-requests', clientId] as const;
@@ -45,7 +53,9 @@ async function fetchLocation(clientId: string): Promise<ClientGbpLocationRow | n
     .select('*')
     .eq('client_id', clientId)
     .maybeSingle();
-  if (error) throw normalizeError(error);
+  // Missing table → treat as "no location yet" (deployment hasn't applied
+  // the GBP migrations); other errors propagate.
+  if (error && !isMissingTableError(error)) throw normalizeError(error);
   return (data as ClientGbpLocationRow | null) ?? null;
 }
 
@@ -65,7 +75,7 @@ async function fetchReviews(clientId: string): Promise<GbpReviewRow[]> {
     .is('deleted_at_google', null)
     .order('created_at_google', { ascending: false })
     .limit(100);
-  if (error) throw normalizeError(error);
+  if (error && !isMissingTableError(error)) throw normalizeError(error);
   return (data as GbpReviewRow[] | null) ?? [];
 }
 
@@ -84,7 +94,7 @@ async function fetchRequests(clientId: string): Promise<GbpReviewRequestRow[]> {
     .eq('client_id', clientId)
     .order('sent_at', { ascending: false })
     .limit(50);
-  if (error) throw normalizeError(error);
+  if (error && !isMissingTableError(error)) throw normalizeError(error);
   return (data as GbpReviewRequestRow[] | null) ?? [];
 }
 

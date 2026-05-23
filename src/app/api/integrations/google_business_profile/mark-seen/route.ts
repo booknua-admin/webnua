@@ -7,13 +7,13 @@
 //
 //   POST { clientId }
 //
-// Operator-only; client-role users see their own reviews but the "new"
-// badge is for the operator team's triage.
+// Client-or-operator. Both contexts open the reviews list and have the
+// badge clear on mount; the route shares the same code path.
 // =============================================================================
 
 import { NextResponse } from 'next/server';
 
-import { requireOperatorForClient } from '@/lib/integrations/_shared/operator-auth';
+import { requireClientAccess } from '@/lib/integrations/_shared/operator-auth';
 import { markReviewsSeen } from '@/lib/integrations/gbp/reviews';
 
 export async function POST(request: Request): Promise<Response> {
@@ -28,7 +28,7 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: 'missing-clientId' }, { status: 400 });
   }
 
-  const auth = await requireOperatorForClient(request, clientId);
+  const auth = await requireClientAccess(request, clientId);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

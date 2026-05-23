@@ -1,18 +1,21 @@
 // =============================================================================
 // POST /api/integrations/[provider]/connect — start a per-tenant OAuth flow.
 //
-// Phase 7 Session 2. Operator-only. The operator (in a client's sub-account
-// settings) connects that client's Google Business Profile / Meta Ads account.
+// Phase 7 Session 2 + Phase 7 GBP UI consolidation. Auth depends on the
+// provider: Google Business Profile is the customer's own listing, so a
+// client-role user (or the operator on their behalf) may initiate connect;
+// Meta Ads stays operator-only (governance over an ad account is the
+// operator's contract decision, not the customer's).
 //
-// Returns JSON { authorizationUrl } — NOT an HTTP redirect. The route is
-// operator-only and authenticated by the caller's Supabase access token on
-// the Authorization header (the app has no cookie-based server auth — same as
-// /api/domains), so it must be reached by fetch(), not a browser navigation.
-// A fetch cannot follow a 302 to accounts.google.com (CORS), so the route
-// hands back the URL and the operator's browser navigates to it.
+// Returns JSON { authorizationUrl } — NOT an HTTP redirect. Authenticated by
+// the caller's Supabase access token on the Authorization header (the app
+// has no cookie-based server auth — same as /api/domains), so it must be
+// reached by fetch(), not a browser navigation. A fetch cannot follow a 302
+// to accounts.google.com (CORS), so the route hands back the URL and the
+// caller's browser navigates to it.
 //
 // The signed `state` token (oauth.ts) carries the tenant + the initiating
-// operator across the OAuth round-trip — it is the callback's only proof of
+// user across the OAuth round-trip — it is the callback's only proof of
 // authenticated context, since a provider redirect arrives with no header.
 // =============================================================================
 
@@ -21,7 +24,7 @@ import { NextResponse } from 'next/server';
 import { isOAuthProviderId } from '@/lib/integrations/connections';
 import { generateAuthorizationUrl, buildRedirectUri, signOAuthState } from '@/lib/integrations/_shared/oauth';
 import { isOAuthProviderConfigured } from '@/lib/integrations/_shared/oauth-providers';
-import { requireOperatorForClient } from '@/lib/integrations/_shared/operator-auth';
+import { requireClientAccess, requireOperatorForClient } from '@/lib/integrations/_shared/operator-auth';
 
 export async function POST(
   request: Request,
@@ -43,7 +46,12 @@ export async function POST(
     return NextResponse.json({ error: 'missing-clientId' }, { status: 400 });
   }
 
-  const auth = await requireOperatorForClient(request, clientId);
+  // GBP is the customer's own listing — allow client-or-operator. Meta
+  // Ads stays operator-only (the operator owns the ad-account contract).
+  const auth =
+    provider === 'google_business_profile'
+      ? await requireClientAccess(request, clientId)
+      : await requireOperatorForClient(request, clientId);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
