@@ -11,6 +11,10 @@
 // Covered:
 //   - notifications (the bell feed), tickets + ticket_messages (both inboxes
 //     + every detail thread) — invalidate the matching query keys.
+//   - lead_events (the leads inbox + detail + conversation surfaces) — any
+//     insert (inbound email reply, outbound send, status change, form
+//     submission) invalidates the leads queries so the conversation reflows
+//     without a navigate-away-and-back.
 //   - website / funnel approval submissions + version tables — fan a
 //     BUILDER_EVENT via `notifyBuilder`, which every builder query subscribes
 //     to. This is both editor-side liveness (a submitter's lock banner clears
@@ -23,7 +27,8 @@
 // queue, publish-state, pending submissions) are all useBuilderQuery-based.
 //
 // The tables are added to the supabase_realtime publication by migration 0032
-// (notifications / tickets) + 0046 (approval + version tables).
+// (notifications / tickets), 0046 (approval + version tables), and 0065
+// (lead_events).
 //
 // The provider holds no context — it only runs the subscription effect and
 // passes children straight through.
@@ -70,6 +75,15 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'ticket_messages' },
         () => invalidate(['tickets']),
+      )
+      // Leads — a new lead_event (inbound email reply, outbound send,
+      // status change) invalidates every leads surface. Broad: the inbox
+      // preview line + the detail rail + the conversation thread all
+      // derive from lead_events, so one invalidation covers them all.
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'lead_events' },
+        () => invalidate(['leads']),
       )
       // Builder approval lanes — a BUILDER_EVENT refetches every builder query
       // (publish state, approval queue, the editor lock, version history).

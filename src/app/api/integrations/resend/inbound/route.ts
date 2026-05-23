@@ -295,6 +295,13 @@ export async function POST(request: Request): Promise<Response> {
           fromAddress: email.from ?? '',
         },
       });
+
+      // Auto-status: an inbound reply on a `contacted` lead bumps it
+      // back to `new` so the operator sees it as needing attention.
+      // Other terminal statuses (booked / completed / lost) stay put —
+      // a reply on a completed job is not a new lead to chase.
+      // Best-effort: a status update failure does NOT fail the inbound.
+      await maybeReturnToNew(resolvedLeadId);
     }
     logInbound(
       'inbound_email_received',
@@ -348,6 +355,39 @@ function stripHtml(html: string): string {
     .replace(/&nbsp;/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+/** Move a `contacted` lead back to `new` after an inbound reply lands, so the
+ *  operator sees it as needing attention again. Other statuses stay put.
+ *  Best-effort: a failure does NOT fail the inbound webhook. */
+async function maybeReturnToNew(leadId: string): Promise<void> {
+  try {
+    const svc = getServiceClient();
+    const { data } = await svc
+      .from('leads')
+      .select('status')
+      .eq('id', leadId)
+      .maybeSingle();
+    const status = (data as { status?: string } | null)?.status;
+    if (status !== 'contacted') return;
+    const { error: updateError } = await svc
+      .from('leads')
+      .update({ status: 'new' })
+      .eq('id', leadId);
+    if (updateError) {
+      console.warn('[resend/inbound] auto-status update failed', updateError.message);
+      return;
+    }
+    await svc.from('lead_events').insert({
+      lead_id: leadId,
+      kind: 'status_changed',
+      occurred_at: new Date().toISOString(),
+      actor_user_id: null,
+      payload: { from: 'Contacted', to: 'New', auto: 'inbound-reply' },
+    });
+  } catch (error) {
+    console.warn('[resend/inbound] auto-status threw', error);
+  }
 }
 
 /** Re-upload inbound attachments to the email-attachments Storage bucket.
