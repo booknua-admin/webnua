@@ -736,6 +736,186 @@ Components for the operator's cross-client integrations matrix — workspace-wid
    Adds notification recipients on `/settings/notifications` (sub-account
    mode) — typically the operator's own email + the client's own.
 
+#### Google Business Profile (Phase 7)
+
+> Per-tenant integration with each customer's own GBP listing. Reviews drive
+> local SEO rankings, so this is one of the highest-leverage automations in
+> the acquisition machine. Three end-to-end flows:
+>
+> 1. **Connect + pick location.** The customer OAuths through the per-tenant
+>    foundation (`/settings/integrations` → connect Google Business
+>    Profile); afterwards the operator picks WHICH location to manage on
+>    `/settings/google-business`. The selection lands in
+>    `client_gbp_locations` (one row per client, migration `0066`).
+> 2. **Review-request automation.** When a booking transitions to
+>    `completed`, the migration `0069` `AFTER UPDATE` trigger enqueues a
+>    `gbp_send_review_request` job with a **2-hour delay**. The handler
+>    resolves the GBP review link, picks SMS or email (SMS preferred when
+>    the customer has a phone AND the client has an approved alphanumeric
+>    sender; email fallback), and enqueues the underlying `send_sms` /
+>    `send_email` job. The audit row lands on `gbp_review_requests`.
+> 3. **Daily review pull.** `pg_cron` fires `gbp_sync_reviews` daily (06:00
+>    UTC) for every connected location. The handler calls Google's
+>    `listReviews` via `callWithToken()`, upserts `gbp_reviews` rows
+>    preserving each row's `is_new_since_last_view` state, marks
+>    Google-removed reviews as deleted, attributes recent requests to the
+>    review they led to (7-day window), and refreshes the cached headline
+>    metrics on the location row. Polling rather than push because GBP
+>    review notifications aren't reliable.
+>
+> SERVER-ONLY for the lib; `use-gbp.ts` is the one `'use client'` UI layer.
+> V1 ships: location data, reviews list, review reply, review-request
+> automation. V1.1: GBP posts + insights (stubbed as fast-fail
+> `IntegrationResult` in `client.ts`).
+
+- **`lib/integrations/gbp/client.ts`** — the typed GBP API wrapper.
+  `isGbpConfigured()`, `listAccounts`, `listLocations`, `getLocation`,
+  `listReviews`, `replyToReview`. Posts + insights are V1.1 stubs that
+  return a fast-fail `non_retryable` `IntegrationResult` so any call site
+  fails loudly when those V1.1 paths get wired. Every call routes through
+  `callWithToken()` so token refresh + 401 retry are handled per-call.
+  Google's APIs are split across three hostnames (Account Management,
+  Business Information, the legacy v4 surface that still owns reviews);
+  the wrapper hides that split behind the function-level interface.
+  Helpers: `composeLocationPath(accountId, locationId)` (builds the full
+  `accounts/.../locations/...` path the v4 API requires from the two stored
+  halves), `buildReviewLink(location)` (prefers
+  `metadata.newReviewUri`, falls back to a `placeId`-based
+  `search.google.com/local/writereview?placeid=…` URL), and
+  `formatLocationAddress(location)` (single-line string from Google's
+  structured `storefrontAddress`).
+- **`lib/integrations/gbp/types.ts`** — Google API slices (`GbpAccount` /
+  `GbpLocation` / `GbpReview` / `GbpStarRating` and the wrappers) +
+  `starRatingToInt()` (Google's enum-string → 1-5 integer) + hand-written
+  row types for the three new tables (`ClientGbpLocationRow`,
+  `GbpReviewRow`, `GbpReviewRequestRow`) until the generated `Database`
+  type is regenerated.
+- **`lib/integrations/gbp/locations.ts`** — `client_gbp_locations` data
+  access (`findLocationByClientId`, `upsertLocation`,
+  `updateLocationSyncState`, `deleteLocationByClientId`). Crucially exports
+  **`getReviewLinkForClient(clientId)`** — the helper the SMS + email
+  `buildRenderContext` calls to substitute `{{review.link}}` to the real
+  Google "leave a review" URL. Pre-GBP, both handlers either left it empty
+  (Twilio) or used a `/reviews` placeholder (Resend); both now resolve
+  through this.
+- **`lib/integrations/gbp/reviews.ts`** — `gbp_reviews` data access:
+  `listKnownReviewIds()` (pre-query set the sync uses to preserve seen
+  state), `upsertReviews()`, `markReviewsDeleted()` (`NOT IN` sweep so
+  Google-removed rows drop out of the visible list but stay for audit),
+  `markReviewsSeen()` (badge-clear on operator open), `recordReviewReply()`
+  (post-reply cache so the inbox shows the reply without waiting for
+  tomorrow's sync), `findReviewById()`.
+- **`lib/integrations/gbp/review-requests.ts`** — `gbp_review_requests`
+  data access: `insertReviewRequest()`, `findAttributableRequest(clientId,
+  reviewCreatedAt)` (the 7-day attribution window — a fresh review may
+  link back to the request that caused it),
+  `attributeRequestToReview()`. The 7-day window is a practical heuristic:
+  reviews left more than a week after a prompt are nearly always
+  unprompted, and a wider attribution window would mislead the conversion
+  dashboard.
+- **`lib/integrations/gbp/job-types.ts`** + **`job-handlers.ts`** — two
+  registered handlers (manifest-imported via
+  `job-handler-manifest.ts`):
+  - **`gbp_sync_reviews`** — pull recent reviews + upsert. **Two-pass
+    upsert strategy** to preserve seen state: pre-query existing
+    `gbp_review_id`s, then INSERT-as-upsert fresh rows with
+    `is_new_since_last_view=true` and UPSERT known rows WITHOUT touching
+    the seen flag (Supabase upsert leaves columns absent from the payload
+    alone on conflict). Optional `refreshLocation: true` flag re-fetches
+    location detail too (used post-connect + on operator "Sync now");
+    daily cron leaves it off to keep API quota cheap.
+  - **`gbp_send_review_request`** — payload normalisation (handles the
+    trigger's `jsonb_build_object` shape via `normalizeSendReviewRequestPayload`),
+    channel selection (SMS preferred → email fallback, with sender +
+    integration-configured gates), then enqueues `send_sms` or
+    `send_email` with a `contextOverrides: { 'review.link': … }` so the
+    underlying handler doesn't re-resolve. The `gbp_review_requests`
+    audit row is the high-level "we asked" log; per-channel detail
+    (delivery / segments / Resend id) lives on `sms_messages` /
+    `email_messages`.
+- **`lib/integrations/gbp/use-gbp.ts`** — `'use client'`. Operator-UI data
+  layer: `useClientGbpLocation` / `useClientGbpReviews` /
+  `useClientGbpReviewRequests` (RLS-scoped browser reads),
+  `useListGbpLocations` / `useSelectGbpLocation` / `useSyncGbpReviews` /
+  `useReplyToGbpReview` / `useMarkGbpReviewsSeen` /
+  `useSendGbpReviewRequest` (POST the operator routes), plus the cheap
+  derived `useNewGbpReviewsCount(clientId)` used by the dashboard widget.
+- **`app/api/integrations/google_business_profile/locations/route.ts`** —
+  `POST`, operator-only. Two actions: `list` calls
+  `listAccounts` + `listLocations` for every account in parallel,
+  returning a bucketed list the picker UI groups under the parent Google
+  account; `select` upserts the chosen location, fetches its detail to
+  cache title / address / `review_link`, and fires an initial
+  `gbp_sync_reviews` job with `refreshLocation=true`. Returns 503 when GBP
+  isn't configured so the consent error is meaningful.
+- **`app/api/integrations/google_business_profile/sync/route.ts`** —
+  `POST`, operator-only. Manual "Sync now" — enqueues a sync with
+  `refreshLocation=true` so the location detail + reviews refresh together.
+- **`app/api/integrations/google_business_profile/reply/route.ts`** —
+  `POST`, operator-only. Validates the reply (≤ 4096 chars), resolves the
+  `gbp_review_id` (the API path) from the DB row id, calls `replyToReview`
+  via `callWithToken`, then caches the reply locally via
+  `recordReviewReply` so the inbox refresh shows the reply immediately
+  (the next daily sync would otherwise be the source of truth).
+- **`app/api/integrations/google_business_profile/review-request/route.ts`** —
+  `POST`, operator-only. Manual review-request send (off-platform jobs,
+  re-sends). Same job handler the trigger uses — `gbp_send_review_request`.
+- **`app/api/integrations/google_business_profile/mark-seen/route.ts`** —
+  `POST`, operator-only. Clears `is_new_since_last_view` for every unseen
+  review for a client (badge-clear).
+- **`components/shared/settings/GbpLocationSection.tsx`** — `'use client'`.
+  The connected-location card on `/settings/google-business`: rating,
+  review count, last synced, the review-link, "Sync now" +
+  "Change location" buttons. Placeholder state when no location is
+  picked.
+- **`components/shared/settings/GbpLocationPickerModal.tsx`** —
+  `'use client'`. Post-OAuth picker. Calls the `list` action on mount,
+  buckets locations under their parent Google account header, and lands
+  the selection through `useSelectGbpLocation`.
+- **`components/shared/settings/GbpReviewsSection.tsx`** — `'use client'`.
+  Reverse-chronological list of reviews with stars, relative age,
+  reviewer avatar, comment, inline reply Textarea, and a per-row "New"
+  badge. Auto-fires `markReviewsSeen` on mount so the unseen badge clears.
+- **`components/shared/settings/GbpReviewRequestsSection.tsx`** —
+  `'use client'`. The review-request audit table + a manual-send modal.
+  Status pills (queued / sent / delivered / failed) and an attribution
+  column reading `resulted_in_review_id` ("✓ Review left") or `clicked_at`
+  ("Link clicked").
+- **`app/settings/google-business/page.tsx`** — the sub-account-mode
+  operational surface (operator-only — added to `subAccountSettingsNav` +
+  the layout's `SUB_ACCOUNT_ONLY` guard). Composes the three sections.
+- **`components/shared/GbpReviewsWidget.tsx`** — `'use client'`. The
+  dashboard widget: rating + total reviews + new-since-last-view counter
+  + an "Open reviews →" link. Mounted today on the operator hub
+  (sub-account `/dashboard`, links to `/settings/google-business`) and the
+  client `/dashboard` (links to `/reviews`). Self-hides when the client
+  has no connected GBP location, so a freshly-onboarded client doesn't
+  see an empty placeholder.
+
+#### Google Business Profile — operator setup
+
+> Builds on the OAuth-app config above ("Per-tenant OAuth — Google
+> Business Profile setup"). These are the in-Webnua steps per-customer.
+
+1. Ensure the OAuth consent screen lists the
+   `https://www.googleapis.com/auth/business.manage` scope, and (for
+   production use) the OAuth app has passed Google's verified-app review.
+   Until verified, only test users added to the consent screen can connect.
+2. With the customer present, navigate to sub-account `/settings/integrations`
+   and click **Connect** on the Google Business Profile row. The customer
+   signs in to their own Google account and grants consent.
+3. The callback redirects to `/settings/integrations?integration=google_business_profile&integration_status=connected`.
+4. Move to sub-account `/settings/google-business` and click **Choose
+   location**. The picker lists every Business Profile location the
+   connected account can manage; pick the one Webnua should sync from.
+5. An initial sync fires automatically on selection. The headline rating
+   + review count populate within seconds; the next daily cron continues
+   from there.
+6. Once a booking is marked **completed** in Webnua (calendar / job
+   detail), Webnua queues a review-request SMS or email two hours later.
+   For off-platform jobs, use the "+ Send review request" button on
+   `/settings/google-business` to send one manually.
+
 ### `shared/website/` — website hub + section editor shell (Phase 6 · Cluster 5 · Session 3 → 3.5)
 
 > **Architectural note — `/website` is shared between roles.** Lives at top-level `app/website/` (moved out of `(client)/` in Session 3) with its own `layout.tsx` ('use client', reads `useRole()`, picks `ClientSidebar` vs `AdminSidebar`, mounts `DevRoleSwitcher`). The hub page (`app/website/page.tsx`) renders header/footer/nav cards + page grid for the active workspace's website. The page editor lives at `app/website/[pageId]/page.tsx`; two reserved sibling routes `app/website/header/page.tsx` and `app/website/footer/page.tsx` take precedence over `[pageId]` and mount the editor in singleton mode (design doc §2.6). The agency-level cross-client matrix lives separately at `app/(admin)/websites/` (admin-only).
@@ -1346,6 +1526,10 @@ The Phase 6 generator pair, called via the `/api/generate-site` route. See the p
 - **`0062_email_templates.sql`** — Phase 7 Resend. Per-client email templates — `(client_id, template_key)` unique. `template_key` check-constrained to the closed 5 (`lead_followup` / `review_request` / `quote_followup` / `lead_notification` / `lead_digest`). Each row carries `subject` + `body_html` + `body_text` (Resend sends both; mail clients pick). A `private.seed_email_templates()` helper + AFTER INSERT trigger on `clients` seed all five defaults per client (SECURITY DEFINER, same pattern as 0060); existing clients are backfilled. **Default bodies stay in lockstep with `DEFAULT_EMAIL_TEMPLATES`** (`lib/email/default-templates.ts`) — editing the defaults means BOTH files. Operator template editor is deferred (same precedent as SMS templates).
 - **`0063_notification_preferences.sql`** — Phase 7 Resend. Per-client operator notification recipients. `(client_id, operator_email)` unique, with per-event flags (`notify_on_new_lead` / `notify_on_payment_failure` / `notify_on_review_received`, all default true) + `digest_frequency` (`immediate` / `hourly` / `daily`). Adds `leads.notification_pending_at` (timestamptz, NULL when no notification has been deferred — set by the throttle path of `send_lead_notification`, cleared by the digest worker). AFTER INSERT trigger on `leads` enqueues a `send_lead_notification` job. `pg_cron` schedule enqueues `batch_notification_digest` hourly. RLS: operators see their accessible clients' preferences; writes service-role only.
 - **`0064_email_attachments_bucket.sql`** — Phase 7 Resend. Supabase Storage bucket for email attachments (outbound: operator-attached files on a reply; inbound: re-uploaded from the inbound MIME so the conversation view can display them). Private bucket; reads gated on `accessible_client_ids()` via the path's first segment (the client slug). Writes service-role only. Path convention: `{client_slug}/{direction}/{email_message_id}/{filename}`.
+- **`0066_client_gbp_locations.sql`** — Phase 7 GBP. Per-client Google Business Profile location selection — one row per client (UNIQUE on `client_id`; V1 forcing function — multi-location clients need this loosened + a `primary` flag). Stores the resource-name pair `gbp_account_id` (`accounts/...`) + `gbp_location_id` (`locations/...`), plus cached `location_title` / `address` / `phone` / `website` / `review_link` (the substitution target for `{{review.link}}`), `current_rating` + `review_count` (refreshed by the daily sync), and `last_synced_at`. RLS: operators see their accessible clients' locations; writes service-role only.
+- **`0067_gbp_reviews.sql`** — Phase 7 GBP. Local cache of GBP reviews — upserted by the daily `gbp_sync_reviews` job. UNIQUE on `(client_id, gbp_review_id)` so per-client upsert is trivial. Stores reviewer name + photo (may be NULL for anonymous reviews), 1-5 `rating`, comment, Google timestamps (`created_at_google` / `updated_at_google`), and operator `reply_text` + `reply_created_at` once one is published. `is_new_since_last_view` powers the operator dashboard badge — preserved across syncs (the handler's two-pass strategy never touches it for known reviews). `deleted_at_google` marks reviews removed at Google so they drop out of the visible list but stay for audit. RLS: SELECT for `accessible_client_ids()`; writes service-role only.
+- **`0068_gbp_review_requests.sql`** — Phase 7 GBP. Audit log of review-request SMS/email sends. One row per send attempt, written by the `gbp_send_review_request` job. Channel-agnostic vocabulary (`channel` = sms|email, `status` = queued/sent/delivered/failed) — per-channel detail (segments, delivery status, Resend message id) is in `sms_messages` / `email_messages`. `resulted_in_review_id` FK is populated by the sync job's 7-day attribution window so the conversion rate is queryable. RLS: SELECT for `accessible_client_ids()`; writes service-role only.
+- **`0069_gbp_triggers_and_cron.sql`** — Phase 7 GBP. Four pieces of plumbing: (1) `AFTER UPDATE` trigger on `bookings` that fires `gbp_send_review_request` with a **2-hour `run_after` delay** on the transition to `status='completed'` (matches the "let the customer experience the work first" UX intent). Looks up the customer's phone/email so the job has a payload to act on; skips cleanly when no contact channel exists. Same swallow-errors pattern as `0063`'s lead-notification trigger — an enqueue failure must not fail the booking update. (2) Daily `pg_cron` schedule at 06:00 UTC enqueueing one `gbp_sync_reviews` job per `client_gbp_locations` with an active GBP `integration_connections`. (3) `AFTER INSERT` trigger on `gbp_reviews` that fans an in-app `notification_kind='review'` via `private.notify_client_users` from migration `0032` (operator + client users see the new review notification immediately). (4) Adds `gbp_reviews` + `gbp_review_requests` to the `supabase_realtime` publication so `RealtimeProvider` can keep operator dashboards live.
 
 ---
 
@@ -1398,6 +1582,20 @@ The Phase 6 generator pair, called via the `/api/generate-site` route. See the p
   operator setup" steps above; migrations `0061`–`0064`. The remaining
   per-provider business logic — GBP review pull, Meta campaign metrics —
   follows.
+  **Google Business Profile — DONE.** Per-tenant GBP integration end-to-end:
+  the API client (`listAccounts` / `listLocations` / `getLocation` /
+  `listReviews` / `replyToReview` through `callWithToken`), the
+  post-OAuth location-picker UI, the daily review-pull cron with
+  seen-state preserved across syncs, the booking-completion trigger that
+  auto-fires a review request 2 hours later through SMS (preferred) or
+  email (fallback), the operator surface on sub-account
+  `/settings/google-business` (location card + reviews list with inline
+  reply + review-request audit log + manual-send modal), the operator +
+  client dashboard widgets, and the SMS/email `{{review.link}}`
+  substitution. GBP Posts + insights deferred to V1.1. See the
+  "Google Business Profile (Phase 7)" inventory + "Google Business Profile
+  — operator setup" steps; migrations `0066`–`0069`. The remaining
+  per-provider business logic — Meta campaign metrics — follows.
 - **Phase 8 — Automation / messaging execution engine.** Automations are
   definitions only — nothing sends. Needs a scheduler (edge function + cron),
   a `messaging_events` send-log table, and the suppression / anti-spam rules
@@ -1475,6 +1673,9 @@ first.
 - **Three `1fr + fixed-rail` detail layouts now exist (`TicketDetailLayout` 320px, the inline lead-detail shape 320px, `AutomationEditorLayout` 340px) — revisit layout-shell consolidation.** Separate from the already-parked rail-card consolidation. The widths and surface treatments diverge slightly (the editor canvas is a white card; ticket/lead detail wrap the main col in their own surface), so this isn't a drop-in extraction. Don't act now — get it on the list for a future housekeeping pass (the `TicketSideCard` → `RailCard` rename it was bundled with is now done; this layout-shell item remains open).
 - **Numbered-option-row pattern — `ConflictOptionRow` (booking conflict modal) + `NegativeReviewActionRow` (admin Screen 24) are visually adjacent (Phase 5 · Cluster 4 · Session A).** Both render a numbered ink/rust-light circle + title + sub + a recommended/selected state. The shapes diverge enough to sibling (the conflict row is 2-column with the recommended state colour-only; the negative-review row is 3-column with a visible "Recommended" pill), so they were intentionally not merged. **Third use → extract** a generic `NumberedOptionRow` in `shared/` with a `pill?: string` slot.
 - ~~**`CampaignActivityCard` vs `LeadTimelineEventRow` — second activity-log pattern.**~~ **Resolved** (Phase 6 · Cluster 6 · Session 1a): evaluated at the third-surface trigger (the overview hub's activity feed). The flat-feed shape was extracted to `shared/ActivityFeed` + `shared/ActivityRow`; `CampaignActivityCard` became a thin adapter over it. `LeadTimeline` was **deliberately left a sibling** — a timeline (dot-spine, scheduled-future pending events, tinted snippet quotes, gapped rows) is a genuinely different structural concern from a flat feed, and folding it in would re-create the optional-slot grab-bag. Flat feeds consolidate; the timeline stays. Don't reopen this — `LeadTimeline` staying separate is the decided outcome, not an unfinished one.
+
+- **GBP review-request delay = 2 hours after job-completion.** Hardcoded in migration `0069`'s booking-completion trigger (`run_after = now() + interval '2 hours'`). The brief reasoned: too soon and the SMS arrives while the tradie is walking back to the van (feels presumptuous, lower review-rate); too late and the experience has faded (also lower review-rate). Two hours is the "evening of the day the work happened" sweet spot for typical-hours residential trades. **Trigger to revisit:** if the conversion rate on the manual-send path (which is immediate) significantly beats the 2-hour auto path, the delay may be wrong for some industries; the `gbp_review_requests.sent_at` + `resulted_in_review_id` columns make the comparison queryable once volume warrants. Also revisit per-client: a 24/7 emergency electrician's job-completion at 3am should NOT fire an SMS at 5am; a quiet-hours guard (using the client's `notification_preferences` quiet hours, which doesn't exist as a per-client column today) would replace the flat 2 hours with "first daytime hour ≥ +2h". Out of scope V1; flag if a customer reports late-night SMS complaints.
+- **GBP V1 scope + minimal-on-purpose choices.** (1) **One GBP location per client** — `client_gbp_locations` is UNIQUE on `client_id`. A multi-location electrician running two suburbs needs the unique loosened + a `primary` flag; defer until a real customer hits the constraint. (2) **No GBP Posts** — `createPost` is a fast-fail stub in `client.ts`. Local posts are a V1.1 add — useful for SEO once basic review automation is proven. (3) **No insights/analytics view** — `getInsights` stubbed too. The views/searches/actions numbers are a dashboard polish pass after V1 proves out. (4) **No auto-generated review replies** — every reply is human. AI-drafted replies could land in V1.1 but only behind explicit "Draft → operator approves → publish" UX (auto-publishing AI replies on customer reviews is a credibility footgun). (5) **Review pull is poll-only** — daily `pg_cron` at 06:00 UTC + on-demand "Sync now". GBP push notifications aren't reliable enough to depend on. (6) **Attribution window = 7 days** — review-request `resulted_in_review_id` link is set only when a review arrives within 7 days of a sent request; longer-window reviews are almost always unprompted. (7) **No "did the link get clicked" wiring yet** — `gbp_review_requests.clicked_at` is in the schema but unwritten in V1 (would need link-tracking through a redirect service). UI displays it as a sentinel when a future session wires it.
 
 - **Wizard field enhancement — accept/reject preview, not auto-replace.** `components/shared/EnhanceableTextarea` shows the AI-enhanced version as a preview card with "Use this →" / "Keep mine" buttons; nothing replaces the user's wording until they explicitly accept. The earlier `CreateClientModal` offer enhance was auto-replace (the polished text overwrote the textarea immediately, with no preview gate); both the offer and the `funnel_customer_pain` fields now flow through the new component. Rationale: AI enhancement on a wizard brief field is **specificity drawing-out**, not blind rewriting — the operator's wording is the ground truth and the enhanced version is a suggestion they should be able to evaluate against the original. Auto-replace loses the operator's input the moment they click; even if they undo via the textarea's history, the recovery is friction-heavy and a hostile-to-trust UX for "I tried it once and the AI ate my words." Accept/reject costs one extra click on the happy path and preserves agency on the unhappy one. **Trigger to revisit:** if telemetry shows operators almost always accept (>90%) the cost of the extra click starts to outweigh the agency benefit — but telemetry like that doesn't exist yet, so the conservative default stands.
 
