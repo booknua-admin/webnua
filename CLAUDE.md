@@ -743,9 +743,9 @@ Components for the operator's cross-client integrations matrix — workspace-wid
 > the acquisition machine. Three end-to-end flows:
 >
 > 1. **Connect + pick location.** The customer OAuths through the per-tenant
->    foundation (`/settings/integrations` → connect Google Business
->    Profile); afterwards the operator picks WHICH location to manage on
->    `/settings/google-business`. The selection lands in
+>    foundation on sub-account `/settings/integrations`; on callback
+>    return, the `GbpLocationPickerModal` auto-opens on that same page so
+>    the operator picks WHICH location to manage. The selection lands in
 >    `client_gbp_locations` (one row per client, migration `0066`).
 > 2. **Review-request automation.** When a booking transitions to
 >    `completed`, the migration `0069` `AFTER UPDATE` trigger enqueues a
@@ -863,34 +863,51 @@ Components for the operator's cross-client integrations matrix — workspace-wid
 - **`app/api/integrations/google_business_profile/mark-seen/route.ts`** —
   `POST`, operator-only. Clears `is_new_since_last_view` for every unseen
   review for a client (badge-clear).
-- **`components/shared/settings/GbpLocationSection.tsx`** — `'use client'`.
-  The connected-location card on `/settings/google-business`: rating,
-  review count, last synced, the review-link, "Sync now" +
-  "Change location" buttons. Placeholder state when no location is
-  picked.
 - **`components/shared/settings/GbpLocationPickerModal.tsx`** —
-  `'use client'`. Post-OAuth picker. Calls the `list` action on mount,
-  buckets locations under their parent Google account header, and lands
-  the selection through `useSelectGbpLocation`.
-- **`components/shared/settings/GbpReviewsSection.tsx`** — `'use client'`.
-  Reverse-chronological list of reviews with stars, relative age,
-  reviewer avatar, comment, inline reply Textarea, and a per-row "New"
-  badge. Auto-fires `markReviewsSeen` on mount so the unseen badge clears.
-- **`components/shared/settings/GbpReviewRequestsSection.tsx`** —
-  `'use client'`. The review-request audit table + a manual-send modal.
-  Status pills (queued / sent / delivered / failed) and an attribution
-  column reading `resulted_in_review_id` ("✓ Review left") or `clicked_at`
-  ("Link clicked").
-- **`app/settings/google-business/page.tsx`** — the sub-account-mode
-  operational surface (operator-only — added to `subAccountSettingsNav` +
-  the layout's `SUB_ACCOUNT_ONLY` guard). Composes the three sections.
+  `'use client'`. Post-OAuth location picker. Calls the `list` action on
+  mount, buckets locations under their parent Google account header, and
+  lands the selection through `useSelectGbpLocation`. Triggered
+  contextually: auto-opens from `IntegrationConnectionsSection` when the
+  OAuth callback redirects back with the GBP success URL; also opened
+  manually from the GBP connection row's "Change location" button.
+- **`components/shared/settings/IntegrationConnectionsSection.tsx`**
+  *(extended)* — the existing operator OAuth connections panel on
+  sub-account `/settings/integrations`. Phase 7 GBP UI consolidation
+  added: (1) auto-open `GbpLocationPickerModal` on the GBP success URL
+  (an effect on `useLocationSearch()` flips the picker open the first
+  time the URL carries the matching params); (2) an inline
+  `GbpConnectionFooter` block on the GBP connection row only — surfaces
+  the connected location title + rating + last-sync time + "Sync now" +
+  "Change location" buttons, OR a "pick a location" prompt when GBP is
+  OAuth-connected but no location row exists yet. No dedicated GBP tab —
+  connection management AND operational state live on the same surface.
+- **`components/shared/reviews/ReviewItem.tsx`** *(extended)* —
+  `'use client'`. The existing reviews-list row (used by `/reviews` in
+  both operator + client contexts) now carries an inline reply UI gated
+  on `review.clientId`. Reply state is read off the row (`review.reply`
+  when GBP has a published reply); when absent, an inline composer opens
+  via `useReplyToGbpReview(clientId)`. Operator + client reply through
+  the same component; the operator just passes the per-card client id.
+- **`components/shared/leads/LeadTimeline.tsx`** *(extended)* — the
+  existing lead-timeline component now styles the new `review-request`
+  dot type (amber star — the GBP echo). Review-request sends fold into
+  the same chronological timeline as the other lead events; no separate
+  audit section.
+- **`components/shared/gbp/GbpSendRequestButton.tsx`** — `'use client'`.
+  The manual review-request affordance. Three render variants:
+  `'button'` (default; outline button), `'action-row'` (full-width
+  ghost row with leading icon, for in-rail mounting), `'ghost'`
+  (ghost button for hero-actions rows). Owns its own modal — pre-filled
+  with the recipient context the parent passes (lead or booking). Posts
+  through `useSendGbpReviewRequest(clientId)` which enqueues the
+  `gbp_send_review_request` job; the modal closes on success.
 - **`components/shared/GbpReviewsWidget.tsx`** — `'use client'`. The
   dashboard widget: rating + total reviews + new-since-last-view counter
-  + an "Open reviews →" link. Mounted today on the operator hub
-  (sub-account `/dashboard`, links to `/settings/google-business`) and the
-  client `/dashboard` (links to `/reviews`). Self-hides when the client
-  has no connected GBP location, so a freshly-onboarded client doesn't
-  see an empty placeholder.
+  + an "Open reviews →" link. Mounted on the operator hub (sub-account
+  `/dashboard`) and the client `/dashboard`; both default the link to
+  `/reviews` (the dedicated GBP tab is gone — `/reviews` IS the
+  destination). Self-hides when the client has no connected GBP location,
+  so a freshly-onboarded dashboard doesn't show an empty placeholder.
 
 #### Google Business Profile — operator setup
 
@@ -905,16 +922,22 @@ Components for the operator's cross-client integrations matrix — workspace-wid
    and click **Connect** on the Google Business Profile row. The customer
    signs in to their own Google account and grants consent.
 3. The callback redirects to `/settings/integrations?integration=google_business_profile&integration_status=connected`.
-4. Move to sub-account `/settings/google-business` and click **Choose
-   location**. The picker lists every Business Profile location the
-   connected account can manage; pick the one Webnua should sync from.
-5. An initial sync fires automatically on selection. The headline rating
-   + review count populate within seconds; the next daily cron continues
-   from there.
-6. Once a booking is marked **completed** in Webnua (calendar / job
-   detail), Webnua queues a review-request SMS or email two hours later.
-   For off-platform jobs, use the "+ Send review request" button on
-   `/settings/google-business` to send one manually.
+   The `GbpLocationPickerModal` opens automatically on landing — pick the
+   Business Profile location Webnua should manage; the modal stores the
+   selection and fires an initial sync.
+4. An initial sync runs in the background. The headline rating + review
+   count populate within seconds; the next daily cron continues from
+   there. The GBP connection row on the same `/settings/integrations`
+   page surfaces the connected location + a "Sync now" button + a
+   "Change location" affordance for later changes.
+5. Once a booking is marked **completed** in Webnua, the booking-
+   completion trigger queues a review-request SMS or email two hours
+   later automatically. For off-platform jobs / re-sends, use the
+   **★ Send review request** button on the lead detail (under QUICK
+   ACTIONS) or on the booking detail (under AFTER THE JOB / in the hero
+   actions for operators).
+6. Reviews + replies live on `/reviews` for both operator (cross-client
+   grid) and client (single-business) views; reply inline on any row.
 
 ### `shared/website/` — website hub + section editor shell (Phase 6 · Cluster 5 · Session 3 → 3.5)
 
@@ -1585,17 +1608,22 @@ The Phase 6 generator pair, called via the `/api/generate-site` route. See the p
   **Google Business Profile — DONE.** Per-tenant GBP integration end-to-end:
   the API client (`listAccounts` / `listLocations` / `getLocation` /
   `listReviews` / `replyToReview` through `callWithToken`), the
-  post-OAuth location-picker UI, the daily review-pull cron with
-  seen-state preserved across syncs, the booking-completion trigger that
-  auto-fires a review request 2 hours later through SMS (preferred) or
-  email (fallback), the operator surface on sub-account
-  `/settings/google-business` (location card + reviews list with inline
-  reply + review-request audit log + manual-send modal), the operator +
-  client dashboard widgets, and the SMS/email `{{review.link}}`
-  substitution. GBP Posts + insights deferred to V1.1. See the
-  "Google Business Profile (Phase 7)" inventory + "Google Business Profile
-  — operator setup" steps; migrations `0066`–`0069`. The remaining
-  per-provider business logic — Meta campaign metrics — follows.
+  post-OAuth location-picker modal (auto-opened from
+  `/settings/integrations`), the daily review-pull cron with seen-state
+  preserved across syncs, the booking-completion trigger that auto-fires
+  a review request 2 hours later through SMS (preferred) or email
+  (fallback), and the operator + client dashboard widgets. **UI
+  consolidation (PR #100):** every GBP affordance lives on Webnua's
+  established surfaces — reviews + inline reply on `/reviews` (both
+  contexts), review-request audit on the lead timeline, manual "Send
+  review request" on lead + booking detail, connection management on
+  `/settings/integrations` with a GBP-only footer for location summary
+  + Sync / Change. No dedicated GBP tab. SMS/email `{{review.link}}`
+  substitution resolved via `getReviewLinkForClient`. GBP Posts +
+  insights deferred to V1.1. See the "Google Business Profile (Phase 7)"
+  inventory + "Google Business Profile — operator setup" steps;
+  migrations `0066`–`0069`. The remaining per-provider business logic —
+  Meta campaign metrics — follows.
 - **Phase 8 — Automation / messaging execution engine.** Automations are
   definitions only — nothing sends. Needs a scheduler (edge function + cron),
   a `messaging_events` send-log table, and the suppression / anti-spam rules
