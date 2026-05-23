@@ -117,7 +117,7 @@ registerJobHandler(SEND_EMAIL_JOB, async (rawPayload, ctx: JobContext) => {
   // out-of-band) and don't need an inbound routing token.
   const threadToken =
     payload.relatedLeadId && isCustomerFacingTemplate(templateKey)
-      ? generateThreadToken(payload.relatedLeadId)
+      ? generateThreadToken()
       : null;
   const replyTo = threadToken
     ? composeReplyToAddress(sender.slug, threadToken)

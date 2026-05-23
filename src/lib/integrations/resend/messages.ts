@@ -100,6 +100,31 @@ export async function findOutboundByResendId(
   return (data as EmailMessageRow | null) ?? null;
 }
 
+/** Look up the outbound email_messages row that minted a thread token. The
+ *  inbound webhook calls this to resolve (clientSlug, token) back to the
+ *  lead — the row's `related_lead_id` is the answer, and the caller
+ *  cross-tenant-guards by comparing `client_id` against the client the
+ *  slug resolved to. We deliberately filter on direction='outbound': we
+ *  only want rows WE minted to be reply-targetable. */
+export async function findOutboundByThreadToken(
+  threadToken: string,
+): Promise<EmailMessageRow | null> {
+  // The same thread token can appear on multiple outbound rows if an
+  // operator sends several replies on the same lead (each reply mints a
+  // fresh token in V1, but a future "single conversation token" model
+  // could reuse one). Order newest-first so the most recent send wins.
+  const { data, error } = await getIntegrationDb()
+    .from(TABLE)
+    .select(COLUMNS)
+    .eq('thread_token', threadToken)
+    .eq('direction', 'outbound')
+    .order('occurred_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`findOutboundByThreadToken: ${error.message}`);
+  return (data as EmailMessageRow | null) ?? null;
+}
+
 /** The conversation thread for one lead — every email_messages row,
  *  chronological. The lead inbox UI reads through this. */
 export async function listMessagesForLead(

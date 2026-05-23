@@ -191,7 +191,7 @@ export async function POST(
     return NextResponse.json({ error: 'no-active-sender' }, { status: 409 });
   }
 
-  const threadToken = generateThreadToken(leadId);
+  const threadToken = generateThreadToken();
   const replyTo = composeReplyToAddress(sender.slug, threadToken);
   const from = `${sender.display_name} <${sender.slug}@${env.EMAIL_SENDING_DOMAIN}>`;
 
@@ -261,7 +261,44 @@ export async function POST(
     },
   });
 
+  // Auto-status: replying to a `new` lead moves it to `contacted`. We
+  // re-read the lead's current status (it may have shifted since the
+  // initial requireLeadAccess fetch — e.g. operator manually changed
+  // it mid-compose). Best-effort: a status update failure does NOT
+  // fail the reply send.
+  await maybeAdvanceToContacted(leadId, auth.userId);
+
   return NextResponse.json({ ok: true, messageId: row.id, resendId: result.data.id });
+}
+
+async function maybeAdvanceToContacted(leadId: string, actorUserId: string): Promise<void> {
+  try {
+    const svc = getServiceClient();
+    const { data } = await svc
+      .from('leads')
+      .select('status')
+      .eq('id', leadId)
+      .maybeSingle();
+    const status = (data as { status?: string } | null)?.status;
+    if (status !== 'new') return;
+    const { error: updateError } = await svc
+      .from('leads')
+      .update({ status: 'contacted' })
+      .eq('id', leadId);
+    if (updateError) {
+      console.warn('[leads/reply] auto-status update failed', updateError.message);
+      return;
+    }
+    await svc.from('lead_events').insert({
+      lead_id: leadId,
+      kind: 'status_changed',
+      occurred_at: new Date().toISOString(),
+      actor_user_id: actorUserId,
+      payload: { from: 'New', to: 'Contacted', auto: 'reply-sent' },
+    });
+  } catch (error) {
+    console.warn('[leads/reply] auto-status threw', error);
+  }
 }
 
 function stripHtml(html: string): string {

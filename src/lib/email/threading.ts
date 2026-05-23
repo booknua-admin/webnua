@@ -1,158 +1,91 @@
 // =============================================================================
-// Email threading — plus-addressing tokens with HMAC signatures.
+// Email threading — plus-addressed lookup tokens, DB-backed.
 //
 // Phase 7 Resend session. When we send an outbound email to a lead we set
 // the Reply-To header to `{clientSlug}+lead-{token}@{sendingDomain}`. The
-// token is an HMAC-signed payload identifying the lead; when the visitor
-// replies, Resend's inbound webhook delivers the message and we parse the
-// recipient address back to (clientSlug, leadId).
+// token is a SHORT random opaque string we also store on the corresponding
+// `email_messages.thread_token` column; when the visitor replies, Resend's
+// inbound webhook parses the recipient back to (clientSlug, token), then
+// looks up the email_messages row by `thread_token` to recover the
+// related_lead_id + verify the row's client_id matches the slug.
 //
-// Why HMAC, not a database lookup id: a database id would be guessable +
-// enumerable — a curious recipient could craft an address pointing at a
-// different lead and have their reply land in someone else's inbox. The
-// HMAC binds the leadId to a server secret, so a third party cannot forge
-// a token for a leadId they did not see.
+// Why random + DB-lookup (not self-contained HMAC):
+//   1. RFC 5321 caps the local-part at 64 characters. A self-contained
+//      HMAC-signed JSON payload runs ~140 chars before the slug prefix —
+//      email validators (including Resend's) correctly reject it.
+//   2. We already insert one `email_messages` row per outbound send and
+//      store the token on it, so the lookup is essentially free — and
+//      indexed (email_messages_thread_idx).
+//   3. A 72-bit random token is infeasible to guess; the cross-tenant
+//      guard at lookup time blocks any cross-tenant token reuse.
 //
-// Token format (base64url-encoded JSON, no padding):
-//   { "v": 1, "lid": "<lead-uuid>", "iat": <unix-seconds> }
-// Signature is base64url(hmac-sha256(secret, payload-bytes)) — 32 bytes
-// raw, 43 chars encoded. Final token: `{payload}.{signature}`.
+// Token format (single string):
+//   `lead-{12-char-base64url}` — 17 chars total.
+// Reply-To address:
+//   `{clientSlug}+lead-{12-char}@{domain}` — fits easily in 64 chars even
+//   for a max-length 30-char slug.
 //
-// SERVER-ONLY — reads OAUTH_STATE_SECRET / SUPABASE_SERVICE_ROLE_KEY. Never
-// import from client code.
+// SERVER-ONLY — uses node:crypto.randomBytes.
 // =============================================================================
 
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 
 import { env } from '@/lib/env';
 
-const TOKEN_VERSION = 1;
 const TOKEN_PREFIX = 'lead-';
+const TOKEN_RANDOM_BYTES = 9; // → 12 chars base64url, 72 bits of entropy.
+const TOKEN_BODY_RE = /^[A-Za-z0-9_-]{8,40}$/;
 
-// --- secret resolution -------------------------------------------------------
+// --- base64url helper --------------------------------------------------------
 
-/** Resolve the HMAC key. OAUTH_STATE_SECRET if set (same convention as the
- *  OAuth state token); otherwise the service-role key (always present
- *  server-side, high entropy). Returns null on a misconfigured deployment. */
-function hmacKey(): string | null {
-  if (env.OAUTH_STATE_SECRET) return env.OAUTH_STATE_SECRET;
-  if (env.SUPABASE_SERVICE_ROLE_KEY) return env.SUPABASE_SERVICE_ROLE_KEY;
-  return null;
-}
-
-// --- base64url helpers -------------------------------------------------------
-
-function base64UrlEncode(input: Buffer | string): string {
-  const buf = typeof input === 'string' ? Buffer.from(input, 'utf8') : input;
-  return buf
+function base64UrlEncode(bytes: Buffer): string {
+  return bytes
     .toString('base64')
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=+$/, '');
 }
 
-function base64UrlDecode(input: string): Buffer | null {
-  try {
-    const padded = input.replace(/-/g, '+').replace(/_/g, '/');
-    const pad = padded.length % 4 === 0 ? '' : '='.repeat(4 - (padded.length % 4));
-    return Buffer.from(padded + pad, 'base64');
-  } catch {
-    return null;
-  }
-}
-
-// --- token mint + verify -----------------------------------------------------
-
-type TokenPayload = {
-  v: number;
-  lid: string;
-  iat: number;
-};
+// --- token mint + shape check ------------------------------------------------
 
 /**
- * Mint a thread token binding the given leadId to a server-side HMAC.
+ * Mint a fresh thread token. The token is opaque — its only meaning is
+ * "the email_messages row that carries this thread_token belongs to lead X".
+ * The caller MUST persist the token on the email_messages row at insert
+ * time (the row's `thread_token` column carries the index the inbound
+ * webhook looks up).
  *
- * The token shape — `lead-{base64url-payload}.{base64url-signature}` — fits
- * inside an email local-part (RFC 5321 limit 64 chars). Typical length is
- * ~110 chars, so the local-part is `{clientSlug}+{TOKEN_PREFIX}{token}` —
- * keep clientSlug short.
- *
- * @throws if no HMAC key is configured.
+ * Length budget: `lead-` (5) + base64url(9 bytes) (12) = 17 chars. Combined
+ * with the longest possible client slug (30 chars), the resulting local-part
+ * `{slug}+lead-{token}` totals at most 48 chars — well under RFC 5321's 64.
  */
-export function generateThreadToken(leadId: string): string {
-  const key = hmacKey();
-  if (!key) {
-    throw new Error(
-      'generateThreadToken: no HMAC key (OAUTH_STATE_SECRET / SUPABASE_SERVICE_ROLE_KEY unset).',
-    );
-  }
-  const payload: TokenPayload = {
-    v: TOKEN_VERSION,
-    lid: leadId,
-    iat: Math.floor(Date.now() / 1000),
-  };
-  const payloadStr = base64UrlEncode(JSON.stringify(payload));
-  const signature = base64UrlEncode(
-    createHmac('sha256', key).update(payloadStr, 'utf8').digest(),
-  );
-  return `${TOKEN_PREFIX}${payloadStr}.${signature}`;
+export function generateThreadToken(): string {
+  return `${TOKEN_PREFIX}${base64UrlEncode(randomBytes(TOKEN_RANDOM_BYTES))}`;
 }
 
-/** Parse + verify a thread token. Returns the leadId on success, null when
- *  the token is malformed, signed with a different secret, or simply not a
- *  thread token (e.g. an inbound to a generic address like
- *  notifications@…). */
-export function parseThreadToken(rawToken: string): { leadId: string } | null {
-  if (typeof rawToken !== 'string' || rawToken.length === 0) return null;
-  if (!rawToken.startsWith(TOKEN_PREFIX)) return null;
-  const inner = rawToken.slice(TOKEN_PREFIX.length);
-
-  const dot = inner.indexOf('.');
-  if (dot <= 0 || dot === inner.length - 1) return null;
-  const payloadStr = inner.slice(0, dot);
-  const providedSig = inner.slice(dot + 1);
-
-  const key = hmacKey();
-  if (!key) return null;
-
-  const expectedSig = base64UrlEncode(
-    createHmac('sha256', key).update(payloadStr, 'utf8').digest(),
-  );
-  const expectedBuf = Buffer.from(expectedSig, 'utf8');
-  const providedBuf = Buffer.from(providedSig, 'utf8');
-  if (expectedBuf.length !== providedBuf.length) return null;
-  if (!timingSafeEqual(expectedBuf, providedBuf)) return null;
-
-  const decoded = base64UrlDecode(payloadStr);
-  if (!decoded) return null;
-  let payload: TokenPayload;
-  try {
-    payload = JSON.parse(decoded.toString('utf8')) as TokenPayload;
-  } catch {
-    return null;
-  }
-  if (payload.v !== TOKEN_VERSION) return null;
-  if (typeof payload.lid !== 'string' || payload.lid.length === 0) return null;
-  return { leadId: payload.lid };
+/** Quick syntactic guard before hitting the DB on inbound. A malformed
+ *  token (wrong prefix, illegal characters, wrong length) is rejected
+ *  without a query. */
+export function isValidThreadTokenShape(token: string): boolean {
+  if (typeof token !== 'string') return false;
+  if (!token.startsWith(TOKEN_PREFIX)) return false;
+  const body = token.slice(TOKEN_PREFIX.length);
+  return TOKEN_BODY_RE.test(body);
 }
 
 // --- address composition + parsing -------------------------------------------
 
-/** Compose the Reply-To address we set on an outbound email to a lead. The
- *  client's sender slug is used as the local-part base; the token appends
- *  via plus-addressing (RFC 5233 sub-addressing) so the visitor's reply lands
- *  back at the same mailbox and we resolve the lead from the token. */
+/** Compose the Reply-To address we set on an outbound email to a lead. */
 export function composeReplyToAddress(clientSlug: string, threadToken: string): string {
   const domain = env.EMAIL_SENDING_DOMAIN;
-  // The token already carries the `lead-` prefix; do not double it.
   return `${clientSlug}+${threadToken}@${domain}`;
 }
 
 /** Parse an inbound recipient address (the `to` of the inbound webhook
- *  delivery) back to (clientSlug, threadToken). Returns null when the address
- *  is not in the plus-addressed shape — a stray email to
- *  notifications@mail.webnua.com (or any non-plus address) gets null. The
- *  caller verifies the threadToken with parseThreadToken to resolve a leadId. */
+ *  delivery) back to (clientSlug, threadToken). Returns null when the
+ *  address is not in the plus-addressed shape. The caller then verifies
+ *  the token with `isValidThreadTokenShape` and resolves the lead via
+ *  the DB lookup on `email_messages.thread_token`. */
 export function parseInboundAddress(
   address: string,
 ): { clientSlug: string; threadToken: string } | null {
@@ -162,9 +95,6 @@ export function parseInboundAddress(
   if (at <= 0) return null;
   const local = lower.slice(0, at);
   const domain = lower.slice(at + 1);
-  // Domain check is informational — Resend already delivers to our domain;
-  // we accept the configured sending domain AND, defensively, any subdomain
-  // routed to the same inbound webhook.
   const sendingDomain = env.EMAIL_SENDING_DOMAIN.toLowerCase();
   if (domain !== sendingDomain && !domain.endsWith(`.${sendingDomain}`)) {
     return null;
