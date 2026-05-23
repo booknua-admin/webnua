@@ -18,9 +18,12 @@
 //
 // Phase 7 Stripe billing adds stripe_payment_failed_notify — the operator
 // payment-failure email.
+//
+// Phase 7 Twilio SMS adds send_sms — the outbound transactional SMS handler.
 // =============================================================================
 
 import '@/lib/integrations/_shared/job-handlers';
 import '@/lib/integrations/stripe/job-handlers';
+import '@/lib/integrations/twilio/job-handlers';
 
 export {};

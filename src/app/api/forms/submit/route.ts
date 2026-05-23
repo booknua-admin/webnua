@@ -31,6 +31,8 @@ import { NextResponse } from 'next/server';
 
 import { getServiceClient } from '@/lib/supabase/server';
 import { clientIp, rateLimit } from '@/lib/public-site/rate-limit';
+import { enqueueJobImmediate } from '@/lib/integrations/_shared/jobs';
+import { SEND_SMS_JOB } from '@/lib/integrations/twilio/job-types';
 
 const MAX_FIELDS = 60;
 
@@ -71,10 +73,7 @@ function cleanField(raw: IncomingField): CleanField | null {
     type: raw.type,
     value,
     leadRole: role,
-    imagePath:
-      typeof raw.imagePath === 'string' && raw.imagePath
-        ? raw.imagePath
-        : undefined,
+    imagePath: typeof raw.imagePath === 'string' && raw.imagePath ? raw.imagePath : undefined,
   };
 }
 
@@ -90,15 +89,8 @@ export async function POST(req: Request) {
     return bad('Invalid request body.');
   }
 
-  const {
-    clientId,
-    surfaceKind,
-    funnelId,
-    source,
-    fields,
-    submissionId,
-    existingLeadId,
-  } = (body ?? {}) as {
+  const { clientId, surfaceKind, funnelId, source, fields, submissionId, existingLeadId } = (body ??
+    {}) as {
     clientId?: unknown;
     surfaceKind?: unknown;
     funnelId?: unknown;
@@ -115,9 +107,7 @@ export async function POST(req: Request) {
   // script's `form_submit` event carries the same id so the funnel's tracked
   // and source-of-truth submitted counts can be reconciled.
   const cleanSubmissionId =
-    typeof submissionId === 'string' && UUID_RE.test(submissionId)
-      ? submissionId
-      : null;
+    typeof submissionId === 'string' && UUID_RE.test(submissionId) ? submissionId : null;
   // Cross-step funnel linking — optional. When set, the route appends to the
   // referenced lead instead of inserting a new one. A malformed value rejects
   // explicitly (a caller who tried to link should know they failed, not get a
@@ -141,14 +131,11 @@ export async function POST(req: Request) {
   if (cleanFields.length === 0) return bad('No valid form fields.');
 
   const sourceLabel =
-    typeof source === 'string' && source.trim()
-      ? source.trim().slice(0, 120)
-      : 'Website form';
+    typeof source === 'string' && source.trim() ? source.trim().slice(0, 120) : 'Website form';
   // Surface attribution — written to `leads.source_kind`. The constraint on
   // the column rejects anything else; default 'website' when the caller
   // omits the field (older clients).
-  const cleanSourceKind: 'website' | 'funnel' =
-    surfaceKind === 'funnel' ? 'funnel' : 'website';
+  const cleanSourceKind: 'website' | 'funnel' = surfaceKind === 'funnel' ? 'funnel' : 'website';
   // Funnel-to-lead attribution — optional. Only persisted when the caller is
   // submitting from a funnel surface; a malformed value rejects explicitly
   // (a caller who tried to attribute should know they failed, not get a
@@ -164,11 +151,7 @@ export async function POST(req: Request) {
   const svc = getServiceClient();
 
   // Verify the client exists — a fabricated clientId is rejected.
-  const { data: client } = await svc
-    .from('clients')
-    .select('id')
-    .eq('id', clientId)
-    .maybeSingle();
+  const { data: client } = await svc.from('clients').select('id').eq('id', clientId).maybeSingle();
   if (!client) return bad('Unknown client.', 404);
 
   // Cross-tenant guard on the funnel reference — same shape as the
@@ -284,6 +267,28 @@ export async function POST(req: Request) {
   });
   if (eventError) {
     return bad('Could not record the submission.', 500);
+  }
+
+  // Lead-acknowledgment SMS — fire the "got your enquiry" text within seconds
+  // of the lead landing (the lead-nurture promise). Enqueued as a send_sms
+  // job; the handler skips silently when SMS is unconfigured or the client
+  // has no approved sender. Best-effort: a job-enqueue failure must NOT fail
+  // the lead capture, so it is wrapped. Only fires when a phone is present.
+  if (phone) {
+    try {
+      await enqueueJobImmediate(
+        SEND_SMS_JOB,
+        {
+          clientId,
+          templateKey: 'lead_acknowledgment',
+          recipientPhone: phone,
+          relatedLeadId: lead.id,
+        },
+        { provider: 'twilio', clientId, correlationId: lead.id },
+      );
+    } catch (smsError) {
+      console.warn('[forms/submit] lead-acknowledgment SMS enqueue failed', smsError);
+    }
   }
 
   return NextResponse.json({ ok: true, leadId: lead.id });
