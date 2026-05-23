@@ -136,8 +136,11 @@ export function sendEmail(
   });
 }
 
-/** Read a Resend message resource back by id — fallback delivery-status
- *  lookup. The inbound webhook is the primary update path. */
+/** Read a Resend OUTBOUND message resource back by id — fallback
+ *  delivery-status lookup. The delivery webhook is the primary update
+ *  path. The path `/emails/{id}` is OUTBOUND-only — for inbound emails
+ *  use `getReceivedEmail` below; mixing them returns 404 "Email not
+ *  found". */
 export function getMessage(
   messageId: string,
   clientId?: string | null,
@@ -148,6 +151,28 @@ export function getMessage(
     provider: 'resend',
     operation: 'get_message',
     url: `${RESEND_API}/emails/${encodeURIComponent(messageId)}`,
+    method: 'GET',
+    headers: { Authorization: auth },
+    clientId: clientId ?? null,
+  });
+}
+
+/** Read a Resend INBOUND (received) email by id — the path is
+ *  `/emails/receiving/{id}` (distinct from outbound `/emails/{id}`).
+ *  Resend's `email.received` webhook payload is METADATA only (no body,
+ *  no headers, no attachment content); this call fetches the parsed
+ *  body so we can persist it on the email_messages row + the email_in
+ *  lead_event. Mirrors the Resend Go/Node SDKs' `emails.receiving.get`. */
+export function getReceivedEmail(
+  emailId: string,
+  clientId?: string | null,
+): Promise<IntegrationResult<ResendMessageResource>> {
+  const auth = authHeader();
+  if (!auth) return Promise.resolve(notConfigured('get_received_email'));
+  return callExternal<ResendMessageResource>({
+    provider: 'resend',
+    operation: 'get_received_email',
+    url: `${RESEND_API}/emails/receiving/${encodeURIComponent(emailId)}`,
     method: 'GET',
     headers: { Authorization: auth },
     clientId: clientId ?? null,

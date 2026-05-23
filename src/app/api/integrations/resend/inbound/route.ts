@@ -39,7 +39,9 @@ import {
 import { getIntegrationDb } from '@/lib/integrations/_shared/db-types';
 import {
   getInboundEmailSecret,
+  getReceivedEmail,
   isInboundEmailWebhookConfigured,
+  isResendConfigured,
 } from '@/lib/integrations/resend/client';
 import {
   findInboundByResendId,
@@ -260,32 +262,27 @@ export async function POST(request: Request): Promise<Response> {
 
   // --- 5a. Body extraction --------------------------------------------------
   //
-  // Resend has TWO inbound-related features in their dashboard:
+  // Resend's `email.received` webhook payload is METADATA ONLY (confirmed
+  // against their docs + observed in integration_call_log: keys are
+  // [attachments, bcc, cc, created_at, email_id, from, message_id,
+  //  subject, to] — no body, headers, or attachment content).
   //
-  //   1. "Webhooks" → `email.received` event — delivers METADATA only
-  //      (subject / from / to / email_id / attachments). NO body fields.
-  //      Trying to fetch the body via `GET /emails/{email_id}` returns
-  //      404 ("Email not found") — that endpoint is outbound-only.
+  // The body must be fetched separately via `GET /emails/receiving/{id}`
+  // (the inbound-specific path; the outbound `/emails/{id}` returns 404
+  // for inbound ids). This mirrors `emails.receiving.get` in Resend's
+  // official Node/Go SDKs.
   //
-  //   2. "Inbound Endpoints" — a separate feature that delivers the FULL
-  //      parsed email with text / html / headers / attachments. THIS is
-  //      what the lead inbox actually needs. Configured under the
-  //      "Inbound" tab in the Resend dashboard (NOT under "Webhooks").
-  //
-  // If we received a payload with NO body fields, the operator probably
-  // configured option 1; we surface this via the call-log so they can
-  // switch to option 2. The route still records the event with whatever
-  // metadata arrived so the operator at least sees that a reply landed.
-  //
-  // We still try the standard body field names defensively — they DO
-  // populate when the payload comes from an Inbound Endpoint.
+  // Best-effort: a fetch failure leaves the body empty (we still record
+  // the event with subject so the operator at least sees a reply landed),
+  // and the call-log row gets a diagnostic message + raw payload sample
+  // so the next-step debug doesn't need a redeploy.
   const dataRec = (payload.data as Record<string, unknown>) ?? {};
   const resendId = pickStringField(dataRec, ['id', 'email_id', 'emailId']);
   const inReplyToHeader = pickStringField(dataRec, [
     'in_reply_to',
     'inReplyTo',
   ]);
-  const bodyText = pickStringField(dataRec, [
+  let bodyText = pickStringField(dataRec, [
     'text',
     'body_text',
     'bodyText',
@@ -293,13 +290,25 @@ export async function POST(request: Request): Promise<Response> {
     'text_body',
     'plainBody',
   ]);
-  const bodyHtml = pickStringField(dataRec, [
+  let bodyHtml = pickStringField(dataRec, [
     'html',
     'body_html',
     'bodyHtml',
     'html_body',
     'htmlBody',
   ]);
+  if (!bodyText && !bodyHtml && resendId && isResendConfigured()) {
+    const fetched = await getReceivedEmail(resendId, sender.client_id);
+    if (fetched.ok) {
+      if (typeof fetched.data.text === 'string') bodyText = fetched.data.text;
+      if (typeof fetched.data.html === 'string') bodyHtml = fetched.data.html;
+    } else {
+      console.warn(
+        '[resend/inbound] received-email fetch failed',
+        fetched.error.message,
+      );
+    }
+  }
 
   // --- 5b. Idempotency — skip if we already recorded this Resend message ---
   // The Resend dashboard's Replay button re-POSTs the original payload;
@@ -399,7 +408,7 @@ export async function POST(request: Request): Promise<Response> {
       bodyHtmlLen: bodyHtml.length,
     };
     if (bodyMissing) {
-      logShape.diagnosis = 'no-body-in-payload';
+      logShape.diagnosis = 'no-body-after-fetch';
       logShape.rawSample = rawBody.slice(0, 2048);
     }
     logInbound(
@@ -411,7 +420,7 @@ export async function POST(request: Request): Promise<Response> {
       isAuto
         ? 'auto-responder'
         : bodyMissing
-          ? 'no-body-in-payload — likely configured as Webhook instead of Inbound Endpoint'
+          ? 'no-body — webhook + /emails/receiving fetch both empty'
           : null,
     );
     return NextResponse.json({ received: true, messageId: row.id });
