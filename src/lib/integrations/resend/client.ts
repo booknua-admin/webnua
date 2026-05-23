@@ -29,10 +29,23 @@ export function isResendConfigured(): boolean {
   return Boolean(env.RESEND_API_KEY);
 }
 
-/** True when the inbound webhook can verify a payload — the webhook secret
- *  is set. */
+/** True when the delivery-status webhook can verify a payload — the webhook
+ *  secret is set. */
 export function isInboundWebhookConfigured(): boolean {
   return Boolean(env.RESEND_WEBHOOK_SECRET);
+}
+
+/** Secret used to verify inbound `email.received` webhook payloads. Prefers
+ *  the dedicated RESEND_INBOUND_WEBHOOK_SECRET, falls back to
+ *  RESEND_WEBHOOK_SECRET when only one Resend webhook covers both URLs. */
+export function getInboundEmailSecret(): string | null {
+  return env.RESEND_INBOUND_WEBHOOK_SECRET || env.RESEND_WEBHOOK_SECRET || null;
+}
+
+/** True when the inbound email webhook can verify a payload — either secret
+ *  is set. */
+export function isInboundEmailWebhookConfigured(): boolean {
+  return Boolean(getInboundEmailSecret());
 }
 
 function authHeader(): string | null {

@@ -101,6 +101,12 @@ const envSchema = z.object({
   // against EMAIL_SENDING_DOMAIN (locked: mail.webnua.com).
   RESEND_API_KEY: optionalStr,
   RESEND_WEBHOOK_SECRET: optionalStr,
+  // Inbound (email.received) webhooks have their own signing secret in the
+  // Resend dashboard when configured as a separate endpoint from the
+  // delivery-status webhook. Optional — falls back to RESEND_WEBHOOK_SECRET
+  // when a single Resend webhook covers both URLs (rare, since one Resend
+  // webhook points at one URL).
+  RESEND_INBOUND_WEBHOOK_SECRET: optionalStr,
   EMAIL_SENDING_DOMAIN: withDefault('mail.webnua.com'),
 
   // --- per-tenant OAuth integrations (customer owns the account) ------------

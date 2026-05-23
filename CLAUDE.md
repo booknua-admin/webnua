@@ -712,17 +712,25 @@ Components for the operator's cross-client integrations matrix — workspace-wid
    routing on the same domain (or a subdomain) to POST every inbound message
    to `{app origin}/api/integrations/resend/inbound`. This requires MX
    records pointing to Resend.
-4. Create a **webhook** in the Resend dashboard pointing at the SAME
-   endpoint for delivery events: `{app origin}/api/integrations/resend/webhook`,
-   subscribed to `email.sent`, `email.delivered`, `email.bounced`,
-   `email.complained`, `email.failed`. (Or one webhook subscribed to
-   everything including `email.received` — the two routes discriminate on
-   the JSON `type`.) Copy the signing secret (`whsec_…`) into
-   `RESEND_WEBHOOK_SECRET`.
+4. Create a **delivery-status webhook** in the Resend dashboard pointing at
+   `{app origin}/api/integrations/resend/webhook`, subscribed to `email.sent`,
+   `email.delivered`, `email.bounced`, `email.complained`, `email.failed`.
+   Copy its signing secret (`whsec_…`) into `RESEND_WEBHOOK_SECRET`.
+4b. Create a **separate inbound webhook** in the Resend dashboard pointing at
+   `{app origin}/api/integrations/resend/inbound`, subscribed to
+   `email.received`. Copy its signing secret (`whsec_…`) into
+   `RESEND_INBOUND_WEBHOOK_SECRET`. **Each Resend webhook has its own signing
+   secret** — using only `RESEND_WEBHOOK_SECRET` for both webhooks produces
+   a 400 + `{"error":"invalid-signature"}` on every `email.received`
+   delivery (which is silently dropped: nothing arrives in the lead inbox).
+   `RESEND_INBOUND_WEBHOOK_SECRET` falls back to `RESEND_WEBHOOK_SECRET` only
+   in the rare single-webhook setup (one Resend webhook URL covers both
+   types — not possible today, since the two routes live at different URLs).
 5. Set the env vars (`.env.local` for dev, the deployment env for production):
-   `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, optionally `EMAIL_SENDING_DOMAIN`
-   (default `mail.webnua.com`). The threading HMAC reads `OAUTH_STATE_SECRET`
-   if set, falling back to `SUPABASE_SERVICE_ROLE_KEY`.
+   `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `RESEND_INBOUND_WEBHOOK_SECRET`,
+   optionally `EMAIL_SENDING_DOMAIN` (default `mail.webnua.com`). The
+   threading HMAC reads `OAUTH_STATE_SECRET` if set, falling back to
+   `SUPABASE_SERVICE_ROLE_KEY`.
 6. Per client: an operator provisions a sender slug on sub-account
    `/settings/email`. The sending address becomes `{slug}@mail.webnua.com`.
    Adds notification recipients on `/settings/notifications` (sub-account

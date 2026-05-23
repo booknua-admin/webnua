@@ -3,7 +3,10 @@
 //
 // Phase 7 Resend session. Resend POSTs every inbound email delivered to
 // *@{EMAIL_SENDING_DOMAIN} here. Authenticated by Svix-style signature
-// (verified against RESEND_WEBHOOK_SECRET).
+// (verified against RESEND_INBOUND_WEBHOOK_SECRET — falls back to
+// RESEND_WEBHOOK_SECRET when only one Resend webhook covers both URLs).
+// Each webhook configured in the Resend dashboard has its own signing
+// secret, so an inbound-only webhook needs its own env var.
 //
 // Routing flow:
 //   1. Verify the Svix signature.
@@ -28,14 +31,16 @@
 
 import { NextResponse } from 'next/server';
 
-import { env } from '@/lib/env';
 import {
   isValidThreadTokenShape,
   looksLikeAutoResponder,
   parseInboundAddress,
 } from '@/lib/email/threading';
 import { getIntegrationDb } from '@/lib/integrations/_shared/db-types';
-import { isInboundWebhookConfigured } from '@/lib/integrations/resend/client';
+import {
+  getInboundEmailSecret,
+  isInboundEmailWebhookConfigured,
+} from '@/lib/integrations/resend/client';
 import {
   findOutboundByThreadToken,
   insertEmailMessage,
@@ -78,18 +83,18 @@ function logInbound(
 }
 
 export async function POST(request: Request): Promise<Response> {
-  if (!isInboundWebhookConfigured()) {
+  const secret = getInboundEmailSecret();
+  if (!isInboundEmailWebhookConfigured() || !secret) {
     return NextResponse.json({ error: 'resend-inbound-not-configured' }, { status: 503 });
   }
 
   const rawBody = await request.text();
 
   // --- 1. Verify signature ---------------------------------------------------
-  const verify = verifyResendWebhook(
-    rawBody,
-    request.headers,
-    env.RESEND_WEBHOOK_SECRET as string,
-  );
+  // Inbound emails are signed with the inbound webhook's own secret in the
+  // Resend dashboard. Prefers RESEND_INBOUND_WEBHOOK_SECRET; falls back to
+  // RESEND_WEBHOOK_SECRET when a single Resend webhook covers both URLs.
+  const verify = verifyResendWebhook(rawBody, request.headers, secret);
   if (!verify.ok) {
     logInbound(
       'inbound_email',
