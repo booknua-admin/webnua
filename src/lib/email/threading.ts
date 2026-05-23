@@ -90,18 +90,23 @@ export function parseInboundAddress(
   address: string,
 ): { clientSlug: string; threadToken: string } | null {
   if (typeof address !== 'string') return null;
-  const lower = address.trim().toLowerCase();
-  const at = lower.indexOf('@');
+  // RFC 5321: the domain is case-insensitive, the local-part is NOT.
+  // We MUST preserve case on the local-part because the thread token is a
+  // base64url-encoded random (case-sensitive) — lowercasing it would break
+  // the DB lookup. The client slug itself is always lowercase by convention
+  // (constrained to [a-z0-9-]) so lowering it for comparison is safe.
+  const trimmed = address.trim();
+  const at = trimmed.indexOf('@');
   if (at <= 0) return null;
-  const local = lower.slice(0, at);
-  const domain = lower.slice(at + 1);
+  const local = trimmed.slice(0, at);
+  const domain = trimmed.slice(at + 1).toLowerCase();
   const sendingDomain = env.EMAIL_SENDING_DOMAIN.toLowerCase();
   if (domain !== sendingDomain && !domain.endsWith(`.${sendingDomain}`)) {
     return null;
   }
   const plus = local.indexOf('+');
   if (plus <= 0 || plus === local.length - 1) return null;
-  const clientSlug = local.slice(0, plus);
+  const clientSlug = local.slice(0, plus).toLowerCase();
   const threadToken = local.slice(plus + 1);
   if (!/^[a-z0-9-]+$/.test(clientSlug)) return null;
   return { clientSlug, threadToken };
