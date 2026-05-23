@@ -11,6 +11,7 @@ import { BookingNotesBox } from '@/components/shared/bookings/BookingNotesBox';
 import { BookingSection } from '@/components/shared/bookings/BookingSection';
 import { RescheduleBookingButton } from '@/components/shared/bookings/RescheduleBookingButton';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { GbpSendRequestButton } from '@/components/shared/gbp/GbpSendRequestButton';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { RailCard } from '@/components/shared/RailCard';
 import { RailPropertyRow } from '@/components/shared/RailPropertyRow';
@@ -79,6 +80,19 @@ function AdminBookingDetailContent() {
                           endsAt: b.endsAt,
                         }}
                         data={freshhomeReschedule}
+                      />
+                      <GbpSendRequestButton
+                        context={{
+                          clientId: b.gbpContext.clientId,
+                          recipientName: b.gbpContext.recipientName,
+                          recipientPhone: b.gbpContext.recipientPhone,
+                          recipientEmail: b.gbpContext.recipientEmail,
+                          leadId: b.gbpContext.leadId,
+                          bookingId: b.gbpContext.bookingId,
+                        }}
+                        variant="ghost"
+                        icon="★"
+                        label="Send review request"
                       />
                       <Button variant="secondary" className="h-9" asChild>
                         <Link href="/leads">Open leads →</Link>

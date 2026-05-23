@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { CalendarTodayPanel } from '@/components/admin/calendar/CalendarTodayPanel';
 import { ClientHubHero } from '@/components/admin/hub/ClientHubHero';
 import { FunnelConversionBars } from '@/components/shared/funnels/FunnelConversionBars';
+import { GbpReviewsWidget } from '@/components/shared/GbpReviewsWidget';
 import { HubInsightBand } from '@/components/admin/hub/HubInsightBand';
 import { OperatorActionBar } from '@/components/admin/hub/OperatorActionBar';
 import { ActivityFeed } from '@/components/shared/ActivityFeed';
@@ -15,6 +16,7 @@ import { StatCard } from '@/components/shared/StatCard';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
 import { useClientHub } from '@/lib/dashboard/queries';
+import { useClientId } from '@/lib/clients/queries';
 import type { ClientHub, HubActivityKind, HubContextCard, HubWeeklyStat } from '@/lib/dashboard/hub-types';
 import { normalizeError } from '@/lib/errors';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
@@ -90,6 +92,8 @@ function ClientHubContent() {
 }
 
 function ClientHubBody({ hub }: { hub: ClientHub }) {
+  const { activeClient } = useWorkspace();
+  const { data: clientUuid } = useClientId(activeClient?.id ?? null);
   const activityItems: ActivityRowData[] = hub.recentActivity.map((event) => ({
     id: event.id,
     icon: ACTIVITY_PRESENTATION[event.kind].icon,
@@ -111,6 +115,8 @@ function ClientHubBody({ hub }: { hub: ClientHub }) {
           <ContextCard key={card.kind} card={card} />
         ))}
       </div>
+
+      <GbpReviewsWidget clientId={clientUuid ?? null} />
 
       <div className="grid grid-cols-2 items-start gap-3.5">
         <CalendarTodayPanel

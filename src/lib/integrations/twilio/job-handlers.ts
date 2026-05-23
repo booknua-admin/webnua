@@ -26,6 +26,7 @@ import { env, getAppBaseUrl } from '@/lib/env';
 import type { IntegrationError } from '@/lib/integrations/_shared/call';
 import { getIntegrationDb } from '@/lib/integrations/_shared/db-types';
 import { type JobContext, registerJobHandler } from '@/lib/integrations/_shared/jobs';
+import { getReviewLinkForClient } from '@/lib/integrations/gbp/locations';
 import { validateTemplate } from '@/lib/sms/character-validator';
 import { DEFAULT_SMS_TEMPLATES } from '@/lib/sms/default-templates';
 import { normalizePhone } from '@/lib/sms/phone';
@@ -152,6 +153,13 @@ async function buildRenderContext(
     .maybeSingle();
   const client = clientRow as { name?: string; primary_contact_phone?: string | null } | null;
 
+  // Resolve the GBP review link for this client (when one is connected) so
+  // {{review.link}} substitutes to the real Google review deep-link. Falls
+  // back to '' when the client has no GBP location yet — contextOverrides on
+  // the payload can still force a value (the gbp_send_review_request job
+  // does exactly that, since it has already resolved the link).
+  const reviewLink = await getReviewLinkForClient(clientId);
+
   const context: RenderContext = {
     'client.shortName': senderId,
     'client.businessName': client?.name ?? '',
@@ -165,7 +173,7 @@ async function buildRenderContext(
     'job.time': '',
     'job.address': '',
     'job.eta': '',
-    'review.link': '',
+    'review.link': reviewLink ?? '',
   };
 
   if (payload.relatedLeadId) {

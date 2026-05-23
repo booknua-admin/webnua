@@ -15,12 +15,19 @@
 
 import type { ReactNode } from 'react';
 
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { CopyableId } from '@/components/shared/CopyableId';
 import { AppError, normalizeError } from '@/lib/errors';
 import { supabase } from '@/lib/supabase/client';
 import { relativeTime } from '@/lib/time';
+
+/** Untyped browser-client view — `gbp_review_requests` is not yet in the
+ *  generated Database type. Same pattern as `lib/reviews/queries.tsx` etc. */
+function untypedDb(): SupabaseClient {
+  return supabase as unknown as SupabaseClient;
+}
 import type { SubmittedFormField } from '@/lib/website/form-config';
 
 import {
@@ -369,6 +376,7 @@ type LeadDetailEventRow = {
 
 type LeadDetailJoinRow = {
   id: string;
+  client_id: string;
   status: LeadStatus;
   urgency: LeadUrgency;
   source: string | null;
@@ -386,7 +394,7 @@ type LeadDetailJoinRow = {
 };
 
 const LEAD_DETAIL_SELECT =
-  'id, status, urgency, source, submission_id, customer_name_snapshot, ' +
+  'id, client_id, status, urgency, source, submission_id, customer_name_snapshot, ' +
   'customer_phone_snapshot, created_at, ' +
   'customer:customers(suburb, email, address), ' +
   'client:clients(name, slug), ' +
@@ -585,12 +593,77 @@ function mapTimelineEvent(
   return event;
 }
 
+type GbpReviewRequestRow = {
+  id: string;
+  channel: 'sms' | 'email';
+  sent_at: string;
+  status: 'queued' | 'sent' | 'delivered' | 'failed';
+  recipient_phone: string | null;
+  recipient_email: string | null;
+  resulted_in_review_id: string | null;
+  error_message: string | null;
+};
+
+/** Map one `gbp_review_requests` row into a timeline event. Renders the
+ *  channel + status in the meta line, the recipient + attribution in the
+ *  body. A successful review attribution renders in good-green; a failed
+ *  send shows the error in warn. */
+function mapReviewRequestEvent(row: GbpReviewRequestRow): LeadTimelineEvent {
+  const recipient = row.recipient_phone ?? row.recipient_email ?? 'customer';
+  const channelLabel = row.channel === 'sms' ? 'SMS' : 'Email';
+  let body: ReactNode;
+  if (row.status === 'failed') {
+    body = (
+      <>
+        Send to <strong>{recipient}</strong> failed
+        {row.error_message ? <>: {row.error_message}</> : null}.
+      </>
+    );
+  } else if (row.resulted_in_review_id) {
+    body = (
+      <>
+        Sent to <strong>{recipient}</strong> · <span className="text-good">✓ Review left</span>
+      </>
+    );
+  } else {
+    body = (
+      <>
+        Sent to <strong>{recipient}</strong>
+      </>
+    );
+  }
+  return {
+    id: `gbp-request-${row.id}`,
+    dot: 'review-request',
+    meta: (
+      <>
+        <span>Review request · {channelLabel}</span>
+        <span>·</span>
+        <span>{relativeTime(row.sent_at)}</span>
+      </>
+    ),
+    body,
+    auto: true,
+  };
+}
+
 function buildLeadDetail(
   row: LeadDetailJoinRow,
   attachmentUrls: Record<string, string>,
+  reviewRequests: GbpReviewRequestRow[],
 ): LeadDetail {
-  const events = [...row.lead_events].sort((a, b) =>
-    b.occurred_at.localeCompare(a.occurred_at),
+  const baseEvents = row.lead_events.map((e) =>
+    mapTimelineEvent(e, attachmentUrls),
+  );
+  // `gbp_review_requests` rows are folded in as `review-request` timeline
+  // events so the lead's timeline carries every customer-facing touchpoint
+  // (form submission → SMS replies → review request sent → review left)
+  // in one chronological view.
+  const reviewEvents = reviewRequests.map(mapReviewRequestEvent);
+  const allEvents = sortTimelineEvents(
+    [...baseEvents, ...reviewEvents],
+    row.lead_events,
+    reviewRequests,
   );
   const conversationHref = `/leads/${row.id}/conversation`;
   const first = row.customer_name_snapshot.trim().split(/\s+/)[0] ?? '';
@@ -663,7 +736,7 @@ function buildLeadDetail(
     subtitle: (
       <>
         Lead via <strong>{row.source ?? 'a direct enquiry'}</strong>.{' '}
-        {events.length} {events.length === 1 ? 'event' : 'events'} on the
+        {allEvents.length} {allEvents.length === 1 ? 'event' : 'events'} on the
         timeline.
       </>
     ),
@@ -672,15 +745,43 @@ function buildLeadDetail(
     metaParts,
     status: row.status,
     timeline: {
-      eventCount: events.length,
-      events: events.map((e) => mapTimelineEvent(e, attachmentUrls)),
+      eventCount: allEvents.length,
+      events: allEvents,
     },
     quickActions,
     rail,
     conversationHref,
+    gbpContext: {
+      clientId: row.client_id,
+      recipientName: row.customer_name_snapshot || null,
+      recipientPhone: row.customer_phone_snapshot ?? null,
+      recipientEmail: row.customer?.email ?? null,
+    },
   };
   if (row.client?.name) detail.clientPillLabel = row.client.name;
   return detail;
+}
+
+/** Combine the lead-event timeline events with the review-request events
+ *  in reverse-chronological order. Both source arrays carry the timestamp
+ *  on the underlying row; we map back through that to compare. */
+function sortTimelineEvents(
+  events: LeadTimelineEvent[],
+  leadEvents: LeadDetailEventRow[],
+  reviewRequests: GbpReviewRequestRow[],
+): LeadTimelineEvent[] {
+  const timestamps = new Map<string, string>();
+  for (const e of leadEvents) {
+    timestamps.set(e.id, e.scheduled_for ?? e.occurred_at);
+  }
+  for (const r of reviewRequests) {
+    timestamps.set(`gbp-request-${r.id}`, r.sent_at);
+  }
+  return [...events].sort((a, b) => {
+    const ta = timestamps.get(a.id) ?? '';
+    const tb = timestamps.get(b.id) ?? '';
+    return tb.localeCompare(ta);
+  });
 }
 
 async function fetchLeadDetail(id: string): Promise<LeadDetail> {
@@ -695,10 +796,33 @@ async function fetchLeadDetail(id: string): Promise<LeadDetail> {
   if (error) throw normalizeError(error);
 
   const row = data as unknown as LeadDetailJoinRow;
-  const attachmentUrls = await signAttachmentUrls(
-    collectAttachmentPaths(row.lead_events),
-  );
-  return buildLeadDetail(row, attachmentUrls);
+  const [attachmentUrls, reviewRequests] = await Promise.all([
+    signAttachmentUrls(collectAttachmentPaths(row.lead_events)),
+    fetchReviewRequestsForLead(id),
+  ]);
+  return buildLeadDetail(row, attachmentUrls, reviewRequests);
+}
+
+async function fetchReviewRequestsForLead(
+  leadId: string,
+): Promise<GbpReviewRequestRow[]> {
+  const { data, error } = await untypedDb()
+    .from('gbp_review_requests')
+    .select(
+      'id, channel, sent_at, status, recipient_phone, recipient_email, resulted_in_review_id, error_message',
+    )
+    .eq('lead_id', leadId)
+    .order('sent_at', { ascending: false });
+  // Don't surface a query error as a lead-detail failure — the GBP table
+  // is optional. PGRST205 = the table doesn't exist (migrations not yet
+  // applied); other errors (RLS denial, network) also degrade silently.
+  if (error) {
+    if (error.code !== 'PGRST205') {
+      console.warn('[lead-detail] gbp_review_requests fetch failed', error.message);
+    }
+    return [];
+  }
+  return (data as GbpReviewRequestRow[] | null) ?? [];
 }
 
 /** One lead + its timeline. RLS scopes the by-id fetch to the caller's

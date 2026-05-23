@@ -7,12 +7,15 @@ import { DashboardQueueCard } from '@/components/client/dashboard/DashboardQueue
 import { FunnelSummaryBand } from '@/components/client/dashboard/FunnelSummaryBand';
 import { LandingSnapshotCard } from '@/components/client/dashboard/LandingSnapshotCard';
 import { ActivityFeed } from '@/components/shared/ActivityFeed';
+import { GbpReviewsWidget } from '@/components/shared/GbpReviewsWidget';
 import type { ActivityRowData, ActivityTone } from '@/components/shared/ActivityRow';
 import { FunnelConversionBars } from '@/components/shared/funnels/FunnelConversionBars';
 import { MiniTrendBars } from '@/components/shared/MiniTrendBars';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { StatCard } from '@/components/shared/StatCard';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
+import { useUser } from '@/lib/auth/user-stub';
+import { useClientId } from '@/lib/clients/queries';
 import type { ClientDashboard } from '@/lib/dashboard/client-dashboard-types';
 import { useClientDashboard } from '@/lib/dashboard/queries';
 import type { HubActivityKind, HubWeeklyStat } from '@/lib/dashboard/hub-types';
@@ -63,6 +66,8 @@ export function ClientDashboardContent() {
 }
 
 function ClientDashboardBody({ dash }: { dash: ClientDashboard }) {
+  const user = useUser();
+  const { data: clientUuid } = useClientId(user?.clientId ?? null);
   const activityItems: ActivityRowData[] = dash.recentActivity.map((event) => ({
     id: event.id,
     icon: ACTIVITY_PRESENTATION[event.kind].icon,
@@ -121,6 +126,8 @@ function ClientDashboardBody({ dash }: { dash: ClientDashboard }) {
       </div>
 
       <LandingSnapshotCard snapshot={dash.landingSnapshot} />
+
+      <GbpReviewsWidget clientId={clientUuid ?? null} href="/reviews" />
 
       <ActivityFeed
         title="Recent activity"

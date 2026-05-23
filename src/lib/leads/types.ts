@@ -116,7 +116,8 @@ export type LeadTimelineDot =
   | 'status'
   | 'email'
   | 'scheduled-sms'
-  | 'scheduled-email';
+  | 'scheduled-email'
+  | 'review-request';
 
 export type LeadTimelineEvent = {
   id: string;
@@ -172,6 +173,16 @@ export type LeadDetail = {
   quickActions: LeadQuickAction[];
   rail: LeadRailCard[];
   conversationHref: string;
+  /** Context for the GBP manual review-request button mounted in the
+   *  QUICK ACTIONS rail. Carries the bits the modal pre-fills. The
+   *  button hides itself when `clientId` is null (eg. a lead whose
+   *  client row was deleted — unreachable in practice). */
+  gbpContext: {
+    clientId: string | null;
+    recipientName: string | null;
+    recipientPhone: string | null;
+    recipientEmail: string | null;
+  };
 };
 
 // Conversation

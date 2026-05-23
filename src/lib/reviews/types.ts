@@ -17,6 +17,18 @@ export type ReviewItem = {
   stars: number;
   /** "14m" / "2d" / "3 DAYS AGO" etc. Mono uppercase rhythm. */
   age: string;
+  /** The GBP-sourced reply text + when it was published. When present the
+   *  reply renders inline below the quote; when absent and the viewer has
+   *  reply capability the inline composer is offered instead (the operator
+   *  reply UI is conditional on the parent passing `clientId`). */
+  reply?: {
+    text: string;
+    at: string;
+  };
+  /** The client id (UUID) the review belongs to. Required to dispatch a
+   *  reply through useReplyToGbpReview — the client view passes the
+   *  signed-in client; the operator view passes the per-card client id. */
+  clientId?: string;
 };
 
 /** Numeric distribution row for the 5★ → 1★ horizontal bar chart on

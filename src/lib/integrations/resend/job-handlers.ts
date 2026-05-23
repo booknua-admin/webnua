@@ -42,6 +42,7 @@ import {
 } from '@/lib/email/threading';
 import type { IntegrationError } from '@/lib/integrations/_shared/call';
 import { getIntegrationDb } from '@/lib/integrations/_shared/db-types';
+import { getReviewLinkForClient } from '@/lib/integrations/gbp/locations';
 import {
   enqueueJob,
   enqueueJobImmediate,
@@ -409,6 +410,12 @@ async function buildRenderContext(
   const baseUrl = getAppBaseUrl();
   const inboxLink = baseUrl ? `${baseUrl}/leads` : '/leads';
 
+  // Resolve the GBP review link for this client (when one is connected) so
+  // {{review.link}} substitutes to the real Google review deep-link. Falls
+  // back to an empty string when the client has no GBP location yet —
+  // contextOverrides on the payload can still force a value.
+  const reviewLink = await getReviewLinkForClient(clientId);
+
   const ctx: EmailRenderContext = {
     'client.shortName': sender.display_name || client?.name || 'Webnua',
     'client.businessName': client?.name ?? '',
@@ -421,7 +428,7 @@ async function buildRenderContext(
     'lead.phone': '',
     'lead.service': 'your enquiry',
     'lead.preview': '',
-    'review.link': baseUrl ? `${baseUrl}/reviews` : '',
+    'review.link': reviewLink ?? '',
     'platform.inboxLink': inboxLink,
     'digest.count': '',
     'digest.summary': '',

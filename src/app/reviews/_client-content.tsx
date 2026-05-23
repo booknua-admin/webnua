@@ -1,18 +1,26 @@
 'use client';
 
 import { NegativeReviewAlertButton } from '@/components/client/reviews/NegativeReviewAlertButton';
+import { GbpConnectPanel } from '@/components/shared/gbp/GbpConnectPanel';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { ReviewCallout } from '@/components/shared/reviews/ReviewCallout';
 import { ReviewDistributionBars } from '@/components/shared/reviews/ReviewDistributionBars';
 import { ReviewItem } from '@/components/shared/reviews/ReviewItem';
 import { ReviewSummaryHeader } from '@/components/shared/reviews/ReviewSummaryHeader';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
+import { useUser } from '@/lib/auth/user-stub';
+import { useClientId } from '@/lib/clients/queries';
 import { normalizeError } from '@/lib/errors';
+import { useClientGbpLocation } from '@/lib/integrations/gbp/use-gbp';
 import { useClientReviews } from '@/lib/reviews/queries';
 import { voltlineNegativeReview } from '@/lib/reviews/client-negative-modal';
 
 function ClientReviewsContent() {
   const { data: page, isLoading, error } = useClientReviews();
+  const user = useUser();
+  const { data: clientId } = useClientId(user?.clientId ?? null);
+  const gbpLocation = useClientGbpLocation(clientId ?? null);
+  const gbpConnected = gbpLocation.data != null;
 
   return (
     <>
@@ -35,43 +43,54 @@ function ClientReviewsContent() {
                 subtitle={page.hero.subtitle}
                 className="mb-0"
               />
-              <NegativeReviewAlertButton data={voltlineNegativeReview} />
+              {gbpConnected ? (
+                <NegativeReviewAlertButton data={voltlineNegativeReview} />
+              ) : null}
             </div>
 
-            <div className="grid grid-cols-[200px_1fr_240px] items-center gap-7 rounded-xl border border-rule bg-card px-7 py-6">
-              <div className="border-r border-paper-2 pr-7">
-                <ReviewSummaryHeader
-                  rating={page.summary.rating}
-                  starsLabel={page.summary.starsLabel}
-                  meta={page.summary.meta}
-                  size="lg"
-                />
-              </div>
-              <ReviewDistributionBars rows={page.distribution} />
-              <ReviewCallout
-                headline={page.callout.headline}
-                sub={page.callout.sub}
-                link={page.callout.link}
-              />
-            </div>
-
-            <div className="overflow-hidden rounded-xl border border-rule bg-card">
-              <div className="flex items-center justify-between border-b border-rule bg-paper-2 px-5.5 py-3.5 font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-ink-quiet [&_strong]:text-ink">
-                <span>{page.listHeader}</span>
-                <span>{page.listAside}</span>
-              </div>
-              {page.reviews.length === 0 ? (
-                <p className="px-5.5 py-12 text-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
-                  {'// No reviews collected yet'}
-                </p>
-              ) : (
-                <div>
-                  {page.reviews.map((review) => (
-                    <ReviewItem key={review.id} review={review} variant="full" />
-                  ))}
+            {!gbpConnected ? (
+              // No GBP location yet — show the connect CTA and hide the
+              // summary / distribution / reviews list (they would all be
+              // empty / misleading until the integration is wired up).
+              <GbpConnectPanel clientId={clientId ?? null} />
+            ) : (
+              <>
+                <div className="grid grid-cols-[200px_1fr_240px] items-center gap-7 rounded-xl border border-rule bg-card px-7 py-6">
+                  <div className="border-r border-paper-2 pr-7">
+                    <ReviewSummaryHeader
+                      rating={page.summary.rating}
+                      starsLabel={page.summary.starsLabel}
+                      meta={page.summary.meta}
+                      size="lg"
+                    />
+                  </div>
+                  <ReviewDistributionBars rows={page.distribution} />
+                  <ReviewCallout
+                    headline={page.callout.headline}
+                    sub={page.callout.sub}
+                    link={page.callout.link}
+                  />
                 </div>
-              )}
-            </div>
+
+                <div className="overflow-hidden rounded-xl border border-rule bg-card">
+                  <div className="flex items-center justify-between border-b border-rule bg-paper-2 px-5.5 py-3.5 font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-ink-quiet [&_strong]:text-ink">
+                    <span>{page.listHeader}</span>
+                    <span>{page.listAside}</span>
+                  </div>
+                  {page.reviews.length === 0 ? (
+                    <p className="px-5.5 py-12 text-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+                      {'// No reviews collected yet'}
+                    </p>
+                  ) : (
+                    <div>
+                      {page.reviews.map((review) => (
+                        <ReviewItem key={review.id} review={review} variant="full" />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </>
         )}
       </div>

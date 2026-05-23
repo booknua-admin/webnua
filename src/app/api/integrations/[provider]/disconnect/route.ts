@@ -2,15 +2,16 @@
 // POST /api/integrations/[provider]/disconnect — revoke a per-tenant OAuth
 // connection.
 //
-// Phase 7 Session 2. Operator-only (same auth as the connect route). Revokes
-// access at the provider, deletes the Vault secret, and marks the connection
-// row revoked. Reached by fetch() with the operator's Supabase access token.
+// Phase 7 Session 2 + Phase 7 GBP UI consolidation. Auth mirrors the connect
+// route: GBP allows client-or-operator (the customer owns the listing), Meta
+// Ads stays operator-only. Revokes access at the provider, deletes the Vault
+// secret, and marks the connection row revoked.
 // =============================================================================
 
 import { NextResponse } from 'next/server';
 
 import { isOAuthProviderId } from '@/lib/integrations/connections';
-import { requireOperatorForClient } from '@/lib/integrations/_shared/operator-auth';
+import { requireClientAccess, requireOperatorForClient } from '@/lib/integrations/_shared/operator-auth';
 import { revokeConnection } from '@/lib/integrations/_shared/tokens';
 
 export async function POST(
@@ -33,7 +34,10 @@ export async function POST(
     return NextResponse.json({ error: 'missing-clientId' }, { status: 400 });
   }
 
-  const auth = await requireOperatorForClient(request, clientId);
+  const auth =
+    provider === 'google_business_profile'
+      ? await requireClientAccess(request, clientId)
+      : await requireOperatorForClient(request, clientId);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
