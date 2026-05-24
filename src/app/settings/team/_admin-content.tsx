@@ -1,3 +1,13 @@
+'use client';
+
+// /settings/team — operator branch. Dispatches on workspace mode:
+// agency mode → Webnua's own team members (operators); sub-account mode →
+// the drilled-in client's user roster + a "+ Invite teammate" button that
+// covers BOTH the operator-concierge invite of the first client owner AND
+// adding subsequent client teammates.
+
+import { useMemo, useSyncExternalStore } from 'react';
+
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
@@ -5,9 +15,45 @@ import { InviteTeamButton } from '@/components/admin/team/InviteTeamButton';
 import { TeamRow } from '@/components/shared/settings/TeamRow';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { cn } from '@/lib/utils';
+import {
+  cancelTeamInvite,
+  getAllTeamInvites,
+  resendTeamInvite,
+  subscribeTeamInvites,
+} from '@/lib/team/team-invite-stub';
 import { adminTeamMembers, adminTeamPermissions } from '@/lib/settings/admin-team';
+import { useWorkspace } from '@/lib/workspace/workspace-stub';
+import { inviteInitials } from '@/components/shared/invite/InviteModalChrome';
+import { getTeamRoleDef } from '@/lib/team/roles';
+import type { TeamInvite } from '@/lib/team/types';
+
+import { SubAccountTeamContent } from './_sub-account-content';
+
+const EMPTY_INVITES: TeamInvite[] = [];
 
 export function AdminSettingsTeamContent() {
+  const { activeClient } = useWorkspace();
+  if (activeClient) {
+    return <SubAccountTeamContent />;
+  }
+  return <AgencyTeamContent />;
+}
+
+function AgencyTeamContent() {
+  const allInvites = useSyncExternalStore(
+    subscribeTeamInvites,
+    getAllTeamInvites,
+    () => EMPTY_INVITES,
+  ) as TeamInvite[];
+
+  const pendingInvites = useMemo(
+    () => allInvites.filter((i) => i.status === 'pending'),
+    [allInvites],
+  );
+
+  const totalMembers = adminTeamMembers.length;
+  const pendingCount = pendingInvites.length;
+
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="Team" />} />
@@ -29,7 +75,7 @@ export function AdminSettingsTeamContent() {
             }
             description={
               <>
-                3 of 5 seats used on the Operator plan.{' '}
+                {totalMembers} of 5 seats used on the Operator plan.{' '}
                 <strong>Invite team members to help manage clients</strong> — they can be assigned
                 client-level or workspace-level access.
               </>
@@ -37,7 +83,8 @@ export function AdminSettingsTeamContent() {
           >
             <div className="mb-4 flex items-center justify-between">
               <span className="font-mono text-[11px] font-bold uppercase tracking-[0.08em] text-ink-quiet">
-                <strong className="text-ink">3</strong> members · 1 invite pending
+                <strong className="text-ink">{totalMembers}</strong> members ·{' '}
+                {pendingCount} invite{pendingCount === 1 ? '' : 's'} pending
               </span>
               <InviteTeamButton />
             </div>
@@ -55,6 +102,37 @@ export function AdminSettingsTeamContent() {
                 actions={member.actions}
               />
             ))}
+
+            {pendingInvites.map((invite) => {
+              const roleDef = getTeamRoleDef(invite.role);
+              return (
+                <TeamRow
+                  key={invite.id}
+                  initial={inviteInitials(invite.fullName, invite.email)}
+                  name={invite.fullName.trim() || invite.email}
+                  email={invite.email}
+                  role={roleDef.name}
+                  roleSub="Invite pending"
+                  status="pending"
+                  statusLabel="Pending"
+                  actions={[
+                    {
+                      label: 'Resend',
+                      onClick: () => {
+                        void resendTeamInvite(invite.id);
+                      },
+                    },
+                    {
+                      label: 'Revoke',
+                      tone: 'danger',
+                      onClick: () => {
+                        void cancelTeamInvite(invite.id);
+                      },
+                    },
+                  ]}
+                />
+              );
+            })}
           </SettingsSection>
 
           <SettingsSection

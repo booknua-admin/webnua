@@ -1,8 +1,24 @@
 'use client';
 
-// /settings/team — client view. The business owner's view of their own client
-// account: who's on the account, how many seats are used, and the invite CTA.
-// Net-new surface — the client prototype has no Team tab (see CLAUDE.md note).
+// /settings/team — operator drilled into a client (sub-account mode). The
+// operator-concierge surface: invite the FIRST client owner of a freshly-
+// created workspace, OR add subsequent teammates on the client's behalf.
+//
+// Structurally mirrors `_client-content.tsx` (same TeamRow + SeatUsageMeter
+// + pending-invite list) so the operator and the client see the SAME thing
+// when they're looking at the same workspace. The framing differs — the
+// operator's eyebrow says "Sub-account · {clientName}" and an explainer
+// banner sits at the top reminding the operator they're acting on the
+// client's behalf.
+//
+// Uses the same `InviteTeammateButton` the client uses. The button is
+// already widened to accept operators in sub-account mode (it reads
+// useWorkspace().activeClientId for operators) — when no users exist yet,
+// the operator is inviting the OWNER, but the UI doesn't have to change
+// for that: the auto-grant trigger from migration 0088 makes the first
+// client-role user the workspace owner automatically. The button's label
+// adapts ("Invite the owner" vs "+ Invite teammate") based on whether
+// there are any client-role users yet.
 
 import { useMemo, useSyncExternalStore } from 'react';
 
@@ -19,21 +35,21 @@ import {
   subscribeRoster,
   type RosterUser,
 } from '@/lib/auth/roster-store';
-import { useUser } from '@/lib/auth/user-stub';
-import { useAdminClients } from '@/lib/clients/clients-store';
 import {
   cancelClientInvite,
   getAllClientInvites,
+  resendClientInvite,
   subscribeClientInvites,
 } from '@/lib/invites/client-invite-stub';
 import type { ClientUserInvite } from '@/lib/invites/client-invite';
 import { useClientSeatUsage } from '@/lib/invites/use-seat-usage';
+import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 const EMPTY_INVITES: ClientUserInvite[] = [];
 
-export function ClientSettingsTeamContent() {
-  const user = useUser();
-  const clientId = user?.clientId ?? null;
+export function SubAccountTeamContent() {
+  const { activeClient } = useWorkspace();
+  const clientId = activeClient?.id ?? null;
 
   const allInvites = useSyncExternalStore(
     subscribeClientInvites,
@@ -45,37 +61,39 @@ export function ClientSettingsTeamContent() {
     () =>
       clientId
         ? allInvites.filter(
-            (inv: ClientUserInvite) => inv.clientId === clientId && inv.status === 'pending',
+            (inv) => inv.clientId === clientId && inv.status === 'pending',
           )
         : [],
     [allInvites, clientId],
-  ) as ClientUserInvite[];
+  );
 
-  const usage = useClientSeatUsage(clientId ?? '');
-  const adminClients = useAdminClients();
   const members = useSyncExternalStore(
     subscribeRoster,
     () => (clientId ? getUserDefsForClient(clientId) : []),
     () => [] as ReturnType<typeof getUserDefsForClient>,
   ) as RosterUser[];
-  const clientName =
-    adminClients.find((c) => c.id === clientId)?.name ?? 'your account';
+
+  const usage = useClientSeatUsage(clientId ?? '');
+  const clientName = activeClient?.name ?? 'this client';
+
+  const isFirstInvite = members.length === 0 && pendingInvites.length === 0;
 
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="Team" />} />
       <SettingsShell
-        eyebrow={`${clientName} · your account`}
+        eyebrow={`Sub-account · ${clientName}`}
         title={
           <>
-            Your <em>team</em>.
+            {clientName}&rsquo;s <em>team</em>.
           </>
         }
         subtitle={
           <>
-            Everyone with access to {clientName}.{' '}
-            <strong>Invite teammates to view your website, leads, and bookings</strong> — editing
-            access is granted by Webnua.
+            Everyone with access to <strong>{clientName}</strong>. Invite the
+            owner if they haven&rsquo;t accepted yet, or add their teammates.
+            Concierge actions you take here affect the client&rsquo;s own view
+            of their account.
           </>
         }
       >
@@ -86,19 +104,33 @@ export function ClientSettingsTeamContent() {
                 People on <em>{clientName}</em>
               </>
             }
-            description="Teammates can see your account. They start with view-only access until Webnua grants editing."
+            description={
+              isFirstInvite
+                ? "No one's accepted yet. Send the owner their magic link to bring them into their workspace."
+                : 'Active teammates and pending invites. Pending invites count against the seat limit.'
+            }
           >
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <SeatUsageMeter usage={usage} className="min-w-[220px] flex-1" />
-              <InviteTeammateButton />
+              <InviteTeammateButton
+                label={isFirstInvite ? 'Invite the owner →' : '+ Invite teammate'}
+              />
             </div>
+
+            {members.length === 0 && pendingInvites.length === 0 ? (
+              <div className="rounded-[10px] border border-dashed border-rule bg-paper px-5 py-4 font-sans text-[13px] text-ink-quiet">
+                No users on this workspace yet. Sending the first invite makes
+                the recipient the <strong>workspace owner</strong>{' '}
+                automatically — they&rsquo;ll land on the dashboard with full
+                editing access.
+              </div>
+            ) : null}
 
             {members.map((member) => (
               <TeamRow
                 key={member.id}
                 initial={inviteInitials(member.displayName, member.email)}
                 name={member.displayName}
-                isYou={member.id === user?.id}
                 email={member.email}
                 role="Member"
                 roleSub="Client account"
@@ -120,6 +152,12 @@ export function ClientSettingsTeamContent() {
                 statusLabel="Pending"
                 actions={[
                   {
+                    label: 'Resend',
+                    onClick: () => {
+                      void resendClientInvite(invite.id);
+                    },
+                  },
+                  {
                     label: 'Revoke',
                     tone: 'danger',
                     onClick: () => {
@@ -137,17 +175,17 @@ export function ClientSettingsTeamContent() {
                 What teammates <em>can do</em>
               </>
             }
-            description="Every teammate starts with the same view-only access. There are no in-account roles to manage — Webnua controls who can edit and publish."
+            description="The first invitee becomes the workspace owner (full access). Every subsequent invitee starts with view-only access — grant edit caps per-website via /settings/access."
           >
             <div className="mt-3 rounded-lg border border-rule bg-paper px-5 py-4">
               {[
-                ['Can', 'See your website, funnels, leads, bookings, and reviews'],
-                ['Cannot', 'Edit pages, publish changes, or manage billing'],
-                ['Need editing access?', `Ask Craig at Webnua to grant it per teammate`],
+                ['Owner (1st invite)', 'Full edit + publish + manage their account'],
+                ['Teammate', 'View only — needs per-website grants to edit'],
+                ['Operator concierge', 'You can act on their behalf via this sub-account view'],
               ].map(([label, body]) => (
                 <div
                   key={label}
-                  className="grid grid-cols-[150px_1fr] gap-3 border-b border-paper-2 py-2.5 last:border-b-0"
+                  className="grid grid-cols-[180px_1fr] gap-3 border-b border-paper-2 py-2.5 last:border-b-0"
                 >
                   <span className="font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-ink-quiet">
                     {label}

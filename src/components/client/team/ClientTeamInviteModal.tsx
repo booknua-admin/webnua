@@ -32,11 +32,11 @@ import {
   InviteSection,
 } from '@/components/shared/invite/InviteModalChrome';
 import { SeatUsageMeter } from '@/components/client/team/SeatUsageMeter';
-import { useUser } from '@/lib/auth/user-stub';
 import { useAdminClients } from '@/lib/clients/clients-store';
 import { addClientInvite } from '@/lib/invites/client-invite-stub';
 import type { ClientUserInvite, ClientUserInviteDraft } from '@/lib/invites/client-invite';
 import { canInviteToClient, type SeatUsage } from '@/lib/invites/seats';
+import { humaniseInviteError } from '@/lib/invites/error-text';
 import { INVITE_TTL_DAYS } from '@/lib/invites/shared-types';
 import { useClientSeatUsage } from '@/lib/invites/use-seat-usage';
 
@@ -58,12 +58,14 @@ function ClientTeamInviteModal({
   onOpenChange,
   clientId,
 }: ClientTeamInviteModalProps) {
-  const user = useUser();
   const adminClients = useAdminClients();
   const usage = useClientSeatUsage(clientId);
   const [step, setStep] = useState<1 | 2>(1);
   const [draft, setDraft] = useState<ClientUserInviteDraft>(EMPTY_DRAFT);
   const [sentInvite, setSentInvite] = useState<ClientUserInvite | null>(null);
+  const [emailOutcome, setEmailOutcome] = useState<'sent' | 'failed' | 'skipped'>('sent');
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   const clientName =
     adminClients.find((c) => c.id === clientId)?.name ?? 'your account';
@@ -78,6 +80,9 @@ function ClientTeamInviteModal({
     setStep(1);
     setDraft(EMPTY_DRAFT);
     setSentInvite(null);
+    setEmailOutcome('sent');
+    setSending(false);
+    setSendError(null);
   }
 
   function handleOpenChange(next: boolean) {
@@ -89,34 +94,26 @@ function ClientTeamInviteModal({
     setDraft((prev) => ({ ...prev, ...fields }));
   }
 
-  // Builds the one discrete, attributable invite record (vision §7). The send
-  // is guarded again here — the seat count could have moved while the modal
-  // was open. Backend pass replaces the body with a real INSERT + email send;
-  // the ClientUserInvite shape stays the contract.
-  function handleSend() {
+  // Submits the invite via POST /api/invites/client — the server enforces
+  // the seat limit (last-line guard), inserts the row + sends the Resend
+  // email + returns the persisted invite with the real token + magic link.
+  async function handleSend() {
+    if (sending) return;
     if (!canInviteToClient(clientId).allowed) return;
-    const now = new Date();
-    const expires = new Date(now.getTime() + INVITE_TTL_DAYS * 86_400_000);
-    const token = (
-      globalThis.crypto?.randomUUID?.() ?? `${Date.now()}`
-    ).replace(/-/g, '');
-    const note = draft.personalNote.trim();
-    const invite: ClientUserInvite = {
-      id: `cinv_${token.slice(0, 12)}`,
-      email: draft.email.trim(),
-      fullName: draft.fullName.trim(),
-      clientId,
-      invitedBy: user?.id ?? 'unknown',
-      invitedAt: now.toISOString(),
-      expiresAt: expires.toISOString(),
-      magicLink: `https://app.webnua.io/invite/wb_${token.slice(0, 16)}`,
-      status: 'pending',
-      personalNote: note.length > 0 ? note : null,
-    };
-    addClientInvite(invite);
-    console.log('[stub] client teammate invite issued', invite);
-    setSentInvite(invite);
-    setStep(2);
+    setSending(true);
+    setSendError(null);
+    try {
+      const result = await addClientInvite({ ...draft, clientId });
+      if (!result.ok) {
+        setSendError(humaniseInviteError(result.error));
+        return;
+      }
+      setSentInvite(result.invite);
+      setEmailOutcome(result.emailOutcome);
+      setStep(2);
+    } finally {
+      setSending(false);
+    }
   }
 
   return (
@@ -154,16 +151,30 @@ function ClientTeamInviteModal({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-7 py-6">
           {step === 1 ? (
-            <Step1
-              draft={draft}
-              clientName={clientName}
-              seatBlocked={seatBlocked}
-              usage={usage}
-              onPatch={patch}
-            />
+            <>
+              <Step1
+                draft={draft}
+                clientName={clientName}
+                seatBlocked={seatBlocked}
+                usage={usage}
+                onPatch={patch}
+              />
+              {sendError ? (
+                <div
+                  role="alert"
+                  className="mt-4 rounded-md border border-warn/40 bg-warn/10 px-4 py-3 font-sans text-[13px] leading-[1.45] text-warn"
+                >
+                  {sendError}
+                </div>
+              ) : null}
+            </>
           ) : null}
           {step === 2 && sentInvite ? (
-            <Step2 invite={sentInvite} inviteeFirstName={inviteeFirstName} />
+            <Step2
+              invite={sentInvite}
+              inviteeFirstName={inviteeFirstName}
+              emailOutcome={emailOutcome}
+            />
           ) : null}
         </div>
 
@@ -187,10 +198,10 @@ function ClientTeamInviteModal({
               </Button>
               <Button
                 className="h-9"
-                disabled={!canContinue}
+                disabled={!canContinue || sending}
                 onClick={handleSend}
               >
-                Send invite →
+                {sending ? 'Sending…' : 'Send invite →'}
               </Button>
             </>
           ) : (
@@ -327,9 +338,11 @@ function Step1({ draft, clientName, seatBlocked, usage, onPatch }: Step1Props) {
 function Step2({
   invite,
   inviteeFirstName,
+  emailOutcome,
 }: {
   invite: ClientUserInvite;
   inviteeFirstName: string;
+  emailOutcome: 'sent' | 'failed' | 'skipped';
 }) {
   const sentAt = new Date(invite.invitedAt).toLocaleTimeString([], {
     hour: 'numeric',
@@ -340,6 +353,28 @@ function Step2({
     month: 'long',
     day: 'numeric',
   });
+  const emailStatus =
+    emailOutcome === 'sent'
+      ? (
+          <>
+            Email sent to <strong>{invite.email}</strong> at {sentAt}.
+          </>
+        )
+      : emailOutcome === 'skipped'
+        ? (
+            <>
+              <strong>Email send was skipped</strong> in this environment. Copy
+              the link below and send it to <strong>{invite.email}</strong>{' '}
+              directly.
+            </>
+          )
+        : (
+            <>
+              <strong>Email failed to send</strong> to{' '}
+              <strong>{invite.email}</strong>. Copy the link below and send it
+              directly.
+            </>
+          );
 
   return (
     <>
@@ -351,9 +386,9 @@ function Step2({
         <em className="not-italic text-rust">live</em>
       </div>
       <p className="mx-auto mt-2 mb-5.5 max-w-[440px] text-center font-sans text-[14px] leading-[1.5] text-ink-quiet [&_strong]:font-semibold [&_strong]:text-ink">
-        Email sent to <strong>{invite.email}</strong> at {sentAt}. The magic
-        link expires <strong>{expiresOn}</strong>. You&apos;ll see &ldquo;invite
-        pending&rdquo; on the Team tab until they accept.
+        {emailStatus} The magic link expires <strong>{expiresOn}</strong>.
+        You&apos;ll see &ldquo;invite pending&rdquo; on the Team tab until they
+        accept.
       </p>
 
       <InviteCopyLinkRow url={invite.magicLink} />
