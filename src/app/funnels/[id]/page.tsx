@@ -21,6 +21,7 @@ import { FunnelHero } from '@/components/client/funnels/FunnelHero';
 import { FunnelHistoryCard } from '@/components/client/funnels/FunnelHistoryCard';
 import { FunnelInsightsCard } from '@/components/client/funnels/FunnelInsightsCard';
 import { FunnelSlugEditor } from '@/components/client/funnels/FunnelSlugEditor';
+import { FunnelPublicationControls } from '@/components/admin/funnels/FunnelPublicationControls';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import {
   fetchFunnelStepBreakdown,
@@ -376,6 +377,11 @@ export default function FunnelDetailPage() {
           host={host}
           slug={funnelSlug}
           canEdit={canEdit}
+        />
+
+        <FunnelPublicationControls
+          funnelId={funnel.id}
+          publishedVersionId={funnel.publishedVersionId}
         />
 
         <FunnelFlow

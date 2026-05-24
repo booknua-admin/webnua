@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   useDismissFollowup,
+  useLeadAutomationRuns,
   useLeadAutomationState,
   useResumeAutomations,
   useTakeOverLead,
@@ -165,9 +166,105 @@ function LeadAutomationPanel({ leadId }: LeadAutomationPanelProps) {
               {'// No active runs on this lead'}
             </div>
           )}
+
+          {/* (4) Run history — collapsed by default; fetches on expand */}
+          <RunHistorySection leadId={leadId} />
         </>
       )}
     </div>
+  );
+}
+
+/** Collapsible "View all runs" block. Fetches /api/leads/[id]/runs lazily
+ *  (only when expanded) so the panel's default render doesn't pay for the
+ *  list. Closes the Session 3 carve-out from CLAUDE.md. */
+function RunHistorySection({ leadId }: { leadId: string }) {
+  const [open, setOpen] = useState(false);
+  const { data, isLoading, error } = useLeadAutomationRuns(leadId, open);
+
+  return (
+    <div className="border-t border-paper-2">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between bg-paper-2/40 px-4.5 py-2 text-left font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-ink-quiet hover:bg-paper-2/70"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        <span>{open ? '// HIDE RUN HISTORY' : '// VIEW ALL RUNS'}</span>
+        <span aria-hidden>{open ? '−' : '+'}</span>
+      </button>
+      {open ? (
+        isLoading ? (
+          <p className="px-4.5 py-3 font-mono text-[10px] uppercase tracking-[0.1em] text-ink-quiet">
+            {'// Loading…'}
+          </p>
+        ) : error || !data ? (
+          <p className="px-4.5 py-3 font-mono text-[10px] uppercase tracking-[0.1em] text-warn">
+            {'// Could not load runs'}
+          </p>
+        ) : data.runs.length === 0 ? (
+          <p className="px-4.5 py-3 font-mono text-[10px] uppercase tracking-[0.1em] text-ink-quiet">
+            {'// No runs on this lead yet'}
+          </p>
+        ) : (
+          <ul>
+            {data.runs.map((run) => (
+              <li
+                key={run.id}
+                className="border-b border-paper-2 px-4.5 py-2.5 last:border-b-0"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-sans text-[12px] font-semibold text-ink">
+                    {run.automationName}
+                  </span>
+                  <HistoryStatusPill status={run.status} pausedReason={run.pausedReason} />
+                </div>
+                <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-ink-quiet">
+                  Started {relativeTime(run.startedAt)}
+                  {run.totalActions > 0 ? (
+                    <span className="ml-2">
+                      · {Math.min(run.currentActionPosition, run.totalActions)}/{run.totalActions}
+                    </span>
+                  ) : null}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : null}
+    </div>
+  );
+}
+
+function HistoryStatusPill({
+  status,
+  pausedReason,
+}: {
+  status: string;
+  pausedReason: string | null;
+}) {
+  // Five terminal/non-terminal statuses to render. Tones tuned to the rest
+  // of the panel — running/paused match RunStatusPill above; completed is
+  // good; cancelled/failed are warn-tinted.
+  if (status === 'running' || status === 'paused') {
+    return <RunStatusPill status={status} pausedReason={pausedReason} />;
+  }
+  const label = status;
+  const tone =
+    status === 'completed'
+      ? 'bg-good/12 text-good'
+      : status === 'cancelled'
+      ? 'bg-ink/8 text-ink-quiet'
+      : 'bg-warn/12 text-warn';
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.08em]',
+        tone,
+      )}
+    >
+      {label}
+    </span>
   );
 }
 

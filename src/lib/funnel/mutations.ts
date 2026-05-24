@@ -353,6 +353,65 @@ export async function updateFunnelSlug(
   return { ok: true, slug };
 }
 
+// ---- Unpublish --------------------------------------------------------------
+
+export type UnpublishFunnelResult =
+  | { ok: true }
+  | { ok: false; reason: 'not_found' | 'not_published' | 'pending_submission' };
+
+/**
+ * Pull a published funnel offline. Reverts the funnel to draft-only — the
+ * public URL stops resolving (404), the draft is preserved so editing
+ * continues. The previously-published version row is archived so its
+ * history is still visible on the funnel detail.
+ *
+ * Refuses while a pending approval submission is in flight — resolving the
+ * submission first keeps the operator approval queue honest (a recall by
+ * the submitter or a reject/approve by the operator is the right path).
+ *
+ * Operator-only at the UI layer (`publish` capability + admin role); the
+ * mutation itself doesn't role-check — RLS on `funnels` + auth at the
+ * surface are the boundary.
+ */
+export async function unpublishFunnel(
+  funnelId: string,
+  actor: FunnelPublishActor,
+): Promise<UnpublishFunnelResult> {
+  const pointers = await getFunnelPointers(funnelId);
+  if (!pointers) return { ok: false, reason: 'not_found' };
+  if (!pointers.publishedVersionId) return { ok: false, reason: 'not_published' };
+
+  // Refuse if a pending approval submission is in flight — the submitter
+  // would lose visibility into where their submission went otherwise.
+  const { data: pending } = await supabase
+    .from('funnel_approval_submissions')
+    .select('id')
+    .eq('funnel_id', funnelId)
+    .eq('status', 'pending')
+    .maybeSingle();
+  if (pending) return { ok: false, reason: 'pending_submission' };
+
+  const now = new Date().toISOString();
+
+  // Archive the previously-live version so the history list still renders it
+  // (the version stays as audit; the funnel just no longer points to it).
+  await supabase
+    .from('funnel_versions')
+    .update({ status: 'archived', notes: `Unpublished by ${actor.displayName} on ${now}.` })
+    .eq('id', pointers.publishedVersionId);
+
+  // Drop the funnel's published pointer — the public-site resolver checks
+  // `funnel.published_version_id IS NULL` to return 'unpublished' (see
+  // `lib/public-site/resolve.ts`).
+  await supabase
+    .from('funnels')
+    .update({ published_version_id: null })
+    .eq('id', funnelId);
+
+  notifyBuilder();
+  return { ok: true };
+}
+
 // ---- SEO --------------------------------------------------------------------
 
 /** Persist per-step SEO (title / description) onto the funnel's draft

@@ -36,6 +36,11 @@ import {
   type LeadSnapshot,
 } from './engine-types';
 import { dispatchAction } from './actions/dispatch';
+import {
+  cancelLowerPriorityRuns,
+  checkSuppressionForCommAction,
+  type CommChannel,
+} from './suppression';
 
 const PAUSE_AFTER_MANUAL_HOURS_DEFAULT = 4;
 
@@ -173,6 +178,23 @@ export async function onTrigger(
     }
     const run = runData as unknown as AutomationRunRow;
 
+    // 4b) Priority cancellation. When the new run is higher priority than
+    //     existing running/paused runs on the same lead, cancel the lower-
+    //     priority runs so the customer never gets a reputation request
+    //     while a transactional follow-up is still in flight. Same-priority
+    //     runs are left alone — they fall through to the frequency-cap layer.
+    try {
+      await cancelLowerPriorityRuns(run, automation);
+    } catch (priorityError) {
+      // Cancellation failure must not block the new run from scheduling —
+      // log + continue. The duplicate flows would only hit the frequency
+      // cap at send time anyway.
+      console.warn(
+        `[engine] cancelLowerPriorityRuns failed for run ${run.id}:`,
+        priorityError instanceof Error ? priorityError.message : priorityError,
+      );
+    }
+
     // 5) Schedule the first action. Per-automation `delay_minutes` on
     //    trigger_config drives the first-action defer (e.g. 2h review-request).
     const delayMinutes = readNumber(automation.trigger_config ?? {}, 'delay_minutes') ?? 0;
@@ -282,6 +304,52 @@ export async function processNextAction(runId: string): Promise<ProcessActionRes
         })
         .eq('id', runId);
       return { kind: 'paused', runId, reason: pause.reason };
+    }
+  }
+
+  // 3b) Suppression check — frequency cap + quiet hours. Only the two
+  //     customer-facing comm actions are subject; operator notifications +
+  //     wait + update-field + create-task are internal and always proceed.
+  //     A 'defer' decision reschedules the SAME action at the deferred-until
+  //     time without advancing position; a 'skip' decision advances like
+  //     dispatchAction returning {kind:'skipped'}.
+  const commChannel = commChannelFor(action.action_type);
+  if (commChannel) {
+    const suppression = await checkSuppressionForCommAction(run, action, commChannel);
+    if (suppression.kind === 'defer') {
+      const delayMs = Math.max(0, suppression.untilMs - Date.now());
+      const payload: AutomationActionJobPayload = { runId };
+      await enqueueJob(AUTOMATION_ACTION_JOB, payload, {
+        provider: 'automations',
+        clientId: run.client_id,
+        runAfter: new Date(Date.now() + delayMs),
+        correlationId: runId,
+      });
+      // Don't advance position — the same action runs again after the defer.
+      return { kind: 'completed', runId };
+    }
+    if (suppression.kind === 'skip') {
+      // Skip-and-advance — same flow as dispatchAction returning skipped.
+      // Move to the next action; the run stays healthy.
+      const nextResolved = await resolveActionForRun(run, run.current_action_position + 1);
+      if (nextResolved === 'lookup_failed' || !nextResolved) {
+        await db
+          .from('automation_runs')
+          .update({ status: 'completed', completed_at: new Date().toISOString() })
+          .eq('id', runId);
+        return { kind: 'completed', runId };
+      }
+      await db
+        .from('automation_runs')
+        .update({ current_action_position: nextResolved.position })
+        .eq('id', runId);
+      const payload: AutomationActionJobPayload = { runId };
+      await enqueueJobImmediate(AUTOMATION_ACTION_JOB, payload, {
+        provider: 'automations',
+        clientId: run.client_id,
+        correlationId: runId,
+      });
+      return { kind: 'completed', runId };
     }
   }
 
@@ -575,6 +643,14 @@ async function fetchLeadSnapshot(leadId: string): Promise<LeadSnapshot | null> {
     lastInboundAt: row.last_inbound_at,
     lastOutboundAt: row.last_outbound_at,
   };
+}
+
+/** Map an action_type to a comm channel for suppression — null for non-comm
+ *  actions, which skip the suppression check entirely. */
+function commChannelFor(actionType: AutomationActionRow['action_type']): CommChannel | null {
+  if (actionType === 'send_sms_to_lead') return 'sms';
+  if (actionType === 'send_email_to_lead') return 'email';
+  return null;
 }
 
 // Re-export for callers that only want the helper layer.
