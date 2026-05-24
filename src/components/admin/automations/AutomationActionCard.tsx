@@ -15,11 +15,13 @@
 //   • send_operator_notification → variant label only (no per-row config).
 // =============================================================================
 
+import Link from 'next/link';
 import { useRef, useState } from 'react';
 
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { applyInsertToField } from '@/lib/editor/insert-at-cursor';
+import { usePlatformTemplates } from '@/lib/email/platform-templates-queries';
 import { cn } from '@/lib/utils';
 
 import type {
@@ -41,6 +43,12 @@ type AutomationActionCardProps = {
   onRemove: () => void;
   onChange: (change: ChangeKind) => void;
   saving?: boolean;
+  /**
+   * Client-side read-only treatment. Hides the move/delete icons; keeps the
+   * body/subject/config editors live (clients tweak copy + cadence knobs,
+   * they don't add/reorder/remove actions).
+   */
+  readOnly?: boolean;
 };
 
 const ACTION_LABEL: Record<AutomationEditorActionType, string> = {
@@ -70,10 +78,13 @@ function AutomationActionCard({
   onRemove,
   onChange,
   saving,
+  readOnly = false,
 }: AutomationActionCardProps) {
   const isComm =
     action.actionType === 'send_sms_to_lead' ||
     action.actionType === 'send_email_to_lead';
+  const isOperatorNotification =
+    action.actionType === 'send_operator_notification';
 
   return (
     <div
@@ -86,7 +97,12 @@ function AutomationActionCard({
     >
       <div
         data-slot="automation-action-card-header"
-        className="grid grid-cols-[26px_auto_1fr_auto_auto_auto] items-center gap-3 border-b border-paper-2 bg-paper px-4.5 py-3.5"
+        className={cn(
+          'grid items-center gap-3 border-b border-paper-2 bg-paper px-4.5 py-3.5',
+          readOnly
+            ? 'grid-cols-[26px_auto_1fr]'
+            : 'grid-cols-[26px_auto_1fr_auto_auto_auto]',
+        )}
       >
         <div className="flex size-6.5 items-center justify-center rounded-full bg-ink font-sans text-[12px] font-extrabold text-rust-light">
           {action.position}
@@ -106,19 +122,25 @@ function AutomationActionCard({
             </span>
           ) : null}
         </span>
-        <IconBtn label="Move up" disabled={isFirst} onClick={() => onMove('up')}>
-          ↑
-        </IconBtn>
-        <IconBtn label="Move down" disabled={isLast} onClick={() => onMove('down')}>
-          ↓
-        </IconBtn>
-        <IconBtn label="Delete" danger onClick={onRemove}>
-          ×
-        </IconBtn>
+        {!readOnly ? (
+          <>
+            <IconBtn label="Move up" disabled={isFirst} onClick={() => onMove('up')}>
+              ↑
+            </IconBtn>
+            <IconBtn label="Move down" disabled={isLast} onClick={() => onMove('down')}>
+              ↓
+            </IconBtn>
+            <IconBtn label="Delete" danger onClick={onRemove}>
+              ×
+            </IconBtn>
+          </>
+        ) : null}
       </div>
 
       <div className="px-5.5 py-4.5">
-        {isComm ? (
+        {isOperatorNotification ? (
+          <OperatorNotificationReadOnly config={action.config} />
+        ) : isComm ? (
           <CommActionBody
             action={action}
             variables={variables}
@@ -141,9 +163,7 @@ function AutomationActionCard({
             config={action.config}
             onChange={(config) => onChange({ kind: 'config', config })}
           />
-        ) : (
-          <OperatorNotificationConfig config={action.config} />
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -340,24 +360,70 @@ function FollowupTaskConfig({
   );
 }
 
-function OperatorNotificationConfig({
+/**
+ * Operator-notification body is platform-managed. The `send_operator_notification`
+ * action_type renders the operator alert from `platform_email_templates`
+ * (one shared body across every client — the recipient is the Webnua operator,
+ * not the customer's business). Editing the body lives on `/settings/platform-templates`;
+ * this card surfaces a read-only preview + a deep-link to the editor so an operator
+ * who landed here from an automation never wonders where to edit it.
+ */
+function OperatorNotificationReadOnly({
   config,
 }: {
   config: Record<string, unknown>;
 }) {
   const variant = typeof config.variant === 'string' ? config.variant : 'new_lead';
-  const label =
+  // Map the action's `variant` config key to the `platform_email_templates`
+  // row that actually drives the send.
+  const templateKey =
+    variant === 'lead_digest' ? 'lead_digest' : 'lead_notification';
+  const { data: templates } = usePlatformTemplates();
+  const template = templates?.find((t) => t.templateKey === templateKey);
+  const bodyText =
+    typeof template?.bodyText === 'string' ? template.bodyText : '';
+  const subject =
+    typeof template?.subject === 'string' ? template.subject : '';
+  const preview =
+    bodyText.length > 200 ? `${bodyText.slice(0, 200).trimEnd()}…` : bodyText;
+  const description =
     variant === 'payment_failed'
-      ? 'Notifies operators of a failed Stripe payment.'
+      ? 'Notifies the operator(s) of a failed Stripe payment.'
       : 'Notifies the operator(s) configured in /settings/notifications.';
+
   return (
-    <p className="font-sans text-[13px] text-ink-soft">
-      <span className="font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-ink-quiet">
-        Variant:
-      </span>{' '}
-      <span className="font-mono text-[12px] font-bold text-ink">{variant}</span>
-      <span className="ml-3 text-ink-quiet">{label}</span>
-    </p>
+    <div className="flex flex-col gap-3">
+      <p className="font-sans text-[13px] text-ink-soft">
+        <span className="font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-ink-quiet">
+          Variant:
+        </span>{' '}
+        <span className="font-mono text-[12px] font-bold text-ink">{variant}</span>
+        <span className="ml-3 text-ink-quiet">{description}</span>
+      </p>
+      <div className="rounded-md bg-paper-2/50 px-4 py-3">
+        <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-ink-quiet">
+          Platform template · {templateKey}
+        </div>
+        {subject ? (
+          <div className="mb-1.5 truncate font-sans text-[12px] font-semibold text-ink">
+            Subject: {subject}
+          </div>
+        ) : null}
+        <div className="whitespace-pre-wrap font-sans text-[12px] leading-[1.5] text-ink-soft">
+          {preview || (
+            <span className="italic text-ink-quiet">
+              Template body lives at /settings/platform-templates.
+            </span>
+          )}
+        </div>
+        <Link
+          href="/settings/platform-templates"
+          className="mt-2 inline-block font-mono text-[11px] font-bold text-rust hover:underline"
+        >
+          Edit template at /settings/platform-templates →
+        </Link>
+      </div>
+    </div>
   );
 }
 

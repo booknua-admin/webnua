@@ -33,6 +33,11 @@ export type AutomationStatsCard = {
   title: string;
   description: ReactNode;
   enabled: boolean;
+  /** Client uuid — drives the GBP-prereq guard on the enable toggle. */
+  clientId: string;
+  /** Mirror of `trigger_filters.requires_gbp_location` — drives the toggle
+   *  guard ("Connect Google Business Profile to enable this automation"). */
+  requiresGbpLocation: boolean;
   /** Optional href — currently unused on client view (read-only). */
   href?: string;
   /** 4 stat tiles. Omitted when `enabled === false`. */
@@ -53,6 +58,11 @@ export type AutomationFlowMini = {
   clientSlug: string;
   clientTone?: AutomationClientTone;
   enabled: boolean;
+  /** Client uuid — drives the GBP-prereq guard on the enable toggle. */
+  clientId: string;
+  /** Mirror of `trigger_filters.requires_gbp_location` — drives the toggle
+   *  guard ("Connect Google Business Profile to enable this automation"). */
+  requiresGbpLocation: boolean;
   /** 3 stat tiles. When `enabled === false`, render "—" placeholders so the columns line up. */
   stats: AutomationStat[];
   /** Set on rows that click through to the editor (admin Screen 17). */

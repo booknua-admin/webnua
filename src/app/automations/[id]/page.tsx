@@ -14,7 +14,7 @@ import { AutomationStepConnector } from '@/components/admin/automations/Automati
 import { AutomationTestSendCard } from '@/components/admin/automations/AutomationTestSendCard';
 import { AutomationTriggerBox } from '@/components/admin/automations/AutomationTriggerBox';
 import { AutomationTriggerEditor } from '@/components/admin/automations/AutomationTriggerEditor';
-import { AutomationVariableList } from '@/components/admin/automations/AutomationVariableList';
+import { useAutomationGbpGuard } from '@/components/shared/automations/AutomationGbpGuard';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { EditorFooterActions } from '@/components/shared/EditorFooterActions';
 import { PageHeader } from '@/components/shared/PageHeader';
@@ -33,7 +33,6 @@ import {
   useUpdateAutomationTrigger,
 } from '@/lib/automations/queries';
 import type {
-  AutomationEditableFilterField,
   AutomationEditableTriggerField,
   AutomationEditor,
   AutomationEditorAction,
@@ -98,15 +97,17 @@ function EditorBody({
   editor: AutomationEditor;
   isOperator: boolean;
 }) {
-  // -- Trigger + filter local state (operator-side dirty/save flow) ----------
+  // -- Trigger local state (operator-side dirty/save flow) ----------
+  // Filter fields (requires_phone / _email / _gbp_location) are NOT exposed
+  // as toggles in the UI — they're system invariants enforced at runtime.
+  // We still persist the existing `trigger_filters` jsonb on save so any
+  // legacy value the row carries is preserved (not clobbered).
   const [triggerFields, setTriggerFields] = useState(editor.triggerFields);
-  const [filterFields, setFilterFields] = useState(editor.filterFields);
   const [triggerDirty, setTriggerDirty] = useState(false);
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     setTriggerFields(editor.triggerFields);
-    setFilterFields(editor.filterFields);
     setTriggerDirty(false);
   }, [editor]);
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -119,7 +120,15 @@ function EditorBody({
   const updateConfig = useUpdateActionConfig();
   const updateTrigger = useUpdateAutomationTrigger();
   const toggle = useToggleAutomation();
+  const { guardEnable, GbpGuardDialog } = useAutomationGbpGuard();
   const { data: activeRunCount = 0 } = useAutomationActiveRuns(editor.id);
+
+  // Trigger filters carry the GBP prereq the toggle guard reads. The editor's
+  // `editor.filterFields` shape preserves the requires_gbp_location flag from
+  // the join.
+  const requiresGbpLocation = editor.filterFields.some(
+    (f) => f.kind === 'requires_gbp_location' && f.value === true,
+  );
 
   // -- Per-action UI state ---------------------------------------------------
   const [pendingRemoval, setPendingRemoval] =
@@ -198,13 +207,6 @@ function EditorBody({
     setTriggerDirty(true);
   };
 
-  const patchFilter = (next: AutomationEditableFilterField) => {
-    setFilterFields((current) =>
-      current.map((f) => (f.kind === next.kind ? next : f)),
-    );
-    setTriggerDirty(true);
-  };
-
   const handleSaveTrigger = async () => {
     if (!triggerDirty) return;
     try {
@@ -212,7 +214,10 @@ function EditorBody({
         id: editor.id,
         patch: {
           triggerConfig: buildTriggerConfigPayload(triggerFields),
-          triggerFilters: buildTriggerFiltersPayload(filterFields),
+          // Preserve the existing trigger_filters jsonb as-is — the UI no
+          // longer exposes `requires_*` checkboxes, but the row's stored
+          // filters drive the runtime engine and must persist.
+          triggerFilters: buildTriggerFiltersPayloadFromEditor(editor.filterFields),
         },
       });
       setStatusMessage('Trigger saved');
@@ -263,9 +268,7 @@ function EditorBody({
             <AutomationTriggerBox trigger={editor.trigger} />
             <AutomationTriggerEditor
               triggerFields={triggerFields}
-              filterFields={filterFields}
               onChangeTrigger={patchTrigger}
-              onChangeFilter={patchFilter}
               readOnly={!isOperator}
             />
             {isOperator && triggerDirty ? (
@@ -287,6 +290,7 @@ function EditorBody({
                   isFirst={index === 0}
                   isLast={index === actions.length - 1}
                   variables={variableItems}
+                  readOnly={!isOperator}
                   onMove={(direction) => handleMove(action.id, direction)}
                   onRemove={() => setPendingRemoval(action)}
                   onChange={(change) => {
@@ -323,6 +327,7 @@ function EditorBody({
                 <AutomationAddActionMenu
                   onPick={handleAdd}
                   disabled={addAction.isPending}
+                  currentCount={actions.length}
                 />
               </div>
             ) : null}
@@ -330,16 +335,16 @@ function EditorBody({
         }
         rail={
           <>
-            <AutomationVariableList
-              heading={editor.rail.variables.heading}
-              items={variableItems}
-            />
-            <AutomationTestSendCard
-              heading={editor.rail.testSend.heading}
-              body={editor.rail.testSend.body}
-              buttonLabel={editor.rail.testSend.buttonLabel}
-              data={editor.testSend}
-            />
+            {isOperator ? (
+              <AutomationTestSendCard
+                heading={editor.rail.testSend.heading}
+                body={editor.rail.testSend.body}
+                buttonLabel={editor.rail.testSend.buttonLabel}
+                data={editor.testSend}
+                clientId={editor.clientId}
+                actions={actions}
+              />
+            ) : null}
             <AutomationStatsRailCard automationId={editor.id} />
             <AutomationRunsCard automationId={editor.id} limit={20} />
           </>
@@ -365,15 +370,30 @@ function EditorBody({
             <Button
               variant="secondary"
               disabled={toggle.isPending}
-              onClick={() =>
-                toggle.mutate({ id: editor.id, enabled: !editor.enabled })
-              }
+              onClick={() => {
+                const nextEnabled = !editor.enabled;
+                const fire = () =>
+                  toggle.mutate({ id: editor.id, enabled: nextEnabled });
+                if (nextEnabled) {
+                  guardEnable(
+                    {
+                      clientId: editor.clientId,
+                      requiresGbpLocation,
+                    },
+                    fire,
+                  );
+                } else {
+                  fire();
+                }
+              }}
             >
               {editor.footer.disableLabel}
             </Button>
           </>
         }
       />
+
+      <GbpGuardDialog />
 
       <ConfirmDialog
         open={pendingRemoval !== null}
@@ -421,8 +441,14 @@ function buildTriggerConfigPayload(
   return payload;
 }
 
-function buildTriggerFiltersPayload(
-  fields: AutomationEditableFilterField[],
+/**
+ * Build the `trigger_filters` jsonb from the editor's filter-fields snapshot.
+ * The filter checkboxes are no longer UI-editable (system invariants), but the
+ * row's stored filters must persist on save so a save of an unrelated cadence
+ * field doesn't clobber `requires_gbp_location` etc.
+ */
+function buildTriggerFiltersPayloadFromEditor(
+  fields: AutomationEditor['filterFields'],
 ): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
   for (const f of fields) {

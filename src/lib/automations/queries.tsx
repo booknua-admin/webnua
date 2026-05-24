@@ -131,7 +131,10 @@ const TYPE_DESCRIPTION: Record<string, ReactNode> = {
   lead_created: (
     <>
       Fires the moment a new lead lands.{' '}
-      <strong>Sends the acknowledgement SMS + email + fans operator alerts.</strong>
+      <strong>
+        SMS to the lead (when phone is on file), email to the lead (when email
+        is on file), and a notification to you — all fan from one trigger.
+      </strong>
     </>
   ),
   job_scheduled: (
@@ -248,6 +251,10 @@ function toStatsCard(row: AutomationJoinRow): AutomationStatsCard {
       <>An automated flow Webnua runs for you.</>
     ),
     enabled: row.is_enabled,
+    clientId: row.client_id,
+    requiresGbpLocation:
+      (row.trigger_filters as { requires_gbp_location?: unknown } | null)
+        ?.requires_gbp_location === true,
     href: `/automations/${row.id}`,
     // Performance stat tiles intentionally omitted — `useAutomationStats`
     // (lazy, per-automation) is the right call for real counts, not the
@@ -313,6 +320,10 @@ function toFlowMini(row: AutomationJoinRow): AutomationFlowMini {
     clientSlug: row.client?.slug ?? 'generic',
     clientTone: toClientTone(row.client?.slug ?? 'generic'),
     enabled: row.is_enabled,
+    clientId: row.client_id,
+    requiresGbpLocation:
+      (row.trigger_filters as { requires_gbp_location?: unknown } | null)
+        ?.requires_gbp_location === true,
     stats: [
       { label: '// FIRED 7D', value: '—' },
       { label: '// DELIVERED', value: '—' },
@@ -330,19 +341,33 @@ function buildAdminAutomations(rows: AutomationJoinRow[]): AdminAutomations {
     const groupRows = rows.filter((r) => r.trigger_type === triggerType);
     if (groupRows.length === 0) continue;
     const enabled = groupRows.filter((r) => r.is_enabled).length;
+    const baseMeta = (
+      <>
+        {enabled} active ·{' '}
+        <strong>
+          {groupRows.length} configured across{' '}
+          {new Set(groupRows.map((r) => r.client_id)).size} clients
+        </strong>
+      </>
+    );
     groups.push({
       id: triggerType,
       title: TYPE_LABEL[triggerType] ?? triggerType,
       countBadge: `${enabled} / ${groupRows.length}`,
-      meta: (
-        <>
-          {enabled} active ·{' '}
-          <strong>
-            {groupRows.length} configured across{' '}
-            {new Set(groupRows.map((r) => r.client_id)).size} clients
-          </strong>
-        </>
-      ),
+      meta:
+        triggerType === 'lead_created' ? (
+          <>
+            {baseMeta} · <strong>SMS + email + operator alert</strong> fan from
+            the same trigger
+          </>
+        ) : triggerType === 'job_completed' ? (
+          <>
+            {baseMeta} · <strong>SMS preferred, email fallback</strong> when no
+            phone is on file
+          </>
+        ) : (
+          baseMeta
+        ),
       flows: groupRows.map(toFlowMini),
     });
   }
@@ -1406,12 +1431,32 @@ export function useMoveAction() {
   });
 }
 
+/** Hard cap on actions per automation. Mirrors the UI guard in
+ *  `AutomationAddActionMenu`. Applies to operators too as an abuse guard;
+ *  bump via a future plan-tier upcharge (parked decision in CLAUDE.md). */
+const MAX_ACTIONS_PER_AUTOMATION = 5;
+
 /** Append a new action at the end of the automation's action list. Config
  *  is initialised from the per-type default; the operator edits inline. */
 async function addAction(input: {
   automationId: string;
   actionType: AutomationEditorActionType;
 }): Promise<{ id: string }> {
+  // Count + position lookup in one shot — count drives the cap guard, the
+  // last position drives the new row's position. We use `head: true` count
+  // for the guard then read the top row for position.
+  const { count, error: cErr } = await supabase
+    .from('automation_actions')
+    .select('id', { count: 'exact', head: true })
+    .eq('automation_id', input.automationId);
+  if (cErr) throw normalizeError(cErr);
+  if ((count ?? 0) >= MAX_ACTIONS_PER_AUTOMATION) {
+    throw AppError.validation(
+      { actions: `Maximum ${MAX_ACTIONS_PER_AUTOMATION} actions per automation.` },
+      `Maximum ${MAX_ACTIONS_PER_AUTOMATION} actions per automation.`,
+    );
+  }
+
   const { data: existing, error: eErr } = await supabase
     .from('automation_actions')
     .select('position')

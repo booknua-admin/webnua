@@ -4,7 +4,10 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { AutomationTestSendModal } from '@/components/shared/automations/AutomationTestSendModal';
-import type { AutomationTestSendData } from '@/lib/automations/types';
+import type {
+  AutomationEditorAction,
+  AutomationTestSendData,
+} from '@/lib/automations/types';
 import { cn } from '@/lib/utils';
 
 type AutomationTestSendCardProps = {
@@ -12,6 +15,11 @@ type AutomationTestSendCardProps = {
   body: ReactNode;
   buttonLabel: string;
   data: AutomationTestSendData;
+  /** Client UUID — drives the API call to enqueue the test send job. */
+  clientId: string;
+  /** The automation's ordered actions — drives channel pick (first comm
+   *  action) and preview body. */
+  actions: AutomationEditorAction[];
   className?: string;
 };
 
@@ -20,6 +28,8 @@ function AutomationTestSendCard({
   body,
   buttonLabel,
   data,
+  clientId,
+  actions,
   className,
 }: AutomationTestSendCardProps) {
   const [open, setOpen] = useState(false);
@@ -51,6 +61,8 @@ function AutomationTestSendCard({
         open={open}
         onOpenChange={setOpen}
         data={data}
+        clientId={clientId}
+        actions={actions}
       />
     </>
   );

@@ -1,5 +1,6 @@
 'use client';
 
+import { useAutomationGbpGuard } from '@/components/shared/automations/AutomationGbpGuard';
 import { AutomationInfoBanner } from '@/components/shared/automations/AutomationInfoBanner';
 import { AutomationStatsCard } from '@/components/shared/automations/AutomationStatsCard';
 import { PageHeader } from '@/components/shared/PageHeader';
@@ -13,6 +14,7 @@ import { normalizeError } from '@/lib/errors';
 function ClientAutomationsContent() {
   const { data: page, isLoading, error } = useClientAutomations();
   const toggle = useToggleAutomation();
+  const { guardEnable, GbpGuardDialog } = useAutomationGbpGuard();
 
   return (
     <>
@@ -41,12 +43,25 @@ function ClientAutomationsContent() {
                 <AutomationStatsCard
                   key={automation.id}
                   automation={automation}
-                  onToggle={(enabled) =>
-                    toggle.mutate({ id: automation.id, enabled })
-                  }
+                  onToggle={(enabled) => {
+                    const fire = () =>
+                      toggle.mutate({ id: automation.id, enabled });
+                    if (enabled) {
+                      guardEnable(
+                        {
+                          clientId: automation.clientId,
+                          requiresGbpLocation: automation.requiresGbpLocation,
+                        },
+                        fire,
+                      );
+                    } else {
+                      fire();
+                    }
+                  }}
                 />
               ))}
             </div>
+            <GbpGuardDialog />
           </>
         )}
       </div>

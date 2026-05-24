@@ -6,6 +6,12 @@ type AutomationTriggerBoxProps = {
   className?: string;
 };
 
+/**
+ * Read-only summary of the automation's trigger. The trigger type is fixed —
+ * to change it, clone the automation (operator-only) and pick a different
+ * trigger on the clone. The former "Change trigger →" affordance was inert and
+ * has been removed.
+ */
 function AutomationTriggerBox({
   trigger,
   className,
@@ -14,7 +20,7 @@ function AutomationTriggerBox({
     <div
       data-slot="automation-trigger-box"
       className={cn(
-        'grid grid-cols-[38px_1fr_auto] items-center gap-3.5 rounded-[10px] bg-ink px-5 py-4 text-paper',
+        'grid grid-cols-[38px_1fr] items-center gap-3.5 rounded-[10px] bg-ink px-5 py-4 text-paper',
         className,
       )}
     >
@@ -32,12 +38,6 @@ function AutomationTriggerBox({
           {trigger.name}
         </div>
       </div>
-      <button
-        type="button"
-        className="cursor-pointer font-sans text-[12px] font-bold text-rust-light hover:text-paper"
-      >
-        {trigger.changeLabel}
-      </button>
     </div>
   );
 }
