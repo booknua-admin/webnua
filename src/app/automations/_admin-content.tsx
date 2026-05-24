@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 
 import { AutomationGroup } from '@/components/admin/automations/AutomationGroup';
+import { useAutomationGbpGuard } from '@/components/shared/automations/AutomationGbpGuard';
 import { ClientMultiSelect } from '@/components/shared/ClientMultiSelect';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { StatCard } from '@/components/shared/StatCard';
@@ -18,7 +19,28 @@ import { useIsAgencyMode, useWorkspace } from '@/lib/workspace/workspace-stub';
 function AdminAutomationsContent() {
   const { data: page, isLoading, error } = useAdminAutomations();
   const toggle = useToggleAutomation();
+  const { guardEnable, GbpGuardDialog } = useAutomationGbpGuard();
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
+
+  const handleToggleFlow = (id: string, enabled: boolean) => {
+    const fire = () => toggle.mutate({ id, enabled });
+    if (!enabled) {
+      fire();
+      return;
+    }
+    // Find the row we're enabling so we can read its GBP prereq.
+    for (const g of page?.groups ?? []) {
+      const f = g.flows.find((flow) => flow.id === id);
+      if (f) {
+        guardEnable(
+          { clientId: f.clientId, requiresGbpLocation: f.requiresGbpLocation },
+          fire,
+        );
+        return;
+      }
+    }
+    fire();
+  };
 
   const groups = useMemo(() => page?.groups ?? [], [page]);
 
@@ -112,13 +134,12 @@ function AdminAutomationsContent() {
                   <AutomationGroup
                     key={group.id}
                     group={group}
-                    onToggleFlow={(id, enabled) =>
-                      toggle.mutate({ id, enabled })
-                    }
+                    onToggleFlow={handleToggleFlow}
                   />
                 ))
               )}
             </div>
+            <GbpGuardDialog />
           </>
         )}
       </div>
