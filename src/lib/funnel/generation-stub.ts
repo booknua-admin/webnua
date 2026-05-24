@@ -109,17 +109,65 @@ export async function generateFunnelStub(
 }
 
 /** Synchronous brief-aware funnel generation (no delay) — deterministic
- *  fallback path for dev surfaces, the no-key environment, and tests. */
+ *  fallback path for dev surfaces, the no-key environment, and tests.
+ *  Overlays real testimonials (from `brief.funnel.testimonials`) onto every
+ *  reviews section the underlying page generator produced — closes the
+ *  long-standing bug where a tradie who entered testimonials saw them on
+ *  the Claude path but lost them on the deterministic path. */
 export function generateFunnelSync(brief: ClientBrief): FunnelGenerationResult {
   // Landing step — a generated `generic` landing sequence (design variety +
   // brief-aware copy already applied by the website page generator). The
   // deterministic fallback reuses the landing copy for the qualification
   // step too — the real Claude path generates a dedicated qualification page.
   const landingPage = generateSync(briefToGenerationContext(brief, 'generic'));
+  const sections = applyBriefTestimonialsToSections(
+    landingPage.page.sections,
+    brief.funnel.testimonials,
+  );
   return buildFunnelSkeleton(brief, {
-    landing: landingPage.page.sections,
-    qualification: landingPage.page.sections,
+    landing: sections,
+    qualification: sections,
     thanks: thanksStepSections(),
+  });
+}
+
+/** Overlay operator-entered testimonials onto every reviews section. The
+ *  funnel-brief carries 0–3 testimonials; when present we replace the
+ *  generator's stub items so the funnel preview shows the tradie's actual
+ *  customer voices. Empty list → no change (keep the generated placeholder
+ *  reviews — they're flagged via `placeholderSnapshot` for the preflight
+ *  banner). */
+function applyBriefTestimonialsToSections(
+  sections: Section[],
+  testimonials: ReadonlyArray<{ quote: string; author: string; context: string }>,
+): Section[] {
+  if (testimonials.length === 0) return sections;
+  const items = testimonials.map((t, i) => ({
+    id: `rev-real-${i}-${Math.random().toString(36).slice(2, 8)}`,
+    quote: t.quote,
+    authorName: t.author,
+    authorRole: t.context,
+    avatarUrl: '',
+    rating: 5,
+  }));
+  return sections.map((section) => {
+    if (section.type !== 'reviews') return section;
+    // Keep section.data.items keyed on the data shape — we don't import
+    // ReviewsData here to avoid pulling 'use client' section modules into
+    // the server bundle. The data shape is established (see reviews.tsx).
+    return {
+      ...section,
+      data: { ...(section.data as Record<string, unknown>), items },
+      // Drop the placeholder snapshot — these aren't AI-invented anymore.
+      ai: section.ai
+        ? {
+            ...section.ai,
+            placeholderSnapshot: section.ai.placeholderSnapshot
+              ? { ...section.ai.placeholderSnapshot, reviews: undefined }
+              : undefined,
+          }
+        : section.ai,
+    };
   });
 }
 

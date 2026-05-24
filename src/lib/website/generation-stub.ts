@@ -29,6 +29,10 @@ import { offerSection } from './sections/offer';
 import { reviewsSection } from './sections/reviews';
 import { trustSection } from './sections/trust';
 import { THEME_PRESETS, type SectionTheme } from './section-theme';
+import {
+  resolveIndustryTemplate,
+  type IndustryTemplate,
+} from './industry-templates';
 import type {
   Page,
   PageSEO,
@@ -415,7 +419,14 @@ function serviceEntries(
   const services = (ctx.business?.services ?? [])
     .map((s) => s.trim())
     .filter(Boolean);
-  return services.map((name) => ({
+  // Brief-supplied services win; if empty, fall back to the industry
+  // template's defaults so the fallback path produces credible service
+  // tiles for the resolved trade instead of dropping them entirely.
+  const source =
+    services.length > 0
+      ? services
+      : [...resolveIndustryTemplate(ctx.brand.industryCategory).defaultServices];
+  return source.map((name) => ({
     icon: iconForService(name),
     title: name,
     description: `Professional ${name.toLowerCase()} — done right the first time, by licensed local pros.`,
@@ -449,19 +460,44 @@ function iconForService(name: string): string {
   return 'check';
 }
 
-/** A short value-prop headline built from the brief. */
+/** A short value-prop headline built from the brief. Industry-aware: the
+ *  resolved template's urgency mode shapes the framing so callout trades
+ *  lead with response time, scheduled trades lead with reliability, and
+ *  project trades lead with craft. */
 function valueHeadline(ctx: GenerationContext, voice: VoiceVariant): string {
   const industry = ctx.brand.industryCategory || 'Local service';
   const area = ctx.business?.serviceArea;
-  switch (voice) {
-    case 'cold-ad-urgent':
-      return `${capitalize(industry)} — sorted, same day.`;
-    case 'existing-calm':
-      return ctx.business?.name
-        ? `Welcome back to ${ctx.business.name}.`
-        : 'Welcome back.';
-    case 'search-plain':
-      return area
+  const template = resolveIndustryTemplate(ctx.brand.industryCategory);
+  // Existing-customer voice stays personal regardless of industry.
+  if (voice === 'existing-calm') {
+    return ctx.business?.name
+      ? `Welcome back to ${ctx.business.name}.`
+      : 'Welcome back.';
+  }
+  // Urgency-mode-shaped framing.
+  switch (template.urgencyMode) {
+    case 'emergency-callout':
+      return voice === 'cold-ad-urgent'
+        ? `${capitalize(industry)} — on the road, fixed quote, today.`
+        : area
+        ? `Local ${industry.toLowerCase()} in ${area} — on call, properly licensed.`
+        : `Local ${industry.toLowerCase()} — on call, properly licensed.`;
+    case 'scheduled':
+      return voice === 'cold-ad-urgent'
+        ? `${capitalize(industry)} that actually turns up.`
+        : area
+        ? `Reliable ${industry.toLowerCase()} across ${area}.`
+        : `Reliable ${industry.toLowerCase()} you can plan around.`;
+    case 'project':
+      return voice === 'cold-ad-urgent'
+        ? `${capitalize(industry)} done properly — on time, on budget.`
+        : area
+        ? `${capitalize(industry)} across ${area} — quoted honestly, finished tidily.`
+        : `${capitalize(industry)} done properly, quoted honestly.`;
+    case 'mixed':
+      return voice === 'cold-ad-urgent'
+        ? `${capitalize(industry)} — sorted, same day where it matters.`
+        : area
         ? `${capitalize(industry)} in ${area}, done properly.`
         : `${capitalize(industry)} you can rely on.`;
   }
@@ -512,12 +548,16 @@ function fillHero(
   voice: VoiceVariant,
   d: SectionDesign,
 ): GeneratedSection {
+  const template = resolveIndustryTemplate(ctx.brand.industryCategory);
   const layout = d.pick('layout', ['split', 'overlay'] as const);
   const headline = valueHeadline(ctx, voice);
   const offer = ctx.business?.offer?.trim();
+  // Fallback chain: real offer copy → industry-template offer framing →
+  // brand audience line → final generic. The template framing is the new
+  // middle layer — replaces the pre-industry generic with copy that reads
+  // for THIS trade. Brand audience line stays as last-resort customisation.
   const sub =
-    offer ||
-    ctx.brand.audienceLine ||
+    offer || template.offerFraming || ctx.brand.audienceLine ||
     'Local, licensed and on call — fixed callout, written quote before we start.';
   const phone = ctx.business?.phone?.trim();
   return {
@@ -530,19 +570,23 @@ function fillHero(
       contentAlign: layout === 'overlay' ? d.pick('align', ['left', 'center'] as const) : 'left',
       imageSide: d.pick('side', ['left', 'right'] as const),
       headlineSize: d.pick('size', ['l', 'xl'] as const),
-      eyebrow: (ctx.brand.industryCategory || 'Local service').toUpperCase(),
+      eyebrow: (ctx.brand.industryCategory || template.displayName).toUpperCase(),
       headline,
       headlineAccent: '',
       sub,
-      ctaPrimaryLabel: intentCtaLabel(ctx.primaryIntent),
+      // Industry-template hero image — credible default for the trade.
+      // Operator brand photography replaces this once uploaded.
+      heroImageUrl: template.stockImages.hero,
+      ctaPrimaryLabel: industryCtaPrimary(ctx, template),
       ctaPrimaryHref: intentHref(ctx.primaryIntent),
-      ctaSecondaryLabel: phone ? `Call ${phone}` : 'Call now',
+      ctaSecondaryLabel: phone ? `Call ${phone}` : template.ctaSecondary,
       ctaSecondaryHref: phone ? `tel:${phone.replace(/[^0-9+]/g, '')}` : 'tel:0400000000',
     },
     populatedFields: [
       'eyebrow',
       'headline',
       'sub',
+      'heroImageUrl',
       'ctaPrimaryLabel',
       'ctaPrimaryHref',
       'ctaSecondaryLabel',
@@ -596,7 +640,18 @@ function fillTrust(
   d: SectionDesign,
 ): GeneratedSection {
   const base = trustSection.defaultData();
+  const template = resolveIndustryTemplate(ctx.brand.industryCategory);
   const area = ctx.business?.serviceArea;
+  // Industry-specific badges instead of the generic seed set. The model on
+  // the Claude path may set its own; the deterministic fallback uses the
+  // first four template trust signals so an electrician's preview shows
+  // "RECI registered" and a plumber's shows "Gas Safe registered" instead
+  // of identical "Fully licensed / Insured / Background checked".
+  const industryBadges = template.trustSignals.slice(0, 4).map((label) => ({
+    id: `badge-${rid()}`,
+    icon: 'shield-check',
+    label,
+  }));
   return {
     type: 'trust',
     enabled: true,
@@ -610,8 +665,13 @@ function fillTrust(
         ? `Trusted across ${area}.`
         : 'Local service, proven results.',
       sub: ctx.brand.audienceLine || base.sub,
+      // Industry-specific badges replace the generic seed set when we have
+      // a real template (>= 2 signals); otherwise keep base.badges so the
+      // generic-industry path still renders.
+      badges: industryBadges.length >= 2 ? industryBadges : base.badges,
+      showBadges: industryBadges.length >= 2,
     },
-    populatedFields: ['eyebrow', 'headline', 'sub', 'items'],
+    populatedFields: ['eyebrow', 'headline', 'sub', 'items', 'badges'],
   };
 }
 
@@ -661,11 +721,22 @@ function fillFeatures(
 }
 
 function fillGallery(
-  _ctx: GenerationContext,
+  ctx: GenerationContext,
   _voice: VoiceVariant,
   d: SectionDesign,
 ): GeneratedSection {
   const base = gallerySection.defaultData();
+  const template = resolveIndustryTemplate(ctx.brand.industryCategory);
+  // Overlay the industry stock URLs onto the base item set so the gallery
+  // doesn't render four broken-image tiles in the fallback path. Image
+  // count matches what the template supplies; remaining defaults keep
+  // their (empty) urls so the operator can clearly see which to swap.
+  type GalleryItem = (typeof base.items)[number];
+  const sourcedImages = [...template.stockImages.gallery];
+  const items: GalleryItem[] = base.items.map((item, i) => {
+    const url = sourcedImages[i];
+    return url ? { ...item, imageUrl: url } : item;
+  });
   return {
     type: 'gallery',
     enabled: true,
@@ -677,8 +748,9 @@ function fillGallery(
       aspect: d.pick('aspect', ['landscape', 'square', 'portrait'] as const),
       headerAlign: d.pick('align', ['left', 'center'] as const),
       headline: 'Our recent work',
+      items,
     },
-    populatedFields: ['eyebrow', 'headline', 'sub'],
+    populatedFields: ['eyebrow', 'headline', 'sub', 'items'],
   };
 }
 
@@ -847,10 +919,23 @@ function fillCta(
   voice: VoiceVariant,
   d: SectionDesign,
 ): GeneratedSection {
+  const template = resolveIndustryTemplate(ctx.brand.industryCategory);
   const name = ctx.business?.name;
+  // Headline framing matches the trade's urgency mode — emergency callout
+  // trades push "today" urgency; scheduled trades push "easy to book";
+  // project trades push "no rush, well planned".
+  const urgentClose: Record<typeof template.urgencyMode, string> = {
+    'emergency-callout': 'On the road today — call or book online.',
+    scheduled: 'Easy to book. Easy to reschedule. We turn up.',
+    project: 'Free consultation, honest quote, finished tidily.',
+    mixed: 'One call, a fixed quote, and work that’s guaranteed.',
+  };
+  const calmClose = name
+    ? `Ready when you are, ${name}.`
+    : 'Book the next one when it suits you.';
   const headline = pick(voice, {
-    'cold-ad-urgent': 'Book today — slots fill fast.',
-    'existing-calm': name ? `Ready when you are.` : 'Book the next one when it suits you.',
+    'cold-ad-urgent': urgentClose[template.urgencyMode],
+    'existing-calm': calmClose,
     'search-plain': "When you're ready, get in touch.",
   });
   const layout = d.pick('layout', ['centered', 'dual'] as const);
@@ -867,11 +952,11 @@ function fillCta(
       eyebrow: 'READY?',
       headline,
       sub:
-        ctx.business?.offer?.trim() ||
+        ctx.business?.offer?.trim() || template.offerFraming ||
         'One call, a fixed quote, and work that’s guaranteed.',
-      primaryLabel: intentCtaLabel(ctx.primaryIntent),
+      primaryLabel: industryCtaPrimary(ctx, template),
       primaryHref: intentHref(ctx.primaryIntent),
-      secondaryLabel: phone ? `Call ${phone}` : 'Contact us',
+      secondaryLabel: phone ? `Call ${phone}` : template.ctaSecondary,
       secondaryHref: phone ? `tel:${phone.replace(/[^0-9+]/g, '')}` : '/contact',
     },
     populatedFields: [
@@ -957,6 +1042,21 @@ function intentCtaLabel(intent: PrimaryIntent): string {
     case 'other':
       return 'Get in touch';
   }
+}
+
+/** Industry-aware primary CTA label. The brief's `primaryIntent` wins when
+ *  the user expressed a clear preference (`call` / `quote` / `signup` /
+ *  `read` / `other`). `book` is ambiguous across trades — a callout trade
+ *  reads "Call now" naturally, a project trade reads "Get a quote" — so for
+ *  `book` we defer to the industry template. */
+function industryCtaPrimary(
+  ctx: GenerationContext,
+  template: IndustryTemplate,
+): string {
+  if (ctx.primaryIntent.kind === 'book') {
+    return template.ctaPrimary;
+  }
+  return intentCtaLabel(ctx.primaryIntent);
 }
 
 function intentHref(intent: PrimaryIntent): string {
