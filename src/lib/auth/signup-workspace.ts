@@ -64,6 +64,14 @@ export type SignupWorkspaceInput = {
   /** A short one-line trade / category, e.g. "Residential electrician".
    *  Stored in `clients.industry`. */
   businessCategory: string;
+  /** The origin (`https://app.webnua.com`) to use as the magic-link
+   *  redirectTo base. The caller passes `new URL(request.url).origin` so
+   *  the redirect lands on the same deployment the user signed up at —
+   *  more reliable than `getAppBaseUrl()` because no env vars need to be
+   *  set. **IMPORTANT** — this origin MUST be in the Supabase project's
+   *  "Redirect URLs" allow-list (Authentication → URL Configuration);
+   *  otherwise Supabase silently falls back to the project's Site URL. */
+  redirectToBase?: string;
 };
 
 export type SignupWorkspaceResult = {
@@ -186,7 +194,13 @@ export async function provisionPendingSignup(
   // The link lands the user on /dashboard. By that moment the migration
   // 0085 trigger has already advanced the client to 'preview', so the
   // dashboard renders the IntegrationOnboarding wizard (not the hub).
-  const appBase = getAppBaseUrl();
+  //
+  // Resolution order for the redirectTo base: caller-supplied origin
+  // (preferred — the route handler reads `new URL(request.url).origin`
+  // which is always the deployed URL, no env required) → `getAppBaseUrl()`
+  // env fallback → null (Supabase falls back to project Site URL, which
+  // is what produced the localhost magic-link bug pre-fix).
+  const appBase = input.redirectToBase ?? getAppBaseUrl();
   const linkOptions = appBase ? { redirectTo: `${appBase}/dashboard` } : undefined;
   const linkResult = await svc.auth.admin.generateLink({
     type: 'magiclink',
