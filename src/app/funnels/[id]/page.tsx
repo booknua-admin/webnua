@@ -376,6 +376,7 @@ export default function FunnelDetailPage() {
           host={host}
           slug={funnelSlug}
           canEdit={canEdit}
+          publishedVersionId={funnel.publishedVersionId}
         />
 
         <FunnelFlow

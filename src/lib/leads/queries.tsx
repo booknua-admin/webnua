@@ -1559,3 +1559,47 @@ export function useLeadAutomationState(leadId: string) {
     enabled: leadId.length > 0,
   });
 }
+
+// ---- Per-lead automation-run history -------------------------------------
+// Distinct from useLeadAutomationState (which is ACTIVE runs only). This is
+// every run ever started on the lead — drives the LeadAutomationPanel's
+// "View all runs" expansion.
+
+export type LeadAutomationRunHistoryRow = {
+  id: string;
+  automationId: string;
+  automationName: string;
+  automationKey: string;
+  status: string;
+  pausedReason: string | null;
+  startedAt: string;
+  completedAt: string | null;
+  pausedAt: string | null;
+  errorMessage: string | null;
+  currentActionPosition: number;
+  totalActions: number;
+};
+
+type LeadAutomationRunHistoryResponse = { runs: LeadAutomationRunHistoryRow[] };
+
+async function fetchLeadAutomationRuns(
+  leadId: string,
+): Promise<LeadAutomationRunHistoryResponse> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) throw AppError.auth();
+  const res = await fetch(`/api/leads/${leadId}/runs`, {
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  });
+  if (!res.ok) throw normalizeError(new Error('automation-runs-fetch-failed'));
+  return res.json();
+}
+
+export function useLeadAutomationRuns(leadId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['leads', 'automation-runs', leadId],
+    queryFn: () => fetchLeadAutomationRuns(leadId),
+    enabled: enabled && leadId.length > 0,
+  });
+}

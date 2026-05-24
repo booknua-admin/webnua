@@ -20,6 +20,7 @@ import { useRouter } from 'next/navigation';
 
 import { NotificationRow } from '@/components/shared/settings/NotificationRow';
 import { NotificationPreferencesSection } from '@/components/shared/settings/NotificationPreferencesSection';
+import { QuietHoursSection } from '@/components/shared/settings/QuietHoursSection';
 import { SettingsFieldRow } from '@/components/shared/settings/SettingsFieldRow';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
@@ -102,6 +103,10 @@ function OperatorContent({
           clientId={clientId ?? null}
           clientName={clientName}
         />
+
+        <SettingsPanel>
+          <QuietHoursSection clientId={clientId ?? null} />
+        </SettingsPanel>
       </SettingsShell>
     </>
   );
