@@ -25,7 +25,7 @@ function FrequencyGrid({
   return (
     <div
       data-slot="frequency-grid"
-      className={cn('grid grid-cols-4 gap-2.5', className)}
+      className={cn('grid grid-cols-2 gap-2.5 md:grid-cols-4', className)}
     >
       {options.map((o) => {
         const isActive = o.id === activeId;

@@ -56,7 +56,7 @@ function ClientTicketsContent() {
       <Topbar
         breadcrumb={<TopbarBreadcrumb trail={['Home']} current="Tickets" />}
       />
-      <div className="flex flex-col gap-[18px] px-10 py-10">
+      <div className="flex flex-col gap-[18px] px-4 py-6 md:px-10 md:py-10">
         <TicketsHero
           tag={clientTicketsHero.tag}
           title={clientTicketsHero.title}

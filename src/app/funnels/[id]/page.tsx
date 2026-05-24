@@ -467,7 +467,7 @@ function StatusState({ message, id }: { message: string; id: string }) {
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb trail={['Funnels']} current={id} />} />
-      <div className="px-10 py-10">
+      <div className="px-4 py-6 md:px-10 md:py-10">
         <p className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
           {message}
         </p>
@@ -480,7 +480,7 @@ function NotFoundState({ id }: { id: string }) {
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb trail={['Funnels']} current={id} />} />
-      <div className="px-10 py-10">
+      <div className="px-4 py-6 md:px-10 md:py-10">
         <p className="mb-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-warn">
           {'// FUNNEL NOT FOUND'}
         </p>

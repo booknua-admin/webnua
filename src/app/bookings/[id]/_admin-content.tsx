@@ -46,7 +46,7 @@ function AdminBookingDetailContent() {
           <TopbarBreadcrumb trail={['Calendar']} current="Booking" />
         }
       />
-      <div className="flex flex-col gap-3.5 px-10 py-10">
+      <div className="flex flex-col gap-3.5 px-4 py-6 md:px-10 md:py-10">
         {isLoading ? (
           <DetailNotice>{'// Loading booking…'}</DetailNotice>
         ) : error || !b ? (
@@ -61,7 +61,7 @@ function AdminBookingDetailContent() {
               subtitle={b.hero.subtitle}
             />
 
-            <div className="grid grid-cols-[1fr_320px] items-start gap-6">
+            <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_320px]">
               <div className="flex flex-col gap-3.5">
                 <AdminBookingHero
                   tone={b.tone}

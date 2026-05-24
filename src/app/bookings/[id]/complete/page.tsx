@@ -53,7 +53,7 @@ export default function JobCompletionPage() {
           <TopbarBreadcrumb trail={['Calendar', 'Booking']} current="Complete" />
         }
       />
-      <div className="px-10 py-10">
+      <div className="px-4 py-6 md:px-10 md:py-10">
         <div className="mx-auto flex max-w-[760px] flex-col gap-5">
           <PageHeader
             eyebrow="// Job completion"

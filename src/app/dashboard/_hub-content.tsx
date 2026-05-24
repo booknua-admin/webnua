@@ -75,7 +75,7 @@ function ClientHubContent() {
           />
         }
       />
-      <div className="flex flex-col gap-7 px-10 py-10">
+      <div className="flex flex-col gap-7 px-4 py-6 md:px-10 md:py-10">
         <WorkspaceContextBanner />
         {isLoading ? (
           <HubNotice>{'// Loading client overview…'}</HubNotice>
@@ -110,7 +110,7 @@ function ClientHubBody({ hub }: { hub: ClientHub }) {
 
       <ClientHubHero hero={hub.hero} />
 
-      <div className="grid grid-cols-3 gap-3.5">
+      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 md:grid-cols-3">
         {hub.contextCards.map((card) => (
           <ContextCard key={card.kind} card={card} />
         ))}
@@ -118,7 +118,7 @@ function ClientHubBody({ hub }: { hub: ClientHub }) {
 
       <GbpReviewsWidget clientId={clientUuid ?? null} />
 
-      <div className="grid grid-cols-2 items-start gap-3.5">
+      <div className="grid grid-cols-1 items-start gap-3.5 md:grid-cols-2">
         <CalendarTodayPanel
           panel={hub.schedule}
           hideClientLogo
@@ -154,7 +154,7 @@ function ClientHubBody({ hub }: { hub: ClientHub }) {
             {`Day ${hub.hero.liveDayCount} of live · ${hub.funnel.periodLabel}`}
           </span>
         </div>
-        <div className="grid grid-cols-4 gap-3.5">
+        <div className="grid grid-cols-2 gap-3.5 md:grid-cols-4">
           {hub.weeklyStats.map((stat) => (
             <StatCard
               key={stat.kind}

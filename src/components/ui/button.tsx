@@ -23,7 +23,11 @@ const buttonVariants = cva(
       },
       size: {
         default: 'h-10 px-[22px] py-3 text-sm',
-        sm: 'h-8 px-3 text-xs rounded-sm',
+        // sm stays 32px on cursor devices (editor chrome, inline action chips)
+        // but lifts to a 44px tap target on touch — the iOS minimum.
+        // `@media (hover: none)` matches touch hardware specifically; pointer
+        // devices with hover keep the compact size.
+        sm: 'h-8 px-3 text-xs rounded-sm [@media(hover:none)]:min-h-11',
         lg: 'h-12 px-7 text-base',
         icon: 'size-10',
       },

@@ -34,7 +34,7 @@ export default function FunnelsHubPage() {
     return (
       <>
         <Topbar breadcrumb={<TopbarBreadcrumb current="Funnels" />} />
-        <div className="px-10 py-10">
+        <div className="px-4 py-6 md:px-10 md:py-10">
           <StatusLine tone="quiet">{'// Resolving workspace…'}</StatusLine>
         </div>
       </>
@@ -180,7 +180,7 @@ function NoFunnelsState({ reason }: { reason: string }) {
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb current="Funnels" />} />
-      <div className="px-10 py-10">
+      <div className="px-4 py-6 md:px-10 md:py-10">
         <StatusLine tone="warn">
           {`// CAN'T RESOLVE WORKSPACE (${reason})`}
         </StatusLine>

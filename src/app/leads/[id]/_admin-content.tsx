@@ -41,7 +41,7 @@ function AdminLeadDetailContent() {
           />
         }
       />
-      <div className="flex flex-col gap-5 px-10 py-10">
+      <div className="flex flex-col gap-5 px-4 py-6 md:px-10 md:py-10">
         <Link
           href="/leads"
           className="inline-flex items-center gap-1.5 font-mono text-[11px] font-bold uppercase tracking-[0.06em] text-ink-quiet transition-colors hover:text-rust"

@@ -50,7 +50,7 @@ export function ClientDashboardContent() {
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb current="Home" />} />
-      <div className="flex flex-col gap-7 px-10 py-10">
+      <div className="flex flex-col gap-7 px-4 py-6 md:px-10 md:py-10">
         {isLoading ? (
           <DashboardNotice>{'// Loading your dashboard…'}</DashboardNotice>
         ) : error || !dash ? (
@@ -92,7 +92,7 @@ function ClientDashboardBody({ dash }: { dash: ClientDashboard }) {
 
       <ClientDashboardHero hero={dash.urgentHero} />
 
-      <div className="grid grid-cols-2 items-start gap-3.5">
+      <div className="grid grid-cols-1 items-start gap-3.5 md:grid-cols-2">
         <DashboardQueueCard queue={dash.followUps} />
         <DashboardQueueCard queue={dash.todaysJobs} />
       </div>
@@ -106,7 +106,7 @@ function ClientDashboardBody({ dash }: { dash: ClientDashboard }) {
             {dash.weeklyMeta}
           </span>
         </div>
-        <div className="grid grid-cols-4 gap-3.5">
+        <div className="grid grid-cols-2 gap-3.5 md:grid-cols-4">
           {dash.weeklyStats.map((stat) => (
             <StatCard
               key={stat.kind}

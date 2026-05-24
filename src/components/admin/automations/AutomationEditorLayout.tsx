@@ -29,19 +29,20 @@ function AutomationEditorLayout({
     <div
       data-slot="automation-editor-layout"
       className={cn(
-        'grid grid-cols-[1fr_340px] items-start gap-6',
+        // Mobile: rail stacks below canvas. Desktop (lg+): rail to the right.
+        'grid grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_340px]',
         className,
       )}
     >
       <div
         data-slot="automation-editor-canvas"
-        className="rounded-xl border border-rule bg-card px-7 py-6.5"
+        className="rounded-xl border border-rule bg-card px-4 py-5 md:px-7 md:py-6.5"
       >
         {canvas}
       </div>
       <div
         data-slot="automation-editor-rail"
-        className="sticky top-[100px] flex flex-col gap-3.5"
+        className="flex flex-col gap-3.5 lg:sticky lg:top-[100px]"
       >
         {rail}
       </div>

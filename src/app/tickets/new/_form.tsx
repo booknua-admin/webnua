@@ -124,7 +124,7 @@ export function NewTicketForm() {
           <TopbarBreadcrumb trail={['Home', 'Tickets']} current="New" />
         }
       />
-      <div className="px-10 py-10">
+      <div className="px-4 py-6 md:px-10 md:py-10">
         <div className="mx-auto flex max-w-[720px] flex-col gap-[18px]">
           <TicketsHero
             tag="New ticket · Webnua queue"

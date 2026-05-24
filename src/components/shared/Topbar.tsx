@@ -1,9 +1,13 @@
 'use client';
 
+import { Menu } from 'lucide-react';
+
 import { NotificationBell } from '@/components/client/notifications/NotificationBell';
 import { GlobalSearchInput } from '@/components/shared/search/GlobalSearchInput';
 import { useRole } from '@/lib/auth/user-stub';
 import { cn } from '@/lib/utils';
+
+import { useMobileNav } from './AppShell';
 
 type TopbarProps = {
   breadcrumb: React.ReactNode;
@@ -21,6 +25,22 @@ type TopbarProps = {
   className?: string;
 };
 
+function MobileMenuButton() {
+  const nav = useMobileNav();
+  if (!nav) return null;
+  return (
+    <button
+      type="button"
+      onClick={nav.toggle}
+      aria-label={nav.isOpen ? 'Close menu' : 'Open menu'}
+      aria-expanded={nav.isOpen}
+      className="flex size-11 shrink-0 items-center justify-center rounded-md text-ink transition-colors hover:bg-paper-2 md:hidden"
+    >
+      <Menu aria-hidden className="size-5" strokeWidth={2} />
+    </button>
+  );
+}
+
 function Topbar({
   breadcrumb,
   middle,
@@ -35,18 +55,25 @@ function Topbar({
   const showBell = hydrated && role === 'client';
   // Global search is the operator-role mirror of the bell: every operator
   // page that mounts a Topbar gets the search field for free. Explicit
-  // `middle`/`search` win; `hideSearch` opts a page out.
+  // `middle`/`search` win; `hideSearch` opts a page out. On mobile we hide
+  // the auto-search to leave room for the hamburger + breadcrumb (operators
+  // can still drill in via the drawer + the dedicated /search route).
   const autoSearch =
-    hydrated && role === 'admin' && !hideSearch ? <GlobalSearchInput /> : null;
+    hydrated && role === 'admin' && !hideSearch ? (
+      <div className="hidden md:block">
+        <GlobalSearchInput />
+      </div>
+    ) : null;
   const centre = middle ?? search ?? autoSearch;
   return (
     <div
       data-slot="topbar"
       className={cn(
-        'sticky top-0 z-10 flex h-[68px] items-center gap-6 border-b border-rule bg-paper px-10',
+        'sticky top-0 z-10 flex h-[68px] items-center gap-3 border-b border-rule bg-paper px-4 md:gap-6 md:px-10',
         className,
       )}
     >
+      <MobileMenuButton />
       <div className="flex min-w-0 items-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
         {breadcrumb}
       </div>

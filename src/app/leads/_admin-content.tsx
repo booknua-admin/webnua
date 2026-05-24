@@ -69,7 +69,7 @@ function AdminLeadsContent() {
         hideSearch
         breadcrumb={<TopbarBreadcrumb trail={['Workspace']} current="Leads" />}
       />
-      <div className="flex flex-col gap-5 px-10 py-10">
+      <div className="flex flex-col gap-5 px-4 py-6 md:px-10 md:py-10">
         <LeadsHero
           tag={adminLeadsHero.eyebrow}
           title={adminLeadsHero.title}
@@ -96,6 +96,8 @@ function AdminLeadsContent() {
         <LeadTabsBar tabs={tabs} value={activeTab} onChange={setActiveTab} />
 
         <div className="overflow-hidden rounded-2xl border border-ink/8 bg-card">
+          <div className="overflow-x-auto">
+          <div className="min-w-[620px]">
           {showingColdTab ? (
             <ColdHeaderRow />
           ) : (
@@ -145,6 +147,8 @@ function AdminLeadsContent() {
               />
             ))
           )}
+          </div>
+          </div>
         </div>
       </div>
     </>

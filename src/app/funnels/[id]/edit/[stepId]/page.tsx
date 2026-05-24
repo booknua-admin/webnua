@@ -15,11 +15,20 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
+import { EditorMobileGuard } from '@/components/shared/EditorMobileGuard';
 import { SectionEditor } from '@/components/shared/website/SectionEditor';
 import { Button } from '@/components/ui/button';
 import { useFunnelWithDraft } from '@/lib/funnel/queries';
 
 export default function FunnelStepEditorPage() {
+  return (
+    <EditorMobileGuard>
+      <FunnelStepEditorInner />
+    </EditorMobileGuard>
+  );
+}
+
+function FunnelStepEditorInner() {
   const params = useParams<{ id: string; stepId: string }>();
   const funnelId = params?.id ?? '';
   const stepId = params?.stepId ?? '';

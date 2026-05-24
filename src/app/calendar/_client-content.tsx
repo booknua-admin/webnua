@@ -26,7 +26,7 @@ function ClientCalendarContent() {
       <Topbar
         breadcrumb={<TopbarBreadcrumb trail={['Home']} current="Calendar" />}
       />
-      <div className="flex flex-col gap-3.5 px-10 py-10">
+      <div className="flex flex-col gap-3.5 px-4 py-6 md:px-10 md:py-10">
         <PageHeader
           eyebrow={hero.eyebrow}
           title={hero.title}

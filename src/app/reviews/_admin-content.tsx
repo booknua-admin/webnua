@@ -28,7 +28,7 @@ function AdminReviewsContent() {
           <TopbarBreadcrumb trail={['Workspace']} current="Reviews" />
         }
       />
-      <div className="flex flex-col gap-5 px-10 py-10">
+      <div className="flex flex-col gap-5 px-4 py-6 md:px-10 md:py-10">
         {isLoading ? (
           <ReviewsNotice>{'// Loading reviews…'}</ReviewsNotice>
         ) : error || !page ? (
@@ -43,7 +43,7 @@ function AdminReviewsContent() {
               subtitle={page.hero.subtitle}
             />
 
-            <div className="grid grid-cols-4 gap-3.5">
+            <div className="grid grid-cols-2 gap-3.5 md:grid-cols-4">
               {page.stats.map((stat) => (
                 <StatCard
                   key={stat.label}

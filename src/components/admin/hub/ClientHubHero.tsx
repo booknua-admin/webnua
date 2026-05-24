@@ -59,7 +59,7 @@ function ClientHubHero({ hero, className }: ClientHubHeroProps) {
         </Button>
       </div>
 
-      <div className="mt-5 grid grid-cols-4 gap-3.5 border-t border-paper/10 pt-5">
+      <div className="mt-5 grid grid-cols-2 gap-3.5 border-t border-paper/10 pt-5 md:grid-cols-4">
         {hero.stats.map((stat) => (
           <div key={stat.kind} data-slot="client-hub-hero-stat">
             <div className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-paper/50">

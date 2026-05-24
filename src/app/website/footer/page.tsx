@@ -8,6 +8,7 @@
 
 import Link from 'next/link';
 
+import { EditorMobileGuard } from '@/components/shared/EditorMobileGuard';
 import { SectionEditor } from '@/components/shared/website/SectionEditor';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/lib/auth/user-stub';
@@ -15,6 +16,14 @@ import { useEffectiveDraft, useWebsiteForClient } from '@/lib/website/queries';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 export default function WebsiteFooterEditorPage() {
+  return (
+    <EditorMobileGuard>
+      <WebsiteFooterEditorInner />
+    </EditorMobileGuard>
+  );
+}
+
+function WebsiteFooterEditorInner() {
   const user = useUser();
   const workspace = useWorkspace();
 

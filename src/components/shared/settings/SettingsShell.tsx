@@ -19,10 +19,13 @@ function SettingsShell({
   className,
 }: SettingsShellProps) {
   return (
-    <div data-slot="settings-shell" className={cn('flex flex-col gap-7 px-10 py-10', className)}>
+    <div data-slot="settings-shell" className={cn('flex flex-col gap-7 px-4 py-6 md:px-10 md:py-10', className)}>
       <PageHeader eyebrow={eyebrow} title={title} subtitle={subtitle} />
       <SettingsContextBanner />
-      <div data-slot="settings-layout" className="grid grid-cols-[220px_1fr] items-start gap-7">
+      <div
+        data-slot="settings-layout"
+        className="grid grid-cols-1 items-start gap-5 md:grid-cols-[220px_1fr] md:gap-7"
+      >
         <SettingsNav />
         <div data-slot="settings-content" className="min-w-0">
           {children}

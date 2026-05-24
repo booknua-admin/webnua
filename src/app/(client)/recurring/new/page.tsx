@@ -214,7 +214,7 @@ export default function ClientRecurringNewPage() {
           <TopbarBreadcrumb trail={['Calendar']} current="New recurring" />
         }
       />
-      <div className="px-10 py-10">
+      <div className="px-4 py-6 md:px-10 md:py-10">
         <PageHeader
           eyebrow={r.hero.eyebrow}
           title={r.hero.title}

@@ -13,7 +13,8 @@ function TicketDetailLayout({ main, side, className }: TicketDetailLayoutProps) 
     <div
       data-slot="ticket-detail-layout"
       className={cn(
-        'grid grid-cols-[1fr_320px] items-start gap-[18px]',
+        // Mobile: rail stacks below main. Desktop: rail to the right.
+        'grid grid-cols-1 items-start gap-[18px] lg:grid-cols-[1fr_320px]',
         className,
       )}
     >

@@ -64,7 +64,7 @@ function AutomationStatsCard({
       {enabled && stats && stats.length > 0 ? (
         <div
           data-slot="automation-stats-card-stats"
-          className="grid grid-cols-4 gap-2.5 border-t border-paper-2 bg-paper-2/40 p-3.5"
+          className="grid grid-cols-2 gap-2.5 border-t border-paper-2 bg-paper-2/40 p-3.5 md:grid-cols-4"
         >
           {stats.map((stat) => (
             <AutomationStatTile
