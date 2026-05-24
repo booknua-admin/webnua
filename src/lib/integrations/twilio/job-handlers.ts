@@ -28,7 +28,6 @@ import { getIntegrationDb } from '@/lib/integrations/_shared/db-types';
 import { type JobContext, registerJobHandler } from '@/lib/integrations/_shared/jobs';
 import { getReviewLinkForClient } from '@/lib/integrations/gbp/locations';
 import { validateTemplate } from '@/lib/sms/character-validator';
-import { DEFAULT_SMS_TEMPLATES } from '@/lib/sms/default-templates';
 import { normalizePhone } from '@/lib/sms/phone';
 import { segmentCost } from '@/lib/sms/pricing';
 import { render, type RenderContext } from '@/lib/sms/template-renderer';
@@ -36,7 +35,6 @@ import { render, type RenderContext } from '@/lib/sms/template-renderer';
 import { isTwilioConfigured, mapTwilioMessageStatus, sendSMS } from './client';
 import { insertSmsMessage } from './messages';
 import { getSenderByClientId } from './senders';
-import { getTemplate } from './templates';
 import { SEND_SMS_JOB, type SendSmsPayload } from './job-types';
 import type { ClientSmsSenderRow } from './types';
 
@@ -44,9 +42,9 @@ import type { ClientSmsSenderRow } from './types';
 
 registerJobHandler(SEND_SMS_JOB, async (rawPayload, ctx: JobContext) => {
   const payload = (rawPayload ?? {}) as Partial<SendSmsPayload>;
-  const { clientId, templateKey, recipientPhone } = payload;
-  if (!clientId || !templateKey || !recipientPhone) {
-    throw new Error('send_sms: payload missing clientId / templateKey / recipientPhone');
+  const { clientId, body, recipientPhone } = payload;
+  if (!clientId || !body || !recipientPhone) {
+    throw new Error('send_sms: payload missing clientId / body / recipientPhone');
   }
 
   // Twilio unconfigured — skip honestly (no fake sms_messages row), same
@@ -77,8 +75,9 @@ registerJobHandler(SEND_SMS_JOB, async (rawPayload, ctx: JobContext) => {
   }
 
   // --- render the message ----------------------------------------------------
-  const template = await getTemplate(clientId, templateKey);
-  const body = template?.body ?? DEFAULT_SMS_TEMPLATES[templateKey];
+  // Phase 8 Session 2: the body comes straight off the payload (it was sourced
+  // from automation_actions.action_config.body or from an ad-hoc caller). The
+  // sms_templates table is gone; there is no template lookup.
   const context = await buildRenderContext(clientId, sender.sender_id, payload);
   const rendered = render(body, context).text.trim();
   if (!rendered) {

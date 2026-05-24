@@ -1,18 +1,24 @@
 // =============================================================================
-// Action handler — send_sms_to_lead (Phase 8 Session 1).
+// Action handler — send_sms_to_lead (Phase 8 Session 1; Session 2 inline body).
 //
 // Enqueues the existing send_sms job (Phase 7 Twilio session). The actual
 // SMS send is unchanged — the engine just orchestrates the enqueue.
 //
+// Phase 8 Session 2: the body now travels with the payload. `action_config`
+// carries the per-client edited body (defaults from
+// `lib/automations/platform-defaults.ts`); the SMS template lookup tables are
+// gone. `template_key` stays on `action_config` as a free-text label so the
+// integration_call_log + the editor's `// {template_key}` step header keep
+// working.
+//
 // When `action_config.writes_gbp_review_request_audit` is true (i.e. this is
-// the review_request automation), the handler also writes a
+// a review_request automation), the handler also writes a
 // gbp_review_requests audit row so the existing GBP attribution + nudge
-// counters still light up. Same behaviour as the previous direct
-// `gbp_send_review_request` job, just split into the audit + the send.
+// counters still light up.
 // =============================================================================
 
 import { enqueueJobImmediate } from '@/lib/integrations/_shared/jobs';
-import { SEND_SMS_JOB } from '@/lib/integrations/twilio/job-types';
+import { SEND_SMS_JOB, type SendSmsPayload } from '@/lib/integrations/twilio/job-types';
 import { insertReviewRequest } from '@/lib/integrations/gbp/review-requests';
 import { getReviewLinkForClient } from '@/lib/integrations/gbp/locations';
 import { getIntegrationDb } from '@/lib/integrations/_shared/db-types';
@@ -20,12 +26,20 @@ import { getIntegrationDb } from '@/lib/integrations/_shared/db-types';
 import { recordOutboundOnLead } from '../handoff';
 
 import type { ActionContext, ActionOutcome } from './dispatch';
-import type { SendSmsActionConfig } from '../engine-types';
+
+type SendSmsActionConfig = {
+  template_key?: string;
+  /** The pre-rendered SMS body (with {{var}} placeholders). Session 2: this
+   *  is the live edit target — the operator/client edits it on action_config
+   *  via the inline editor in the automation detail. */
+  body?: string;
+  writes_gbp_review_request_audit?: boolean;
+};
 
 export async function runSendSmsToLead(ctx: ActionContext): Promise<ActionOutcome> {
   const cfg = ctx.action.action_config as SendSmsActionConfig;
-  if (!cfg.template_key) {
-    return { kind: 'skipped', reason: 'missing_template_key' };
+  if (!cfg.body || cfg.body.trim().length === 0) {
+    return { kind: 'skipped', reason: 'missing_body' };
   }
 
   // Resolve the recipient phone — prefer the trigger_event snapshot (already
@@ -77,20 +91,18 @@ export async function runSendSmsToLead(ctx: ActionContext): Promise<ActionOutcom
     }
   }
 
-  await enqueueJobImmediate(
-    SEND_SMS_JOB,
-    {
-      clientId: ctx.run.client_id,
-      templateKey: cfg.template_key,
-      recipientPhone: phone,
-      relatedLeadId: leadId,
-    },
-    {
-      provider: 'twilio',
-      clientId: ctx.run.client_id,
-      correlationId: ctx.run.id,
-    },
-  );
+  const payload: SendSmsPayload = {
+    clientId: ctx.run.client_id,
+    body: cfg.body,
+    templateKey: cfg.template_key,
+    recipientPhone: phone,
+    relatedLeadId: leadId,
+  };
+  await enqueueJobImmediate(SEND_SMS_JOB, payload, {
+    provider: 'twilio',
+    clientId: ctx.run.client_id,
+    correlationId: ctx.run.id,
+  });
 
   // Update the lead's last_outbound_at so the cold-lead scanner sees it.
   await recordOutboundOnLead(leadId);

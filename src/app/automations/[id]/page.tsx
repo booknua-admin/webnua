@@ -2,21 +2,25 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 
 import { AutomationActionCard } from '@/components/admin/automations/AutomationActionCard';
 import { AutomationAddActionMenu } from '@/components/admin/automations/AutomationAddActionMenu';
+import { AutomationCloneButton } from '@/components/admin/automations/AutomationCloneButton';
 import { AutomationEditorLayout } from '@/components/admin/automations/AutomationEditorLayout';
-import { AutomationPerformanceCard } from '@/components/admin/automations/AutomationPerformanceCard';
+import { AutomationRunsCard } from '@/components/admin/automations/AutomationRunsCard';
+import { AutomationStatsRailCard } from '@/components/admin/automations/AutomationStatsRailCard';
 import { AutomationStepConnector } from '@/components/admin/automations/AutomationStepConnector';
 import { AutomationTestSendCard } from '@/components/admin/automations/AutomationTestSendCard';
 import { AutomationTriggerBox } from '@/components/admin/automations/AutomationTriggerBox';
+import { AutomationTriggerEditor } from '@/components/admin/automations/AutomationTriggerEditor';
 import { AutomationVariableList } from '@/components/admin/automations/AutomationVariableList';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { EditorFooterActions } from '@/components/shared/EditorFooterActions';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
+import { useRole } from '@/lib/auth/user-stub';
 import {
   useAddAction,
   useAutomationActiveRuns,
@@ -26,28 +30,27 @@ import {
   useToggleAutomation,
   useUpdateActionBody,
   useUpdateActionConfig,
+  useUpdateAutomationTrigger,
 } from '@/lib/automations/queries';
 import type {
+  AutomationEditableFilterField,
+  AutomationEditableTriggerField,
   AutomationEditor,
   AutomationEditorAction,
   AutomationEditorActionType,
 } from '@/lib/automations/types';
-import { useRole } from '@/lib/auth/user-stub';
 import { normalizeError } from '@/lib/errors';
 
 export default function AutomationEditorPage() {
   const { role, hydrated } = useRole();
-  const router = useRouter();
   const params = useParams();
   const id = Array.isArray(params.id) ? params.id[0] : (params.id ?? '');
 
-  useEffect(() => {
-    if (hydrated && role === 'client') router.replace('/automations');
-  }, [hydrated, role, router]);
-
+  // Phase 8 Session 2: client-role users can reach the editor (read-only view);
+  // operators get full edit. Role resolution gates the inner mount.
   const { data: editor, isLoading, error } = useAutomationEditor(id ?? '');
 
-  if (!hydrated || role !== 'admin') {
+  if (!hydrated) {
     return (
       <div className="flex min-h-svh items-center justify-center bg-paper">
         <div className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
@@ -57,12 +60,14 @@ export default function AutomationEditorPage() {
     );
   }
 
+  const isOperator = role === 'admin';
+
   return (
     <>
       <Topbar
         breadcrumb={
           <TopbarBreadcrumb
-            trail={['Workspace', 'Automations']}
+            trail={[isOperator ? 'Workspace' : 'Home', 'Automations']}
             current="Edit flow"
           />
         }
@@ -75,26 +80,53 @@ export default function AutomationEditorPage() {
             {`// ${error ? normalizeError(error).message : 'Automation not found'}`}
           </EditorNotice>
         ) : (
-          <EditorBody key={editor.id} editor={editor} />
+          <EditorBody key={editor.id} editor={editor} isOperator={isOperator} />
         )}
       </div>
     </>
   );
 }
 
-function EditorBody({ editor }: { editor: AutomationEditor }) {
+/** The editor body. Operator-edit and client-read use the same shape; the
+ *  per-card / per-mutation surfaces honour the `readOnly` prop where wired,
+ *  and the operator-only affordances (add / remove / reorder / clone, trigger
+ *  edits) are conditionally rendered. */
+function EditorBody({
+  editor,
+  isOperator,
+}: {
+  editor: AutomationEditor;
+  isOperator: boolean;
+}) {
+  // -- Trigger + filter local state (operator-side dirty/save flow) ----------
+  const [triggerFields, setTriggerFields] = useState(editor.triggerFields);
+  const [filterFields, setFilterFields] = useState(editor.filterFields);
+  const [triggerDirty, setTriggerDirty] = useState(false);
+
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    setTriggerFields(editor.triggerFields);
+    setFilterFields(editor.filterFields);
+    setTriggerDirty(false);
+  }, [editor]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // -- Mutations -------------------------------------------------------------
   const addAction = useAddAction();
   const moveAction = useMoveAction();
   const removeAction = useRemoveAction();
   const updateBody = useUpdateActionBody();
   const updateConfig = useUpdateActionConfig();
+  const updateTrigger = useUpdateAutomationTrigger();
   const toggle = useToggleAutomation();
   const { data: activeRunCount = 0 } = useAutomationActiveRuns(editor.id);
 
+  // -- Per-action UI state ---------------------------------------------------
   const [pendingRemoval, setPendingRemoval] =
     useState<AutomationEditorAction | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
+  // -- Per-action handlers ---------------------------------------------------
   const handleBodyChange = (
     actionId: string,
     body: string,
@@ -104,7 +136,8 @@ function EditorBody({ editor }: { editor: AutomationEditor }) {
     updateBody.mutate(
       { actionId, body, subject },
       {
-        onError: (err) => setStatusMessage(`Save failed — ${normalizeError(err).message}`),
+        onError: (err) =>
+          setStatusMessage(`Save failed — ${normalizeError(err).message}`),
         onSuccess: () => setStatusMessage('Saved'),
       },
     );
@@ -118,7 +151,8 @@ function EditorBody({ editor }: { editor: AutomationEditor }) {
     updateConfig.mutate(
       { actionId, config },
       {
-        onError: (err) => setStatusMessage(`Save failed — ${normalizeError(err).message}`),
+        onError: (err) =>
+          setStatusMessage(`Save failed — ${normalizeError(err).message}`),
         onSuccess: () => setStatusMessage('Saved'),
       },
     );
@@ -128,7 +162,8 @@ function EditorBody({ editor }: { editor: AutomationEditor }) {
     moveAction.mutate(
       { actionId, direction },
       {
-        onError: (err) => setStatusMessage(`Move failed — ${normalizeError(err).message}`),
+        onError: (err) =>
+          setStatusMessage(`Move failed — ${normalizeError(err).message}`),
       },
     );
   };
@@ -137,7 +172,8 @@ function EditorBody({ editor }: { editor: AutomationEditor }) {
     addAction.mutate(
       { automationId: editor.id, actionType },
       {
-        onError: (err) => setStatusMessage(`Add failed — ${normalizeError(err).message}`),
+        onError: (err) =>
+          setStatusMessage(`Add failed — ${normalizeError(err).message}`),
       },
     );
   };
@@ -146,11 +182,43 @@ function EditorBody({ editor }: { editor: AutomationEditor }) {
     removeAction.mutate(
       { actionId: action.id },
       {
-        onError: (err) => setStatusMessage(`Delete failed — ${normalizeError(err).message}`),
+        onError: (err) =>
+          setStatusMessage(`Delete failed — ${normalizeError(err).message}`),
         onSuccess: () => setStatusMessage('Action removed'),
       },
     );
     setPendingRemoval(null);
+  };
+
+  // -- Trigger handlers ------------------------------------------------------
+  const patchTrigger = (next: AutomationEditableTriggerField) => {
+    setTriggerFields((current) =>
+      current.map((f) => (f.kind === next.kind ? next : f)),
+    );
+    setTriggerDirty(true);
+  };
+
+  const patchFilter = (next: AutomationEditableFilterField) => {
+    setFilterFields((current) =>
+      current.map((f) => (f.kind === next.kind ? next : f)),
+    );
+    setTriggerDirty(true);
+  };
+
+  const handleSaveTrigger = async () => {
+    if (!triggerDirty) return;
+    try {
+      await updateTrigger.mutateAsync({
+        id: editor.id,
+        patch: {
+          triggerConfig: buildTriggerConfigPayload(triggerFields),
+          triggerFilters: buildTriggerFiltersPayload(filterFields),
+        },
+      });
+      setStatusMessage('Trigger saved');
+    } catch (err) {
+      setStatusMessage(`Save failed — ${normalizeError(err).message}`);
+    }
   };
 
   const actions = editor.actions ?? [];
@@ -163,15 +231,54 @@ function EditorBody({ editor }: { editor: AutomationEditor }) {
         title={editor.title}
         subtitle={editor.subtitle}
       />
+      {!isOperator ? (
+        <div className="mb-5 rounded-md border border-info/40 bg-info/8 px-4 py-3 font-sans text-[13px] text-ink">
+          <span className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-info">
+            {'// View only'}
+          </span>{' '}
+          Webnua manages this automation&rsquo;s copy. You can pause it from
+          the toggle below; <strong>copy changes go through your operator</strong>
+          .
+        </div>
+      ) : null}
+      {isOperator ? (
+        <div className="mb-4 flex items-center justify-end gap-2">
+          <AutomationCloneButton
+            automationId={editor.id}
+            sourceName={editor.clientName}
+            visible={isOperator}
+          />
+        </div>
+      ) : null}
       <AutomationEditorLayout
         canvas={
           <>
             {activeRunCount > 0 ? (
               <p className="mb-4 rounded-md border border-rust-soft bg-rust-soft/30 px-4 py-3 font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-ink-soft">
-                {`// ${activeRunCount} active ${activeRunCount === 1 ? 'run' : 'runs'} — they'll finish with the previous sequence`}
+                {`// ${activeRunCount} active ${
+                  activeRunCount === 1 ? 'run' : 'runs'
+                } — they'll finish with the previous sequence`}
               </p>
             ) : null}
             <AutomationTriggerBox trigger={editor.trigger} />
+            <AutomationTriggerEditor
+              triggerFields={triggerFields}
+              filterFields={filterFields}
+              onChangeTrigger={patchTrigger}
+              onChangeFilter={patchFilter}
+              readOnly={!isOperator}
+            />
+            {isOperator && triggerDirty ? (
+              <div className="mt-2 flex justify-end">
+                <Button
+                  variant="secondary"
+                  onClick={handleSaveTrigger}
+                  disabled={updateTrigger.isPending}
+                >
+                  {updateTrigger.isPending ? 'Saving trigger…' : 'Save trigger'}
+                </Button>
+              </div>
+            ) : null}
             {actions.map((action, index) => (
               <div key={action.id}>
                 <AutomationStepConnector />
@@ -184,7 +291,11 @@ function EditorBody({ editor }: { editor: AutomationEditor }) {
                   onRemove={() => setPendingRemoval(action)}
                   onChange={(change) => {
                     if (change.kind === 'body') {
-                      handleBodyChange(action.id, change.body, change.subject ?? null);
+                      handleBodyChange(
+                        action.id,
+                        change.body,
+                        change.subject ?? null,
+                      );
                     } else {
                       handleConfigChange(action.id, change.config);
                     }
@@ -207,12 +318,14 @@ function EditorBody({ editor }: { editor: AutomationEditor }) {
                 {'// This automation has no actions yet — add one below'}
               </p>
             ) : null}
-            <div className="mt-5">
-              <AutomationAddActionMenu
-                onPick={handleAdd}
-                disabled={addAction.isPending}
-              />
-            </div>
+            {isOperator ? (
+              <div className="mt-5">
+                <AutomationAddActionMenu
+                  onPick={handleAdd}
+                  disabled={addAction.isPending}
+                />
+              </div>
+            ) : null}
           </>
         }
         rail={
@@ -227,10 +340,8 @@ function EditorBody({ editor }: { editor: AutomationEditor }) {
               buttonLabel={editor.rail.testSend.buttonLabel}
               data={editor.testSend}
             />
-            <AutomationPerformanceCard
-              heading={editor.rail.performance.heading}
-              metrics={editor.rail.performance.metrics}
-            />
+            <AutomationStatsRailCard automationId={editor.id} />
+            <AutomationRunsCard automationId={editor.id} limit={20} />
           </>
         }
       />
@@ -288,4 +399,34 @@ function EditorNotice({ children }: { children: React.ReactNode }) {
       {children}
     </p>
   );
+}
+
+// --- Trigger config / filter payload builders -----------------------------
+
+function buildTriggerConfigPayload(
+  fields: AutomationEditableTriggerField[],
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  for (const f of fields) {
+    if (
+      f.kind === 'delay_minutes' ||
+      f.kind === 'days_after_last_outbound' ||
+      f.kind === 'max_nudges'
+    ) {
+      payload[f.kind] = f.value;
+    } else if (f.kind === 'to_status') {
+      payload[f.kind] = f.value;
+    }
+  }
+  return payload;
+}
+
+function buildTriggerFiltersPayload(
+  fields: AutomationEditableFilterField[],
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  for (const f of fields) {
+    if (f.value) payload[f.kind] = true;
+  }
+  return payload;
 }

@@ -1,10 +1,14 @@
 import type { LeadTab } from '@/lib/leads/types';
 
+/** Static tab definitions. Phase 8 Session 2 adds the `needs_followup` tab —
+ *  the cold-lead surface. Status tabs map 1:1 to `LeadStatus`; the new tab
+ *  is orthogonal (a lead in any status can be cold). */
 export const clientLeadsTabs: LeadTab[] = [
-  { id: 'new', label: 'New', count: 5 },
-  { id: 'contacted', label: 'Contacted', count: 4 },
-  { id: 'booked', label: 'Booked', count: 12 },
-  { id: 'lost', label: 'Lost', count: 2 },
+  { id: 'needs_followup', label: 'Needs follow-up' },
+  { id: 'new', label: 'New' },
+  { id: 'contacted', label: 'Contacted' },
+  { id: 'booked', label: 'Booked' },
+  { id: 'lost', label: 'Lost' },
   { id: 'all', label: 'All' },
 ];
 

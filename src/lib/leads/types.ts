@@ -63,8 +63,33 @@ export const LEAD_SOURCE_KIND_LABEL: Record<LeadSourceKind, string> = {
   meta: 'Meta',
 };
 
+/** Engine-side handoff state — same vocabulary as `leads.automation_state`. */
+export type LeadAutomationStateValue =
+  | 'automated'
+  | 'taken_over'
+  | 'completed'
+  | 'archived';
+
+/** Cold-lead annotations carried on every inbox row (Phase 8 Session 2).
+ *  Lets the inbox filter the "Needs follow-up" tab and lets the row
+ *  optionally render a warn-tinted hint without re-querying per row. */
+export type LeadColdFields = {
+  /** Set by the cold-lead scanner when the lead goes quiet (4+ days). */
+  needsFollowupAt: string | null;
+  /** Set when the client/operator dismissed the nudge for this lead. */
+  followupDismissedAt: string | null;
+  /** Count of nudges fired for this lead (max 3, see seed config). */
+  nudgeCount: number;
+  /** Lead-level engine state — flips to `taken_over` when the client/
+   *  operator clicks "Take over" or sends a manual reply. */
+  automationState: LeadAutomationStateValue;
+  /** ISO timestamp of the most recent outbound message — used to render
+   *  the "Last touched N days ago" hint on the cold-lead tab. */
+  lastOutboundAt: string | null;
+};
+
 // Inbox rows
-export type ClientLeadRow = {
+export type ClientLeadRow = LeadColdFields & {
   id: string;
   initial: string;
   name: string;
@@ -83,7 +108,7 @@ export type ClientLeadRow = {
   sourceKind: LeadSourceKind;
 };
 
-export type AdminLeadRow = {
+export type AdminLeadRow = LeadColdFields & {
   id: string;
   initial: string;
   name: string;

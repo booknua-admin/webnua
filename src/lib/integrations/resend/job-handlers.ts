@@ -36,6 +36,10 @@ import {
   type EmailTemplateBody,
 } from '@/lib/email/default-templates';
 import { renderEmail, type EmailRenderContext } from '@/lib/email/templates';
+// Phase 8 Session 2: the sms_templates / email_templates tables are gone.
+// Bodies live on the originating automation_action's action_config (or in
+// DEFAULT_EMAIL_TEMPLATES for operator-facing keys). The previous
+// `getTemplate` lookup is no longer used.
 import {
   composeReplyToAddress,
   generateThreadToken,
@@ -68,7 +72,6 @@ import {
   listNewLeadRecipients,
 } from './preferences';
 import { getSenderByClientId } from './senders';
-import { getTemplate } from './templates';
 import type {
   ClientEmailSenderRow,
   EmailMessageStatus,
@@ -101,7 +104,14 @@ registerJobHandler(SEND_EMAIL_JOB, async (rawPayload, ctx: JobContext) => {
   }
 
   // --- render ---------------------------------------------------------------
-  const template = await loadTemplate(clientId, templateKey);
+  // Body source priority (see resolveTemplateBody for full detail):
+  //   1. Payload-supplied subject + body — customer-facing automation actions
+  //      (Phase 8 Session 2 inline-body model).
+  //   2. platform_email_templates row — operator-facing system templates
+  //      (Phase 8 Session 3, `lead_notification` / `lead_digest`).
+  //   3. DEFAULT_EMAIL_TEMPLATES[templateKey] — in-code fallback.
+  // The per-client sms_templates / email_templates tables are gone.
+  const template = await resolveTemplateBody(payload, templateKey);
   const context = await buildRenderContext(clientId, sender, payload);
   const rendered = renderEmail(template, context);
   if (!rendered.subject && !rendered.text && !rendered.html) {
@@ -378,9 +388,9 @@ function isCustomerFacingTemplate(key: EmailTemplateKey): boolean {
 }
 
 /** True for operator-facing templates that live at platform level (one body
- *  for all clients) instead of per-client. Phase 8 · Session 3 added the
- *  `platform_email_templates` table; the per-client rows in `email_templates`
- *  for these keys are now legacy fallbacks. */
+ *  for all clients). Phase 8 · Session 3 added the `platform_email_templates`
+ *  table — when a row exists for one of these keys, it wins over the in-code
+ *  default; absent rows fall through to `DEFAULT_EMAIL_TEMPLATES`. */
 function isPlatformLevelTemplate(key: EmailTemplateKey): boolean {
   return key === 'lead_notification' || key === 'lead_digest';
 }
@@ -403,25 +413,37 @@ async function loadPlatformTemplate(
   };
 }
 
-async function loadTemplate(
-  clientId: string,
+/** Pick the email body source.
+ *
+ * Resolution order:
+ *   1. Payload-supplied subject + body — customer-facing automation actions
+ *      pass the inline body straight from `automation_actions.action_config`
+ *      (Phase 8 Session 2 inline-body model).
+ *   2. Platform-level template row (Phase 8 Session 3) — for operator-facing
+ *      keys (`lead_notification`, `lead_digest`), an operator can override
+ *      the body via `platform_email_templates`.
+ *   3. `DEFAULT_EMAIL_TEMPLATES[key]` — the in-code fallback.
+ *
+ * The per-client `email_templates` table no longer exists (deleted in
+ * Session 2). */
+async function resolveTemplateBody(
+  payload: Partial<SendEmailPayload>,
   key: EmailTemplateKey,
 ): Promise<EmailTemplateBody> {
-  // Phase 8 · Session 3: operator-facing templates resolve from the
-  // platform-level table first (one body for all clients). Per-client rows
-  // remain a legacy fallback for any environment where the platform table
-  // doesn't carry a row yet.
+  const hasPayloadBody =
+    typeof payload.subject === 'string' &&
+    (typeof payload.bodyHtml === 'string' || typeof payload.bodyText === 'string');
+
+  if (hasPayloadBody) {
+    return {
+      subject: payload.subject ?? '',
+      body_html: payload.bodyHtml ?? '',
+      body_text: payload.bodyText ?? '',
+    };
+  }
   if (isPlatformLevelTemplate(key)) {
     const platform = await loadPlatformTemplate(key);
     if (platform) return platform;
-  }
-  const row = await getTemplate(clientId, key);
-  if (row) {
-    return {
-      subject: row.subject,
-      body_html: row.body_html,
-      body_text: row.body_text,
-    };
   }
   return DEFAULT_EMAIL_TEMPLATES[key];
 }

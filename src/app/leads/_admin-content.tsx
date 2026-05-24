@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 
 import { ClientMultiSelect } from '@/components/shared/ClientMultiSelect';
+import { ColdLeadRow } from '@/components/shared/leads/ColdLeadRow';
 import { LeadRow } from '@/components/shared/leads/LeadRow';
 import { LeadTabsBar } from '@/components/shared/leads/LeadTabsBar';
 import { LeadsHero } from '@/components/shared/leads/LeadsHero';
@@ -12,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { normalizeError } from '@/lib/errors';
 import { adminLeadsHero, adminLeadsTabs } from '@/lib/leads/admin-leads';
-import { useAdminLeadsInbox } from '@/lib/leads/queries';
+import { isColdLeadRow, useAdminLeadsInbox } from '@/lib/leads/queries';
 import { useIsAgencyMode, useWorkspace } from '@/lib/workspace/workspace-stub';
 
 function AdminLeadsContent() {
@@ -51,12 +52,19 @@ function AdminLeadsContent() {
     return counts;
   }, [allLeads]);
 
-  // Tab ids map 1:1 to LeadStatus. The badge represents UNREAD leads in
-  // that tab (suppressed when 0) — the email-inbox model the user asked
-  // for: the count = things that need looking at, not total volume.
+  // Tab ids map 1:1 to LeadStatus (with the orthogonal `needs_followup`
+  // surface added in Phase 8 Session 2). The badge represents:
+  //   • `needs_followup` → the count of cold leads still awaiting a nudge
+  //     (the whole count matters, not just unread — cold leads need a
+  //     personal reply regardless of read state).
+  //   • status tabs → the count of UNREAD leads in that tab (email-inbox
+  //     model: count = things that need looking at, not total volume).
   const tabs = useMemo(
     () =>
       adminLeadsTabs.map((tab) => {
+        if (tab.id === 'needs_followup') {
+          return { ...tab, count: clientPool.filter(isColdLeadRow).length };
+        }
         const tabRows = clientPool.filter((lead) => lead.status === tab.id);
         return {
           ...tab,
@@ -67,9 +75,18 @@ function AdminLeadsContent() {
   );
 
   const visibleLeads = useMemo(
-    () => clientPool.filter((lead) => lead.status === activeTab),
+    () =>
+      activeTab === 'needs_followup'
+        ? clientPool
+            .filter(isColdLeadRow)
+            .sort((a, b) =>
+              (b.needsFollowupAt ?? '').localeCompare(a.needsFollowupAt ?? ''),
+            )
+        : clientPool.filter((lead) => lead.status === activeTab),
     [clientPool, activeTab],
   );
+
+  const showingColdTab = activeTab === 'needs_followup';
 
   return (
     <>
@@ -115,21 +132,33 @@ function AdminLeadsContent() {
         <LeadTabsBar tabs={tabs} value={activeTab} onChange={setActiveTab} />
 
         <div className="overflow-hidden rounded-2xl border border-ink/8 bg-card">
-          <div className="grid grid-cols-[36px_180px_1fr_110px_80px_80px_100px] items-center gap-3 border-b border-ink/8 bg-paper-2/40 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
-            <div />
-            <div>{'// Lead'}</div>
-            <div>{'// Preview'}</div>
-            <div>{'// Status'}</div>
-            <div>{'// Source'}</div>
-            <div>{'// Age'}</div>
-            <div className="text-right">{'// Activity'}</div>
-          </div>
+          {showingColdTab ? (
+            <ColdHeaderRow />
+          ) : (
+            <div className="grid grid-cols-[36px_180px_1fr_110px_80px_80px_100px] items-center gap-3 border-b border-ink/8 bg-paper-2/40 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
+              <div />
+              <div>{'// Lead'}</div>
+              <div>{'// Preview'}</div>
+              <div>{'// Status'}</div>
+              <div>{'// Source'}</div>
+              <div>{'// Age'}</div>
+              <div className="text-right">{'// Activity'}</div>
+            </div>
+          )}
           {isLoading ? (
             <InboxNotice>{'// Loading leads…'}</InboxNotice>
           ) : error ? (
             <InboxNotice>{`// ${normalizeError(error).message}`}</InboxNotice>
           ) : visibleLeads.length === 0 ? (
-            <InboxNotice>{'// No leads in this view'}</InboxNotice>
+            <InboxNotice>
+              {showingColdTab
+                ? '// Nothing to nudge. Every lead is fresh or already handled.'
+                : '// No leads in this view'}
+            </InboxNotice>
+          ) : showingColdTab ? (
+            visibleLeads.map((lead) => (
+              <ColdLeadRow key={lead.id} variant="admin" row={lead} />
+            ))
           ) : (
             visibleLeads.map((lead) => (
               <LeadRow
@@ -163,6 +192,22 @@ function InboxNotice({ children }: { children: React.ReactNode }) {
     <p className="px-[18px] py-12 text-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
       {children}
     </p>
+  );
+}
+
+/** The header row above the cold-lead list — different shape than the
+ *  status-tab rows since the cold rows carry a "Dismiss" affordance and
+ *  the dominant signal is "needs nudging now". */
+function ColdHeaderRow() {
+  return (
+    <div className="grid grid-cols-[4px_36px_1fr_140px_120px_auto] items-center gap-3 border-b border-ink/8 bg-warn-soft/30 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
+      <div />
+      <div />
+      <div>{'// Lead'}</div>
+      <div>{'// Nudge'}</div>
+      <div>{'// Last outbound'}</div>
+      <div className="text-right">{'// Dismiss'}</div>
+    </div>
   );
 }
 

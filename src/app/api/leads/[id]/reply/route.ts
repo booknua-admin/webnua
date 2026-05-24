@@ -18,7 +18,11 @@ import { NextResponse } from 'next/server';
 import { wrapPlainAsHtml } from '@/lib/email/templates';
 import { listMessagesForLead } from '@/lib/integrations/resend/messages';
 import { getServiceClient } from '@/lib/supabase/server';
-import { recordOutboundOnLead, takeoverLead } from '@/lib/automations/handoff';
+import {
+  dismissFollowupTask,
+  recordOutboundOnLead,
+  takeoverLead,
+} from '@/lib/automations/handoff';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -282,6 +286,16 @@ export async function POST(
   // Phase 8 Session 1 — update leads.last_outbound_at so the engine's
   // handoff pre-flight + cold-lead scanner see this manual reply.
   await recordOutboundOnLead(leadId);
+
+  // Phase 8 Session 2 — sending a manual reply IS the follow-up the cold-
+  // lead surface is asking for. Mark the nudge dismissed so the lead drops
+  // off the "Needs follow-up" tab; followup_nudge_count is preserved
+  // (the next scan respects the max-nudges cap). Best-effort.
+  try {
+    await dismissFollowupTask(leadId, auth.userId);
+  } catch (dismissError) {
+    console.warn('[leads/reply] dismissFollowupTask failed', dismissError);
+  }
 
   return NextResponse.json({ ok: true, messageId: row.id, resendId: result.data.id });
 }

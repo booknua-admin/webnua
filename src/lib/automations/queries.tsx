@@ -1,25 +1,30 @@
 // =============================================================================
-// Automations cluster — data access (Phase 8 Session 1).
+// Automations cluster — data access (Phase 8 Session 2).
 //
-// Retargeted to the new engine tables:
-//   • `automations`         — new shape (is_enabled, automation_key, etc.)
-//   • `automation_actions`  — replaces automation_steps. Comm-only actions
-//                              (send_sms_to_lead / send_email_to_lead) are
-//                              shown to the existing editor; other action
-//                              types (wait, operator_notification, etc.)
-//                              are engine-internal until Session 2 lands
-//                              the new editor UI.
+// READS:
+//   • useClientAutomations()  — client-side toggle cards (own client).
+//   • useAdminAutomations()   — cross-client roster (operator).
+//   • useAutomationEditor(id) — one automation's editor view: every action
+//     type (not just comm), live body / subject from action_config, the
+//     editable trigger + filter fields, and the variable catalog.
+//   • useAutomationRuns(id, limit) — recent runs for an automation
+//     (sourced from automation_runs; SELECT RLS in migration 0076 already
+//     scopes the read).
+//   • useAutomationStats(id) — last-30-day completion / pause / failure
+//     rates + average completion time.
 //
-// READ HOOKS — work as before.
-// TOGGLE     — works as before (real persistence).
-// EDITOR STEP-SAVE — throws a clear AppError pointing at Session 2. The
-//                    editor surfaces the error in its existing pane.
-//                    Editing per-step copy means editing the referenced
-//                    sms_templates / email_templates row; that surface
-//                    lands with Session 2.
-//
-// Performance metrics (sent / delivered / replied) still have no schema
-// home — placeholders unchanged.
+// MUTATIONS:
+//   • useToggleAutomation()        — flip is_enabled (works for client + op).
+//   • useUpdateAutomationAction()  — write the editable fields of one action
+//     (body / subject / body_html / body_text). The engine + manual paths
+//     pick this up on the next send.
+//   • useUpdateAutomationTrigger() — write trigger_config / trigger_filters.
+//   • useCloneAutomation()         — operator-only. Forks an automation under
+//     a new automation_key with is_default=false + is_enabled=false. Body
+//     edits on the clone don't touch the source.
+//   • useUpdateAutomationSteps()   — kept as a thin shim over
+//     useUpdateAutomationAction so the existing editor page's `handleSave`
+//     keeps compiling — it now writes per-action through the new path.
 // =============================================================================
 
 import type { ReactNode } from 'react';
@@ -30,21 +35,28 @@ import { AppError, normalizeError } from '@/lib/errors';
 import { supabase } from '@/lib/supabase/client';
 import type { Json } from '@/lib/types/database';
 
+import { ACTION_PAUSES_ON_HUMAN_ACTIVITY } from './engine-types';
+import {
+  AUTOMATION_VARIABLE_FLAT,
+} from './platform-defaults';
 import type {
   AdminAutomations,
   AutomationClientTone,
+  AutomationEditableFilterField,
+  AutomationEditableTriggerField,
   AutomationEditor,
   AutomationEditorAction,
+  AutomationEditorActionKind,
   AutomationEditorActionType,
   AutomationEditorChannel,
+  AutomationEditorRun,
+  AutomationEditorStats,
   AutomationEditorStep,
   AutomationFlowMini,
   AutomationGroup,
   AutomationStatsCard,
   ClientAutomations,
 } from './types';
-
-import { ACTION_PAUSES_ON_HUMAN_ACTIVITY } from './engine-types';
 
 // ---- Row shapes (new schema) -----------------------------------------------
 
@@ -53,28 +65,32 @@ type ActionRow = {
   position: number;
   action_type: string;
   action_config: Record<string, unknown> | null;
+  pauses_on_human_activity: boolean;
 };
 
 type AutomationJoinRow = {
   id: string;
   client_id: string;
+  automation_key: string;
   name: string;
+  description: string | null;
   is_enabled: boolean;
+  is_default: boolean;
   trigger_type: string;
   trigger_config: Record<string, unknown> | null;
+  trigger_filters: Record<string, unknown> | null;
   client: { name: string; slug: string } | null;
   automation_actions: ActionRow[];
 };
 
 const AUTOMATION_SELECT =
-  'id, client_id, name, is_enabled, trigger_type, trigger_config, ' +
+  'id, client_id, automation_key, name, description, is_enabled, is_default, ' +
+  'trigger_type, trigger_config, trigger_filters, ' +
   'client:clients(name, slug), ' +
-  'automation_actions(id, position, action_type, action_config)';
+  'automation_actions(id, position, action_type, action_config, pauses_on_human_activity)';
 
 // ---- Trigger-type vocabulary ------------------------------------------------
 
-// The library types, in display order. lead_inactive (cold lead) lives at
-// the end — it surfaces a task, not a message, so it sits visually apart.
 const TYPE_ORDER = [
   'lead_created',
   'job_scheduled',
@@ -176,10 +192,6 @@ function sortedActions(actions: ActionRow[]): ActionRow[] {
   return [...actions].sort((a, b) => a.position - b.position);
 }
 
-function isCommAction(t: string): boolean {
-  return t === 'send_sms_to_lead' || t === 'send_email_to_lead';
-}
-
 function actionToChannel(t: string): AutomationEditorChannel | null {
   if (t === 'send_sms_to_lead') return 'sms';
   if (t === 'send_email_to_lead') return 'email';
@@ -189,7 +201,6 @@ function actionToChannel(t: string): AutomationEditorChannel | null {
 function actionTypeSummary(actions: ActionRow[]): string {
   const types = sortedActions(actions).map((a) => a.action_type);
   if (types.length === 0) return 'no actions';
-  // Compact: "SMS / email" for comm-only; otherwise "task" for non-comm.
   return types
     .map((t) => {
       if (t === 'send_sms_to_lead') return 'SMS';
@@ -237,8 +248,10 @@ function toStatsCard(row: AutomationJoinRow): AutomationStatsCard {
       <>An automated flow Webnua runs for you.</>
     ),
     enabled: row.is_enabled,
-    // Performance stat tiles are intentionally omitted — no send-log table
-    // yet. The card renders header + toggle only.
+    href: `/automations/${row.id}`,
+    // Performance stat tiles intentionally omitted — `useAutomationStats`
+    // (lazy, per-automation) is the right call for real counts, not the
+    // list view's eager join.
   };
 }
 
@@ -275,7 +288,6 @@ function buildClientAutomations(rows: AutomationJoinRow[]): ClientAutomations {
   };
 }
 
-/** The client automations list — RLS bounds rows to the signed-in client. */
 export function useClientAutomations() {
   return useQuery({
     queryKey: ['automations', 'list'],
@@ -385,9 +397,9 @@ function buildAdminAutomations(rows: AutomationJoinRow[]): AdminAutomations {
         trendTone: 'quiet',
       },
       {
-        label: '// SENT · 7D',
+        label: '// SENT · 30D',
         value: '—',
-        trend: 'awaiting send log',
+        trend: 'open editor for per-flow stats',
         trendTone: 'quiet',
       },
     ],
@@ -395,7 +407,6 @@ function buildAdminAutomations(rows: AutomationJoinRow[]): AdminAutomations {
   };
 }
 
-/** The operator cross-client automations roster. */
 export function useAdminAutomations() {
   return useQuery({
     queryKey: ['automations', 'list'],
@@ -405,49 +416,56 @@ export function useAdminAutomations() {
 }
 
 // =============================================================================
-// Editor `/automations/[id]` — one automation + its comm actions.
+// Editor `/automations/[id]` — one automation + its actions + trigger config.
 //
-// Session 2 will replace the editor UI with one that handles every action
-// type. Until then this view shows the SMS / email actions only; non-comm
-// actions are engine-internal and the editor doesn't render them.
+// Phase 8 Session 2: surfaces every action type (not just comm), the live
+// body / subject from action_config, the editable trigger fields, and the
+// filter checkboxes. Add/remove/reorder of actions is V1.1 and the
+// `addStepLabel` reflects that.
 // =============================================================================
 
-const VARIABLE_CATALOG = [
-  { code: '{first_name}', description: "Lead's first name" },
-  { code: '{business}', description: 'The client business name' },
-  { code: '{job_type}', description: 'What the lead asked for' },
-  { code: '{suburb}', description: 'From the address field' },
-  { code: '{review_link}', description: 'Google review URL' },
-  { code: '{rebook_link}', description: 'Rebooking page URL' },
-];
-
 function toEditorStep(action: ActionRow): AutomationEditorStep {
-  const channel = actionToChannel(action.action_type) ?? 'sms';
-  const cfg = (action.action_config ?? {}) as {
-    body?: string;
-    body_text?: string;
-    body_html?: string;
-    subject?: string;
-  };
-  const bodyText =
-    channel === 'sms'
-      ? (cfg.body ?? '')
-      : (cfg.body_text ?? cfg.body_html ?? '');
-  const step: AutomationEditorStep = {
+  const kind = action.action_type as AutomationEditorActionKind;
+  const channel = actionToChannel(action.action_type);
+  const cfg = (action.action_config ?? {}) as Record<string, unknown>;
+  const isComm = kind === 'send_sms_to_lead' || kind === 'send_email_to_lead';
+  const isSms = kind === 'send_sms_to_lead';
+
+  const base: AutomationEditorStep = {
     id: action.id,
     number: action.position,
-    channel,
-    delay: 'Sends from the trigger',
-    name: channel === 'sms' ? 'SMS' : 'Email',
-    body: bodyText,
-    bodyText,
-    footerMeta: '// Awaiting send data',
-    variables: [],
+    actionKind: kind,
+    channel: channel ?? undefined,
+    delay: action.position === 1 ? 'Sends from the trigger' : `Step ${action.position}`,
+    name:
+      typeof cfg.label === 'string' && cfg.label.length > 0
+        ? cfg.label
+        : actionDefaultName(kind),
+    bodyText: typeof cfg.body === 'string' ? (cfg.body as string) : undefined,
+    footerMeta: isComm ? '// Edits save to this client only' : '// Engine-managed',
+    variables: AUTOMATION_VARIABLE_FLAT.slice(0, 4).map((v) => v.code),
+    canEditBody: isComm,
+    canEditSms: isSms,
   };
-  if (channel === 'email') step.subject = cfg.subject ?? '';
-  return step;
+
+  if (kind === 'send_email_to_lead') {
+    base.subject = typeof cfg.subject === 'string' ? (cfg.subject as string) : '';
+    base.bodyHtml = typeof cfg.body_html === 'string' ? (cfg.body_html as string) : '';
+    base.bodyText = typeof cfg.body_text === 'string' ? (cfg.body_text as string) : '';
+  }
+
+  if (!isComm) {
+    base.readOnlySummary = describeReadOnlyAction(kind, cfg);
+  }
+
+  return base;
 }
 
+/**
+ * Phase 8 · Session 3 — `AutomationEditorAction` projection consumed by the
+ * full editor body (add/reorder/remove + per-action edit). Reads body/subject
+ * straight off `action_config` (inline-body model from Session 2).
+ */
 function actionToEditorAction(a: ActionRow): AutomationEditorAction {
   const cfg = (a.action_config ?? {}) as Record<string, unknown>;
   let body: string | null = null;
@@ -471,9 +489,152 @@ function actionToEditorAction(a: ActionRow): AutomationEditorAction {
     config: cfg,
     body,
     subject,
+    // Prefer the DB column (Session 2 schema), fall back to the static map.
     pausesOnHumanActivity:
-      ACTION_PAUSES_ON_HUMAN_ACTIVITY[actionType] ?? false,
+      a.pauses_on_human_activity ??
+      ACTION_PAUSES_ON_HUMAN_ACTIVITY[actionType] ??
+      false,
   };
+}
+
+function actionDefaultName(kind: AutomationEditorActionKind): string {
+  switch (kind) {
+    case 'send_sms_to_lead':
+      return 'SMS';
+    case 'send_email_to_lead':
+      return 'Email';
+    case 'send_operator_notification':
+      return 'Operator notification';
+    case 'wait_for_duration':
+      return 'Wait';
+    case 'update_lead_field':
+      return 'Update lead';
+    case 'create_followup_task':
+      return 'Follow-up task';
+  }
+}
+
+function describeReadOnlyAction(
+  kind: AutomationEditorActionKind,
+  cfg: Record<string, unknown>,
+): ReactNode {
+  switch (kind) {
+    case 'send_operator_notification':
+      return (
+        <>
+          Fans the <strong>{String(cfg.variant ?? 'configured')}</strong>{' '}
+          notification through the operator throttle + digest pipeline.
+        </>
+      );
+    case 'wait_for_duration':
+      return (
+        <>
+          Waits <strong>{Number(cfg.minutes ?? 0)}</strong> minutes before the
+          next action.
+        </>
+      );
+    case 'update_lead_field':
+      return (
+        <>
+          Sets <strong>lead.{String(cfg.field ?? 'field')}</strong> to{' '}
+          <strong>{String(cfg.value ?? '')}</strong>.
+        </>
+      );
+    case 'create_followup_task':
+      return (
+        <>
+          Surfaces the lead on the &ldquo;Needs follow-up&rdquo; inbox tab so
+          the client can write a personal nudge.
+          {typeof cfg.hint === 'string' && cfg.hint.length > 0 ? (
+            <>
+              {' '}
+              Hint: <em>{cfg.hint}</em>.
+            </>
+          ) : null}
+        </>
+      );
+    default:
+      return null;
+  }
+}
+
+// --- Trigger config + filter editors ----------------------------------------
+
+function buildTriggerFields(
+  triggerType: string,
+  cfg: Record<string, unknown>,
+): AutomationEditableTriggerField[] {
+  const fields: AutomationEditableTriggerField[] = [];
+
+  // delay_minutes is editable on triggers that defer the first action
+  // (review request 2h, etc.).
+  if (triggerType === 'job_completed' || triggerType === 'job_scheduled') {
+    const value = Number(cfg.delay_minutes ?? 0);
+    fields.push({
+      kind: 'delay_minutes',
+      label: 'Delay before send (minutes)',
+      value: Number.isFinite(value) ? value : 0,
+      min: 0,
+      max: 1440, // 24h cap — beyond that, the operator should rethink the flow.
+    });
+  }
+
+  if (triggerType === 'job_status_changed') {
+    const current = typeof cfg.to_status === 'string' ? (cfg.to_status as string) : 'on_the_way';
+    fields.push({
+      kind: 'to_status',
+      label: 'Fire when booking status becomes',
+      value: current,
+      options: [
+        { value: 'on_the_way', label: 'On the way' },
+        { value: 'arrived', label: 'Arrived' },
+        { value: 'completed', label: 'Completed' },
+      ],
+    });
+  }
+
+  if (triggerType === 'lead_inactive') {
+    const days = Number(cfg.days_after_last_outbound ?? 4);
+    fields.push({
+      kind: 'days_after_last_outbound',
+      label: 'Lead is "cold" after this many days',
+      value: Number.isFinite(days) ? days : 4,
+      min: 1,
+      max: 30,
+    });
+    const max = Number(cfg.max_nudges ?? 3);
+    fields.push({
+      kind: 'max_nudges',
+      label: 'Maximum nudges per lead',
+      value: Number.isFinite(max) ? max : 3,
+      min: 1,
+      max: 10,
+    });
+  }
+
+  return fields;
+}
+
+function buildFilterFields(
+  filters: Record<string, unknown>,
+): AutomationEditableFilterField[] {
+  return [
+    {
+      kind: 'requires_phone',
+      label: 'Only fire when the lead has a phone number',
+      value: filters.requires_phone === true,
+    },
+    {
+      kind: 'requires_email',
+      label: 'Only fire when the lead has an email',
+      value: filters.requires_email === true,
+    },
+    {
+      kind: 'requires_gbp_location',
+      label: 'Only fire when the client has a connected Google Business Profile',
+      value: filters.requires_gbp_location === true,
+    },
+  ];
 }
 
 async function fetchAutomationEditor(id: string): Promise<AutomationEditor> {
@@ -491,15 +652,20 @@ async function fetchAutomationEditor(id: string): Promise<AutomationEditor> {
 
   const row = data as unknown as AutomationJoinRow;
   const clientName = row.client?.name ?? 'Client';
-  const allActions = sortedActions(row.automation_actions);
-  const commActions = allActions.filter((a) => isCommAction(a.action_type));
-  const editorActions = allActions.map((a) => actionToEditorAction(a));
+  const actions = sortedActions(row.automation_actions);
+  const triggerCfg = row.trigger_config ?? {};
+  const triggerFilters = row.trigger_filters ?? {};
+  const triggerType = row.trigger_type as AutomationEditor['triggerType'];
 
   return {
     id: row.id,
-    clientId: row.client_id,
+    automationKey: row.automation_key,
+    isDefault: row.is_default,
+    triggerType,
     enabled: row.is_enabled,
-    eyebrow: `// ${clientName} · ${row.name}`,
+    clientId: row.client_id,
+    clientName,
+    eyebrow: `// ${clientName} · ${row.name}${row.is_default ? '' : ' · custom'}`,
     title: (
       <>
         Edit the <em>flow</em>.
@@ -507,21 +673,23 @@ async function fetchAutomationEditor(id: string): Promise<AutomationEditor> {
     ),
     subtitle: (
       <>
-        {commActions.length}-step sequence on the{' '}
+        {actions.length}-step sequence on the{' '}
         <strong>{TYPE_LABEL[row.trigger_type] ?? row.trigger_type}</strong>{' '}
-        trigger. Step copy edits land with Session 2.
+        trigger. Edits apply only to <strong>{clientName}</strong>.
       </>
     ),
     trigger: {
       label: '// TRIGGER',
       name: TRIGGER_NAME[row.trigger_type] ?? row.trigger_type,
-      changeLabel: 'Change trigger →',
+      changeLabel: 'Trigger type is fixed — clone to change',
     },
-    steps: commActions.map((a) => toEditorStep(a)),
-    actions: editorActions,
-    addStepLabel: '+ Add another step',
+    triggerFields: buildTriggerFields(row.trigger_type, triggerCfg),
+    filterFields: buildFilterFields(triggerFilters),
+    steps: actions.map(toEditorStep),
+    actions: actions.map(actionToEditorAction),
+    addStepLabel: '+ Add another step (SMS / Email / Wait)',
     rail: {
-      variables: { heading: '// AVAILABLE VARIABLES', items: VARIABLE_CATALOG },
+      variables: { heading: '// AVAILABLE VARIABLES', items: [...AUTOMATION_VARIABLE_FLAT] },
       testSend: {
         heading: '// TEST SEND',
         body: (
@@ -533,11 +701,11 @@ async function fetchAutomationEditor(id: string): Promise<AutomationEditor> {
         buttonLabel: 'Send test to my phone',
       },
       performance: {
-        heading: '// PERFORMANCE · 7D',
+        heading: '// PERFORMANCE · 30D',
         metrics: [
           { label: 'Triggered', value: '—' },
-          { label: 'Replies', value: '—', tone: 'accent' },
-          { label: '→ Booked', value: '—', tone: 'good' },
+          { label: 'Completed', value: '—', tone: 'good' },
+          { label: 'Paused', value: '—', tone: 'accent' },
         ],
       },
     },
@@ -551,7 +719,7 @@ async function fetchAutomationEditor(id: string): Promise<AutomationEditor> {
       backLabel: '← Back to all automations',
       backHref: '/automations',
       disableLabel: row.is_enabled ? 'Disable flow' : 'Enable flow',
-      saveLabel: 'Save (Session 2)',
+      saveLabel: 'Save copy',
     },
     testSend: {
       tag: `// TEST SEND · ${row.name}`,
@@ -569,9 +737,13 @@ async function fetchAutomationEditor(id: string): Promise<AutomationEditor> {
       sendTo: 'Your verified operator number',
       sendToHint: 'Add another test recipient in Settings.',
       phoneBar: 'Test send · from your business number',
-      smsPreview: commActions[0]
-        ? (toEditorStep(commActions[0]).body as ReactNode)
-        : 'This automation has no comm actions.',
+      smsPreview:
+        actions[0] && actions[0].action_type === 'send_sms_to_lead'
+          ? String(
+              (actions[0].action_config as { body?: string } | null)?.body ??
+                'This automation has no SMS step.',
+            )
+          : 'This automation has no SMS step.',
       smsVariablesLine: <>Variables are filled with sample values for the test.</>,
       options: {
         title: <strong>Send as SMS only</strong>,
@@ -585,8 +757,6 @@ async function fetchAutomationEditor(id: string): Promise<AutomationEditor> {
   };
 }
 
-/** One automation as the editor sees it. RLS scopes the by-id fetch to the
- *  caller's tenant; an automation outside it resolves as not_found. */
 export function useAutomationEditor(id: string) {
   return useQuery({
     queryKey: ['automations', 'editor', id],
@@ -596,7 +766,7 @@ export function useAutomationEditor(id: string) {
 }
 
 // =============================================================================
-// Toggle — enable / disable a flow. A real mutation; the change persists.
+// Toggle — enable / disable a flow.
 // =============================================================================
 
 async function toggleAutomation(input: {
@@ -610,8 +780,6 @@ async function toggleAutomation(input: {
   if (error) throw normalizeError(error);
 }
 
-/** Enable / disable an automation. On success the automations queries are
- *  invalidated so every list + the editor reflect the new state. */
 export function useToggleAutomation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -623,7 +791,395 @@ export function useToggleAutomation() {
 }
 
 // =============================================================================
-// Active-run count — drives the editor's in-flight note.
+// useUpdateAutomationAction — write one action's editable fields.
+//
+// The single canonical write path for body / subject / body_html / body_text.
+// RLS already gates this to operators in `accessible_client_ids()`; client
+// users get a permission error (we surface that as the editor's read-only
+// banner — see the client editor page).
+// =============================================================================
+
+export type AutomationActionPatch = {
+  /** SMS body OR email plain-text body. */
+  body?: string;
+  /** Email-only — the subject line. */
+  subject?: string;
+  /** Email-only — HTML body. */
+  body_html?: string;
+  /** Email-only — plain-text body (when set alongside body_html). */
+  body_text?: string;
+  /** Editable step name — stored on action_config.label. */
+  label?: string;
+};
+
+async function updateAutomationAction(input: {
+  actionId: string;
+  patch: AutomationActionPatch;
+}): Promise<void> {
+  // Read-modify-write: merge into the existing action_config so we don't
+  // clobber keys we don't manage (template_key, writes_gbp_review_request_audit).
+  const { data, error: readErr } = await supabase
+    .from('automation_actions')
+    .select('action_config')
+    .eq('id', input.actionId)
+    .single();
+  if (readErr) throw normalizeError(readErr);
+  const existing =
+    ((data as { action_config?: Record<string, unknown> } | null)?.action_config ?? {}) as Record<
+      string,
+      unknown
+    >;
+
+  const next: Record<string, unknown> = { ...existing };
+  if (input.patch.body !== undefined) next.body = input.patch.body;
+  if (input.patch.subject !== undefined) next.subject = input.patch.subject;
+  if (input.patch.body_html !== undefined) next.body_html = input.patch.body_html;
+  if (input.patch.body_text !== undefined) next.body_text = input.patch.body_text;
+  if (input.patch.label !== undefined) next.label = input.patch.label;
+
+  const { error } = await supabase
+    .from('automation_actions')
+    .update({ action_config: next } as unknown as never)
+    .eq('id', input.actionId);
+  if (error) throw normalizeError(error);
+}
+
+export function useUpdateAutomationAction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateAutomationAction,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['automations'] });
+    },
+  });
+}
+
+// =============================================================================
+// useUpdateAutomationTrigger — trigger_config / trigger_filters patch.
+// =============================================================================
+
+export type AutomationTriggerPatch = {
+  triggerConfig?: Record<string, unknown>;
+  triggerFilters?: Record<string, unknown>;
+};
+
+async function updateAutomationTrigger(input: {
+  id: string;
+  patch: AutomationTriggerPatch;
+}): Promise<void> {
+  const updates: Record<string, unknown> = {};
+  if (input.patch.triggerConfig !== undefined) {
+    updates.trigger_config = input.patch.triggerConfig;
+  }
+  if (input.patch.triggerFilters !== undefined) {
+    updates.trigger_filters = input.patch.triggerFilters;
+  }
+  if (Object.keys(updates).length === 0) return;
+  const { error } = await supabase
+    .from('automations')
+    .update(updates as unknown as never)
+    .eq('id', input.id);
+  if (error) throw normalizeError(error);
+}
+
+export function useUpdateAutomationTrigger() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateAutomationTrigger,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['automations'] });
+    },
+  });
+}
+
+// =============================================================================
+// useCloneAutomation — operator-only fork.
+//
+// Reads the source row + every action, inserts a new automation with a new
+// automation_key (suffixed `_v2`, `_v3`, … picking the next free slot for
+// this client), then inserts every action with the same action_config. The
+// new row lands `is_default=false`, `is_enabled=false` so an operator picks
+// the moment to flip it on.
+// =============================================================================
+
+export type CloneAutomationInput = {
+  /** The automation to clone. */
+  sourceId: string;
+  /** Optional human-readable suffix to append to the source name. */
+  suffix?: string;
+};
+
+async function cloneAutomation(
+  input: CloneAutomationInput,
+): Promise<{ id: string; automationKey: string }> {
+  // 1. Read the source.
+  const { data: src, error: srcError } = await supabase
+    .from('automations')
+    .select(
+      'id, client_id, automation_key, name, description, trigger_type, trigger_config, trigger_filters, ' +
+        'automation_actions(position, action_type, action_config, pauses_on_human_activity)',
+    )
+    .eq('id', input.sourceId)
+    .single();
+  if (srcError) throw normalizeError(srcError);
+  const source = src as unknown as {
+    client_id: string;
+    automation_key: string;
+    name: string;
+    description: string | null;
+    trigger_type: string;
+    trigger_config: Record<string, unknown> | null;
+    trigger_filters: Record<string, unknown> | null;
+    automation_actions: Array<{
+      position: number;
+      action_type: string;
+      action_config: Record<string, unknown> | null;
+      pauses_on_human_activity: boolean;
+    }>;
+  };
+
+  // 2. Pick a fresh automation_key for the same client.
+  const newKey = await findFreeAutomationKey(source.client_id, source.automation_key);
+  const suffix = input.suffix?.trim();
+  const newName = suffix ? `${source.name} · ${suffix}` : `${source.name} (copy)`;
+
+  // 3. Insert the new automation.
+  const { data: inserted, error: insertError } = await supabase
+    .from('automations')
+    .insert({
+      client_id: source.client_id,
+      automation_key: newKey,
+      name: newName,
+      description: source.description,
+      is_enabled: false,
+      is_default: false,
+      trigger_type: source.trigger_type,
+      trigger_config: source.trigger_config ?? {},
+      trigger_filters: source.trigger_filters ?? {},
+    } as unknown as never)
+    .select('id')
+    .single();
+  if (insertError) throw normalizeError(insertError);
+  const newId = (inserted as { id: string }).id;
+
+  // 4. Insert each action with the same config.
+  if (source.automation_actions.length > 0) {
+    const actionRows = source.automation_actions.map((a) => ({
+      automation_id: newId,
+      position: a.position,
+      action_type: a.action_type,
+      action_config: a.action_config ?? {},
+      pauses_on_human_activity: a.pauses_on_human_activity,
+    }));
+    const { error: actionsError } = await supabase
+      .from('automation_actions')
+      .insert(actionRows as unknown as never);
+    if (actionsError) throw normalizeError(actionsError);
+  }
+
+  return { id: newId, automationKey: newKey };
+}
+
+async function findFreeAutomationKey(
+  clientId: string,
+  sourceKey: string,
+): Promise<string> {
+  const { data, error } = await supabase
+    .from('automations')
+    .select('automation_key')
+    .eq('client_id', clientId)
+    .like('automation_key', `${sourceKey}%`);
+  if (error) throw normalizeError(error);
+  const used = new Set(
+    (data as { automation_key: string }[]).map((r) => r.automation_key),
+  );
+  for (let n = 2; n < 100; n += 1) {
+    const candidate = `${sourceKey}_v${n}`;
+    if (!used.has(candidate)) return candidate;
+  }
+  // Beyond v99 — fall back to a timestamp.
+  return `${sourceKey}_${Date.now()}`;
+}
+
+export function useCloneAutomation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: cloneAutomation,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['automations'] });
+    },
+  });
+}
+
+// =============================================================================
+// Recent runs + stats.
+// =============================================================================
+
+async function fetchAutomationRuns(
+  automationId: string,
+  limit: number,
+): Promise<AutomationEditorRun[]> {
+  const { data, error } = await supabase
+    .from('automation_runs')
+    .select(
+      'id, automation_id, lead_id, trigger_event, started_at, completed_at, paused_at, ' +
+        'status, paused_reason, current_action_position, error_message',
+    )
+    .eq('automation_id', automationId)
+    .order('started_at', { ascending: false })
+    .limit(limit);
+  if (error) throw normalizeError(error);
+  type Row = {
+    id: string;
+    automation_id: string;
+    lead_id: string | null;
+    trigger_event: Record<string, unknown>;
+    started_at: string;
+    completed_at: string | null;
+    paused_at: string | null;
+    status: string;
+    paused_reason: string | null;
+    current_action_position: number;
+    error_message: string | null;
+  };
+  return (data as unknown as Row[]).map((row) => ({
+    id: row.id,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    status: row.status as AutomationEditorRun['status'],
+    pausedReason: (row.paused_reason as AutomationEditorRun['pausedReason']) ?? null,
+    triggerSummary: summariseTriggerEvent(row.trigger_event),
+    leadId: row.lead_id,
+    currentActionPosition: row.current_action_position,
+    errorMessage: row.error_message,
+  }));
+}
+
+function summariseTriggerEvent(event: Record<string, unknown>): string {
+  const recipientName =
+    typeof event.recipientName === 'string' && event.recipientName.length > 0
+      ? event.recipientName
+      : null;
+  if (recipientName) return `Lead · ${recipientName}`;
+  if (typeof event.bookingId === 'string') return 'Booking · ' + event.bookingId.slice(0, 8);
+  if (typeof event.leadId === 'string') return 'Lead · ' + event.leadId.slice(0, 8);
+  if (typeof event.invoiceId === 'string') return 'Invoice · ' + event.invoiceId.slice(0, 8);
+  return 'Triggered';
+}
+
+/** Recent N runs for an automation (newest first). Default 20. */
+export function useAutomationRuns(automationId: string, limit = 20) {
+  return useQuery({
+    queryKey: ['automations', 'runs', automationId, limit],
+    queryFn: () => fetchAutomationRuns(automationId, limit),
+    enabled: automationId.length > 0,
+  });
+}
+
+async function fetchAutomationStats(
+  automationId: string,
+): Promise<AutomationEditorStats> {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from('automation_runs')
+    .select('status, started_at, completed_at')
+    .eq('automation_id', automationId)
+    .gte('started_at', thirtyDaysAgo);
+  if (error) throw normalizeError(error);
+
+  const rows = data as {
+    status: string;
+    started_at: string;
+    completed_at: string | null;
+  }[];
+
+  const totalRuns = rows.length;
+  const completedRuns = rows.filter((r) => r.status === 'completed').length;
+  const pausedRuns = rows.filter((r) => r.status === 'paused').length;
+  const failedRuns = rows.filter((r) => r.status === 'failed').length;
+
+  const completionRate = totalRuns === 0 ? 0 : Math.round((completedRuns / totalRuns) * 100);
+  const pauseRate = totalRuns === 0 ? 0 : Math.round((pausedRuns / totalRuns) * 100);
+
+  let avgCompletionSeconds: number | null = null;
+  const completedWithTime = rows.filter(
+    (r) => r.status === 'completed' && r.completed_at !== null,
+  );
+  if (completedWithTime.length > 0) {
+    const total = completedWithTime.reduce((sum, r) => {
+      const start = Date.parse(r.started_at);
+      const end = Date.parse(r.completed_at ?? '');
+      if (!Number.isFinite(start) || !Number.isFinite(end)) return sum;
+      return sum + (end - start) / 1000;
+    }, 0);
+    avgCompletionSeconds = Math.round(total / completedWithTime.length);
+  }
+
+  return {
+    totalRuns,
+    completedRuns,
+    pausedRuns,
+    failedRuns,
+    completionRate,
+    pauseRate,
+    avgCompletionSeconds,
+  };
+}
+
+export function useAutomationStats(automationId: string) {
+  return useQuery({
+    queryKey: ['automations', 'stats', automationId],
+    queryFn: () => fetchAutomationStats(automationId),
+    enabled: automationId.length > 0,
+  });
+}
+
+// =============================================================================
+// Back-compat shim — useUpdateAutomationSteps.
+//
+// The Phase 8 Session 1 editor page calls this with a list of step edits. We
+// translate each step into a per-action update via the new path so existing
+// call sites keep working while the new editor surfaces (which call
+// useUpdateAutomationAction directly) come online.
+// =============================================================================
+
+export type AutomationStepEdit = {
+  id: string;
+  name: string;
+  subject: string | null;
+  body: string;
+};
+
+async function updateAutomationSteps(input: {
+  steps: AutomationStepEdit[];
+}): Promise<void> {
+  for (const step of input.steps) {
+    const patch: AutomationActionPatch = { label: step.name };
+    if (step.subject !== null) patch.subject = step.subject;
+    // Heuristic: a body with HTML angle brackets is an email HTML payload,
+    // else SMS / plain-text. The editor splits these explicitly so this
+    // shim only fires for legacy call sites.
+    if (/<\/?[a-z]/i.test(step.body)) {
+      patch.body_html = step.body;
+    } else {
+      patch.body = step.body;
+    }
+    await updateAutomationAction({ actionId: step.id, patch });
+  }
+}
+
+export function useUpdateAutomationSteps() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateAutomationSteps,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['automations'] });
+    },
+  });
+}
+
+// =============================================================================
+// Active-run count — drives the editor's in-flight note (Phase 8 · Session 3).
 //
 // A run is "active" while status ∈ {running, paused}. Reorders / inserts /
 // deletes on an automation's actions never block — they only affect runs
@@ -654,15 +1210,16 @@ export function useAutomationActiveRuns(automationId: string) {
 // =============================================================================
 // Action mutations — Phase 8 · Session 3.
 //
-// The editor's action list is now fully editable: add, reorder, remove,
-// update config, and (for comm actions) edit the referenced template body.
-// Body edits write through to sms_templates / email_templates per the
-// resolved (clientId, template_key); the change is per-client, so it
-// doesn't affect siblings on other clients.
+// The editor's action list is fully editable: add, reorder, remove, update
+// config, and (for comm actions) edit body / subject inline. All write paths
+// land on `automation_actions.action_config` (Session 2's inline-body model);
+// per-client templates are NOT involved.
 // =============================================================================
 
-/** Update the body (+ subject for email) of a comm action's referenced
- *  per-client template row. Resolves template_key from action_config. */
+/** Update body (+ optional subject) of a comm action — thin wrapper around
+ *  `useUpdateAutomationAction`'s write path that picks the right config keys
+ *  per action_type. Use this when the editor knows only "body" / "subject"
+ *  rather than the discriminated `body_text` / `body_html` shape. */
 async function updateActionBody(input: {
   actionId: string;
   body: string;
@@ -715,7 +1272,7 @@ function textToHtml(text: string): string {
     .join('');
 }
 
-/** Hook — update the body (+ subject for email) of one action's template. */
+/** Hook — update the body (+ subject for email) of one comm action. */
 export function useUpdateActionBody() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -750,8 +1307,9 @@ export function useUpdateActionConfig() {
 }
 
 /** Remove one action and shift the higher positions down. Atomic enough:
- *  the unique (automation_id, position) constraint is deferred at insert,
- *  but our DELETE → renumber happens in two steps with no overlap. */
+ *  the unique (automation_id, position) constraint is enforced via
+ *  DELETE-then-renumber with no overlap window. In-flight runs are untouched
+ *  thanks to the action_sequence snapshot on automation_runs (migration 0080). */
 async function removeAction(input: { actionId: string }): Promise<void> {
   const { data: action, error: aErr } = await supabase
     .from('automation_actions')
@@ -794,9 +1352,8 @@ export function useRemoveAction() {
   });
 }
 
-/** Move an action one slot up or down. Swaps positions with the neighbour.
- *  Two-step swap with an intermediate temp slot to dodge the unique
- *  constraint (position INT, unique on (automation_id, position)). */
+/** Move an action one slot up or down. Three-step swap with a parking
+ *  position to dodge the unique (automation_id, position) constraint. */
 async function moveAction(input: {
   actionId: string;
   direction: 'up' | 'down';
@@ -821,8 +1378,6 @@ async function moveAction(input: {
   if (!neighbour) return;
   const n = neighbour as { id: string; position: number };
 
-  // Three-step swap via a parking position to avoid the unique-constraint
-  // collision (positions can't both temporarily equal each other).
   const PARK = -1;
   const m1 = await supabase
     .from('automation_actions')
@@ -851,9 +1406,8 @@ export function useMoveAction() {
   });
 }
 
-/** Append a new action at the end of the automation's action list. Action
- *  config is initialised from the per-type default; the operator edits
- *  inline after the row appears. */
+/** Append a new action at the end of the automation's action list. Config
+ *  is initialised from the per-type default; the operator edits inline. */
 async function addAction(input: {
   automationId: string;
   actionType: AutomationEditorActionType;
@@ -878,7 +1432,7 @@ async function addAction(input: {
       action_config: defaultConfig as Json,
       pauses_on_human_activity:
         ACTION_PAUSES_ON_HUMAN_ACTIVITY[input.actionType] ?? false,
-    })
+    } as never)
     .select('id')
     .single();
   if (error) throw normalizeError(error);
@@ -890,9 +1444,9 @@ function defaultActionConfig(
 ): Record<string, unknown> {
   switch (actionType) {
     case 'send_sms_to_lead':
-      return { template_key: 'lead_acknowledgment' };
+      return { body: '' };
     case 'send_email_to_lead':
-      return { template_key: 'lead_followup' };
+      return { subject: '', body_text: '', body_html: '' };
     case 'send_operator_notification':
       return { variant: 'new_lead' };
     case 'wait_for_duration':
@@ -908,41 +1462,6 @@ export function useAddAction() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: addAction,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['automations'] });
-    },
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Legacy step-save bridge — kept callable for the existing editor page until
-// it migrates onto the new action editor. Bodies still write through.
-// ---------------------------------------------------------------------------
-
-export type AutomationStepEdit = {
-  id: string;
-  name: string;
-  subject: string | null;
-  body: string;
-};
-
-async function updateAutomationSteps(input: {
-  steps: AutomationStepEdit[];
-}): Promise<void> {
-  for (const step of input.steps) {
-    await updateActionBody({
-      actionId: step.id,
-      body: step.body,
-      subject: step.subject,
-    });
-  }
-}
-
-/** Bulk step-save — now wired through `updateActionBody`. */
-export function useUpdateAutomationSteps() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: updateAutomationSteps,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['automations'] });
     },

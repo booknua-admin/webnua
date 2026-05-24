@@ -22,6 +22,11 @@ import { SEND_EMAIL_JOB, type SendEmailPayload } from '@/lib/integrations/resend
 import { isTwilioConfigured } from '@/lib/integrations/twilio/client';
 import { getSenderByClientId as getSmsSenderByClientId } from '@/lib/integrations/twilio/senders';
 import { SEND_SMS_JOB, type SendSmsPayload } from '@/lib/integrations/twilio/job-types';
+import { getAutomationActionConfig } from '@/lib/automations/lookup';
+import {
+  getPlatformDefault,
+  actionDefaultToConfig,
+} from '@/lib/automations/platform-defaults';
 
 import {
   buildReviewLink,
@@ -252,8 +257,17 @@ registerJobHandler(GBP_SEND_REVIEW_REQUEST_JOB, async (rawPayload) => {
   const emailReady = await isEmailChannelReady(clientId, recipientEmail);
 
   if (smsReady && recipientPhone) {
+    // Phase 8 Session 2: pull the body from the client's
+    // `review_request_sms` automation action so manual sends honour any
+    // per-client edits. Falls back to the platform default so a brand-new
+    // client (or one whose seeding glitched) still produces a sensible send.
+    const smsBody = await resolveReviewRequestSmsBody(clientId);
+    if (!smsBody) {
+      return { skipped: true, reason: 'no-review-request-sms-body' };
+    }
     const sendPayload: SendSmsPayload = {
       clientId,
+      body: smsBody,
       templateKey: 'review_request',
       recipientPhone,
       relatedLeadId: leadId,
@@ -283,12 +297,19 @@ registerJobHandler(GBP_SEND_REVIEW_REQUEST_JOB, async (rawPayload) => {
   }
 
   if (emailReady && recipientEmail) {
+    const emailParts = await resolveReviewRequestEmailParts(clientId);
+    if (!emailParts) {
+      return { skipped: true, reason: 'no-review-request-email-body' };
+    }
     const sendPayload: SendEmailPayload = {
       clientId,
       templateKey: 'review_request',
       recipientEmail,
       recipientName: recipientName ?? undefined,
       relatedLeadId: leadId,
+      subject: emailParts.subject,
+      bodyHtml: emailParts.bodyHtml,
+      bodyText: emailParts.bodyText,
       contextOverrides: {
         'review.link': reviewLink,
         ...(recipientName ? { 'lead.firstName': firstName(recipientName) } : {}),
@@ -332,6 +353,60 @@ registerJobHandler(GBP_SEND_REVIEW_REQUEST_JOB, async (rawPayload) => {
 });
 
 // --- helpers -----------------------------------------------------------------
+
+/** Resolve the SMS body for a manual review-request send.
+ *  Reads the client's `review_request_sms` automation action_config.body
+ *  (the per-client edit target); falls back to the platform default if the
+ *  automation row is missing. Never reads `is_enabled` — a manual send must
+ *  work even when the operator has disabled the automation. */
+async function resolveReviewRequestSmsBody(clientId: string): Promise<string | null> {
+  const live = await getAutomationActionConfig(clientId, 'review_request_sms');
+  if (live) {
+    const body = (live.config as { body?: unknown }).body;
+    if (typeof body === 'string' && body.trim().length > 0) return body;
+  }
+  // Fallback — should be rare (a half-seeded client).
+  const def = getPlatformDefault('review_request_sms');
+  if (!def) return null;
+  const cfg = actionDefaultToConfig(def.actions[0]);
+  const body = cfg.body;
+  return typeof body === 'string' && body.length > 0 ? body : null;
+}
+
+/** Resolve the email subject + bodies for a manual review-request send.
+ *  Reads the client's `review_request_email` automation action_config.
+ *  Falls back to the platform default. */
+async function resolveReviewRequestEmailParts(
+  clientId: string,
+): Promise<{ subject: string; bodyHtml: string; bodyText: string } | null> {
+  const live = await getAutomationActionConfig(clientId, 'review_request_email');
+  if (live) {
+    const cfg = live.config as {
+      subject?: unknown;
+      body_html?: unknown;
+      body_text?: unknown;
+    };
+    const subject = typeof cfg.subject === 'string' ? cfg.subject : '';
+    const bodyHtml = typeof cfg.body_html === 'string' ? cfg.body_html : '';
+    const bodyText = typeof cfg.body_text === 'string' ? cfg.body_text : '';
+    if (subject && (bodyHtml || bodyText)) {
+      return { subject, bodyHtml, bodyText };
+    }
+  }
+  const def = getPlatformDefault('review_request_email');
+  if (!def) return null;
+  const cfg = actionDefaultToConfig(def.actions[0]) as {
+    subject?: string;
+    body_html?: string;
+    body_text?: string;
+  };
+  if (!cfg.subject || (!cfg.body_html && !cfg.body_text)) return null;
+  return {
+    subject: cfg.subject,
+    bodyHtml: cfg.body_html ?? '',
+    bodyText: cfg.body_text ?? '',
+  };
+}
 
 async function isSmsChannelReady(
   clientId: string,
