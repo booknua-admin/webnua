@@ -43,6 +43,9 @@ export type FunnelApprovalSubmission = {
   /** Funnel name + client display name — joined for the queue row label. */
   funnelName?: string;
   clientName?: string;
+  /** Client slug — used by sub-account filters (the same axis as the
+   *  sidebar workspace picker). */
+  clientSlug?: string;
   /** Operator's rejection reason (rejected status only). */
   rejectionReason?: string;
   resolvedAt?: string;

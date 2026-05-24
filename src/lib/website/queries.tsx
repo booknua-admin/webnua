@@ -87,7 +87,7 @@ type ApprovalRow = {
   resolved_by: string | null;
   submitter?: { display_name: string } | null;
   resolver?: { display_name: string } | null;
-  website?: { name: string; clients: { name: string } | null } | null;
+  website?: { name: string; clients: { name: string; slug: string } | null } | null;
 };
 
 // ---- Mappers --------------------------------------------------------------
@@ -136,6 +136,7 @@ function mapApproval(row: ApprovalRow): WebsiteApprovalSubmission {
     note: row.note ?? undefined,
     diff: row.diff as WebsiteApprovalDiff,
     clientName: row.website?.clients?.name ?? row.website?.name ?? undefined,
+    clientSlug: row.website?.clients?.slug ?? undefined,
     rejectionReason: row.rejection_reason ?? undefined,
     resolvedAt: row.resolved_at ?? undefined,
     resolvedByName: row.resolver?.display_name ?? undefined,
@@ -143,7 +144,7 @@ function mapApproval(row: ApprovalRow): WebsiteApprovalSubmission {
 }
 
 const APPROVAL_SELECT =
-  '*, submitter:users!website_approval_submissions_submitter_id_fkey(display_name), resolver:users!website_approval_submissions_resolved_by_fkey(display_name), website:websites!website_approval_submissions_website_id_fkey(name, clients(name))';
+  '*, submitter:users!website_approval_submissions_submitter_id_fkey(display_name), resolver:users!website_approval_submissions_resolved_by_fkey(display_name), website:websites!website_approval_submissions_website_id_fkey(name, clients(name, slug))';
 
 // ---- builder-aware query wrapper ------------------------------------------
 

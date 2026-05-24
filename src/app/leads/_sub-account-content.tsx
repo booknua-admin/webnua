@@ -5,85 +5,95 @@ import { useMemo, useState } from 'react';
 import { ColdLeadRow } from '@/components/shared/leads/ColdLeadRow';
 import { LeadRow } from '@/components/shared/leads/LeadRow';
 import { LeadTabsBar } from '@/components/shared/leads/LeadTabsBar';
-import { LeadsHero } from '@/components/shared/leads/LeadsHero';
+import { PageHeader } from '@/components/shared/PageHeader';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { normalizeError } from '@/lib/errors';
-import { adminLeadsHero, adminLeadsTabs } from '@/lib/leads/admin-leads';
+import { adminLeadsTabs } from '@/lib/leads/admin-leads';
 import { isColdLeadRow, useAdminLeadsInbox } from '@/lib/leads/queries';
+import { useActiveClient, useWorkspace } from '@/lib/workspace/workspace-stub';
 
 /**
- * Operator agency-mode leads inbox — cross-client roster.
+ * Operator-in-sub-account leads inbox — drilled into one client.
  *
- * The sidebar `AdminClientPicker` is canonical for narrowing scope; the
- * in-page client multi-select was dropped (Phase 9b · Session 1). When an
- * operator drills into a client, the `/leads` dispatcher hands off to
- * `_sub-account-content.tsx` instead.
+ * Same single-business shape the client sees on `_client-content.tsx`,
+ * fed by the operator's accessible-clients query and filtered to the
+ * active client. No `ClientMultiSelect` (sidebar is canonical), no
+ * `WorkspaceContextBanner` (the hero already says which client), no
+ * per-row client pill / activity meta. Operator capabilities apply via
+ * role, not row shape.
  */
-function AdminLeadsContent() {
+function SubAccountLeadsContent() {
+  const activeClient = useActiveClient();
+  const { activeClientId } = useWorkspace();
   const [activeTab, setActiveTab] = useState('new');
   const { data: leads, isLoading, error } = useAdminLeadsInbox();
 
-  const clientPool = useMemo(() => leads ?? [], [leads]);
+  const allLeads = useMemo(
+    () => (leads ?? []).filter((lead) => lead.clientSlug === activeClientId),
+    [leads, activeClientId],
+  );
 
-  // Tab ids map 1:1 to LeadStatus (with the orthogonal `needs_followup`
-  // surface added in Phase 8 Session 2). The badge represents:
-  //   • `needs_followup` → the count of cold leads still awaiting a nudge
-  //     (the whole count matters, not just unread — cold leads need a
-  //     personal reply regardless of read state).
-  //   • status tabs → the count of UNREAD leads in that tab (email-inbox
-  //     model: count = things that need looking at, not total volume).
   const tabs = useMemo(
     () =>
       adminLeadsTabs.map((tab) => {
         if (tab.id === 'needs_followup') {
-          return { ...tab, count: clientPool.filter(isColdLeadRow).length };
+          return { ...tab, count: allLeads.filter(isColdLeadRow).length };
         }
-        const tabRows = clientPool.filter((lead) => lead.status === tab.id);
+        const tabRows = allLeads.filter((lead) => lead.status === tab.id);
         return {
           ...tab,
           count: tabRows.filter((lead) => lead.unread).length,
         };
       }),
-    [clientPool],
+    [allLeads],
   );
 
   const visibleLeads = useMemo(
     () =>
       activeTab === 'needs_followup'
-        ? clientPool
+        ? allLeads
             .filter(isColdLeadRow)
             .sort((a, b) =>
               (b.needsFollowupAt ?? '').localeCompare(a.needsFollowupAt ?? ''),
             )
-        : clientPool.filter((lead) => lead.status === activeTab),
-    [clientPool, activeTab],
+        : allLeads.filter((lead) => lead.status === activeTab),
+    [allLeads, activeTab],
   );
 
   const showingColdTab = activeTab === 'needs_followup';
+  const clientName = activeClient?.name ?? 'this client';
 
   return (
     <>
       <Topbar
         hideSearch
-        breadcrumb={<TopbarBreadcrumb trail={['Workspace']} current="Leads" />}
+        breadcrumb={<TopbarBreadcrumb trail={[clientName]} current="Leads" />}
       />
       <div className="flex flex-col gap-5 px-10 py-10">
-        <LeadsHero
-          tag={adminLeadsHero.eyebrow}
-          title={adminLeadsHero.title}
-          subtitle={adminLeadsHero.subtitle}
+        <PageHeader
+          eyebrow={`// ${clientName.toUpperCase()} · LEADS`}
+          title={
+            <>
+              Lead <em>inbox</em>.
+            </>
+          }
+          subtitle={
+            <>
+              Every lead from <strong>{clientName}</strong>. Click a row to
+              open the full conversation thread.
+            </>
+          }
         />
 
         <div className="flex flex-wrap items-center justify-between gap-3">
+          <LeadTabsBar tabs={tabs} value={activeTab} onChange={setActiveTab} />
           <div className="flex items-center gap-2">
             <Input
               placeholder="Search by name, phone, or message…"
-              className="h-9 w-[320px]"
+              className="h-9 w-[260px]"
             />
-          </div>
-          <div className="flex items-center gap-2">
             <Button variant="secondary" className="h-9">
               Export CSV
             </Button>
@@ -93,9 +103,7 @@ function AdminLeadsContent() {
           </div>
         </div>
 
-        <LeadTabsBar tabs={tabs} value={activeTab} onChange={setActiveTab} />
-
-        <div className="overflow-hidden rounded-2xl border border-ink/8 bg-card">
+        <div className="overflow-hidden rounded-[14px] border border-ink/8 bg-card">
           {showingColdTab ? (
             <ColdHeaderRow />
           ) : (
@@ -159,9 +167,6 @@ function InboxNotice({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** The header row above the cold-lead list — different shape than the
- *  status-tab rows since the cold rows carry a "Dismiss" affordance and
- *  the dominant signal is "needs nudging now". */
 function ColdHeaderRow() {
   return (
     <div className="grid grid-cols-[4px_36px_1fr_140px_120px_auto] items-center gap-3 border-b border-ink/8 bg-warn-soft/30 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
@@ -175,4 +180,4 @@ function ColdHeaderRow() {
   );
 }
 
-export { AdminLeadsContent };
+export { SubAccountLeadsContent };

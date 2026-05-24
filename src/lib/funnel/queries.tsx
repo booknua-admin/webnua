@@ -242,11 +242,11 @@ type FunnelApprovalSubmissionRow = {
   resolved_by: string | null;
   submitter?: { display_name: string } | null;
   resolver?: { display_name: string } | null;
-  funnel?: { name: string; clients: { name: string } | null } | null;
+  funnel?: { name: string; clients: { name: string; slug: string } | null } | null;
 };
 
 const FUNNEL_APPROVAL_SELECT =
-  '*, submitter:users!funnel_approval_submissions_submitter_id_fkey(display_name), resolver:users!funnel_approval_submissions_resolved_by_fkey(display_name), funnel:funnels!funnel_approval_submissions_funnel_id_fkey(name, clients(name))';
+  '*, submitter:users!funnel_approval_submissions_submitter_id_fkey(display_name), resolver:users!funnel_approval_submissions_resolved_by_fkey(display_name), funnel:funnels!funnel_approval_submissions_funnel_id_fkey(name, clients(name, slug))';
 
 function mapFunnelApproval(
   row: FunnelApprovalSubmissionRow,
@@ -263,6 +263,7 @@ function mapFunnelApproval(
     diff: row.diff as FunnelApprovalDiff,
     funnelName: row.funnel?.name ?? undefined,
     clientName: row.funnel?.clients?.name ?? undefined,
+    clientSlug: row.funnel?.clients?.slug ?? undefined,
     rejectionReason: row.rejection_reason ?? undefined,
     resolvedAt: row.resolved_at ?? undefined,
     resolvedByName: row.resolver?.display_name ?? undefined,
