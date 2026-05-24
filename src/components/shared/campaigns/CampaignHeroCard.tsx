@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import type { CampaignHeroData } from '@/lib/campaigns/types';
+import type { CampaignHeroData, CampaignHeroTone } from '@/lib/campaigns/types';
 
 import { CampaignMetricTile } from './CampaignMetricTile';
 import { CampaignPlainEnglish } from './CampaignPlainEnglish';
@@ -9,12 +9,54 @@ type CampaignHeroCardProps = {
   className?: string;
 };
 
+// Status → colour mapping for the eyebrow dot + status pill. Tied to the
+// campaign's lifecycle so a paused campaign doesn't render with the green
+// "active" treatment.
+const TONE_STYLES: Record<
+  CampaignHeroTone,
+  { dotBg: string; dotRing: string; pillBg: string; pillText: string; pillDot: string }
+> = {
+  active: {
+    dotBg: 'bg-good',
+    dotRing: 'shadow-[0_0_0_3px_var(--color-good-soft)]',
+    pillBg: 'bg-good-soft',
+    pillText: 'text-good',
+    pillDot: 'bg-good',
+  },
+  paused: {
+    dotBg: 'bg-ink-quiet',
+    dotRing: 'shadow-[0_0_0_3px_var(--color-paper-2)]',
+    pillBg: 'bg-paper-2',
+    pillText: 'text-ink-quiet',
+    pillDot: 'bg-ink-quiet',
+  },
+  pending: {
+    dotBg: 'bg-warn',
+    dotRing: 'shadow-[0_0_0_3px_var(--color-warn-soft,#fde8d8)]',
+    pillBg: 'bg-warn-soft',
+    pillText: 'text-warn',
+    pillDot: 'bg-warn',
+  },
+  unknown: {
+    dotBg: 'bg-ink-quiet',
+    dotRing: 'shadow-[0_0_0_3px_var(--color-paper-2)]',
+    pillBg: 'bg-paper-2',
+    pillText: 'text-ink-quiet',
+    pillDot: 'bg-ink-quiet',
+  },
+};
+
 /**
  * Active-campaign hero card on client `/campaigns`. White card with header
  * row (eyebrow + name + meta + status pill), 4-tile metric grid with 1px
  * paper-2 separators, and a plain-English explainer card below the metrics.
+ *
+ * `data.statusTone` colour-keys the eyebrow dot + status pill (active →
+ * green, paused → ink-quiet, pending → warn). Defaults to `unknown` (also
+ * ink-quiet) so a campaign whose tone is unset doesn't visually lie.
  */
 function CampaignHeroCard({ data, className }: CampaignHeroCardProps) {
+  const tone = TONE_STYLES[data.statusTone ?? 'unknown'];
   return (
     <div
       data-slot="campaign-hero-card"
@@ -28,7 +70,7 @@ function CampaignHeroCard({ data, className }: CampaignHeroCardProps) {
           <div className="mb-1.5 inline-flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-rust">
             <span
               aria-hidden
-              className="h-2 w-2 rounded-full bg-good shadow-[0_0_0_3px_var(--color-good-soft)]"
+              className={cn('h-2 w-2 rounded-full', tone.dotBg, tone.dotRing)}
             />
             {data.eyebrow}
           </div>
@@ -39,8 +81,14 @@ function CampaignHeroCard({ data, className }: CampaignHeroCardProps) {
             {data.meta}
           </p>
         </div>
-        <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-good-soft px-3.5 py-1.5 font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-good">
-          <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-good" />
+        <span
+          className={cn(
+            'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1.5 font-mono text-[11px] font-bold uppercase tracking-[0.1em]',
+            tone.pillBg,
+            tone.pillText,
+          )}
+        >
+          <span aria-hidden className={cn('h-1.5 w-1.5 rounded-full', tone.pillDot)} />
           {data.statusLabel}
         </span>
       </div>
