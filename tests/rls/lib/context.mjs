@@ -28,7 +28,29 @@ const TEST_USERS = {
 const AUTH_OPTS = { auth: { persistSession: false, autoRefreshToken: false } };
 
 // Tables emptied at teardown, in FK-safe order (children before parents).
+// Phase-7 tables come first — most cascade-delete with `clients`, so order
+// against the rest is forgiving, but explicit beats implicit.
 const TEARDOWN_ORDER = [
+  // Phase 7 (service-role-seeded; only present when SUPABASE_SERVICE_ROLE_KEY is set)
+  'meta_ads_insights',
+  'meta_campaigns',
+  'meta_lead_forms',
+  'client_meta_ad_accounts',
+  'gbp_review_requests',
+  'gbp_reviews',
+  'client_gbp_locations',
+  'notification_preferences',
+  'email_messages',
+  'email_templates',
+  'sms_messages',
+  'sms_templates',
+  'integration_connections',
+  'notifications_outbound',
+  'client_stripe_customers',
+  'client_email_senders',
+  'client_sms_senders',
+  'integration_call_log',
+  // Original (operator-seeded)
   'job_completions',
   'bookings',
   'recurring_booking_schedules',
@@ -152,6 +174,136 @@ async function seedTenant(operator, clientId, operatorId, recipientUserId, tag, 
   return f;
 }
 
+// Phase-7 seeding — every writable Phase-7 table revokes
+// INSERT/UPDATE/DELETE from `authenticated`, so an operator-authenticated
+// client can't seed them. The service-role bypass is the only way to insert
+// a disposable probe row. Without SUPABASE_SERVICE_ROLE_KEY this returns
+// null and the integrations suite SKIPs everything.
+//
+// Unique-per-client constraints (`client_sms_senders.client_id` unique,
+// `client_email_senders.slug` globally unique, `client_stripe_customers.
+// client_id` unique, `client_gbp_locations.client_id` unique,
+// `client_meta_ad_accounts.client_id` unique) mean a previous run that
+// crashed before teardown can collide on re-seed. Pre-delete by client_id
+// for the tables with a `unique(client_id)` constraint so the harness is
+// idempotent.
+async function seedPhase7Tenant(svc, clientId, parents, tag, tracker) {
+  const id = () => randomUUID();
+  const now = new Date().toISOString();
+  const sentinel = `rls7-${tag}-${randomUUID().slice(0, 8)}`;
+  const f = {
+    smsSender: id(),
+    emailSender: id(),
+    stripeCustomer: id(),
+    notifOutbound: id(),
+    integrationConnection: id(),
+    callLog: id(),
+    smsTemplate: id(),
+    emailTemplate: id(),
+    smsMessage: id(),
+    emailMessage: id(),
+    notifPref: id(),
+    gbpLocation: id(),
+    gbpReview: id(),
+    gbpReviewRequest: id(),
+    metaAdAccount: id(),
+    metaLeadForm: id(),
+    metaCampaign: id(),
+    metaInsight: id(),
+    sentinel,
+  };
+
+  // Pre-delete the unique-per-client tables so a re-run is idempotent.
+  for (const table of [
+    'client_sms_senders',
+    'client_email_senders',
+    'client_stripe_customers',
+    'client_gbp_locations',
+    'client_meta_ad_accounts',
+  ]) {
+    await svc.from(table).delete().eq('client_id', clientId);
+  }
+
+  // ===== operator-only-readable tables =====================================
+  await mustInsert(svc, 'client_sms_senders', {
+    id: f.smsSender, client_id: clientId, sender_id: `RLS${tag.toUpperCase()}`, status: 'pending_approval',
+  }, tracker);
+  // Email-sender slug is globally unique — sentinel-suffixed.
+  await mustInsert(svc, 'client_email_senders', {
+    id: f.emailSender, client_id: clientId, slug: `rls-${tag}-${randomUUID().slice(0, 6)}`, display_name: 'RLS Test',
+  }, tracker);
+  await mustInsert(svc, 'client_stripe_customers', {
+    id: f.stripeCustomer, client_id: clientId, stripe_customer_id: `cus_rls_${randomUUID().slice(0, 12)}`,
+  }, tracker);
+  await mustInsert(svc, 'notifications_outbound', {
+    id: f.notifOutbound, client_id: clientId, recipient_email: `${sentinel}@example.com`,
+    template_name: 'lead_notification', sent_at: now,
+  }, tracker);
+  await mustInsert(svc, 'integration_connections', {
+    id: f.integrationConnection, client_id: clientId, provider: 'google_business_profile',
+    provider_account_id: `acct_rls_${randomUUID().slice(0, 8)}`, token_model: 'refresh_access',
+  }, tracker);
+  await mustInsert(svc, 'integration_call_log', {
+    id: f.callLog, client_id: clientId, provider: 'stripe', operation: 'rls_test', direction: 'outbound',
+    occurred_at: now,
+  }, tracker);
+
+  // ===== tenant-readable (acl) tables ======================================
+  await mustInsert(svc, 'sms_templates', {
+    id: f.smsTemplate, client_id: clientId, template_key: 'lead_acknowledgment',
+    body: `rls ${sentinel}`,
+  }, tracker);
+  await mustInsert(svc, 'email_templates', {
+    id: f.emailTemplate, client_id: clientId, template_key: 'lead_followup',
+    subject: 'rls', body_html: '<p>rls</p>', body_text: 'rls',
+  }, tracker);
+  await mustInsert(svc, 'sms_messages', {
+    id: f.smsMessage, client_id: clientId, sender_id: 'RLSTEST', recipient_phone: '+15555550100',
+    message_body: sentinel, segments_count: 1, encoding: 'gsm', status: 'queued', sent_at: now,
+  }, tracker);
+  await mustInsert(svc, 'email_messages', {
+    id: f.emailMessage, client_id: clientId, direction: 'outbound',
+    sender_address: 'rls@mail.webnua.com', recipient_address: `${sentinel}@example.com`,
+    subject: 'rls', body_text: sentinel, status: 'queued', occurred_at: now,
+  }, tracker);
+  await mustInsert(svc, 'notification_preferences', {
+    id: f.notifPref, client_id: clientId, operator_email: `${sentinel}-ops@webnua.com`,
+  }, tracker);
+  await mustInsert(svc, 'client_gbp_locations', {
+    id: f.gbpLocation, client_id: clientId,
+    gbp_account_id: `accounts/rls-${randomUUID().slice(0, 8)}`,
+    gbp_location_id: `locations/rls-${randomUUID().slice(0, 8)}`,
+    location_title: sentinel,
+  }, tracker);
+  await mustInsert(svc, 'gbp_reviews', {
+    id: f.gbpReview, client_id: clientId, gbp_review_id: `rls-${randomUUID()}`,
+    rating: 5, comment: sentinel, created_at_google: now,
+  }, tracker);
+  await mustInsert(svc, 'gbp_review_requests', {
+    id: f.gbpReviewRequest, client_id: clientId, channel: 'sms', sent_at: now,
+    review_link: `https://example.com/rls/${sentinel}`,
+  }, tracker);
+  await mustInsert(svc, 'client_meta_ad_accounts', {
+    id: f.metaAdAccount, client_id: clientId,
+    meta_ad_account_id: `act_rls_${randomUUID().slice(0, 10)}`,
+  }, tracker);
+  await mustInsert(svc, 'meta_lead_forms', {
+    id: f.metaLeadForm, client_id: clientId,
+    meta_form_id: `rls-form-${randomUUID().slice(0, 8)}`, form_name: sentinel,
+  }, tracker);
+  // meta_campaigns needs a real public.campaigns row — re-use the parent's.
+  await mustInsert(svc, 'meta_campaigns', {
+    id: f.metaCampaign, client_id: clientId, campaign_id: parents.campaign,
+    meta_campaign_id: `rls-camp-${randomUUID().slice(0, 8)}`, campaign_name: sentinel,
+  }, tracker);
+  await mustInsert(svc, 'meta_ads_insights', {
+    id: f.metaInsight, client_id: clientId, meta_campaign_id: f.metaCampaign,
+    date_recorded: now.slice(0, 10),
+  }, tracker);
+
+  return f;
+}
+
 async function discoverTenants(operator) {
   const { data, error } = await operator
     .from('clients')
@@ -219,6 +371,7 @@ export async function buildContext(cfg) {
   // Optional service-role + junior-operator fixtures.
   let svc = null;
   let junior = null;
+  let phase7Seeded = false;
   if (cfg.serviceKey) {
     svc = newClient(cfg, cfg.serviceKey);
     process.stdout.write('  Service-role key present — building junior-operator fixture...\n');
@@ -227,9 +380,26 @@ export async function buildContext(cfg) {
     } catch (err) {
       process.stdout.write(`  WARNING: junior fixture skipped — ${err.message}\n`);
     }
+    // Phase-7 tables revoke INSERT/UPDATE/DELETE from `authenticated`, so we
+    // can only seed them via service-role. The integrations suite SKIPs when
+    // phase7Seeded is false.
+    process.stdout.write('  Seeding Phase-7 disposable fixtures (integrations / channels)...\n');
+    try {
+      Object.assign(
+        fixture.voltline,
+        await seedPhase7Tenant(svc, tenants.voltline, fixture.voltline, 'volt', tracker),
+      );
+      Object.assign(
+        fixture.freshhome,
+        await seedPhase7Tenant(svc, tenants.freshhome, fixture.freshhome, 'fresh', tracker),
+      );
+      phase7Seeded = true;
+    } catch (err) {
+      process.stdout.write(`  WARNING: Phase-7 fixture seeding incomplete — ${err.message}\n`);
+    }
   } else {
     process.stdout.write(
-      '  No SUPABASE_SERVICE_ROLE_KEY — service-role + junior-operator tests will SKIP.\n',
+      '  No SUPABASE_SERVICE_ROLE_KEY — service-role + junior-operator + integrations tests will SKIP.\n',
     );
   }
 
@@ -266,6 +436,7 @@ export async function buildContext(cfg) {
     discovered,
     svc,
     junior,
+    phase7Seeded,
     track: (table, id) => (tracker[table] ??= []).push(id),
     teardown,
   };

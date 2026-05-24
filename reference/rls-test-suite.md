@@ -8,6 +8,11 @@ as real Supabase Auth users and exercises RLS exactly as the browser does.
 - **Run:** `pnpm test:rls` (or `npm run test:rls`)
 - **Created by:** the Section-A cross-tenant RLS validation pass. See the
   *Findings* section for the holes it caught on first run.
+- **Extended by:** the A1 Phase-7/8 pass — added the `integrations` and
+  `storage` suites covering every table introduced by migrations
+  `0047`–`0079` (Stripe / Twilio / Resend / GBP / Meta + Vault + the two
+  private Storage buckets). Companion: `reference/rls-audit.md` is the
+  comprehensive policy inventory the extension was scoped against.
 
 ---
 
@@ -108,8 +113,29 @@ client.
 **Analytics** — `analytics_events`, `analytics_funnel_daily`,
 `analytics_page_daily` (SELECT-only for `authenticated`; writes revoked).
 
+**Phase 7 — operator-only readable** (`is_operator() AND acl`; writes
+service-role only) — `integration_call_log`, `integration_connections`,
+`client_sms_senders`, `client_email_senders`, `client_stripe_customers`,
+`notifications_outbound`.
+
+**Phase 7 — tenant-readable** (`acl`; writes service-role only) —
+`sms_messages`, `sms_templates`, `email_messages`, `email_templates`,
+`notification_preferences`, `client_gbp_locations`, `gbp_reviews`,
+`gbp_review_requests`, `client_meta_ad_accounts`, `meta_lead_forms`,
+`meta_campaigns`, `meta_ads_insights`.
+
+**Phase 7 — service-role only** (no `authenticated` policy at all;
+SELECT included) — `integration_jobs`.
+
+**Phase 7 — Vault wrappers** (`public.webnua_vault_*`, migration `0054`) —
+EXECUTE explicitly revoked from `public` / `anon` / `authenticated`; granted
+only to `service_role`. Layer-2 defence on per-tenant OAuth-token isolation
+(the layer-1 defence is the `integration_connections` SELECT denial above).
+
 **Storage** (`storage.objects`) — `section-media` (public read; authenticated
-write), `lead-attachments` (tenant-private, path-prefixed by client id).
+write), `lead-attachments` (tenant-private, path-prefixed by client id),
+`email-attachments` (tenant-private, path-prefixed by client slug; writes
+service-role only).
 
 Policy shapes worth knowing:
 
@@ -185,6 +211,33 @@ check already and were not affected.
   are safe (operator-only, no anon read) but the table should be captured in
   a migration.
 
+### Phase-7/8 extension pass — no new holes found
+
+The Phase-7/8 extension (migrations `0047`–`0079`) added 19 tables + four
+Vault wrappers + a second private storage bucket. The audit pass
+(`reference/rls-audit.md`) and the harness extension found **no new cross-
+tenant or privilege-escalation holes**. Every Phase-7 table follows one of
+two structurally-safe patterns:
+
+1. **Tenant-readable** (`acl` SELECT) — `revoke insert, update, delete from
+   authenticated`. Writes are service-role only; the 0045-class hole
+   (capability-based INSERT without a tenant AND-clause) cannot recur because
+   there is no capability-gated INSERT path at all.
+2. **Operator-only readable** (`is_operator() AND acl` SELECT) — same write
+   story; the SELECT additionally requires the admin role, so clients see
+   nothing in these tables (even their own tenant's rows).
+
+`integration_jobs` goes further (`revoke all … from authenticated` — no
+SELECT either; service-role only). The harness negative-tests every shape.
+
+### Documentation drift caught (no code/policy change)
+
+CLAUDE.md describes `notification_preferences` as "operator-only RLS"; the
+actual policy is `acl`-scoped — clients **can** SELECT their own preferences
+(they configure which operator emails fire on the client's behalf), but
+cannot write (writes service-role only). Doc-only correction next time the
+inventory is touched; no code/policy change.
+
 ---
 
 ## 5. Adding tests for a new RLS-protected resource
@@ -221,9 +274,28 @@ decision in `CLAUDE.md`). The mechanical path:
 | `tests/rls/lib/harness.mjs` | runner, assertions, reporter |
 | `tests/rls/lib/context.mjs` | clients, fixture seeding, teardown |
 | `tests/rls/lib/scenarios.mjs` | `clientScoped` / `childCrossTenant` builders |
-| `tests/rls/suites/anonymous.mjs` | unauthenticated baseline |
+| `tests/rls/suites/anonymous.mjs` | unauthenticated baseline (incl. Phase-7 tables + Vault) |
 | `tests/rls/suites/identity.mjs` | clients, users, brands, grants, access |
-| `tests/rls/suites/agency.mjs` | agency policy + billing + invites |
-| `tests/rls/suites/operational.mjs` | leads / bookings / tickets / reviews / … |
-| `tests/rls/suites/builder.mjs` | websites / funnels / versions / approvals |
+| `tests/rls/suites/agency.mjs` | agency policy + billing + invites + platform email templates |
+| `tests/rls/suites/operational.mjs` | leads / bookings / tickets / reviews / campaigns / automations |
+| `tests/rls/suites/builder.mjs` | websites / funnels / versions / drafts / approvals / audit |
 | `tests/rls/suites/isolation.mjs` | per-viewer, analytics, workspace/service/agency |
+| `tests/rls/suites/automation-engine.mjs` | `automation_runs` (service-role-only writes) |
+| `tests/rls/suites/integrations.mjs` | **Phase 7** — Stripe / Twilio / Resend / GBP / Meta / Vault |
+| `tests/rls/suites/storage.mjs` | private buckets (`lead-attachments`, `email-attachments`) |
+
+### Phase-7 fixture seeding
+
+Phase-7 tables `revoke insert, update, delete from authenticated`, so even
+the operator user cannot seed them — only `service_role` can. The harness's
+`seedPhase7Tenant` (in `tests/rls/lib/context.mjs`) runs when
+`SUPABASE_SERVICE_ROLE_KEY` is set and writes one disposable row per Phase-7
+table for each tenant; the integrations suite SKIPs all tests if the key is
+absent (`ctx.phase7Seeded === false`).
+
+The seeding pre-deletes unique-per-client rows before insert so the harness
+is idempotent across runs (the unique constraints on
+`client_sms_senders.client_id`, `client_email_senders.slug`,
+`client_stripe_customers.client_id`, `client_gbp_locations.client_id`, and
+`client_meta_ad_accounts.client_id` mean a previous run that crashed before
+teardown would otherwise collide).

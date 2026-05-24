@@ -20,6 +20,8 @@ import operational from './suites/operational.mjs';
 import builder from './suites/builder.mjs';
 import isolation from './suites/isolation.mjs';
 import automationEngine from './suites/automation-engine.mjs';
+import integrations from './suites/integrations.mjs';
+import storage from './suites/storage.mjs';
 
 const SUITES = [
   anonymous,
@@ -29,6 +31,8 @@ const SUITES = [
   builder,
   isolation,
   automationEngine,
+  integrations,
+  storage,
 ];
 
 async function main() {
