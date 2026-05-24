@@ -19,12 +19,12 @@
 
 import { useEffect, useState } from 'react';
 
+import { XIcon } from 'lucide-react';
+import { Dialog as DialogPrimitive } from 'radix-ui';
+
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -41,6 +41,7 @@ import {
   type CampaignTemplateSlug,
 } from '@/lib/integrations/meta-ads/campaign-templates';
 import {
+  MetaRouteError,
   useClientMetaAdAccount,
   useLaunchMetaCampaign,
   useListMetaAdAccounts,
@@ -122,33 +123,60 @@ export function LaunchMetaCampaignModal({
       handleOpenChange(false);
     } catch (err) {
       // The launch route returns a structured failure body when a Meta
-      // call fails mid-sequence (step / detail / partial). useMutation
-      // throws an Error whose message is the JSON detail; surface the
-      // human-readable bits.
-      const message = err instanceof Error ? err.message : 'Launch failed.';
-      setFailure({ detail: message });
+      // call fails mid-sequence: { step, detail, partial }. `postJson` in
+      // use-meta-ads throws a MetaRouteError carrying those fields so the
+      // operator sees which step failed + any Meta-side resources that
+      // need cleanup in Ads Manager.
+      if (err instanceof MetaRouteError) {
+        setFailure({
+          step: err.step,
+          detail: err.detail ?? err.message,
+          partial: err.partial,
+        });
+      } else {
+        setFailure({ detail: err instanceof Error ? err.message : 'Launch failed.' });
+      }
     }
   }
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent size="lg">
-        <DialogHeader>
-          <DialogTitle>Launch a Meta lead-gen campaign</DialogTitle>
-          <DialogDescription>
-            Webnua creates the campaign + ad set + lead form + creative + ad on
-            the customer&apos;s Meta ad account. <strong>Defaults to PAUSED</strong> —
-            review in Meta Ads Manager before publishing.
-          </DialogDescription>
-        </DialogHeader>
-
-        {!adAccount.data ? (
-          <div className="rounded-md border border-warn bg-warn-soft px-3 py-3 text-[13px] text-warn">
-            <strong>No Meta ad account wired.</strong> Connect Meta + pick an ad
-            account on <code>/settings/integrations</code> before launching.
+      <DialogContent
+        size="lg"
+        showCloseButton={false}
+        className="flex max-h-[calc(100vh-4rem)] flex-col overflow-hidden rounded-[14px] border-rule bg-card p-0 gap-0"
+      >
+        {/* Sticky header */}
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-paper-2 px-7 pb-4 pt-5.5">
+          <div className="flex-1">
+            <DialogTitle className="mb-1.5 text-[22px] font-extrabold leading-[1.15] tracking-[-0.02em] text-ink">
+              Launch a Meta lead-gen campaign
+            </DialogTitle>
+            <p className="text-[13px] leading-[1.45] text-ink-quiet">
+              Webnua creates the campaign + ad set + lead form + creative + ad
+              on the customer&apos;s Meta ad account.{' '}
+              <strong className="text-ink">Defaults to PAUSED</strong> — review
+              in Meta Ads Manager before publishing.
+            </p>
           </div>
-        ) : (
-          <div className="flex flex-col gap-4 py-2">
+          <DialogPrimitive.Close
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-paper-2 font-mono text-[16px] text-ink-quiet transition-colors hover:bg-ink hover:text-paper"
+            aria-label="Close"
+          >
+            <XIcon className="size-4" />
+          </DialogPrimitive.Close>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-7 py-5">
+          {!adAccount.data ? (
+            <div className="rounded-md border border-warn bg-warn-soft px-3 py-3 text-[13px] text-warn">
+              <strong>No Meta ad account wired.</strong> Connect Meta + pick an
+              ad account on <code>/settings/integrations</code> before
+              launching.
+            </div>
+          ) : (
+            <>
             {/* Template */}
             <Field
               label="Template"
@@ -277,7 +305,9 @@ export function LaunchMetaCampaignModal({
 
             {failure ? (
               <div className="rounded-md border border-warn bg-warn-soft px-3 py-2 text-[12px] text-warn">
-                <div className="font-bold">Launch failed</div>
+                <div className="font-bold">
+                  Launch failed{failure.step ? ` · ${failure.step}` : ''}
+                </div>
                 <div>{failure.detail}</div>
                 {failure.partial ? (
                   <div className="mt-1 font-mono text-[10px] text-ink-quiet">
@@ -286,17 +316,19 @@ export function LaunchMetaCampaignModal({
                 ) : null}
               </div>
             ) : null}
-          </div>
-        )}
+            </>
+          )}
+        </div>
 
-        <DialogFooter>
+        {/* Sticky footer */}
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-paper-2 bg-paper px-7 py-3.5">
           <Button variant="outline" onClick={() => handleOpenChange(false)}>
             Cancel
           </Button>
           <Button onClick={handleLaunch} disabled={!canLaunch}>
             {launch.isPending ? 'Launching…' : 'Launch campaign'}
           </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );
