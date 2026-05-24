@@ -231,6 +231,22 @@ function toCampaignStatus(status: string): AdminCampaignStatus {
   return status === 'active' || status === 'paused' ? status : 'pending';
 }
 
+/** DB status → hero tone (eyebrow dot + status pill colours). Anything
+ *  outside the known set falls through to `unknown` (ink-quiet, not a
+ *  misleading green). */
+function toHeroTone(status: string): 'active' | 'paused' | 'pending' | 'unknown' {
+  switch (status) {
+    case 'active':
+      return 'active';
+    case 'paused':
+      return 'paused';
+    case 'pending':
+      return 'pending';
+    default:
+      return 'unknown';
+  }
+}
+
 const ACTIVITY_ICON: Record<CampaignActivityIconTone, string> = {
   creative: '✦',
   audience: '◎',
@@ -386,6 +402,7 @@ async function fetchClientCampaigns(): Promise<ClientCampaignsPage | null> {
         name: <>No active campaign</>,
         meta: <>Webnua launches your first campaign once your funnel is live.</>,
         statusLabel: 'Not launched',
+        statusTone: 'pending',
         metrics: PLACEHOLDER_METRICS,
         plainEnglish: PLACEHOLDER_PLAIN_ENGLISH,
       },
@@ -413,8 +430,11 @@ async function fetchClientCampaigns(): Promise<ClientCampaignsPage | null> {
       </>
     ),
     statusLabel: STATUS_LABEL[campaign.status] ?? campaign.status,
+    statusTone: toHeroTone(campaign.status),
     metrics: metaMetrics ? buildLiveMetrics(metaMetrics) : PLACEHOLDER_METRICS,
-    plainEnglish: metaMetrics ? buildLivePlainEnglish(metaMetrics) : PLACEHOLDER_PLAIN_ENGLISH,
+    plainEnglish: metaMetrics
+      ? buildLivePlainEnglish(metaMetrics, campaign.status)
+      : PLACEHOLDER_PLAIN_ENGLISH,
   };
 
   const events = [...campaign.campaign_activity_events].sort((a, b) =>
@@ -443,7 +463,7 @@ function buildLiveMetrics(m: MetaMetrics): CampaignMetric[] {
       label: '// LEADS · 7D',
       value: String(m.leads),
       trend: 'Last 7 days · Meta',
-      trendTone: 'good',
+      trendTone: m.leads > 0 ? 'good' : 'quiet',
     },
     {
       label: '// COST / LEAD',
@@ -460,19 +480,50 @@ function buildLiveMetrics(m: MetaMetrics): CampaignMetric[] {
     {
       label: '// CONVERSION',
       value: '—',
-      trend: 'GA4 integration pending',
+      // Meta Pixel — not GA4 — tracks Meta-ad-driven on-site conversions.
+      // Wiring lands in a separate session.
+      trend: 'Meta Pixel integration pending',
       trendTone: 'quiet',
     },
   ];
 }
 
-function buildLivePlainEnglish(m: MetaMetrics): ReactNode {
+/** Plain-English explainer below the metric grid. Reflects the campaign's
+ *  actual status — a paused campaign that hasn't accumulated leads in the
+ *  last 7 days mustn't be described as "live but no leads yet". */
+function buildLivePlainEnglish(m: MetaMetrics, status: string): ReactNode {
+  if (status === 'paused') {
+    if (m.leads === 0) {
+      return (
+        <>
+          Campaign is <strong>paused</strong> with no leads in the last 7
+          days. Resume it from Meta Ads Manager to start spending again.
+        </>
+      );
+    }
+    return (
+      <>
+        Campaign is <strong>paused</strong>. The last 7 days captured{' '}
+        <strong>{m.leads} {m.leads === 1 ? 'lead' : 'leads'}</strong> before
+        the pause; nothing is spending right now.
+      </>
+    );
+  }
+  if (status === 'pending') {
+    return (
+      <>
+        Campaign is <strong>pending</strong> — not yet launched. Performance
+        numbers will arrive once Meta starts spending.
+      </>
+    );
+  }
+  // active (or any other "live-ish" status)
   if (m.leads === 0) {
     return (
       <>
-        Campaign is live but <strong>no leads yet</strong> in the last 7 days.
-        Give it 48 hours after launch before drawing conclusions — Meta takes
-        time to find the right audience.
+        Campaign is <strong>active but no leads yet</strong> in the last 7
+        days. Give it 48 hours after launch before drawing conclusions — Meta
+        takes time to find the right audience.
       </>
     );
   }
@@ -665,6 +716,7 @@ async function fetchSubAccountCampaigns(
           </>
         ),
         statusLabel: 'Not launched',
+        statusTone: 'pending',
         metrics: PLACEHOLDER_METRICS,
         plainEnglish: PLACEHOLDER_PLAIN_ENGLISH,
       },
@@ -692,8 +744,11 @@ async function fetchSubAccountCampaigns(
       </>
     ),
     statusLabel: STATUS_LABEL[campaign.status] ?? campaign.status,
+    statusTone: toHeroTone(campaign.status),
     metrics: metaMetrics ? buildLiveMetrics(metaMetrics) : PLACEHOLDER_METRICS,
-    plainEnglish: metaMetrics ? buildLivePlainEnglish(metaMetrics) : PLACEHOLDER_PLAIN_ENGLISH,
+    plainEnglish: metaMetrics
+      ? buildLivePlainEnglish(metaMetrics, campaign.status)
+      : PLACEHOLDER_PLAIN_ENGLISH,
   };
 
   const events = [...campaign.campaign_activity_events].sort((a, b) =>

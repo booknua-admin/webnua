@@ -32,6 +32,11 @@ export type CampaignManagedBandData = {
   cta: { label: string; href: string };
 };
 
+/** Colour key for the hero eyebrow dot + status pill. Maps to the
+ *  campaign's lifecycle so the card doesn't render a green "active" dot for
+ *  a paused / pending campaign. */
+export type CampaignHeroTone = 'active' | 'paused' | 'pending' | 'unknown';
+
 /** Active campaign hero (Client Screen 18). */
 export type CampaignHeroData = {
   eyebrow: string;
@@ -40,6 +45,9 @@ export type CampaignHeroData = {
   /** ReactNode — `<strong>` renders ink-bold. */
   meta: ReactNode;
   statusLabel: string;
+  /** Drives the eyebrow dot + status pill colours. Defaults treated as
+   *  `unknown` (paper-2 / ink-quiet) by the card. */
+  statusTone?: CampaignHeroTone;
   metrics: CampaignMetric[];
   plainEnglish: ReactNode;
 };
