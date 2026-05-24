@@ -12,6 +12,7 @@ export const adminSettingsNav: SettingsNavItem[] = [
   { label: 'Team', href: '/settings/team', icon: '⌥' },
   { label: 'Access', href: '/settings/access', icon: '⌗' },
   { label: 'Integrations', href: '/settings/integrations', icon: '⊠' },
+  { label: 'Domains', href: '/settings/domains', icon: '◉' },
   { label: 'Billing', href: '/settings/billing', icon: '$' },
   { label: 'Plans', href: '/settings/plans', icon: '◈' },
   { label: 'Defaults', href: '/settings/defaults', icon: '⚐' },

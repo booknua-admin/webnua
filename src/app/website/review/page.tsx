@@ -20,6 +20,7 @@ import { useMemo, useState } from 'react';
 
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { DomainStatusIndicator } from '@/components/shared/website/DomainStatusIndicator';
+import { getClientUuidBySlug } from '@/lib/clients/clients-store';
 import { ForcePublishMenu } from '@/components/shared/website/ForcePublishMenu';
 import { PageReviewCard } from '@/components/shared/website/PageReviewCard';
 import { PreflightChecklist } from '@/components/shared/website/PreflightChecklist';
@@ -202,7 +203,10 @@ function ReviewSurface({ website }: { website: Website }) {
             must be cleared; warnings can ship and be fixed later.
           </p>
         </div>
-        <DomainStatusIndicator domain={website.domain} />
+        <DomainStatusIndicator
+          domain={website.domain}
+          clientId={getClientUuidBySlug(website.clientId)}
+        />
       </div>
 
       <PreflightChecklist report={report} className="mb-6" />

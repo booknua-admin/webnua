@@ -21,7 +21,6 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { CapabilityGate } from '@/components/shared/CapabilityGate';
-import { ConnectDomainButton } from '@/components/shared/website/ConnectDomainButton';
 import { DomainStatusIndicator } from '@/components/shared/website/DomainStatusIndicator';
 import { ManagePagesPanel } from '@/components/shared/website/ManagePagesPanel';
 import { NewPageEntry } from '@/components/shared/website/NewPageEntry';
@@ -37,7 +36,7 @@ import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBann
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/lib/auth/user-stub';
-import { useAdminClients } from '@/lib/clients/clients-store';
+import { getClientUuidBySlug, useAdminClients } from '@/lib/clients/clients-store';
 import { renamePages } from '@/lib/website/mutations';
 import { useEffectiveDraft, useWebsiteForClient, useWebsiteVersions } from '@/lib/website/queries';
 import { type Page, type Version, type Website } from '@/lib/website/types';
@@ -189,8 +188,13 @@ function WebsiteHub({ website }: { website: Website }) {
         {/* Domain status + view-live + review entry point */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <DomainStatusIndicator domain={website.domain} />
-            {user?.role === 'admin' ? <ConnectDomainButton website={website} /> : null}
+            <DomainStatusIndicator
+              domain={website.domain}
+              clientId={getClientUuidBySlug(website.clientId)}
+            />
+            <Button asChild variant="secondary" size="sm">
+              <Link href="/settings/domains">Manage domains →</Link>
+            </Button>
           </div>
           <Button asChild>
             <Link href="/website/review">Review &amp; publish →</Link>

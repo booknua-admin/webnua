@@ -134,10 +134,29 @@ the suppression/anti-spam rules (CLAUDE.md parked decision). Closes the
 campaign + automation metrics gap (sent/delivered/replied become real).
 Depends on Phase 7.
 
-## Phase 9 — Realtime + notification writes
+## Phase 9 — Realtime + notification writes — DONE
 
 Supabase Realtime on tickets / approvals / notifications. Notification
-write path (feed is currently read-only).
+write path (feed is currently read-only). Closed by migration `0032`.
+
+## Phase 9b — Client context routing fix — DONE
+
+Every shared route follows the canonical
+`_admin-content/_sub-account-content/_client-content` pattern
+documented at `reference/client-context-pattern.md`. Sessions 1–3
+brought `/tickets`, `/leads`, `/calendar`, `/search`, `/automations`,
+`/reviews`, `/campaigns`, and `/(admin)/websites` into line.
+
+## Phase 9 · Custom domains — IN PROGRESS
+
+Self-serve + operator-concierge custom domain attachment via Vercel's
+Domains API. New `client_custom_domains` table (migration `0081`),
+lifecycle status (`pending_dns` → `verifying` → `ssl_pending` → `live`
+/ `failed` / `removed`), 5-minute polling job (cron in `0082`),
+client + operator UI on `/settings/domains`, host-aware middleware
+with 301 redirect from `{slug}.webnua.dev` to a client's primary
+domain. End-to-end verification against the live Vercel API is the
+follow-up step (real domain test under operator credentials).
 
 ## Phase 10 — Production hardening
 
@@ -152,11 +171,16 @@ Build last, per CLAUDE.md.
 
 ## Deployment env
 
-Two server env vars on the deployment (added to `.env.example`):
+Server env vars on the deployment (added to `.env.example`):
 
 - `VERCEL_TOKEN` — a Vercel access token
 - `VERCEL_PROJECT_ID` — this deployment's project id
 - `VERCEL_TEAM_ID` — only if the project is team-scoped
+- `NEXT_PUBLIC_WEBNUA_CONCIERGE_CALENDAR_URL` — surfaced to clients
+  in the domain-setup-in-progress UI as a "book a setup call" link.
+  Also mirrored to server-only `WEBNUA_CONCIERGE_CALENDAR_URL`.
+- `DOMAIN_CHECK_BATCH_SIZE` — optional, default 50. Per-tick batch
+  size for the every-5-min domain-verification poller.
 
 ## Discipline restoration
 

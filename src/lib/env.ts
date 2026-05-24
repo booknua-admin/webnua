@@ -80,6 +80,19 @@ const envSchema = z.object({
   VERCEL_PROJECT_ID: optionalStr,
   VERCEL_TEAM_ID: optionalStr,
 
+  // --- Phase 9 custom-domain attachment --------------------------------------
+  // Concierge booking URL surfaced to clients who hit a DNS-setup snag — the
+  // setup-in-progress UI links to it. Set NEXT_PUBLIC_WEBNUA_CONCIERGE_CALENDAR_URL
+  // (browser-readable; the same value the operator pastes into a setup-call
+  // link). WEBNUA_CONCIERGE_CALENDAR_URL is the server-only mirror; either may
+  // be set, the browser side is what surfaces in UI.
+  WEBNUA_CONCIERGE_CALENDAR_URL: optionalStr,
+  NEXT_PUBLIC_WEBNUA_CONCIERGE_CALENDAR_URL: optionalStr,
+  // Batch size for the every-5-minutes domain-verification poller. Vercel's
+  // per-account rate limit is around 100 req/min — a 50-row batch × 2 calls
+  // per row sits well under it. Tune down on a busy deployment.
+  DOMAIN_CHECK_BATCH_SIZE: withDefault('50'),
+
   // --- platform integrations (Webnua owns the account) ----------------------
   // Stripe: standard scope, no Connect (operator decision).
   STRIPE_SECRET_KEY: optionalStr,

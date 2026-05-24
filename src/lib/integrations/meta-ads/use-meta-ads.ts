@@ -15,11 +15,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { normalizeError } from '@/lib/errors';
 import { supabase } from '@/lib/supabase/client';
 
-import type {
-  ClientMetaAdAccountRow,
-  MetaAdsInsightsRow,
-  MetaCampaignRow,
-} from './types';
+import type { ClientMetaAdAccountRow, MetaAdsInsightsRow } from './types';
 
 function db(): SupabaseClient {
   return supabase as unknown as SupabaseClient;
@@ -148,24 +144,6 @@ export function useClientMetaAdAccount(clientId: string | null) {
   });
 }
 
-async function fetchCampaigns(clientId: string): Promise<MetaCampaignRow[]> {
-  const { data, error } = await db()
-    .from('meta_campaigns')
-    .select('*')
-    .eq('client_id', clientId)
-    .order('created_at', { ascending: false });
-  if (error && !isMissingTableError(error)) throw normalizeError(error);
-  return (data as MetaCampaignRow[] | null) ?? [];
-}
-
-export function useClientMetaCampaigns(clientId: string | null) {
-  return useQuery({
-    queryKey: campaignsKey(clientId),
-    queryFn: () => fetchCampaigns(clientId as string),
-    enabled: clientId != null && clientId.length > 0,
-  });
-}
-
 async function fetchRecentInsights(
   clientId: string,
   days: number,
@@ -290,30 +268,6 @@ export function useSelectMetaAdAccount() {
     },
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: adAccountKey(vars.clientId) });
-    },
-  });
-}
-
-/** Pause / resume a Meta campaign. */
-export function useSetMetaCampaignStatus() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: {
-      clientId: string;
-      metaCampaignDbId: string;
-      status: 'ACTIVE' | 'PAUSED';
-    }) => {
-      await postJson('/api/integrations/meta_ads/campaigns', {
-        action: input.status === 'ACTIVE' ? 'activate' : 'pause',
-        clientId: input.clientId,
-        metaCampaignDbId: input.metaCampaignDbId,
-      });
-    },
-    onSuccess: (_d, vars) => {
-      qc.invalidateQueries({ queryKey: campaignsKey(vars.clientId) });
-      qc.invalidateQueries({ queryKey: ['campaigns', 'admin'] });
-      qc.invalidateQueries({ queryKey: ['campaigns', 'client'] });
-      qc.invalidateQueries({ queryKey: ['campaigns', 'sub-account'] });
     },
   });
 }
