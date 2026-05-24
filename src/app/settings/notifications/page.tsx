@@ -18,19 +18,16 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { NotificationRow } from '@/components/shared/settings/NotificationRow';
 import { NotificationPreferencesSection } from '@/components/shared/settings/NotificationPreferencesSection';
 import { QuietHoursSection } from '@/components/shared/settings/QuietHoursSection';
-import { SettingsFieldRow } from '@/components/shared/settings/SettingsFieldRow';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
-import { Switch } from '@/components/ui/switch';
-import { Eyebrow } from '@/components/ui/eyebrow';
-import { useRole } from '@/lib/auth/user-stub';
+import { useNotificationPreferences } from '@/lib/integrations/resend/use-email';
+import { useRole, useUser } from '@/lib/auth/user-stub';
+import { useAdminClients } from '@/lib/clients/clients-store';
 import { useClientId } from '@/lib/clients/queries';
-import { clientNotifications, clientQuietHours } from '@/lib/settings/client-notifications';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 export default function SettingsNotificationsPage() {
@@ -112,94 +109,128 @@ function OperatorContent({
   );
 }
 
-// --- client branch (existing stub copy) --------------------------------------
+// --- client branch (live data) ----------------------------------------------
+//
+// Pattern B critical-fix: the client branch used to render hardcoded
+// `clientNotifications` + `clientQuietHours` stubs — no writes, no real
+// state. Now mounts the SAME live data components the operator sub-account
+// view uses, scoped to the signed-in client's clientId. The client owner
+// holds the `publish` cap (clients_update RLS, migration 0087) so editing
+// quiet hours on `clients` and managing notification recipients works.
+//
+// Operator's sub-account view (`OperatorContent` above) and this branch
+// converge on the same component set — different auth shape, identical UI.
 
 function ClientContent() {
+  const user = useUser();
+  const clients = useAdminClients();
+  const client = user?.clientId
+    ? clients.find((c) => c.id === user.clientId) ?? null
+    : null;
+  const { data: clientId } = useClientId(user?.clientId ?? null);
+
   return (
     <>
       <Topbar
         breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="Notifications" />}
       />
       <SettingsShell
-        eyebrow="Your account"
+        eyebrow={`${client?.name ?? 'Your account'} · notifications`}
         title={
           <>
-            Your <em>settings</em>.
+            Your <em>notifications</em>.
           </>
         }
         subtitle={
           <>
-            When and how Webnua tells you about leads, bookings, reviews, and alerts.{' '}
-            <strong>SMS hits fast, email is good for end-of-day.</strong>
+            <strong>Quiet hours pause non-critical customer SMS</strong> during the
+            window you choose. Below it: who Webnua emails on your behalf when a
+            new lead lands. That recipient list is managed by your operator —
+            text them if you need a change.
           </>
         }
       >
         <SettingsPanel>
-          <SettingsSection
-            heading={
-              <>
-                Notification <em>preferences</em>
-              </>
-            }
-            description={
-              <>
-                Toggle the channels for each notification type.{' '}
-                <strong>Critical alerts (negative reviews, missed bookings)</strong> are
-                always sent via SMS regardless of these settings.
-              </>
-            }
-          >
-            <div className="flex flex-col gap-5">
-              {clientNotifications.map((group) => (
-                <div key={group.label}>
-                  <Eyebrow tone="quiet" className="mb-1.5 block text-[10px]">
-                    {`// ${group.label.toUpperCase()}`}
-                  </Eyebrow>
-                  {group.rows.map((row) => (
-                    <NotificationRow
-                      key={row.label}
-                      label={row.label}
-                      sub={row.sub}
-                      channels={group.channels}
-                      active={row.active}
-                    />
-                  ))}
-                </div>
-              ))}
-            </div>
-          </SettingsSection>
-
-          <SettingsSection
-            heading={
-              <>
-                Quiet <em>hours</em>
-              </>
-            }
-            description={
-              <>
-                Pause non-critical SMS during these times.{' '}
-                <strong>Critical alerts still come through</strong> regardless.
-              </>
-            }
-          >
-            <SettingsFieldRow
-              label="Enabled"
-              sub="Quiet hours active"
-              value={
-                <span className="flex items-center gap-2.5">
-                  <Switch defaultChecked={clientQuietHours.enabled} />
-                  <span>{clientQuietHours.window}</span>
-                </span>
-              }
-              action={
-                <span className="cursor-pointer font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-rust hover:text-rust-deep">
-                  Edit ✎
-                </span>
-              }
-            />
-          </SettingsSection>
+          <QuietHoursSection clientId={clientId ?? null} />
         </SettingsPanel>
+
+        <ClientNotificationRecipientsReadOnly
+          clientId={clientId ?? null}
+          clientName={client?.name ?? 'your business'}
+        />
       </SettingsShell>
     </>
+  );
+}
+
+// Read-only view of `notification_preferences` for clients. The table's RLS
+// allows SELECT for any user with the client in scope, but writes are
+// operator-only (route + RLS); rather than pretend clients can edit and
+// ship a 403, surface it honestly as "managed by your operator".
+function ClientNotificationRecipientsReadOnly({
+  clientId,
+  clientName,
+}: {
+  clientId: string | null;
+  clientName: string;
+}) {
+  const { data: prefs, isLoading, error } = useNotificationPreferences(clientId);
+
+  return (
+    <SettingsPanel>
+      <SettingsSection
+        heading={
+          <>
+            New-lead <em>notifications</em>
+          </>
+        }
+        description={
+          <>
+            Where Webnua emails new {clientName} leads.{' '}
+            <strong>Recipients are managed by your operator</strong> — open a ticket
+            from the sidebar if you want yourself, a teammate, or someone else added
+            or removed.
+          </>
+        }
+      >
+        {isLoading ? (
+          <p className="text-[13px] text-ink-quiet">Loading…</p>
+        ) : error ? (
+          <p className="text-[13px] text-warn">
+            Could not load recipients: {error instanceof Error ? error.message : 'unknown error'}
+          </p>
+        ) : !prefs || prefs.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-rule bg-paper px-5 py-4 text-[13px] text-ink-quiet">
+            No recipients configured. Your operator hasn&rsquo;t added anyone yet —
+            open a ticket and ask Craig to add your email.
+          </p>
+        ) : (
+          <div className="flex flex-col">
+            {prefs.map((pref) => {
+              const events: string[] = [];
+              if (pref.notify_on_new_lead) events.push('new leads');
+              if (pref.notify_on_payment_failure) events.push('payment failures');
+              if (pref.notify_on_review_received) events.push('reviews');
+              return (
+                <div
+                  key={pref.id}
+                  className="grid grid-cols-1 gap-1 border-b border-dotted border-paper-2 py-3 last:border-b-0 sm:grid-cols-[1fr_auto] sm:items-baseline sm:gap-4"
+                >
+                  <div>
+                    <div className="text-[13px] font-semibold text-ink">{pref.operator_email}</div>
+                    <div className="mt-0.5 text-[12px] text-ink-quiet">
+                      {events.length > 0 ? events.join(' · ') : 'no events selected'}
+                    </div>
+                  </div>
+                  <div className="font-mono text-[11px] uppercase tracking-[0.06em] text-ink-quiet">
+                    {pref.digest_frequency}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </SettingsSection>
+    </SettingsPanel>
   );
 }

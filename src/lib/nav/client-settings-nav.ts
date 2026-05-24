@@ -4,6 +4,7 @@ export const clientSettingsNav: SettingsNavItem[] = [
   { label: 'Integrations', href: '/settings/integrations', icon: '⚭' },
   { label: 'Domains', href: '/settings/domains', icon: '◉' },
   { label: 'Profile', href: '/settings/profile', icon: '⊕' },
+  { label: 'Brand', href: '/settings/brand', icon: '✦' },
   { label: 'Team', href: '/settings/team', icon: '⌥' },
   { label: 'Notifications', href: '/settings/notifications', icon: '🔔' },
   { label: 'Billing', href: '/settings/billing', icon: '$' },

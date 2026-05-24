@@ -94,9 +94,12 @@ export async function createClientWithGeneration(
         primary_contact_email: brief.business.email || null,
         primary_contact_phone: brief.business.phone || null,
         onboarded_by: user.id,
-        // 'active' is a Pattern B enum addition (migration 0084); cast
-        // until the generated Database type catches up.
-        lifecycle_status: 'active' as never,
+        // The operator concierge path bypasses the verify + pay gates — the
+        // operator is the verifier (we trust they have a real customer); the
+        // payment is collected out-of-band. So this insert sets 'active'
+        // EXPLICITLY rather than relying on the table default (which
+        // Pattern B flipped to 'pending_verification' for self-serve signup).
+        lifecycle_status: 'active',
       })
       .select('id, slug')
       .single();
@@ -128,50 +131,12 @@ export async function createClientWithGeneration(
 
   // -- 3. website + draft version --
   if (input.wantWebsite) {
-    // Real Claude generation via /api/generate-site; falls back to the
-    // deterministic generator if ANTHROPIC_API_KEY is unset. Passing clientId
-    // lets the route attribute generation_log rows to this client.
-    const site = await generateSiteStub(brief, { clientId: client.id });
-    const { data: web, error: webErr } = await supabase
-      .from('websites')
-      .insert({
-        client_id: client.id,
-        name: `${brief.business.name} website`,
-        domain_primary: `${client.slug}.webnua.dev`,
-      })
-      .select('id')
-      .single();
-    if (webErr || !web) throw normalizeError(webErr ?? new Error('website insert failed'));
-    websiteId = web.id;
-
-    const pages = site.pages.map((p) => ({ ...p, websiteId: web.id }));
-    const snapshot = {
-      pages,
-      header: site.header,
-      footer: site.footer,
-      nav: pages.slice(0, MAX_NAV_LINKS).map((p) => ({
-        label: p.title,
-        target: { kind: 'page', pageId: p.id },
-      })),
-      pageOrder: pages.map((p) => p.id),
-    };
-    const { data: ver, error: verErr } = await supabase
-      .from('website_versions')
-      .insert({
-        website_id: web.id,
-        status: 'draft',
-        snapshot: snapshot as unknown as never,
-        created_by: user.id,
-      })
-      .select('id')
-      .single();
-    if (verErr || !ver) throw normalizeError(verErr ?? new Error('website version insert failed'));
-
-    const { error: webUpdErr } = await supabase
-      .from('websites')
-      .update({ draft_version_id: ver.id })
-      .eq('id', web.id);
-    if (webUpdErr) throw normalizeError(webUpdErr);
+    websiteId = await createWebsiteForClient({
+      clientId: client.id,
+      clientSlug: client.slug,
+      brief,
+      createdByUserId: user.id,
+    });
   }
 
   // -- 4. funnel + draft version --
@@ -236,4 +201,80 @@ export async function createClientWithGeneration(
   await hydrateClients();
 
   return { clientSlug: client.slug, websiteId, funnelId };
+}
+
+// =============================================================================
+// createWebsiteForClient — extracted from createClientWithGeneration so a
+// scaffolding flow can spin up a fresh website for an existing client without
+// re-running the whole client + brand + funnel pipeline. Used by the
+// /website agency-empty-state Scaffold button when an operator is drilled
+// into a client that has no website yet.
+//
+// Idempotent in spirit but not enforced: callers that hit this twice will
+// get two websites on the client. The /website empty state only mounts the
+// button when there's no website to begin with, so duplication shouldn't
+// happen in practice.
+// =============================================================================
+
+export type CreateWebsiteForClientInput = {
+  clientId: string;
+  clientSlug: string;
+  brief: ClientBrief;
+  /** The auth user id stamped on website_versions.created_by. */
+  createdByUserId: string;
+};
+
+export async function createWebsiteForClient(
+  input: CreateWebsiteForClientInput,
+): Promise<string> {
+  const { clientId, clientSlug, brief, createdByUserId } = input;
+
+  // Real Claude generation via /api/generate-site; falls back to the
+  // deterministic generator if ANTHROPIC_API_KEY is unset. Passing clientId
+  // lets the route attribute generation_log rows to this client.
+  const site = await generateSiteStub(brief, { clientId });
+
+  const { data: web, error: webErr } = await supabase
+    .from('websites')
+    .insert({
+      client_id: clientId,
+      name: `${brief.business.name} website`,
+      domain_primary: `${clientSlug}.webnua.dev`,
+    })
+    .select('id')
+    .single();
+  if (webErr || !web) throw normalizeError(webErr ?? new Error('website insert failed'));
+
+  const pages = site.pages.map((p) => ({ ...p, websiteId: web.id }));
+  const snapshot = {
+    pages,
+    header: site.header,
+    footer: site.footer,
+    nav: pages.slice(0, MAX_NAV_LINKS).map((p) => ({
+      label: p.title,
+      target: { kind: 'page', pageId: p.id },
+    })),
+    pageOrder: pages.map((p) => p.id),
+  };
+  const { data: ver, error: verErr } = await supabase
+    .from('website_versions')
+    .insert({
+      website_id: web.id,
+      status: 'draft',
+      snapshot: snapshot as unknown as never,
+      created_by: createdByUserId,
+    })
+    .select('id')
+    .single();
+  if (verErr || !ver) {
+    throw normalizeError(verErr ?? new Error('website version insert failed'));
+  }
+
+  const { error: webUpdErr } = await supabase
+    .from('websites')
+    .update({ draft_version_id: ver.id })
+    .eq('id', web.id);
+  if (webUpdErr) throw normalizeError(webUpdErr);
+
+  return web.id;
 }

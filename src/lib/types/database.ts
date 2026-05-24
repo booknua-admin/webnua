@@ -478,10 +478,17 @@ export type Database = {
         Row: {
           accent_color: string
           audience_line: string
+          background_color: string | null
+          body_color: string | null
+          body_font: string | null
+          brand_colors: string[]
           client_id: string
           favicon_url: string | null
+          heading_color: string | null
+          heading_font: string | null
           industry_category: string
           logo_url: string | null
+          tagline: string | null
           top_jobs_to_be_booked: string[]
           updated_at: string
           voice_formality: number
@@ -491,10 +498,17 @@ export type Database = {
         Insert: {
           accent_color: string
           audience_line: string
+          background_color?: string | null
+          body_color?: string | null
+          body_font?: string | null
+          brand_colors?: string[]
           client_id: string
           favicon_url?: string | null
+          heading_color?: string | null
+          heading_font?: string | null
           industry_category: string
           logo_url?: string | null
+          tagline?: string | null
           top_jobs_to_be_booked?: string[]
           updated_at?: string
           voice_formality: number
@@ -504,10 +518,17 @@ export type Database = {
         Update: {
           accent_color?: string
           audience_line?: string
+          background_color?: string | null
+          body_color?: string | null
+          body_font?: string | null
+          brand_colors?: string[]
           client_id?: string
           favicon_url?: string | null
+          heading_color?: string | null
+          heading_font?: string | null
           industry_category?: string
           logo_url?: string | null
+          tagline?: string | null
           top_jobs_to_be_booked?: string[]
           updated_at?: string
           voice_formality?: number
@@ -654,6 +675,72 @@ export type Database = {
             columns: ["website_id"]
             isOneToOne: false
             referencedRelation: "websites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_custom_domains: {
+        Row: {
+          added_at: string
+          added_by: string | null
+          client_id: string
+          dns_records_required: Json
+          domain: string
+          id: string
+          is_primary: boolean
+          last_checked_at: string | null
+          last_error: string | null
+          removed_at: string | null
+          status: Database["public"]["Enums"]["client_custom_domain_status"]
+          vercel_domain_name: string | null
+          verification_failed_reason: string | null
+          verified_at: string | null
+        }
+        Insert: {
+          added_at?: string
+          added_by?: string | null
+          client_id: string
+          dns_records_required?: Json
+          domain: string
+          id?: string
+          is_primary?: boolean
+          last_checked_at?: string | null
+          last_error?: string | null
+          removed_at?: string | null
+          status?: Database["public"]["Enums"]["client_custom_domain_status"]
+          vercel_domain_name?: string | null
+          verification_failed_reason?: string | null
+          verified_at?: string | null
+        }
+        Update: {
+          added_at?: string
+          added_by?: string | null
+          client_id?: string
+          dns_records_required?: Json
+          domain?: string
+          id?: string
+          is_primary?: boolean
+          last_checked_at?: string | null
+          last_error?: string | null
+          removed_at?: string | null
+          status?: Database["public"]["Enums"]["client_custom_domain_status"]
+          vercel_domain_name?: string | null
+          verification_failed_reason?: string | null
+          verified_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_custom_domains_added_by_fkey"
+            columns: ["added_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_custom_domains_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
             referencedColumns: ["id"]
           },
         ]
@@ -979,6 +1066,8 @@ export type Database = {
           primary_contact_email: string | null
           primary_contact_name: string | null
           primary_contact_phone: string | null
+          re_engagement_sent_at: string | null
+          review_requested_at: string | null
           service_area: string | null
           slug: string
           tracking_consent_mode: string
@@ -994,6 +1083,8 @@ export type Database = {
           primary_contact_email?: string | null
           primary_contact_name?: string | null
           primary_contact_phone?: string | null
+          re_engagement_sent_at?: string | null
+          review_requested_at?: string | null
           service_area?: string | null
           slug: string
           tracking_consent_mode?: string
@@ -1009,6 +1100,8 @@ export type Database = {
           primary_contact_email?: string | null
           primary_contact_name?: string | null
           primary_contact_phone?: string | null
+          re_engagement_sent_at?: string | null
+          review_requested_at?: string | null
           service_area?: string | null
           slug?: string
           tracking_consent_mode?: string
@@ -2616,6 +2709,47 @@ export type Database = {
           },
         ]
       }
+      rate_limit_hits: {
+        Row: {
+          action: string
+          client_id: string | null
+          id: string
+          ip: unknown
+          key: string
+          occurred_at: string
+          reason: string | null
+          status: string
+        }
+        Insert: {
+          action: string
+          client_id?: string | null
+          id?: string
+          ip?: unknown
+          key: string
+          occurred_at?: string
+          reason?: string | null
+          status?: string
+        }
+        Update: {
+          action?: string
+          client_id?: string | null
+          id?: string
+          ip?: unknown
+          key?: string
+          occurred_at?: string
+          reason?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rate_limit_hits_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       recurring_booking_schedules: {
         Row: {
           active: boolean
@@ -3509,7 +3643,22 @@ export type Database = {
         | "rollback"
         | "manageDomain"
         | "editForms"
-      client_lifecycle: "onboarding" | "live" | "paused" | "churned"
+      client_custom_domain_status:
+        | "pending_dns"
+        | "verifying"
+        | "ssl_pending"
+        | "live"
+        | "failed"
+        | "removed"
+      client_lifecycle:
+        | "onboarding"
+        | "live"
+        | "paused"
+        | "churned"
+        | "pending_verification"
+        | "preview"
+        | "banned"
+        | "active"
       delay_unit: "minutes" | "hours" | "days"
       draft_scope_kind: "page" | "header" | "footer" | "funnel_step"
       funnel_step_type: "landing" | "schedule" | "thanks" | "optin" | "upsell"
@@ -3773,7 +3922,24 @@ export const Constants = {
         "manageDomain",
         "editForms",
       ],
-      client_lifecycle: ["onboarding", "live", "paused", "churned"],
+      client_custom_domain_status: [
+        "pending_dns",
+        "verifying",
+        "ssl_pending",
+        "live",
+        "failed",
+        "removed",
+      ],
+      client_lifecycle: [
+        "onboarding",
+        "live",
+        "paused",
+        "churned",
+        "pending_verification",
+        "preview",
+        "banned",
+        "active",
+      ],
       delay_unit: ["minutes", "hours", "days"],
       draft_scope_kind: ["page", "header", "footer", "funnel_step"],
       funnel_step_type: ["landing", "schedule", "thanks", "optin", "upsell"],

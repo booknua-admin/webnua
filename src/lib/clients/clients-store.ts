@@ -139,9 +139,7 @@ export async function activateClient(
 
   const { error } = await supabase
     .from('clients')
-    // 'active' is a Pattern B addition (migration 0084); cast until the
-    // generated Database type catches up.
-    .update({ lifecycle_status: 'active' as never })
+    .update({ lifecycle_status: 'active' })
     .eq('id', uuid);
   if (error) {
     return { ok: false, message: normalizeError(error).message };

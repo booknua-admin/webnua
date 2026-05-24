@@ -17,14 +17,16 @@
 // aesthetic of `BillingPlanCard` / `CampaignManagedBand`.
 // =============================================================================
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { useClientId } from '@/lib/clients/queries';
 import {
   formatPlanPrice,
   startStripeCheckout,
   usePlanInfo,
 } from '@/lib/integrations/stripe/use-billing';
+import { supabase } from '@/lib/supabase/client';
 
 type PublishToGoLiveCTAProps = {
   /** The drilled-into / signed-in client's slug. The checkout route
@@ -45,8 +47,36 @@ export function PublishToGoLiveCTA({
   disabledReason,
 }: PublishToGoLiveCTAProps) {
   const planInfo = usePlanInfo();
+  const { data: clientUuid } = useClientId(clientSlug);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Request-review state: requesting → sending; requested → already lodged
+  // (read from clients.review_requested_at on mount). The two paths
+  // (direct publish vs request review) are NOT mutually exclusive — the
+  // request is a SIGNAL to the operator, not a publish lock. The customer
+  // can still hit Publish even after requesting review.
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewRequestedAt, setReviewRequestedAt] = useState<string | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!clientUuid) return;
+    let active = true;
+    supabase
+      .from('clients')
+      .select('review_requested_at')
+      .eq('id', clientUuid)
+      .single()
+      .then(({ data }) => {
+        if (!active) return;
+        const row = data as { review_requested_at?: string | null } | null;
+        setReviewRequestedAt(row?.review_requested_at ?? null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [clientUuid]);
 
   const priceLabel = planInfo.data
     ? formatPlanPrice(planInfo.data)
@@ -64,6 +94,30 @@ export function PublishToGoLiveCTA({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start checkout.');
       setBusy(false);
+    }
+  };
+
+  const onRequestReview = async () => {
+    if (reviewBusy || !clientUuid) return;
+    setReviewError(null);
+    setReviewBusy(true);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session.session?.access_token;
+      if (!token) throw new Error('Sign in again to request a review.');
+      const res = await fetch(`/api/clients/${clientUuid}/request-review`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Request failed (${res.status}).`);
+      }
+      setReviewRequestedAt(new Date().toISOString());
+    } catch (err) {
+      setReviewError(err instanceof Error ? err.message : 'Could not request review.');
+    } finally {
+      setReviewBusy(false);
     }
   };
 
@@ -122,15 +176,31 @@ export function PublishToGoLiveCTA({
           >
             {busy ? 'Opening checkout…' : 'Publish to go live →'}
           </Button>
+          {reviewRequestedAt ? (
+            <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-good md:text-right">
+              ✓ Review requested · we&rsquo;ll be in touch within 24h
+            </p>
+          ) : (
+            <button
+              type="button"
+              onClick={onRequestReview}
+              disabled={reviewBusy || !clientUuid}
+              className="text-[12px] text-paper/70 underline-offset-2 hover:text-paper hover:underline disabled:cursor-not-allowed disabled:opacity-60 md:text-right"
+            >
+              {reviewBusy
+                ? 'Sending request…'
+                : 'Or request operator review first →'}
+            </button>
+          )}
           <p className="text-[11px] text-paper/55 md:text-right">
             Cancel any time from Settings &rarr; Billing.
           </p>
         </div>
       </div>
 
-      {(disabledReason || error) ? (
+      {(disabledReason || error || reviewError) ? (
         <div className="border-t border-paper/10 bg-warn/10 px-7 py-3 text-[12px] leading-[1.5] text-warn">
-          {disabledReason ?? error}
+          {disabledReason ?? error ?? reviewError}
         </div>
       ) : null}
     </div>
