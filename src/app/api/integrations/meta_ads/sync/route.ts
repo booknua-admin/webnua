@@ -4,8 +4,21 @@
 // Manual on-demand sync — client-or-operator. Same job handlers the cron
 // enqueues; this route just forces an immediate refresh. A read-only
 // action (pulls latest metrics + leads for the caller's own client), so
-// allowing the client mirrors the GBP "Sync now" pattern. Fires both
-// jobs (insights + leads) for symmetry with the dashboard widgets.
+// allowing the client mirrors the GBP "Sync now" pattern.
+//
+// Two shapes:
+//   POST { clientId }
+//     Fires `meta_sync_campaigns` for the whole ad account — discovers
+//     campaigns built in Ads Manager + writes / refreshes the matching
+//     public.campaigns + meta_campaigns rows. The /campaigns roster
+//     hook (`useAdminCampaigns` / `useClientCampaigns`) invalidates on
+//     mount of the next render, so a fresh sync surfaces within seconds.
+//
+//   POST { clientId, metaCampaignDbId }
+//     Per-campaign sync — enqueues `meta_sync_insights` (last 7 days)
+//     + `meta_sync_leads` (last 24h) for one specific meta_campaigns row.
+//     Used by the per-row "Sync now" affordance on /campaigns once
+//     campaigns exist.
 // =============================================================================
 
 import { NextResponse } from 'next/server';
@@ -13,8 +26,10 @@ import { NextResponse } from 'next/server';
 import { findMetaCampaignById } from '@/lib/integrations/meta-ads/campaigns';
 import { findLeadFormById } from '@/lib/integrations/meta-ads/lead-forms';
 import {
+  META_SYNC_CAMPAIGNS_JOB,
   META_SYNC_INSIGHTS_JOB,
   META_SYNC_LEADS_JOB,
+  type MetaSyncCampaignsPayload,
   type MetaSyncInsightsPayload,
   type MetaSyncLeadsPayload,
 } from '@/lib/integrations/meta-ads/job-types';
@@ -29,12 +44,8 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: 'invalid-body' }, { status: 400 });
   }
   const clientId = body.clientId;
-  const metaCampaignDbId = body.metaCampaignDbId;
   if (typeof clientId !== 'string' || clientId.length === 0) {
     return NextResponse.json({ error: 'missing-clientId' }, { status: 400 });
-  }
-  if (typeof metaCampaignDbId !== 'string' || metaCampaignDbId.length === 0) {
-    return NextResponse.json({ error: 'missing-metaCampaignDbId' }, { status: 400 });
   }
 
   const auth = await requireClientAccess(request, clientId);
@@ -42,6 +53,21 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
+  // Whole-account sync — no metaCampaignDbId means "discover campaigns
+  // built in Ads Manager + refresh local rows". This is what the
+  // /campaigns surface "Sync campaigns" button calls.
+  const metaCampaignDbId = body.metaCampaignDbId;
+  if (typeof metaCampaignDbId !== 'string' || metaCampaignDbId.length === 0) {
+    const payload: MetaSyncCampaignsPayload = { clientId };
+    await enqueueJobImmediate(META_SYNC_CAMPAIGNS_JOB, payload, {
+      clientId,
+      provider: 'meta_ads',
+      correlationId: clientId,
+    });
+    return NextResponse.json({ ok: true, kind: 'campaigns' });
+  }
+
+  // Per-campaign sync — insights + leads for one row.
   const local = await findMetaCampaignById(metaCampaignDbId);
   if (!local || local.client_id !== clientId) {
     return NextResponse.json({ error: 'not-found' }, { status: 404 });
@@ -86,5 +112,5 @@ export async function POST(request: Request): Promise<Response> {
     }
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, kind: 'campaign' });
 }

@@ -1,18 +1,44 @@
 // =============================================================================
 // Meta Ads — job types + payload shapes.
 //
-// Two registered handlers (see job-handlers.ts):
+// Three registered handlers (see job-handlers.ts):
 //
-// 1. meta_sync_insights — pulls yesterday's insights for one Meta campaign
+// 1. meta_sync_campaigns — lists every campaign on a client's connected
+//    ad account via Meta's /act_{id}/campaigns endpoint and upserts the
+//    public.campaigns + meta_campaigns rows. Enqueued hourly by pg_cron
+//    (migration 0075) + immediately after a fresh ad-account `select`
+//    so a newly-connected customer sees their campaigns within seconds.
+//    This is what brings Ads-Manager-built campaigns into Webnua —
+//    Webnua does not build campaigns in-app (V1 manage-in-Meta model).
+//
+// 2. meta_sync_insights — pulls yesterday's insights for one Meta campaign
 //    via Meta's /insights endpoint and upserts into meta_ads_insights.
-//    Enqueued by the daily pg_cron schedule (migration 0074).
+//    Enqueued by the daily pg_cron schedule (migration 0074). Requires a
+//    pre-existing meta_campaigns row (from #1).
 //
-// 2. meta_sync_leads — pulls leads created since the last sync for one
+// 3. meta_sync_leads — pulls leads created since the last sync for one
 //    Meta lead form and inserts into public.leads (source_kind='meta').
-//    Enqueued every 15 minutes by pg_cron (migration 0074).
+//    Enqueued every 15 minutes by pg_cron (migration 0074). Requires a
+//    pre-existing meta_lead_forms row (lead-form discovery is a separate
+//    follow-up — see CLAUDE.md).
 //
 // SERVER + CLIENT safe — pure types + constants only.
 // =============================================================================
+
+export const META_SYNC_CAMPAIGNS_JOB = 'meta_sync_campaigns';
+
+export type MetaSyncCampaignsPayload = {
+  clientId: string;
+};
+
+export function normalizeSyncCampaignsPayload(
+  raw: unknown,
+): MetaSyncCampaignsPayload | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const clientId = stringOrNull((raw as Record<string, unknown>).clientId);
+  if (!clientId) return null;
+  return { clientId };
+}
 
 export const META_SYNC_INSIGHTS_JOB = 'meta_sync_insights';
 

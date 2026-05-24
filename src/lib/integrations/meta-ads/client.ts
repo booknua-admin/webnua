@@ -462,6 +462,138 @@ export function activateAd(clientId: string, metaAdId: string) {
 
 // --- read ops ----------------------------------------------------------------
 
+/** List all campaigns on an ad account. Used by the `meta_sync_campaigns`
+ *  ingest job to discover campaigns built in Meta Ads Manager and bring
+ *  them into Webnua's `public.campaigns` + `meta_campaigns` tables.
+ *
+ *  The `act_*` prefixed ad-account id (Webnua's canonical form) is fine to
+ *  pass — Meta accepts both `act_NNNNN` and the bare numeric id on this
+ *  endpoint. Paging is handled by Meta automatically up to `limit`. */
+export async function listCampaignsForAdAccount(
+  clientId: string,
+  adAccountId: string,
+): Promise<IntegrationResult<MetaCampaign[]>> {
+  return callWithToken<MetaCampaign[]>(
+    clientId,
+    'meta_ads',
+    async (accessToken) => {
+      const url = `${GRAPH}/${adAccountId}/campaigns?${form({
+        access_token: accessToken,
+        fields:
+          'id,name,objective,status,effective_status,daily_budget,lifetime_budget,start_time,stop_time,created_time',
+        limit: 200,
+      })}`;
+      const result = await callExternal<{ data?: MetaCampaign[] }>({
+        provider: 'meta_ads',
+        operation: 'list_campaigns_for_ad_account',
+        url,
+        method: 'GET',
+        clientId,
+      });
+      if (!result.ok) return result;
+      return { ok: true, data: result.data.data ?? [], status: result.status };
+    },
+  );
+}
+
+/** Ad-with-creative slice returned by `listAdsForCampaign`. Used by the
+ *  lead-form discovery walk: every lead-gen ad's creative carries a
+ *  `lead_gen_form_id` somewhere — either on the modern `form_id` field
+ *  directly on the creative, or nested under
+ *  `object_story_spec.link_data.lead_gen_form_id` (the older shape).
+ *  Both are returned by Meta on the same request; the resolver checks
+ *  each. */
+export interface MetaAdWithCreative {
+  id?: string;
+  name?: string;
+  status?: string;
+  creative?: {
+    id?: string;
+    name?: string;
+    /** Newer creatives carry the form id directly. */
+    form_id?: string;
+    /** Older creatives nest it under the story spec. */
+    object_story_spec?: {
+      link_data?: { lead_gen_form_id?: string };
+    };
+  };
+}
+
+/** List ads on a campaign with the bits needed to resolve a lead form.
+ *  The lead-form discovery walk uses this — for each ad, look for a
+ *  `form_id` on the creative (either modern or nested shape). The first
+ *  ad with a non-null form id wins; we treat that as the campaign's
+ *  primary lead form. */
+export async function listAdsForCampaign(
+  clientId: string,
+  metaCampaignId: string,
+): Promise<IntegrationResult<MetaAdWithCreative[]>> {
+  return callWithToken<MetaAdWithCreative[]>(
+    clientId,
+    'meta_ads',
+    async (accessToken) => {
+      const url = `${GRAPH}/${metaCampaignId}/ads?${form({
+        access_token: accessToken,
+        fields:
+          'id,name,status,creative{id,name,form_id,object_story_spec{link_data{lead_gen_form_id}}}',
+        limit: 100,
+      })}`;
+      const result = await callExternal<{ data?: MetaAdWithCreative[] }>({
+        provider: 'meta_ads',
+        operation: 'list_ads_for_campaign',
+        url,
+        method: 'GET',
+        clientId,
+      });
+      if (!result.ok) return result;
+      return { ok: true, data: result.data.data ?? [], status: result.status };
+    },
+  );
+}
+
+/** Lead-form details — name, page id, and the question array (which
+ *  describes the fields the customer fills in). The questions list is
+ *  persisted to `meta_lead_forms.fields` so the lead-ingest job knows
+ *  how to map field values to display labels without extra API calls. */
+export interface MetaLeadFormDetail {
+  id?: string;
+  name?: string;
+  status?: string;
+  page_id?: string;
+  questions?: Array<{
+    key?: string;
+    label?: string;
+    type?: string;
+    options?: Array<{ key?: string; value?: string }>;
+  }>;
+}
+
+/** Fetch a lead form's details by Meta form id. Called once per
+ *  newly-discovered lead form during `meta_sync_campaigns` so we have
+ *  the name + page id + question list cached locally. */
+export async function getLeadForm(
+  clientId: string,
+  metaFormId: string,
+): Promise<IntegrationResult<MetaLeadFormDetail>> {
+  return callWithToken<MetaLeadFormDetail>(
+    clientId,
+    'meta_ads',
+    async (accessToken) => {
+      const url = `${GRAPH}/${metaFormId}?${form({
+        access_token: accessToken,
+        fields: 'id,name,status,page_id,questions',
+      })}`;
+      return callExternal<MetaLeadFormDetail>({
+        provider: 'meta_ads',
+        operation: 'get_lead_form',
+        url,
+        method: 'GET',
+        clientId,
+      });
+    },
+  );
+}
+
 /** Fetch the live campaign object (status, effective_status, budget,
  *  schedule). Used by the daily insights sync to refresh local status. */
 export async function getCampaign(

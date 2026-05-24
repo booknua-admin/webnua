@@ -33,6 +33,11 @@ import { upsertAdAccount } from '@/lib/integrations/meta-ads/ad-accounts';
 import {
   describeMetaAccountStatus,
 } from '@/lib/integrations/meta-ads/types';
+import {
+  META_SYNC_CAMPAIGNS_JOB,
+  type MetaSyncCampaignsPayload,
+} from '@/lib/integrations/meta-ads/job-types';
+import { enqueueJobImmediate } from '@/lib/integrations/_shared/jobs';
 import { requireClientAccess } from '@/lib/integrations/_shared/operator-auth';
 
 export async function POST(request: Request): Promise<Response> {
@@ -155,6 +160,23 @@ export async function POST(request: Request): Promise<Response> {
           detail: err instanceof Error ? err.message : 'write failed',
         },
         { status: 500 },
+      );
+    }
+    // Kick off campaign discovery so the operator sees their Ads-Manager-
+    // launched campaigns appear on /campaigns within seconds. Fire-and-
+    // forget — a failed enqueue must not fail the picker save (the hourly
+    // cron will catch it on the next tick).
+    try {
+      const campaignsPayload: MetaSyncCampaignsPayload = { clientId };
+      await enqueueJobImmediate(META_SYNC_CAMPAIGNS_JOB, campaignsPayload, {
+        clientId,
+        provider: 'meta_ads',
+        correlationId: clientId,
+      });
+    } catch (err) {
+      console.warn(
+        '[meta_ads/ad-accounts] post-select campaign sync enqueue failed:',
+        err instanceof Error ? err.message : err,
       );
     }
     return NextResponse.json({ ok: true });

@@ -13,17 +13,23 @@
 // States:
 //   • Agency mode (no client picked)   → disabled, "Pick a client".
 //   • Sub-account + no ad account      → disabled, "Wire Meta first".
-//   • Sub-account + ad account wired   → opens Ads Manager.
+//   • Sub-account + ad account wired   → opens Ads Manager + a sibling
+//     "Sync campaigns" button refreshes the in-app roster from Meta.
 //
-// A future ingest job (meta_sync_campaigns) will pull campaigns launched
-// in Ads Manager back into public.campaigns + meta_campaigns so they
-// surface on /campaigns. Until then, /campaigns lists what Webnua knows
-// about; the source-of-truth for the campaigns themselves is Meta.
+// Campaigns built in Meta Ads Manager flow into Webnua via the
+// `meta_sync_campaigns` ingest job (auto-fires after a fresh ad-account
+// pick, hourly by cron thereafter). The "Sync campaigns" button here
+// re-runs that job immediately for the active client.
 // =============================================================================
+
+import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { useClientId } from '@/lib/clients/queries';
-import { useClientMetaAdAccount } from '@/lib/integrations/meta-ads/use-meta-ads';
+import {
+  useClientMetaAdAccount,
+  useSyncMetaAccountCampaigns,
+} from '@/lib/integrations/meta-ads/use-meta-ads';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 /** Build the Ads Manager deep-link for an ad account. `meta_ad_account_id`
@@ -78,10 +84,45 @@ export function LaunchMetaCampaignButton() {
 
   const href = adsManagerUrl(row.meta_ad_account_id, row.meta_business_id);
   return (
-    <Button asChild type="button" className="h-9">
-      <a href={href} target="_blank" rel="noopener noreferrer">
-        Open Meta Ads Manager →
-      </a>
+    <div className="flex items-center gap-2">
+      <SyncCampaignsButton clientId={clientId!} />
+      <Button asChild type="button" className="h-9">
+        <a href={href} target="_blank" rel="noopener noreferrer">
+          Open Meta Ads Manager →
+        </a>
+      </Button>
+    </div>
+  );
+}
+
+/** "Sync campaigns" button — fires `meta_sync_campaigns` for the active
+ *  client. Settles into a "Queued" confirmation for a few seconds so the
+ *  operator sees something happened (the actual roster refresh happens
+ *  on the next render via the invalidation in `useSyncMetaAccountCampaigns`). */
+function SyncCampaignsButton({ clientId }: { clientId: string }) {
+  const sync = useSyncMetaAccountCampaigns();
+  const [justQueued, setJustQueued] = useState(false);
+  async function handleClick() {
+    setJustQueued(false);
+    try {
+      await sync.mutateAsync({ clientId });
+      setJustQueued(true);
+      window.setTimeout(() => setJustQueued(false), 3000);
+    } catch {
+      // The mutation already exposes `sync.error` for the failure
+      // message; the button just shows the catch-all state.
+    }
+  }
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      className="h-9"
+      disabled={sync.isPending}
+      onClick={handleClick}
+      title="Pull the latest campaigns from Meta into /campaigns"
+    >
+      {sync.isPending ? 'Syncing…' : justQueued ? 'Queued ✓' : '↻ Sync campaigns'}
     </Button>
   );
 }
