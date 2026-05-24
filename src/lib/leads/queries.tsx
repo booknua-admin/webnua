@@ -75,6 +75,12 @@ export type LeadInboxRecord = {
   unread: boolean;
   completion: LeadCompletion;
   sourceKind: LeadSourceKind;
+  /** Phase 8 Session 2 — cold-lead + handoff state. */
+  needsFollowupAt: string | null;
+  followupDismissedAt: string | null;
+  nudgeCount: number;
+  automationState: import('./types').LeadAutomationStateValue;
+  lastOutboundAt: string | null;
 };
 
 // ---- The Supabase row shapes the select returns ----
@@ -93,6 +99,12 @@ type LeadJoinRow = {
   customer_name_snapshot: string;
   created_at: string;
   source_kind: 'website' | 'funnel' | 'meta' | null;
+  // Phase 8 Session 2 — cold-lead + handoff columns from migration 0076.
+  needs_followup_at: string | null;
+  followup_dismissed_at: string | null;
+  followup_nudge_count: number | null;
+  automation_state: string | null;
+  last_outbound_at: string | null;
   customer: { suburb: string | null } | null;
   client: { name: string; industry: string; slug: string } | null;
   lead_events: LeadEventRow[];
@@ -100,6 +112,8 @@ type LeadJoinRow = {
 
 const LEAD_SELECT =
   'id, status, urgency, customer_name_snapshot, created_at, source_kind, ' +
+  'needs_followup_at, followup_dismissed_at, followup_nudge_count, ' +
+  'automation_state, last_outbound_at, ' +
   'customer:customers(suburb), ' +
   'client:clients(name, industry, slug), ' +
   'lead_events(kind, occurred_at, automation_id, payload)';
@@ -293,6 +307,12 @@ async function fetchLeadInbox(): Promise<LeadInboxRecord[]> {
     unread: deriveUnread(row.lead_events, readAtByLead.get(row.id) ?? null),
     completion: deriveCompletion(row.lead_events),
     sourceKind: row.source_kind ?? 'website',
+    needsFollowupAt: row.needs_followup_at,
+    followupDismissedAt: row.followup_dismissed_at,
+    nudgeCount: row.followup_nudge_count ?? 0,
+    automationState:
+      (row.automation_state as LeadInboxRecord['automationState']) ?? 'automated',
+    lastOutboundAt: row.last_outbound_at,
   }));
 }
 
@@ -312,6 +332,11 @@ function toClientLeadRow(record: LeadInboxRecord): ClientLeadRow {
     href: `/leads/${record.id}`,
     completion: record.completion,
     sourceKind: record.sourceKind,
+    needsFollowupAt: record.needsFollowupAt,
+    followupDismissedAt: record.followupDismissedAt,
+    nudgeCount: record.nudgeCount,
+    automationState: record.automationState,
+    lastOutboundAt: record.lastOutboundAt,
   };
 }
 
@@ -333,7 +358,18 @@ function toAdminLeadRow(record: LeadInboxRecord): AdminLeadRow {
     href: `/leads/${record.id}`,
     completion: record.completion,
     sourceKind: record.sourceKind,
+    needsFollowupAt: record.needsFollowupAt,
+    followupDismissedAt: record.followupDismissedAt,
+    nudgeCount: record.nudgeCount,
+    automationState: record.automationState,
+    lastOutboundAt: record.lastOutboundAt,
   };
+}
+
+/** True when a row should appear on the "Needs follow-up" tab — the cold
+ *  lead surface. Exported so admin + client content files share the rule. */
+export function isColdLeadRow(row: { needsFollowupAt: string | null; followupDismissedAt: string | null }): boolean {
+  return row.needsFollowupAt !== null && row.followupDismissedAt === null;
 }
 
 // ---- Hooks ----
@@ -1389,5 +1425,137 @@ export function useReplyToLead() {
       // Inbox 'meta' line is derived from latest event — refresh the inbox too.
       void queryClient.invalidateQueries({ queryKey: ['leads', 'inbox'] });
     },
+  });
+}
+
+// =============================================================================
+// Phase 8 Session 2 — handoff mutations + automation-state read.
+//
+// Each mutation POSTs an existing /api/leads/[id]/* route (which gates on
+// requireLeadAccess and calls into lib/automations/handoff). On success we
+// invalidate the inbox + detail queries so the UI re-renders without a
+// manual refresh.
+// =============================================================================
+
+/** A small fetch wrapper for the lead-action routes. Bearer-token auth
+ *  matches what `requireLeadAccess` (lib/automations/lead-access.ts) expects.
+ *  Throws an AppError on a non-OK response so callers' error handling can be
+ *  uniform with the rest of the queries module. */
+async function postLeadAction(
+  leadId: string,
+  action: 'take-over' | 'dismiss-followup' | 'resume-automations',
+  body?: Record<string, unknown>,
+): Promise<unknown> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) throw AppError.auth();
+  const res = await fetch(`/api/leads/${leadId}/${action}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({ error: 'request-failed' }));
+    throw AppError.unexpected(
+      typeof detail.error === 'string' ? detail.error : 'lead-action-failed',
+      String(res.status),
+    );
+  }
+  return res.json();
+}
+
+export function useTakeOverLead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (leadId: string) => postLeadAction(leadId, 'take-over'),
+    onSuccess: (_, leadId) => {
+      void queryClient.invalidateQueries({ queryKey: ['leads', 'inbox'] });
+      void queryClient.invalidateQueries({ queryKey: ['leads', 'detail', leadId] });
+      void queryClient.invalidateQueries({ queryKey: ['leads', 'automation-state', leadId] });
+      void queryClient.invalidateQueries({ queryKey: ['leads', 'cold'] });
+    },
+  });
+}
+
+export function useDismissFollowup() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (leadId: string) => postLeadAction(leadId, 'dismiss-followup'),
+    onSuccess: (_, leadId) => {
+      void queryClient.invalidateQueries({ queryKey: ['leads', 'inbox'] });
+      void queryClient.invalidateQueries({ queryKey: ['leads', 'detail', leadId] });
+      void queryClient.invalidateQueries({ queryKey: ['leads', 'automation-state', leadId] });
+      void queryClient.invalidateQueries({ queryKey: ['leads', 'cold'] });
+    },
+  });
+}
+
+export function useResumeAutomations() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (leadId: string) => postLeadAction(leadId, 'resume-automations'),
+    onSuccess: (_, leadId) => {
+      void queryClient.invalidateQueries({ queryKey: ['leads', 'inbox'] });
+      void queryClient.invalidateQueries({ queryKey: ['leads', 'detail', leadId] });
+      void queryClient.invalidateQueries({ queryKey: ['leads', 'automation-state', leadId] });
+    },
+  });
+}
+
+// --- Automation state read --------------------------------------------------
+
+export type LeadAutomationStateResponse = {
+  lead: {
+    id: string;
+    status: string | null;
+    automationState: 'automated' | 'taken_over' | 'completed' | 'archived';
+    takenOverAt: string | null;
+    takenOverBy: string | null;
+    needsFollowupAt: string | null;
+    followupDismissedAt: string | null;
+    followupNudgeCount: number;
+    lastInboundAt: string | null;
+    lastOutboundAt: string | null;
+  };
+  runs: Array<{
+    id: string;
+    automationId: string;
+    automationName: string;
+    status: string;
+    pausedReason: string | null;
+    startedAt: string;
+    pausedAt: string | null;
+    currentActionPosition: number;
+    totalActions: number;
+    nextActionType: string | null;
+    nextRunAt: string | null;
+  }>;
+};
+
+async function fetchLeadAutomationState(
+  leadId: string,
+): Promise<LeadAutomationStateResponse> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) throw AppError.auth();
+  const res = await fetch(`/api/leads/${leadId}/automation-state`, {
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  });
+  if (!res.ok) throw normalizeError(new Error('automation-state-fetch-failed'));
+  return res.json();
+}
+
+/** Per-lead automation + handoff snapshot. Drives the side-rail panel on
+ *  the lead detail page. */
+export function useLeadAutomationState(leadId: string) {
+  return useQuery({
+    queryKey: ['leads', 'automation-state', leadId],
+    queryFn: () => fetchLeadAutomationState(leadId),
+    enabled: leadId.length > 0,
   });
 }

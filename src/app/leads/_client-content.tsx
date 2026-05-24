@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 
+import { ColdLeadRow } from '@/components/shared/leads/ColdLeadRow';
 import { LeadRow } from '@/components/shared/leads/LeadRow';
 import { LeadTabsBar } from '@/components/shared/leads/LeadTabsBar';
 import { PageHeader } from '@/components/shared/PageHeader';
@@ -10,19 +11,20 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { normalizeError } from '@/lib/errors';
 import { clientLeadsHero, clientLeadsTabs } from '@/lib/leads/client-leads';
-import { useClientLeadsInbox } from '@/lib/leads/queries';
+import { isColdLeadRow, useClientLeadsInbox } from '@/lib/leads/queries';
 
 function ClientLeadsContent() {
   const [activeTab, setActiveTab] = useState('new');
   const { data: leads, isLoading, error } = useClientLeadsInbox();
 
-  // Tab ids map 1:1 to LeadStatus (plus `all`). The badge represents
-  // UNREAD leads in that tab (suppressed when 0) — the email-inbox model
-  // the user asked for: the count = things that need looking at, not
-  // total volume.
+  // Tab ids map to LeadStatus (plus `all`) — and the orthogonal
+  // `needs_followup` cold-lead tab from Phase 8 Session 2.
   const tabs = useMemo(() => {
     const rows = leads ?? [];
     return clientLeadsTabs.map((tab) => {
+      if (tab.id === 'needs_followup') {
+        return { ...tab, count: rows.filter(isColdLeadRow).length };
+      }
       const tabRows =
         tab.id === 'all' ? rows : rows.filter((lead) => lead.status === tab.id);
       return {
@@ -34,10 +36,19 @@ function ClientLeadsContent() {
 
   const visibleLeads = useMemo(() => {
     const rows = leads ?? [];
+    if (activeTab === 'needs_followup') {
+      return rows
+        .filter(isColdLeadRow)
+        .sort((a, b) =>
+          (b.needsFollowupAt ?? '').localeCompare(a.needsFollowupAt ?? ''),
+        );
+    }
     return activeTab === 'all'
       ? rows
       : rows.filter((lead) => lead.status === activeTab);
   }, [leads, activeTab]);
+
+  const showingColdTab = activeTab === 'needs_followup';
 
   return (
     <>
@@ -72,7 +83,15 @@ function ClientLeadsContent() {
               {`// ${normalizeError(error).message}`}
             </InboxNotice>
           ) : visibleLeads.length === 0 ? (
-            <InboxNotice>{'// No leads in this view'}</InboxNotice>
+            <InboxNotice>
+              {showingColdTab
+                ? '// Nothing to nudge. Every lead is fresh or already handled.'
+                : '// No leads in this view'}
+            </InboxNotice>
+          ) : showingColdTab ? (
+            visibleLeads.map((lead) => (
+              <ColdLeadRow key={lead.id} variant="client" row={lead} />
+            ))
           ) : (
             visibleLeads.map((lead) => (
               <LeadRow

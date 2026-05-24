@@ -24,11 +24,15 @@ export const adminLeadsClientFilters: LeadFilterChip[] = [
   { id: 'voltline', label: 'Voltline' },
 ];
 
+/** Static tab definitions. Phase 8 Session 2 adds the `needs_followup` tab —
+ *  the cold-lead surface. Status tabs map 1:1 to `LeadStatus`; the new tab
+ *  is orthogonal (a lead in any status can be cold). */
 export const adminLeadsTabs: LeadTab[] = [
-  { id: 'new', label: 'New', count: 23 },
-  { id: 'contacted', label: 'Contacted', count: 41 },
-  { id: 'booked', label: 'Booked', count: 28 },
-  { id: 'completed', label: 'Completed', count: 156 },
-  { id: 'lost', label: 'Lost', count: 12 },
-  { id: 'spam', label: 'Spam', count: 3 },
+  { id: 'needs_followup', label: 'Needs follow-up' },
+  { id: 'new', label: 'New' },
+  { id: 'contacted', label: 'Contacted' },
+  { id: 'booked', label: 'Booked' },
+  { id: 'completed', label: 'Completed' },
+  { id: 'lost', label: 'Lost' },
+  { id: 'spam', label: 'Spam' },
 ];
