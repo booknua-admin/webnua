@@ -190,5 +190,51 @@ export default {
         await expectAbsent('cross invite insert', op, 'client_user_invites', 'email', email);
       },
     );
+
+    // ===== platform_email_templates (operator-only, V1.1 polish) =============
+    // Phase 8 · Session 3 (migration 0079). Operator-only SELECT + UPDATE;
+    // INSERT/DELETE are service-role only (templates are seeded once and
+    // edited, never created or deleted from the app).
+    t(
+      { table: 'platform_email_templates', policy: 'platform_email_templates_select', category: 'capability', kind: 'positive', scenario: 'operator reads the platform templates' }, // prettier-ignore
+      async () => okQuery('platform templates', craig.from('platform_email_templates').select('template_key, subject').limit(5)),
+    );
+    t(
+      { table: 'platform_email_templates', policy: 'platform_email_templates_select', category: 'capability', kind: 'negative', scenario: 'client cannot read platform notification templates' }, // prettier-ignore
+      async () => expectHidden('platform templates', await mark.from('platform_email_templates').select('*')),
+    );
+    t(
+      { table: 'platform_email_templates', policy: 'platform_email_templates_update', category: 'capability', kind: 'negative', scenario: 'client cannot rewrite the platform notification copy' }, // prettier-ignore
+      async () => {
+        const { data: before } = await op.from('platform_email_templates').select('subject').eq('template_key', 'lead_notification').maybeSingle();
+        if (!before) return;
+        await mark.from('platform_email_templates').update({ subject: 'RLS HOLE' }).eq('template_key', 'lead_notification');
+        const { data: after } = await op.from('platform_email_templates').select('subject').eq('template_key', 'lead_notification').maybeSingle();
+        if (after?.subject !== before.subject)
+          fail('HOLE — a client rewrote a platform template');
+      },
+    );
+    t(
+      { table: 'platform_email_templates', policy: 'platform_email_templates_insert', category: 'capability', kind: 'negative', scenario: 'operator cannot insert into the seed-only platform templates table' }, // prettier-ignore
+      async () => {
+        const { error } = await craig.from('platform_email_templates').insert({
+          template_key: 'lead_notification',
+          subject: 'RLS attacker',
+          body_html: '<p>x</p>',
+          body_text: 'x',
+        });
+        if (!error) fail('HOLE — operator inserted into platform templates (should be service-role-only)');
+      },
+    );
+    t(
+      { table: 'platform_email_templates', policy: 'platform_email_templates_delete', category: 'capability', kind: 'negative', scenario: 'operator cannot delete the seeded platform templates' }, // prettier-ignore
+      async () => {
+        const { data: beforeRow } = await op.from('platform_email_templates').select('template_key').eq('template_key', 'lead_notification').maybeSingle();
+        if (!beforeRow) return;
+        await craig.from('platform_email_templates').delete().eq('template_key', 'lead_notification');
+        const { data: afterRow } = await op.from('platform_email_templates').select('template_key').eq('template_key', 'lead_notification').maybeSingle();
+        if (!afterRow) fail('HOLE — operator deleted a platform template (should be service-role-only)');
+      },
+    );
   },
 };

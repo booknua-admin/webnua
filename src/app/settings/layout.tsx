@@ -19,6 +19,7 @@ const AGENCY_ONLY = [
   '/settings/defaults',
   '/settings/seats',
   '/settings/api',
+  '/settings/platform-templates',
 ];
 const SUB_ACCOUNT_ONLY = [
   '/settings/profile',

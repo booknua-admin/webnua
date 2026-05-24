@@ -17,5 +17,6 @@ export const adminSettingsNav: SettingsNavItem[] = [
   { label: 'Defaults', href: '/settings/defaults', icon: '⚐' },
   { label: 'Default seat limit', href: '/settings/seats', icon: '⊜' },
   { label: 'API & services', href: '/settings/api', icon: '⚿' },
+  { label: 'Platform templates', href: '/settings/platform-templates', icon: '✉' },
   { label: 'Danger zone', href: '/settings/danger', icon: '⤬' },
 ];

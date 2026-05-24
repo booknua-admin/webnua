@@ -377,10 +377,44 @@ function isCustomerFacingTemplate(key: EmailTemplateKey): boolean {
   return key === 'lead_followup' || key === 'review_request' || key === 'quote_followup';
 }
 
+/** True for operator-facing templates that live at platform level (one body
+ *  for all clients) instead of per-client. Phase 8 · Session 3 added the
+ *  `platform_email_templates` table; the per-client rows in `email_templates`
+ *  for these keys are now legacy fallbacks. */
+function isPlatformLevelTemplate(key: EmailTemplateKey): boolean {
+  return key === 'lead_notification' || key === 'lead_digest';
+}
+
+async function loadPlatformTemplate(
+  key: EmailTemplateKey,
+): Promise<EmailTemplateBody | null> {
+  const db = getIntegrationDb();
+  const { data, error } = await db
+    .from('platform_email_templates')
+    .select('subject, body_html, body_text')
+    .eq('template_key', key)
+    .maybeSingle();
+  if (error || !data) return null;
+  const row = data as { subject: string; body_html: string; body_text: string };
+  return {
+    subject: row.subject,
+    body_html: row.body_html,
+    body_text: row.body_text,
+  };
+}
+
 async function loadTemplate(
   clientId: string,
   key: EmailTemplateKey,
 ): Promise<EmailTemplateBody> {
+  // Phase 8 · Session 3: operator-facing templates resolve from the
+  // platform-level table first (one body for all clients). Per-client rows
+  // remain a legacy fallback for any environment where the platform table
+  // doesn't carry a row yet.
+  if (isPlatformLevelTemplate(key)) {
+    const platform = await loadPlatformTemplate(key);
+    if (platform) return platform;
+  }
   const row = await getTemplate(clientId, key);
   if (row) {
     return {
