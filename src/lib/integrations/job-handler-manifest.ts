@@ -51,4 +51,9 @@ import '@/lib/integrations/resend/job-handlers';
 import '@/lib/integrations/stripe/job-handlers';
 import '@/lib/integrations/twilio/job-handlers';
 
+// Phase 8 Session 1 — automation engine. Registers automation_trigger,
+// automation_action, and cold_lead_scan handlers so the integration_jobs
+// executor can dispatch the engine.
+import '@/lib/automations/job-handlers';
+
 export {};

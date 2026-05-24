@@ -879,7 +879,7 @@ async function fetchClientHub(clientSlug: string): Promise<ClientHub> {
     // totals when one exists; fall back to the website. Step-1 vs step-2
     // granularity is lost in the rollup PK today (audit §2.2) — accepted V1.
     supabase.from('funnels').select('id').eq('client_id', clientId).limit(1),
-    supabase.from('automations').select('enabled').eq('client_id', clientId),
+    supabase.from('automations').select('is_enabled').eq('client_id', clientId),
     supabase
       .from('campaigns')
       .select('name, status, budget')
@@ -908,7 +908,7 @@ async function fetchClientHub(clientSlug: string): Promise<ClientHub> {
     lifecycle_status: string;
     created_at: string;
   };
-  const automations = (automationsResult.data ?? []) as { enabled: boolean }[];
+  const automations = (automationsResult.data ?? []) as { is_enabled: boolean }[];
   const hubWebsite =
     (websiteResult.data as { id: string; domain_primary: string }[])[0] ?? null;
   const hubFunnel =
@@ -932,7 +932,7 @@ async function fetchClientHub(clientSlug: string): Promise<ClientHub> {
     websiteDomain: hubWebsite?.domain_primary ?? null,
     funnelTotals,
     automationsTotal: automations.length,
-    automationsEnabled: automations.filter((a) => a.enabled).length,
+    automationsEnabled: automations.filter((a) => a.is_enabled).length,
     campaign:
       (campaignsResult.data as {
         name: string;

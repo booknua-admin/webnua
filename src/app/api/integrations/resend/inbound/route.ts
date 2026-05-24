@@ -395,6 +395,16 @@ export async function POST(request: Request): Promise<Response> {
       // tab count badge), derived from the latest message direction.
       // Best-effort: a status update failure does NOT fail the inbound.
       await maybeReturnToNew(resolvedLeadId);
+
+      // Phase 8 Session 1 — update leads.last_inbound_at and pause any
+      // running automation_run on the lead with reason='lead_replied'.
+      // Best-effort; a failure here must not fail the inbound write.
+      try {
+        const { recordInboundOnLead } = await import('@/lib/automations/handoff');
+        await recordInboundOnLead(resolvedLeadId);
+      } catch (handoffError) {
+        console.warn('[resend/inbound] recordInboundOnLead failed', handoffError);
+      }
     }
     // Capture a payload sample for diagnosis. When the body is empty
     // (the symptom of the wrong Resend feature being configured —

@@ -100,6 +100,7 @@ export default {
       buildRow: (clientId, id) => ({
         id,
         client_id: clientId,
+        automation_key: `rls-${id.slice(0, 8)}`,
         name: `rls-${id.slice(0, 8)}`,
         trigger_type: 'lead_created',
       }),
@@ -153,17 +154,17 @@ export default {
       }),
     });
     childCrossTenant(t, ctx, {
-      table: 'automation_steps',
-      policy: 'automation_steps',
+      table: 'automation_actions',
+      policy: 'automation_actions',
       key: 'automationStep',
       parentKey: 'automation',
       buildRow: (automationId, id) => ({
         id,
         automation_id: automationId,
         position: 99,
-        channel: 'sms',
-        name: 'rls',
-        body: 'rls',
+        action_type: 'send_sms_to_lead',
+        action_config: { template_key: 'lead_acknowledgment' },
+        pauses_on_human_activity: true,
       }),
     });
     childCrossTenant(t, ctx, {

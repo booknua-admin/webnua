@@ -18,6 +18,7 @@ import { NextResponse } from 'next/server';
 import { wrapPlainAsHtml } from '@/lib/email/templates';
 import { listMessagesForLead } from '@/lib/integrations/resend/messages';
 import { getServiceClient } from '@/lib/supabase/server';
+import { recordOutboundOnLead, takeoverLead } from '@/lib/automations/handoff';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -195,6 +196,16 @@ export async function POST(
   const replyTo = composeReplyToAddress(sender.slug, threadToken);
   const from = `${sender.display_name} <${sender.slug}@${env.EMAIL_SENDING_DOMAIN}>`;
 
+  // Phase 8 Session 1 — a manual reply is the canonical "client took over"
+  // signal: flip the lead to taken_over BEFORE sending so any in-flight
+  // automation runs pause cleanly. Best-effort; a failure here must not
+  // block the send.
+  try {
+    await takeoverLead(leadId, auth.userId);
+  } catch (handoffError) {
+    console.warn('[leads/reply] takeoverLead failed', handoffError);
+  }
+
   const result = await sendEmail({
     clientId: auth.clientId,
     from,
@@ -267,6 +278,10 @@ export async function POST(
   // it mid-compose). Best-effort: a status update failure does NOT
   // fail the reply send.
   await maybeAdvanceToContacted(leadId, auth.userId);
+
+  // Phase 8 Session 1 — update leads.last_outbound_at so the engine's
+  // handoff pre-flight + cold-lead scanner see this manual reply.
+  await recordOutboundOnLead(leadId);
 
   return NextResponse.json({ ok: true, messageId: row.id, resendId: result.data.id });
 }

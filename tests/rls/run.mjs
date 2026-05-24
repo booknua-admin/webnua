@@ -19,8 +19,17 @@ import agency from './suites/agency.mjs';
 import operational from './suites/operational.mjs';
 import builder from './suites/builder.mjs';
 import isolation from './suites/isolation.mjs';
+import automationEngine from './suites/automation-engine.mjs';
 
-const SUITES = [anonymous, identity, agency, operational, builder, isolation];
+const SUITES = [
+  anonymous,
+  identity,
+  agency,
+  operational,
+  builder,
+  isolation,
+  automationEngine,
+];
 
 async function main() {
   process.stdout.write('\n  Webnua — RLS cross-tenant validation harness\n');

@@ -38,7 +38,8 @@ const TEARDOWN_ORDER = [
   'customers',
   'campaign_activity_events',
   'campaigns',
-  'automation_steps',
+  'automation_runs',
+  'automation_actions',
   'automations',
   'ticket_messages',
   'tickets',
@@ -130,8 +131,8 @@ async function seedTenant(operator, clientId, operatorId, recipientUserId, tag, 
   await mustInsert(operator, 'reviews', { id: f.review, client_id: clientId, author_name: f.sentinel, body: f.sentinel, stars: 5, reviewed_at: now }, tracker); // prettier-ignore
   await mustInsert(operator, 'campaigns', { id: f.campaign, client_id: clientId, name: f.sentinel }, tracker); // prettier-ignore
   await mustInsert(operator, 'campaign_activity_events', { id: f.campaignEvent, campaign_id: f.campaign, category: 'creative', occurred_at: now }, tracker); // prettier-ignore
-  await mustInsert(operator, 'automations', { id: f.automation, client_id: clientId, name: f.sentinel, trigger_type: 'lead_created' }, tracker); // prettier-ignore
-  await mustInsert(operator, 'automation_steps', { id: f.automationStep, automation_id: f.automation, position: 1, channel: 'sms', name: f.sentinel, body: 'rls-test' }, tracker); // prettier-ignore
+  await mustInsert(operator, 'automations', { id: f.automation, client_id: clientId, automation_key: `rls-${f.sentinel}`, name: f.sentinel, trigger_type: 'lead_created' }, tracker); // prettier-ignore
+  await mustInsert(operator, 'automation_actions', { id: f.automationStep, automation_id: f.automation, position: 1, action_type: 'send_sms_to_lead', action_config: { template_key: 'lead_acknowledgment' }, pauses_on_human_activity: true }, tracker); // prettier-ignore
   await mustInsert(operator, 'tickets', { id: f.ticket, reference: `RLS-${f.sentinel}`, client_id: clientId, title: f.sentinel, category: 'website', created_by: operatorId }, tracker); // prettier-ignore
   await mustInsert(operator, 'ticket_messages', { id: f.ticketMessage, ticket_id: f.ticket, author_user_id: operatorId, body: 'rls-test' }, tracker); // prettier-ignore
   await mustInsert(operator, 'websites', { id: f.website, client_id: clientId, name: f.sentinel, domain_primary: `${f.sentinel}.example` }, tracker); // prettier-ignore

@@ -31,9 +31,13 @@ import { NextResponse } from 'next/server';
 
 import { getServiceClient } from '@/lib/supabase/server';
 import { clientIp, rateLimit } from '@/lib/public-site/rate-limit';
-import { enqueueJobImmediate } from '@/lib/integrations/_shared/jobs';
-import { SEND_EMAIL_JOB } from '@/lib/integrations/resend/job-types';
-import { SEND_SMS_JOB } from '@/lib/integrations/twilio/job-types';
+
+// Phase 8 Session 1 — the previous direct enqueues of send_sms /
+// send_email / send_lead_notification are gone. The leads INSERT DB trigger
+// (migration 0078) now fans an `automation_trigger` job; the engine fires
+// the matching lead_acknowledgment / lead_followup / operator_notification
+// automations. Observable behaviour unchanged (same templates, same
+// gating).
 
 const MAX_FIELDS = 60;
 
@@ -270,51 +274,12 @@ export async function POST(req: Request) {
     return bad('Could not record the submission.', 500);
   }
 
-  // Lead-acknowledgment SMS — fire the "got your enquiry" text within seconds
-  // of the lead landing (the lead-nurture promise). Enqueued as a send_sms
-  // job; the handler skips silently when SMS is unconfigured or the client
-  // has no approved sender. Best-effort: a job-enqueue failure must NOT fail
-  // the lead capture, so it is wrapped. Only fires when a phone is present.
-  if (phone) {
-    try {
-      await enqueueJobImmediate(
-        SEND_SMS_JOB,
-        {
-          clientId,
-          templateKey: 'lead_acknowledgment',
-          recipientPhone: phone,
-          relatedLeadId: lead.id,
-        },
-        { provider: 'twilio', clientId, correlationId: lead.id },
-      );
-    } catch (smsError) {
-      console.warn('[forms/submit] lead-acknowledgment SMS enqueue failed', smsError);
-    }
-  }
-
-  // Lead-followup email — when no phone was captured (so the SMS branch did
-  // not fire), or as a paired follow-up to the SMS. Enqueued as a send_email
-  // job; the handler skips silently when Resend is unconfigured or no email
-  // sender is provisioned. Best-effort wrapper, same pattern as the SMS
-  // enqueue. The lead-notification email to OPERATORS is fanned by the DB
-  // trigger in migration 0063 — separate concern.
-  if (email) {
-    try {
-      await enqueueJobImmediate(
-        SEND_EMAIL_JOB,
-        {
-          clientId,
-          templateKey: 'lead_followup',
-          recipientEmail: email,
-          recipientName: name,
-          relatedLeadId: lead.id,
-        },
-        { provider: 'resend', clientId, correlationId: lead.id },
-      );
-    } catch (emailError) {
-      console.warn('[forms/submit] lead-followup email enqueue failed', emailError);
-    }
-  }
+  // Phase 8 Session 1 — the lead INSERT trigger fires an automation_trigger
+  // job. The engine resolves matching enabled automations and fires:
+  //   • lead_acknowledgment_sms   (template lead_acknowledgment, if phone)
+  //   • lead_acknowledgment_email (template lead_followup, if email)
+  //   • operator_lead_notification (replaces the 0063 direct enqueue)
+  // No application-level enqueue is needed here.
 
   return NextResponse.json({ ok: true, leadId: lead.id });
 }

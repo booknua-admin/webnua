@@ -32,49 +32,181 @@ export type Database = {
         }
         Relationships: []
       }
-      automation_steps: {
+      analytics_events: {
         Row: {
-          automation_id: string
-          body: string
-          channel: Database["public"]["Enums"]["automation_channel"]
-          created_at: string
-          delay_amount: number
-          delay_unit: Database["public"]["Enums"]["delay_unit"]
+          client_id: string
+          event_type: Database["public"]["Enums"]["analytics_event_type"]
           id: string
-          name: string
+          ingested_at: string
+          occurred_at: string
+          page_ref: string
+          payload: Json
+          session_id: string
+          surface_id: string
+          surface_kind: string
+          visitor_id: string
+        }
+        Insert: {
+          client_id: string
+          event_type: Database["public"]["Enums"]["analytics_event_type"]
+          id?: string
+          ingested_at?: string
+          occurred_at: string
+          page_ref: string
+          payload?: Json
+          session_id: string
+          surface_id: string
+          surface_kind: string
+          visitor_id: string
+        }
+        Update: {
+          client_id?: string
+          event_type?: Database["public"]["Enums"]["analytics_event_type"]
+          id?: string
+          ingested_at?: string
+          occurred_at?: string
+          page_ref?: string
+          payload?: Json
+          session_id?: string
+          surface_id?: string
+          surface_kind?: string
+          visitor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analytics_events_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      analytics_funnel_daily: {
+        Row: {
+          client_id: string
+          day: string
+          element_label: string
+          event_count: number
+          page_ref: string
+          stage: string
+          surface_id: string
+          surface_kind: string
+          unique_visitors: number
+        }
+        Insert: {
+          client_id: string
+          day: string
+          element_label?: string
+          event_count?: number
+          page_ref?: string
+          stage: string
+          surface_id: string
+          surface_kind: string
+          unique_visitors?: number
+        }
+        Update: {
+          client_id?: string
+          day?: string
+          element_label?: string
+          event_count?: number
+          page_ref?: string
+          stage?: string
+          surface_id?: string
+          surface_kind?: string
+          unique_visitors?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analytics_funnel_daily_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      analytics_page_daily: {
+        Row: {
+          avg_seconds: number | null
+          client_id: string
+          cls_p75: number | null
+          day: string
+          inp_p75: number | null
+          lcp_p75: number | null
+          page_ref: string
+          surface_id: string
+          unique_visitors: number
+          visits: number
+        }
+        Insert: {
+          avg_seconds?: number | null
+          client_id: string
+          cls_p75?: number | null
+          day: string
+          inp_p75?: number | null
+          lcp_p75?: number | null
+          page_ref: string
+          surface_id: string
+          unique_visitors?: number
+          visits?: number
+        }
+        Update: {
+          avg_seconds?: number | null
+          client_id?: string
+          cls_p75?: number | null
+          day?: string
+          inp_p75?: number | null
+          lcp_p75?: number | null
+          page_ref?: string
+          surface_id?: string
+          unique_visitors?: number
+          visits?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analytics_page_daily_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      automation_actions: {
+        Row: {
+          action_config: Json
+          action_type: Database["public"]["Enums"]["automation_action_type"]
+          automation_id: string
+          created_at: string
+          id: string
+          pauses_on_human_activity: boolean
           position: number
-          subject: string | null
           updated_at: string
         }
         Insert: {
+          action_config?: Json
+          action_type: Database["public"]["Enums"]["automation_action_type"]
           automation_id: string
-          body: string
-          channel: Database["public"]["Enums"]["automation_channel"]
           created_at?: string
-          delay_amount?: number
-          delay_unit?: Database["public"]["Enums"]["delay_unit"]
           id?: string
-          name: string
+          pauses_on_human_activity: boolean
           position: number
-          subject?: string | null
           updated_at?: string
         }
         Update: {
+          action_config?: Json
+          action_type?: Database["public"]["Enums"]["automation_action_type"]
           automation_id?: string
-          body?: string
-          channel?: Database["public"]["Enums"]["automation_channel"]
           created_at?: string
-          delay_amount?: number
-          delay_unit?: Database["public"]["Enums"]["delay_unit"]
           id?: string
-          name?: string
+          pauses_on_human_activity?: boolean
           position?: number
-          subject?: string | null
           updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "automation_steps_automation_id_fkey"
+            foreignKeyName: "automation_actions_automation_id_fkey"
             columns: ["automation_id"]
             isOneToOne: false
             referencedRelation: "automations"
@@ -82,35 +214,135 @@ export type Database = {
           },
         ]
       }
-      automations: {
+      automation_runs: {
         Row: {
+          automation_id: string
           client_id: string
+          completed_at: string | null
           created_at: string
-          enabled: boolean
+          current_action_position: number
+          error_message: string | null
           id: string
-          name: string
-          trigger_config: Json
-          trigger_type: string
+          last_automation_message_at: string | null
+          lead_id: string | null
+          paused_at: string | null
+          paused_reason:
+            | Database["public"]["Enums"]["automation_pause_reason"]
+            | null
+          resumed_at: string | null
+          started_at: string
+          status: Database["public"]["Enums"]["automation_run_status"]
+          trigger_event: Json
           updated_at: string
         }
         Insert: {
+          automation_id: string
           client_id: string
+          completed_at?: string | null
           created_at?: string
-          enabled?: boolean
+          current_action_position?: number
+          error_message?: string | null
           id?: string
-          name: string
-          trigger_config?: Json
-          trigger_type: string
+          last_automation_message_at?: string | null
+          lead_id?: string | null
+          paused_at?: string | null
+          paused_reason?:
+            | Database["public"]["Enums"]["automation_pause_reason"]
+            | null
+          resumed_at?: string | null
+          started_at?: string
+          status?: Database["public"]["Enums"]["automation_run_status"]
+          trigger_event?: Json
           updated_at?: string
         }
         Update: {
+          automation_id?: string
+          client_id?: string
+          completed_at?: string | null
+          created_at?: string
+          current_action_position?: number
+          error_message?: string | null
+          id?: string
+          last_automation_message_at?: string | null
+          lead_id?: string | null
+          paused_at?: string | null
+          paused_reason?:
+            | Database["public"]["Enums"]["automation_pause_reason"]
+            | null
+          resumed_at?: string | null
+          started_at?: string
+          status?: Database["public"]["Enums"]["automation_run_status"]
+          trigger_event?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_runs_automation_id_fkey"
+            columns: ["automation_id"]
+            isOneToOne: false
+            referencedRelation: "automations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_runs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_runs_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      automations: {
+        Row: {
+          automation_key: string
+          client_id: string
+          created_at: string
+          description: string | null
+          id: string
+          is_default: boolean
+          is_enabled: boolean
+          last_edited_by: string | null
+          name: string
+          trigger_config: Json
+          trigger_filters: Json
+          trigger_type: Database["public"]["Enums"]["automation_trigger_type"]
+          updated_at: string
+        }
+        Insert: {
+          automation_key: string
+          client_id: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_default?: boolean
+          is_enabled?: boolean
+          last_edited_by?: string | null
+          name: string
+          trigger_config?: Json
+          trigger_filters?: Json
+          trigger_type: Database["public"]["Enums"]["automation_trigger_type"]
+          updated_at?: string
+        }
+        Update: {
+          automation_key?: string
           client_id?: string
           created_at?: string
-          enabled?: boolean
+          description?: string | null
           id?: string
+          is_default?: boolean
+          is_enabled?: boolean
+          last_edited_by?: string | null
           name?: string
           trigger_config?: Json
-          trigger_type?: string
+          trigger_filters?: Json
+          trigger_type?: Database["public"]["Enums"]["automation_trigger_type"]
           updated_at?: string
         }
         Relationships: [
@@ -119,6 +351,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automations_last_edited_by_fkey"
+            columns: ["last_edited_by"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
@@ -327,141 +566,6 @@ export type Database = {
           },
         ]
       }
-      analytics_events: {
-        Row: {
-          client_id: string
-          event_type: Database["public"]["Enums"]["analytics_event_type"]
-          id: string
-          ingested_at: string
-          occurred_at: string
-          page_ref: string
-          payload: Json
-          session_id: string
-          surface_id: string
-          surface_kind: string
-          visitor_id: string
-        }
-        Insert: {
-          client_id: string
-          event_type: Database["public"]["Enums"]["analytics_event_type"]
-          id?: string
-          ingested_at?: string
-          occurred_at: string
-          page_ref: string
-          payload?: Json
-          session_id: string
-          surface_id: string
-          surface_kind: string
-          visitor_id: string
-        }
-        Update: {
-          client_id?: string
-          event_type?: Database["public"]["Enums"]["analytics_event_type"]
-          id?: string
-          ingested_at?: string
-          occurred_at?: string
-          page_ref?: string
-          payload?: Json
-          session_id?: string
-          surface_id?: string
-          surface_kind?: string
-          visitor_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "analytics_events_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      analytics_funnel_daily: {
-        Row: {
-          client_id: string
-          day: string
-          event_count: number
-          stage: string
-          surface_id: string
-          surface_kind: string
-          unique_visitors: number
-        }
-        Insert: {
-          client_id: string
-          day: string
-          event_count?: number
-          stage: string
-          surface_id: string
-          surface_kind: string
-          unique_visitors?: number
-        }
-        Update: {
-          client_id?: string
-          day?: string
-          event_count?: number
-          stage?: string
-          surface_id?: string
-          surface_kind?: string
-          unique_visitors?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "analytics_funnel_daily_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      analytics_page_daily: {
-        Row: {
-          avg_seconds: number | null
-          client_id: string
-          cls_p75: number | null
-          day: string
-          inp_p75: number | null
-          lcp_p75: number | null
-          page_ref: string
-          surface_id: string
-          unique_visitors: number
-          visits: number
-        }
-        Insert: {
-          avg_seconds?: number | null
-          client_id: string
-          cls_p75?: number | null
-          day: string
-          inp_p75?: number | null
-          lcp_p75?: number | null
-          page_ref: string
-          surface_id: string
-          unique_visitors?: number
-          visits?: number
-        }
-        Update: {
-          avg_seconds?: number | null
-          client_id?: string
-          cls_p75?: number | null
-          day?: string
-          inp_p75?: number | null
-          lcp_p75?: number | null
-          page_ref?: string
-          surface_id?: string
-          unique_visitors?: number
-          visits?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "analytics_page_daily_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       campaigns: {
         Row: {
           budget: number | null
@@ -547,6 +651,262 @@ export type Database = {
             columns: ["website_id"]
             isOneToOne: false
             referencedRelation: "websites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_email_senders: {
+        Row: {
+          client_id: string
+          created_at: string
+          custom_domain: string | null
+          display_name: string
+          id: string
+          slug: string
+          status: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          custom_domain?: string | null
+          display_name: string
+          id?: string
+          slug: string
+          status?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          custom_domain?: string | null
+          display_name?: string
+          id?: string
+          slug?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_email_senders_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: true
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_gbp_locations: {
+        Row: {
+          address: string | null
+          client_id: string
+          created_at: string
+          current_rating: number | null
+          gbp_account_id: string
+          gbp_location_id: string
+          id: string
+          last_synced_at: string | null
+          location_title: string
+          phone: string | null
+          review_count: number
+          review_link: string | null
+          updated_at: string
+          website: string | null
+        }
+        Insert: {
+          address?: string | null
+          client_id: string
+          created_at?: string
+          current_rating?: number | null
+          gbp_account_id: string
+          gbp_location_id: string
+          id?: string
+          last_synced_at?: string | null
+          location_title?: string
+          phone?: string | null
+          review_count?: number
+          review_link?: string | null
+          updated_at?: string
+          website?: string | null
+        }
+        Update: {
+          address?: string | null
+          client_id?: string
+          created_at?: string
+          current_rating?: number | null
+          gbp_account_id?: string
+          gbp_location_id?: string
+          id?: string
+          last_synced_at?: string | null
+          location_title?: string
+          phone?: string | null
+          review_count?: number
+          review_link?: string | null
+          updated_at?: string
+          website?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_gbp_locations_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: true
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_meta_ad_accounts: {
+        Row: {
+          account_status: number | null
+          ad_account_name: string | null
+          amount_spent_cents: number | null
+          balance_cents: number | null
+          client_id: string
+          created_at: string
+          currency: string | null
+          customer_agreed_at: string | null
+          customer_agreed_by_email: string | null
+          id: string
+          last_synced_at: string | null
+          meta_ad_account_id: string
+          meta_business_id: string | null
+          meta_user_id: string | null
+          timezone_name: string | null
+          updated_at: string
+        }
+        Insert: {
+          account_status?: number | null
+          ad_account_name?: string | null
+          amount_spent_cents?: number | null
+          balance_cents?: number | null
+          client_id: string
+          created_at?: string
+          currency?: string | null
+          customer_agreed_at?: string | null
+          customer_agreed_by_email?: string | null
+          id?: string
+          last_synced_at?: string | null
+          meta_ad_account_id: string
+          meta_business_id?: string | null
+          meta_user_id?: string | null
+          timezone_name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          account_status?: number | null
+          ad_account_name?: string | null
+          amount_spent_cents?: number | null
+          balance_cents?: number | null
+          client_id?: string
+          created_at?: string
+          currency?: string | null
+          customer_agreed_at?: string | null
+          customer_agreed_by_email?: string | null
+          id?: string
+          last_synced_at?: string | null
+          meta_ad_account_id?: string
+          meta_business_id?: string | null
+          meta_user_id?: string | null
+          timezone_name?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_meta_ad_accounts_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: true
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_sms_senders: {
+        Row: {
+          client_id: string
+          id: string
+          notes: string | null
+          registered_at: string
+          sender_id: string
+          status: string
+          twilio_registration_sid: string | null
+        }
+        Insert: {
+          client_id: string
+          id?: string
+          notes?: string | null
+          registered_at?: string
+          sender_id: string
+          status?: string
+          twilio_registration_sid?: string | null
+        }
+        Update: {
+          client_id?: string
+          id?: string
+          notes?: string | null
+          registered_at?: string
+          sender_id?: string
+          status?: string
+          twilio_registration_sid?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_sms_senders_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: true
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_stripe_customers: {
+        Row: {
+          cancel_at_period_end: boolean
+          client_id: string
+          created_at: string
+          current_period_end: string | null
+          id: string
+          last_payment_at: string | null
+          last_payment_status: string | null
+          past_due_since: string | null
+          status: string
+          stripe_customer_id: string
+          stripe_price_id: string | null
+          stripe_subscription_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          cancel_at_period_end?: boolean
+          client_id: string
+          created_at?: string
+          current_period_end?: string | null
+          id?: string
+          last_payment_at?: string | null
+          last_payment_status?: string | null
+          past_due_since?: string | null
+          status?: string
+          stripe_customer_id: string
+          stripe_price_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          cancel_at_period_end?: boolean
+          client_id?: string
+          created_at?: string
+          current_period_end?: string | null
+          id?: string
+          last_payment_at?: string | null
+          last_payment_status?: string | null
+          past_due_since?: string | null
+          status?: string
+          stripe_customer_id?: string
+          stripe_price_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_stripe_customers_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: true
+            referencedRelation: "clients"
             referencedColumns: ["id"]
           },
         ]
@@ -759,6 +1119,148 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      email_messages: {
+        Row: {
+          attachments: Json
+          body_html: string
+          body_text: string
+          client_id: string
+          correlation_id: string | null
+          direction: string
+          id: string
+          in_reply_to_message_id: string | null
+          is_auto_responder: boolean
+          occurred_at: string
+          recipient_address: string
+          related_lead_id: string | null
+          reply_to_address: string | null
+          resend_message_id: string | null
+          sender_address: string
+          sent_by: string | null
+          status: string
+          subject: string
+          thread_token: string | null
+        }
+        Insert: {
+          attachments?: Json
+          body_html?: string
+          body_text?: string
+          client_id: string
+          correlation_id?: string | null
+          direction: string
+          id?: string
+          in_reply_to_message_id?: string | null
+          is_auto_responder?: boolean
+          occurred_at?: string
+          recipient_address: string
+          related_lead_id?: string | null
+          reply_to_address?: string | null
+          resend_message_id?: string | null
+          sender_address: string
+          sent_by?: string | null
+          status?: string
+          subject?: string
+          thread_token?: string | null
+        }
+        Update: {
+          attachments?: Json
+          body_html?: string
+          body_text?: string
+          client_id?: string
+          correlation_id?: string | null
+          direction?: string
+          id?: string
+          in_reply_to_message_id?: string | null
+          is_auto_responder?: boolean
+          occurred_at?: string
+          recipient_address?: string
+          related_lead_id?: string | null
+          reply_to_address?: string | null
+          resend_message_id?: string | null
+          sender_address?: string
+          sent_by?: string | null
+          status?: string
+          subject?: string
+          thread_token?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_messages_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_messages_related_lead_id_fkey"
+            columns: ["related_lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_messages_sent_by_fkey"
+            columns: ["sent_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      email_templates: {
+        Row: {
+          body_html: string
+          body_text: string
+          client_id: string
+          created_at: string
+          id: string
+          is_default: boolean
+          last_edited_at: string
+          last_edited_by: string | null
+          subject: string
+          template_key: string
+        }
+        Insert: {
+          body_html: string
+          body_text: string
+          client_id: string
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          last_edited_at?: string
+          last_edited_by?: string | null
+          subject: string
+          template_key: string
+        }
+        Update: {
+          body_html?: string
+          body_text?: string
+          client_id?: string
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          last_edited_at?: string
+          last_edited_by?: string | null
+          subject?: string
+          template_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_templates_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_templates_last_edited_by_fkey"
+            columns: ["last_edited_by"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
@@ -1033,6 +1535,145 @@ export type Database = {
           },
         ]
       }
+      gbp_review_requests: {
+        Row: {
+          booking_id: string | null
+          channel: string
+          clicked_at: string | null
+          client_id: string
+          error_message: string | null
+          id: string
+          lead_id: string | null
+          recipient_email: string | null
+          recipient_name: string | null
+          recipient_phone: string | null
+          resulted_in_review_id: string | null
+          review_link: string
+          sent_at: string
+          status: string
+        }
+        Insert: {
+          booking_id?: string | null
+          channel: string
+          clicked_at?: string | null
+          client_id: string
+          error_message?: string | null
+          id?: string
+          lead_id?: string | null
+          recipient_email?: string | null
+          recipient_name?: string | null
+          recipient_phone?: string | null
+          resulted_in_review_id?: string | null
+          review_link: string
+          sent_at?: string
+          status?: string
+        }
+        Update: {
+          booking_id?: string | null
+          channel?: string
+          clicked_at?: string | null
+          client_id?: string
+          error_message?: string | null
+          id?: string
+          lead_id?: string | null
+          recipient_email?: string | null
+          recipient_name?: string | null
+          recipient_phone?: string | null
+          resulted_in_review_id?: string | null
+          review_link?: string
+          sent_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gbp_review_requests_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gbp_review_requests_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gbp_review_requests_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gbp_review_requests_resulted_in_review_id_fkey"
+            columns: ["resulted_in_review_id"]
+            isOneToOne: false
+            referencedRelation: "gbp_reviews"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gbp_reviews: {
+        Row: {
+          client_id: string
+          comment: string | null
+          created_at_google: string
+          deleted_at_google: string | null
+          gbp_review_id: string
+          id: string
+          is_new_since_last_view: boolean
+          rating: number
+          reply_created_at: string | null
+          reply_text: string | null
+          reviewer_name: string | null
+          reviewer_profile_photo_url: string | null
+          synced_at: string
+          updated_at_google: string | null
+        }
+        Insert: {
+          client_id: string
+          comment?: string | null
+          created_at_google: string
+          deleted_at_google?: string | null
+          gbp_review_id: string
+          id?: string
+          is_new_since_last_view?: boolean
+          rating: number
+          reply_created_at?: string | null
+          reply_text?: string | null
+          reviewer_name?: string | null
+          reviewer_profile_photo_url?: string | null
+          synced_at?: string
+          updated_at_google?: string | null
+        }
+        Update: {
+          client_id?: string
+          comment?: string | null
+          created_at_google?: string
+          deleted_at_google?: string | null
+          gbp_review_id?: string
+          id?: string
+          is_new_since_last_view?: boolean
+          rating?: number
+          reply_created_at?: string | null
+          reply_text?: string | null
+          reviewer_name?: string | null
+          reviewer_profile_photo_url?: string | null
+          synced_at?: string
+          updated_at_google?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gbp_reviews_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       generation_log: {
         Row: {
           client_id: string
@@ -1070,6 +1711,189 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "generation_log_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      integration_call_log: {
+        Row: {
+          client_id: string | null
+          correlation_id: string | null
+          direction: string
+          error_class: string | null
+          error_message: string | null
+          id: string
+          latency_ms: number | null
+          occurred_at: string
+          operation: string
+          provider: string
+          request_shape: Json | null
+          response_shape: Json | null
+          response_status: number | null
+        }
+        Insert: {
+          client_id?: string | null
+          correlation_id?: string | null
+          direction?: string
+          error_class?: string | null
+          error_message?: string | null
+          id?: string
+          latency_ms?: number | null
+          occurred_at?: string
+          operation: string
+          provider: string
+          request_shape?: Json | null
+          response_shape?: Json | null
+          response_status?: number | null
+        }
+        Update: {
+          client_id?: string | null
+          correlation_id?: string | null
+          direction?: string
+          error_class?: string | null
+          error_message?: string | null
+          id?: string
+          latency_ms?: number | null
+          occurred_at?: string
+          operation?: string
+          provider?: string
+          request_shape?: Json | null
+          response_shape?: Json | null
+          response_status?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "integration_call_log_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      integration_connections: {
+        Row: {
+          access_token_cached: string | null
+          access_token_expires_at: string | null
+          client_id: string
+          connected_at: string
+          id: string
+          last_error: string | null
+          last_failure_notified_at: string | null
+          last_refreshed_at: string | null
+          last_used_at: string | null
+          provider: string
+          provider_account_id: string
+          scopes: string[]
+          status: string
+          token_model: string
+          token_secret_id: string | null
+        }
+        Insert: {
+          access_token_cached?: string | null
+          access_token_expires_at?: string | null
+          client_id: string
+          connected_at?: string
+          id?: string
+          last_error?: string | null
+          last_failure_notified_at?: string | null
+          last_refreshed_at?: string | null
+          last_used_at?: string | null
+          provider: string
+          provider_account_id: string
+          scopes?: string[]
+          status?: string
+          token_model: string
+          token_secret_id?: string | null
+        }
+        Update: {
+          access_token_cached?: string | null
+          access_token_expires_at?: string | null
+          client_id?: string
+          connected_at?: string
+          id?: string
+          last_error?: string | null
+          last_failure_notified_at?: string | null
+          last_refreshed_at?: string | null
+          last_used_at?: string | null
+          provider?: string
+          provider_account_id?: string
+          scopes?: string[]
+          status?: string
+          token_model?: string
+          token_secret_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "integration_connections_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      integration_jobs: {
+        Row: {
+          attempts: number
+          client_id: string | null
+          completed_at: string | null
+          correlation_id: string | null
+          created_at: string
+          error_class: string | null
+          error_message: string | null
+          id: string
+          job_type: string
+          max_attempts: number
+          payload: Json
+          provider: string | null
+          result: Json | null
+          run_after: string
+          started_at: string | null
+          status: string
+        }
+        Insert: {
+          attempts?: number
+          client_id?: string | null
+          completed_at?: string | null
+          correlation_id?: string | null
+          created_at?: string
+          error_class?: string | null
+          error_message?: string | null
+          id?: string
+          job_type: string
+          max_attempts?: number
+          payload?: Json
+          provider?: string | null
+          result?: Json | null
+          run_after?: string
+          started_at?: string | null
+          status?: string
+        }
+        Update: {
+          attempts?: number
+          client_id?: string | null
+          completed_at?: string | null
+          correlation_id?: string | null
+          created_at?: string
+          error_class?: string | null
+          error_message?: string | null
+          id?: string
+          job_type?: string
+          max_attempts?: number
+          payload?: Json
+          provider?: string | null
+          result?: Json | null
+          run_after?: string
+          started_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "integration_jobs_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
@@ -1222,43 +2046,76 @@ export type Database = {
       leads: {
         Row: {
           assigned_operator_id: string | null
+          automation_state: Database["public"]["Enums"]["lead_automation_state"]
           client_id: string
           created_at: string
           customer_id: string | null
           customer_name_snapshot: string
           customer_phone_snapshot: string | null
+          followup_dismissed_at: string | null
+          followup_nudge_count: number
           id: string
+          last_inbound_at: string | null
+          last_outbound_at: string | null
+          needs_followup_at: string | null
+          notification_pending_at: string | null
           source: string | null
+          source_funnel_id: string | null
+          source_kind: string
           status: Database["public"]["Enums"]["lead_status"]
           submission_id: string | null
+          taken_over_at: string | null
+          taken_over_by: string | null
           updated_at: string
           urgency: Database["public"]["Enums"]["lead_urgency"]
         }
         Insert: {
           assigned_operator_id?: string | null
+          automation_state?: Database["public"]["Enums"]["lead_automation_state"]
           client_id: string
           created_at?: string
           customer_id?: string | null
           customer_name_snapshot: string
           customer_phone_snapshot?: string | null
+          followup_dismissed_at?: string | null
+          followup_nudge_count?: number
           id?: string
+          last_inbound_at?: string | null
+          last_outbound_at?: string | null
+          needs_followup_at?: string | null
+          notification_pending_at?: string | null
           source?: string | null
+          source_funnel_id?: string | null
+          source_kind?: string
           status?: Database["public"]["Enums"]["lead_status"]
           submission_id?: string | null
+          taken_over_at?: string | null
+          taken_over_by?: string | null
           updated_at?: string
           urgency?: Database["public"]["Enums"]["lead_urgency"]
         }
         Update: {
           assigned_operator_id?: string | null
+          automation_state?: Database["public"]["Enums"]["lead_automation_state"]
           client_id?: string
           created_at?: string
           customer_id?: string | null
           customer_name_snapshot?: string
           customer_phone_snapshot?: string | null
+          followup_dismissed_at?: string | null
+          followup_nudge_count?: number
           id?: string
+          last_inbound_at?: string | null
+          last_outbound_at?: string | null
+          needs_followup_at?: string | null
+          notification_pending_at?: string | null
           source?: string | null
+          source_funnel_id?: string | null
+          source_kind?: string
           status?: Database["public"]["Enums"]["lead_status"]
           submission_id?: string | null
+          taken_over_at?: string | null
+          taken_over_by?: string | null
           updated_at?: string
           urgency?: Database["public"]["Enums"]["lead_urgency"]
         }
@@ -1282,6 +2139,262 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_source_funnel_id_fkey"
+            columns: ["source_funnel_id"]
+            isOneToOne: false
+            referencedRelation: "funnels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_taken_over_by_fkey"
+            columns: ["taken_over_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meta_ads_insights: {
+        Row: {
+          clicks: number
+          client_id: string
+          cpl_cents: number | null
+          ctr_bps: number | null
+          date_recorded: string
+          id: string
+          impressions: number
+          leads: number
+          meta_campaign_id: string
+          raw_payload: Json | null
+          spend_cents: number
+          synced_at: string
+        }
+        Insert: {
+          clicks?: number
+          client_id: string
+          cpl_cents?: number | null
+          ctr_bps?: number | null
+          date_recorded: string
+          id?: string
+          impressions?: number
+          leads?: number
+          meta_campaign_id: string
+          raw_payload?: Json | null
+          spend_cents?: number
+          synced_at?: string
+        }
+        Update: {
+          clicks?: number
+          client_id?: string
+          cpl_cents?: number | null
+          ctr_bps?: number | null
+          date_recorded?: string
+          id?: string
+          impressions?: number
+          leads?: number
+          meta_campaign_id?: string
+          raw_payload?: Json | null
+          spend_cents?: number
+          synced_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_ads_insights_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_ads_insights_meta_campaign_id_fkey"
+            columns: ["meta_campaign_id"]
+            isOneToOne: false
+            referencedRelation: "meta_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meta_campaigns: {
+        Row: {
+          campaign_id: string
+          campaign_name: string
+          client_id: string
+          created_at: string
+          created_via: Database["public"]["Enums"]["meta_campaign_created_via"]
+          daily_budget_cents: number | null
+          end_date: string | null
+          id: string
+          last_insights_synced_at: string | null
+          last_synced_at: string | null
+          lifetime_budget_cents: number | null
+          meta_ad_id: string | null
+          meta_ad_set_id: string | null
+          meta_campaign_id: string
+          meta_creative_id: string | null
+          meta_lead_form_id: string | null
+          objective: string
+          start_date: string | null
+          status: Database["public"]["Enums"]["meta_campaign_status"]
+          template_slug: string | null
+          updated_at: string
+        }
+        Insert: {
+          campaign_id: string
+          campaign_name: string
+          client_id: string
+          created_at?: string
+          created_via?: Database["public"]["Enums"]["meta_campaign_created_via"]
+          daily_budget_cents?: number | null
+          end_date?: string | null
+          id?: string
+          last_insights_synced_at?: string | null
+          last_synced_at?: string | null
+          lifetime_budget_cents?: number | null
+          meta_ad_id?: string | null
+          meta_ad_set_id?: string | null
+          meta_campaign_id: string
+          meta_creative_id?: string | null
+          meta_lead_form_id?: string | null
+          objective?: string
+          start_date?: string | null
+          status?: Database["public"]["Enums"]["meta_campaign_status"]
+          template_slug?: string | null
+          updated_at?: string
+        }
+        Update: {
+          campaign_id?: string
+          campaign_name?: string
+          client_id?: string
+          created_at?: string
+          created_via?: Database["public"]["Enums"]["meta_campaign_created_via"]
+          daily_budget_cents?: number | null
+          end_date?: string | null
+          id?: string
+          last_insights_synced_at?: string | null
+          last_synced_at?: string | null
+          lifetime_budget_cents?: number | null
+          meta_ad_id?: string | null
+          meta_ad_set_id?: string | null
+          meta_campaign_id?: string
+          meta_creative_id?: string | null
+          meta_lead_form_id?: string | null
+          objective?: string
+          start_date?: string | null
+          status?: Database["public"]["Enums"]["meta_campaign_status"]
+          template_slug?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_campaigns_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: true
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_campaigns_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_campaigns_meta_lead_form_id_fkey"
+            columns: ["meta_lead_form_id"]
+            isOneToOne: false
+            referencedRelation: "meta_lead_forms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meta_lead_forms: {
+        Row: {
+          archived_at: string | null
+          client_id: string
+          created_at: string
+          fields: Json
+          form_name: string
+          id: string
+          meta_form_id: string
+          meta_page_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          archived_at?: string | null
+          client_id: string
+          created_at?: string
+          fields?: Json
+          form_name: string
+          id?: string
+          meta_form_id: string
+          meta_page_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          archived_at?: string | null
+          client_id?: string
+          created_at?: string
+          fields?: Json
+          form_name?: string
+          id?: string
+          meta_form_id?: string
+          meta_page_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_lead_forms_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_preferences: {
+        Row: {
+          client_id: string
+          created_at: string
+          digest_frequency: string
+          id: string
+          notify_on_new_lead: boolean
+          notify_on_payment_failure: boolean
+          notify_on_review_received: boolean
+          operator_email: string
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          digest_frequency?: string
+          id?: string
+          notify_on_new_lead?: boolean
+          notify_on_payment_failure?: boolean
+          notify_on_review_received?: boolean
+          operator_email: string
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          digest_frequency?: string
+          id?: string
+          notify_on_new_lead?: boolean
+          notify_on_payment_failure?: boolean
+          notify_on_review_received?: boolean
+          operator_email?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_preferences_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
             referencedColumns: ["id"]
           },
         ]
@@ -1353,6 +2466,54 @@ export type Database = {
             columns: ["recipient_user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notifications_outbound: {
+        Row: {
+          client_id: string
+          id: string
+          recipient_email: string
+          related_lead_id: string | null
+          resend_message_id: string | null
+          sent_at: string
+          status: string
+          template_name: string
+        }
+        Insert: {
+          client_id: string
+          id?: string
+          recipient_email: string
+          related_lead_id?: string | null
+          resend_message_id?: string | null
+          sent_at?: string
+          status?: string
+          template_name: string
+        }
+        Update: {
+          client_id?: string
+          id?: string
+          recipient_email?: string
+          related_lead_id?: string | null
+          resend_message_id?: string | null
+          sent_at?: string
+          status?: string
+          template_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_outbound_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_outbound_related_lead_id_fkey"
+            columns: ["related_lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
             referencedColumns: ["id"]
           },
         ]
@@ -1643,6 +2804,198 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      signup_submissions: {
+        Row: {
+          ad_spend_max: number | null
+          ad_spend_min: number | null
+          base_leads_estimate: number | null
+          brand_colors: string[]
+          business_name: string | null
+          contact_email: string
+          contact_name: string | null
+          contact_phone: string | null
+          created_at: string
+          guaranteed_leads: number | null
+          id: string
+          ip_hash: string | null
+          main_service: string | null
+          meta: Json
+          monthly_price: number
+          service_area: string
+          setup_fee: number
+          setup_fee_waived: boolean
+          signed_up_at: string | null
+          status: Database["public"]["Enums"]["signup_submission_status"]
+          trade: string
+          updated_at: string
+          user_agent: string | null
+        }
+        Insert: {
+          ad_spend_max?: number | null
+          ad_spend_min?: number | null
+          base_leads_estimate?: number | null
+          brand_colors?: string[]
+          business_name?: string | null
+          contact_email: string
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          guaranteed_leads?: number | null
+          id?: string
+          ip_hash?: string | null
+          main_service?: string | null
+          meta?: Json
+          monthly_price?: number
+          service_area: string
+          setup_fee?: number
+          setup_fee_waived?: boolean
+          signed_up_at?: string | null
+          status?: Database["public"]["Enums"]["signup_submission_status"]
+          trade: string
+          updated_at?: string
+          user_agent?: string | null
+        }
+        Update: {
+          ad_spend_max?: number | null
+          ad_spend_min?: number | null
+          base_leads_estimate?: number | null
+          brand_colors?: string[]
+          business_name?: string | null
+          contact_email?: string
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          guaranteed_leads?: number | null
+          id?: string
+          ip_hash?: string | null
+          main_service?: string | null
+          meta?: Json
+          monthly_price?: number
+          service_area?: string
+          setup_fee?: number
+          setup_fee_waived?: boolean
+          signed_up_at?: string | null
+          status?: Database["public"]["Enums"]["signup_submission_status"]
+          trade?: string
+          updated_at?: string
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
+      sms_messages: {
+        Row: {
+          client_id: string
+          cost_eur: number | null
+          encoding: string
+          error_code: string | null
+          error_message: string | null
+          id: string
+          message_body: string
+          recipient_phone: string
+          related_lead_id: string | null
+          segments_count: number
+          sender_id: string
+          sent_at: string
+          status: string
+          twilio_message_sid: string | null
+        }
+        Insert: {
+          client_id: string
+          cost_eur?: number | null
+          encoding?: string
+          error_code?: string | null
+          error_message?: string | null
+          id?: string
+          message_body: string
+          recipient_phone: string
+          related_lead_id?: string | null
+          segments_count?: number
+          sender_id: string
+          sent_at?: string
+          status?: string
+          twilio_message_sid?: string | null
+        }
+        Update: {
+          client_id?: string
+          cost_eur?: number | null
+          encoding?: string
+          error_code?: string | null
+          error_message?: string | null
+          id?: string
+          message_body?: string
+          recipient_phone?: string
+          related_lead_id?: string | null
+          segments_count?: number
+          sender_id?: string
+          sent_at?: string
+          status?: string
+          twilio_message_sid?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_messages_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_messages_related_lead_id_fkey"
+            columns: ["related_lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sms_templates: {
+        Row: {
+          body: string
+          client_id: string
+          created_at: string
+          id: string
+          is_default: boolean
+          last_edited_at: string
+          last_edited_by: string | null
+          template_key: string
+        }
+        Insert: {
+          body: string
+          client_id: string
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          last_edited_at?: string
+          last_edited_by?: string | null
+          template_key: string
+        }
+        Update: {
+          body?: string
+          client_id?: string
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          last_edited_at?: string
+          last_edited_by?: string | null
+          template_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_templates_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_templates_last_edited_by_fkey"
+            columns: ["last_edited_by"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
@@ -2147,7 +3500,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      webnua_vault_create_secret: {
+        Args: { p_description?: string; p_secret: string }
+        Returns: string
+      }
+      webnua_vault_delete_secret: { Args: { p_id: string }; Returns: undefined }
+      webnua_vault_read_secret: { Args: { p_id: string }; Returns: string }
+      webnua_vault_update_secret: {
+        Args: { p_id: string; p_secret: string }
+        Returns: undefined
+      }
     }
     Enums: {
       analytics_event_type:
@@ -2158,10 +3520,34 @@ export type Database = {
         | "form_field"
         | "form_abandon"
         | "form_submit"
-        | "form_submit_error"
         | "web_vital"
+        | "form_submit_error"
       approval_status: "pending" | "approved" | "rejected" | "recalled"
+      automation_action_type:
+        | "send_sms_to_lead"
+        | "send_email_to_lead"
+        | "send_operator_notification"
+        | "wait_for_duration"
+        | "update_lead_field"
+        | "create_followup_task"
       automation_channel: "sms" | "email"
+      automation_pause_reason:
+        | "lead_replied"
+        | "client_took_over"
+        | "manually_cancelled"
+      automation_run_status:
+        | "running"
+        | "completed"
+        | "failed"
+        | "cancelled"
+        | "paused"
+      automation_trigger_type:
+        | "lead_created"
+        | "job_completed"
+        | "payment_failed"
+        | "job_scheduled"
+        | "job_status_changed"
+        | "lead_inactive"
       billing_cycle: "monthly" | "yearly"
       booking_status: "scheduled" | "in_progress" | "completed" | "cancelled"
       campaign_activity_category: "creative" | "audience" | "budget" | "tune"
@@ -2187,6 +3573,11 @@ export type Database = {
       funnel_step_type: "landing" | "schedule" | "thanks" | "optin" | "upsell"
       generation_fallback_reason: "missing" | "invalid"
       invite_status: "pending" | "accepted" | "expired" | "revoked"
+      lead_automation_state:
+        | "automated"
+        | "taken_over"
+        | "completed"
+        | "archived"
       lead_event_kind:
         | "sms_in"
         | "sms_out"
@@ -2198,6 +3589,16 @@ export type Database = {
         | "automation_fired"
       lead_status: "new" | "contacted" | "booked" | "completed" | "lost"
       lead_urgency: "asap" | "today" | "soon" | "none"
+      meta_campaign_created_via:
+        | "webnua_month_1"
+        | "webnua_ongoing"
+        | "external"
+      meta_campaign_status:
+        | "active"
+        | "paused"
+        | "archived"
+        | "in_review"
+        | "with_issues"
       notification_kind: "lead" | "review" | "auto" | "booking" | "alert"
       page_type: "home" | "about" | "services" | "contact" | "generic"
       payment_method: "card" | "cash" | "invoice_7" | "invoice_14"
@@ -2217,7 +3618,6 @@ export type Database = {
         | "reviews"
         | "faq"
         | "cta"
-        | "form"
         | "schedulePicker"
         | "thanksConfirmation"
         | "header"
@@ -2226,6 +3626,8 @@ export type Database = {
         | "gallery"
         | "about"
         | "contact"
+        | "form"
+      signup_submission_status: "new" | "contacted" | "converted" | "dismissed"
       ssl_status: "pending" | "live" | "error"
       team_role: "owner" | "operator" | "junior"
       ticket_awaiting: "operator" | "client"
@@ -2368,8 +3770,47 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      analytics_event_type: [
+        "page_view",
+        "scroll_depth",
+        "element_click",
+        "form_start",
+        "form_field",
+        "form_abandon",
+        "form_submit",
+        "web_vital",
+        "form_submit_error",
+      ],
       approval_status: ["pending", "approved", "rejected", "recalled"],
+      automation_action_type: [
+        "send_sms_to_lead",
+        "send_email_to_lead",
+        "send_operator_notification",
+        "wait_for_duration",
+        "update_lead_field",
+        "create_followup_task",
+      ],
       automation_channel: ["sms", "email"],
+      automation_pause_reason: [
+        "lead_replied",
+        "client_took_over",
+        "manually_cancelled",
+      ],
+      automation_run_status: [
+        "running",
+        "completed",
+        "failed",
+        "cancelled",
+        "paused",
+      ],
+      automation_trigger_type: [
+        "lead_created",
+        "job_completed",
+        "payment_failed",
+        "job_scheduled",
+        "job_status_changed",
+        "lead_inactive",
+      ],
       billing_cycle: ["monthly", "yearly"],
       booking_status: ["scheduled", "in_progress", "completed", "cancelled"],
       campaign_activity_category: ["creative", "audience", "budget", "tune"],
@@ -2396,6 +3837,12 @@ export const Constants = {
       funnel_step_type: ["landing", "schedule", "thanks", "optin", "upsell"],
       generation_fallback_reason: ["missing", "invalid"],
       invite_status: ["pending", "accepted", "expired", "revoked"],
+      lead_automation_state: [
+        "automated",
+        "taken_over",
+        "completed",
+        "archived",
+      ],
       lead_event_kind: [
         "sms_in",
         "sms_out",
@@ -2408,6 +3855,18 @@ export const Constants = {
       ],
       lead_status: ["new", "contacted", "booked", "completed", "lost"],
       lead_urgency: ["asap", "today", "soon", "none"],
+      meta_campaign_created_via: [
+        "webnua_month_1",
+        "webnua_ongoing",
+        "external",
+      ],
+      meta_campaign_status: [
+        "active",
+        "paused",
+        "archived",
+        "in_review",
+        "with_issues",
+      ],
       notification_kind: ["lead", "review", "auto", "booking", "alert"],
       page_type: ["home", "about", "services", "contact", "generic"],
       payment_method: ["card", "cash", "invoice_7", "invoice_14"],
@@ -2428,7 +3887,6 @@ export const Constants = {
         "reviews",
         "faq",
         "cta",
-        "form",
         "schedulePicker",
         "thanksConfirmation",
         "header",
@@ -2437,7 +3895,9 @@ export const Constants = {
         "gallery",
         "about",
         "contact",
+        "form",
       ],
+      signup_submission_status: ["new", "contacted", "converted", "dismissed"],
       ssl_status: ["pending", "live", "error"],
       team_role: ["owner", "operator", "junior"],
       ticket_awaiting: ["operator", "client"],
