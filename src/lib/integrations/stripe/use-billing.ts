@@ -169,8 +169,15 @@ function billingErrorMessage(code: string | undefined, fallbackStatus: number): 
  * Start the Checkout flow for a client. POSTs the checkout route, then
  * navigates the browser to Stripe's hosted checkout. Resolves only on failure
  * (on success the page has already navigated away).
+ *
+ * @param clientId — the client's **UUID** (the FK to `public.clients.id`),
+ *   NOT the URL slug. Callers that hold a slug must resolve it first via
+ *   `useClientId(slug)` (or `getClientUuidBySlug`). The route's
+ *   `requireClientAccess` compares this against `users.client_id` (UUID) —
+ *   passing a slug here returns 403 forbidden-client every time.
  */
 export async function startStripeCheckout(clientId: string): Promise<void> {
+  assertClientUuid(clientId, 'startStripeCheckout');
   const token = await accessToken();
   const response = await fetch('/api/integrations/stripe/checkout', {
     method: 'POST',
@@ -188,8 +195,15 @@ export async function startStripeCheckout(clientId: string): Promise<void> {
 /**
  * Open the Stripe Customer Portal for a client. POSTs the portal route, then
  * navigates the browser to Stripe's hosted portal.
+ *
+ * @param clientId — the client's **UUID** (the FK to `public.clients.id`), NOT
+ *   the URL slug. Callers that hold a slug must resolve it first via
+ *   `useClientId(slug)` (or `getClientUuidBySlug`). The route's
+ *   `requireClientAccess` compares this against `users.client_id` (UUID) —
+ *   passing a slug here returns 403 forbidden-client every time.
  */
 export async function openStripePortal(clientId: string): Promise<void> {
+  assertClientUuid(clientId, 'openStripePortal');
   const token = await accessToken();
   const response = await fetch('/api/integrations/stripe/portal', {
     method: 'POST',
@@ -202,4 +216,25 @@ export async function openStripePortal(clientId: string): Promise<void> {
   }
   const { portalUrl } = (await response.json()) as { portalUrl: string };
   window.location.assign(portalUrl);
+}
+
+// --- UUID guard --------------------------------------------------------------
+//
+// The `clientId` param on the Stripe helpers MUST be the workspace UUID — the
+// route's `requireClientAccess` compares it to `users.client_id` (a UUID).
+// PublishToGoLiveCTA's first version passed `clientSlug` instead (`useUser().
+// clientId` exposes the slug, not the UUID — different conventions; see the
+// "User.clientId is a slug" gotcha in CLAUDE.md). The result was 403 on every
+// Pattern B publish attempt. This guard fails LOUDLY at the call site so the
+// regression cannot ship silently again. It is intentionally narrow: a fast,
+// inline regex check, no Supabase round-trip.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function assertClientUuid(clientId: string, fnName: string): void {
+  if (!UUID_RE.test(clientId)) {
+    throw new Error(
+      `${fnName} requires the client UUID (eg. "01234567-89ab-cdef-…"), got "${clientId}". ` +
+        'Resolve a slug via useClientId(slug) or getClientUuidBySlug(slug) first.',
+    );
+  }
 }

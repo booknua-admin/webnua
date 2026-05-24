@@ -127,7 +127,21 @@ export type User = {
   email: string;
   role: Role;
   /** The client business this user belongs to. Operators have null
-   *  (workspace-wide via role). Resolves to AdminClient.id. */
+   *  (workspace-wide via role). **This is the workspace SLUG** (matches
+   *  `AdminClient.id` from `clients-store.ts`, which intentionally aliases
+   *  `slug` to `id` for the public surface) — **NOT the UUID** stored in
+   *  `auth.users.user_metadata.client_id` / `public.users.client_id`.
+   *
+   *  Conversion lives in `lib/clients/clients-store.ts`:
+   *    - `getClientUuidBySlug(slug)` — slug → UUID
+   *    - `getClientSlugByUuid(uuid)` — UUID → slug
+   *
+   *  Any API that takes a "clientId" param needs to be told which it wants.
+   *  Routes that compare against `users.client_id` (the UUID column) — eg.
+   *  `requireClientAccess` — need the UUID. The Stripe billing helpers in
+   *  `lib/integrations/stripe/use-billing.ts` carry a runtime UUID guard so
+   *  passing the slug fails loudly instead of returning 403. See the
+   *  "User.clientId is a slug" gotcha in CLAUDE.md. */
   clientId: string | null;
   // Resolved capability set: role defaults + grants applied.
   capabilities: Set<Capability>;

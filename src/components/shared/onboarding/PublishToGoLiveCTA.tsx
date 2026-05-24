@@ -85,12 +85,16 @@ export function PublishToGoLiveCTA({
       : 'Pricing unavailable';
 
   const onPublish = async () => {
-    if (busy || disabledReason) return;
+    if (busy || disabledReason || !clientUuid) return;
     setError(null);
     setBusy(true);
     try {
-      // Resolves only on failure — on success the browser navigates to Stripe.
-      await startStripeCheckout(clientSlug);
+      // startStripeCheckout requires the UUID, not the slug — the route's
+      // `requireClientAccess` compares `users.client_id` (UUID) to the body's
+      // `clientId`. We resolved the UUID at mount via `useClientId(clientSlug)`
+      // (line 50 above); pass that, NOT the slug. Passing the slug here was
+      // the Pattern B 403 regression closed in this hotfix.
+      await startStripeCheckout(clientUuid);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start checkout.');
       setBusy(false);
@@ -171,7 +175,9 @@ export function PublishToGoLiveCTA({
           <Button
             size="lg"
             onClick={onPublish}
-            disabled={busy || !!disabledReason || planInfo.isLoading}
+            disabled={
+              busy || !!disabledReason || planInfo.isLoading || !clientUuid
+            }
             className="bg-rust text-paper hover:bg-rust-deep"
           >
             {busy ? 'Opening checkout…' : 'Publish to go live →'}

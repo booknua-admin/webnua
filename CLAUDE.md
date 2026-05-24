@@ -163,6 +163,55 @@ When a design decision isn't covered by a token, **ask rather than inventing** �
 
 ---
 
+## Common gotchas
+
+> Things that catch every engineer who works on this codebase. Codified as we
+> hit them so the third instance doesn't happen.
+
+- **`User.clientId` is a SLUG, not a UUID.** `useUser().clientId` and
+  `AdminClient.id` both expose the workspace slug (the public-surface id),
+  matching what shows up in URLs. The UUID lives in
+  `auth.users.user_metadata.client_id` and in the FK column
+  `public.users.client_id`. Translation between the two lives in
+  `lib/clients/clients-store.ts`: `getClientUuidBySlug` / `getClientSlugByUuid`.
+  Routes that compare against the UUID column (anything calling
+  `requireClientAccess` / `requireOperatorForClient`) need the UUID — passing
+  the slug returns 403 forbidden-client every time. The Stripe billing helpers
+  in `lib/integrations/stripe/use-billing.ts` carry a runtime UUID-shape guard
+  (`assertClientUuid`) so the mistake fails loudly at the call site instead of
+  silently 403-ing in production. **Adding a new route that takes a client id?
+  Decide at the boundary which form you want and name the param to match
+  (`clientUuid` vs `clientSlug`), or guard at entry.** The Pattern B publish
+  CTA 403 (resolved in the Pattern B hotfix) is the canonical example of this
+  bug recurring.
+
+- **If you ship an editing UI, verify the data it edits exists or gets seeded
+  somewhere.** The Pattern B critical-fixes session shipped the brand editor
+  + the website SectionEditor + the matching RLS + caps, but didn't seed a
+  `brands` row on self-serve signup. Result: every editing surface
+  hard-blocked with "No brand registered for this client" because the row it
+  edits didn't exist. Same shape recurred in Phase 8 with the
+  `LeadAutomationPanel` (editor without the corresponding execution-engine
+  seed). **The rule:** when adding an editing surface, trace the seed path
+  for every entity it reads. If a new self-serve flow doesn't seed the entity
+  (Pattern B's `provisionPendingSignup`), either seed a placeholder at signup
+  OR make the editor tolerate a missing row by offering to create one inline.
+  Don't ship a surface that refuses to mount until "someone else" inserts the
+  row — every editor needs an unambiguous "row exists" path.
+
+- **Snapshot stability on `useSyncExternalStore`-backed stores.** `getSnapshot`
+  MUST return a reference-stable value when the underlying data hasn't
+  changed. The Supabase-backed caches (agency-policy / overrides / plan-catalog
+  / plan-assignments / client-invites / seat-limit / roster) bump a version
+  counter on every write and only rebuild the snapshot when the version
+  changes. Any new store accessor read through `useSyncExternalStore` must
+  follow the same pattern — a fresh array/object per call sends React into an
+  infinite-loop render that crashes the route in production. (Also documented
+  inline in `Code conventions` above; called out here because it's the most
+  common cause of "page renders fine in dev, crashes in prod" reports.)
+
+---
+
 ## What NOT to touch
 
 - `/reference` — read-only, ever.
