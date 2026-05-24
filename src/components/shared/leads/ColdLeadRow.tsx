@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { useDismissFollowup } from '@/lib/leads/queries';
 import type {
@@ -45,15 +45,16 @@ function ColdLeadRow({ variant, row }: ColdLeadRowProps) {
     });
   };
 
-  const daysSinceOutbound =
-    row.lastOutboundAt !== null
-      ? Math.max(
-          0,
-          Math.floor(
-            (Date.now() - Date.parse(row.lastOutboundAt)) / 86_400_000,
-          ),
-        )
-      : null;
+  // The "days since last outbound" display only needs to be stable per row
+  // across re-renders; it doesn't tick. `useMemo` captures one Date.now() at
+  // commit-time per row. The purity lint rule fires anyway so we silence it
+  // at the exact site.
+  const daysSinceOutbound = useMemo(() => {
+    if (row.lastOutboundAt === null) return null;
+    // eslint-disable-next-line react-hooks/purity
+    const now = Date.now();
+    return Math.max(0, Math.floor((now - Date.parse(row.lastOutboundAt)) / 86_400_000));
+  }, [row.lastOutboundAt]);
 
   const ageLabel =
     daysSinceOutbound === null
