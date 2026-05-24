@@ -8,7 +8,7 @@
 // preview pane rendering the template with sample data.
 // =============================================================================
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -44,17 +44,14 @@ type PlatformTemplateEditorProps = {
 };
 
 function PlatformTemplateEditor({ template }: PlatformTemplateEditorProps) {
+  // Local-state subject/body. The page keys each editor by template.templateKey
+  // so a re-fetch produces a fresh mount with fresh state — no re-sync effect
+  // needed.
   const [subject, setSubject] = useState(template.subject);
   const [bodyText, setBodyText] = useState(template.bodyText);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const update = useUpdatePlatformTemplate();
-
-  // Re-sync local state when the underlying row changes from elsewhere.
-  useEffect(() => {
-    setSubject(template.subject);
-    setBodyText(template.bodyText);
-  }, [template.templateKey, template.subject, template.bodyText]);
 
   const subjectRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);

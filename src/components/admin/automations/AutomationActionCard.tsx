@@ -15,7 +15,7 @@
 //   • send_operator_notification → variant label only (no per-row config).
 // =============================================================================
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -158,16 +158,12 @@ function CommActionBody({
   variables: AutomationVariable[];
   onChange: (body: string, subject: string | null) => void;
 }) {
+  // Local-state body/subject. The parent re-mounts this card via the action.id
+  // key when underlying data changes after invalidation, so we don't need a
+  // re-sync effect — fresh props mount fresh state.
   const [body, setBody] = useState(action.body ?? '');
   const [subject, setSubject] = useState(action.subject ?? '');
   const isEmail = action.actionType === 'send_email_to_lead';
-
-  // Re-sync local state when the action's underlying body/subject changes
-  // (e.g. after a successful save invalidates the query).
-  useEffect(() => {
-    setBody(action.body ?? '');
-    setSubject(action.subject ?? '');
-  }, [action.id, action.body, action.subject]);
 
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const subjectRef = useRef<HTMLInputElement>(null);
