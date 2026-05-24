@@ -38,6 +38,10 @@ type LeadConversationComposerProps = {
    *  this state so the header tabs + composer tabs stay in lockstep. */
   activeChannelId?: string;
   onChannelChange?: (id: string) => void;
+  /** Forwarded to the underlying ConversationComposer — autofocuses the
+   *  textarea on mount + scrolls it into view. Used when the page is
+   *  entered with `?compose=true` (cold-lead deep-link). */
+  autoFocus?: boolean;
 };
 
 function LeadConversationComposer({
@@ -47,6 +51,7 @@ function LeadConversationComposer({
   helpers,
   activeChannelId,
   onChannelChange,
+  autoFocus,
 }: LeadConversationComposerProps) {
   const reply = useReplyToLead();
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -97,6 +102,7 @@ function LeadConversationComposer({
       isSending={reply.isPending}
       errorMessage={reply.isError ? (reply.error as Error).message : statusMessage}
       sendLabel={hasEmail ? 'Send email →' : 'Send →'}
+      autoFocus={autoFocus}
     />
   );
 }
