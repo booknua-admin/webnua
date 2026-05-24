@@ -294,41 +294,6 @@ export function useSelectMetaAdAccount() {
   });
 }
 
-/** Launch a campaign from a template. */
-export function useLaunchMetaCampaign() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: {
-      clientId: string;
-      templateSlug: string;
-      dailyBudgetMajor: number;
-      pageId: string;
-      pageAccessToken: string;
-      privacyPolicyUrl: string;
-      linkUrl: string;
-      contextOverrides?: Record<string, string>;
-      initialStatus?: 'ACTIVE' | 'PAUSED';
-      startDate?: string;
-      endDate?: string;
-    }) => {
-      return await postJson('/api/integrations/meta_ads/campaigns', {
-        action: 'launch',
-        ...input,
-      });
-    },
-    onSuccess: (_d, vars) => {
-      qc.invalidateQueries({ queryKey: campaignsKey(vars.clientId) });
-      qc.invalidateQueries({ queryKey: insightsKey(vars.clientId, 30) });
-      // The /campaigns admin roster + client deep-dive read public.campaigns
-      // (joined to meta_campaigns) — different query keys than the per-client
-      // Meta hooks above. Without these invalidations a freshly-launched
-      // campaign doesn't appear on /campaigns until a full refresh.
-      qc.invalidateQueries({ queryKey: ['campaigns', 'admin'] });
-      qc.invalidateQueries({ queryKey: ['campaigns', 'client'] });
-    },
-  });
-}
-
 /** Pause / resume a Meta campaign. */
 export function useSetMetaCampaignStatus() {
   const qc = useQueryClient();
