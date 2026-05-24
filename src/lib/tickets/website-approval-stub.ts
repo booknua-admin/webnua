@@ -41,6 +41,9 @@ export type WebsiteApprovalSubmission = {
   diff: WebsiteApprovalDiff;
   /** Client display name — joined for the approval row's avatar/label. */
   clientName?: string;
+  /** Client slug — used by sub-account filters (the same axis as the
+   *  sidebar workspace picker). */
+  clientSlug?: string;
   /** Full snapshot at submit-time. The pending version holds the canonical
    *  copy (§5 #10 — no duplicated blob); left undefined by the live reads. */
   snapshot?: VersionSnapshot;

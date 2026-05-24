@@ -76,7 +76,7 @@ type LeadHit = {
   source: string | null;
   created_at: string;
   customer: { suburb: string | null } | null;
-  client: { name: string } | null;
+  client: { name: string; slug: string } | null;
   lead_events: { kind: string }[];
 };
 
@@ -88,7 +88,7 @@ type BookingHit = {
   starts_at: string;
   price: number | null;
   customer: { suburb: string | null } | null;
-  client: { name: string } | null;
+  client: { name: string; slug: string } | null;
 };
 
 type ReviewHit = {
@@ -98,7 +98,7 @@ type ReviewHit = {
   stars: number;
   job: string | null;
   reviewed_at: string;
-  client: { name: string } | null;
+  client: { name: string; slug: string } | null;
 };
 
 const MESSAGE_KINDS = new Set(['sms_in', 'sms_out', 'email_in', 'email_out']);
@@ -108,6 +108,7 @@ const MESSAGE_KINDS = new Set(['sms_in', 'sms_out', 'email_in', 'email_out']);
 async function fetchSearch(
   rawQuery: string,
   scope: SearchScope,
+  clientSlugFilter: string | null,
 ): Promise<SearchResults> {
   const {
     data: { user },
@@ -116,9 +117,11 @@ async function fetchSearch(
 
   const query = sanitizeQuery(rawQuery);
   const scopeLabel =
-    scope === 'admin'
-      ? 'leads, bookings, reviews and conversations across all clients'
-      : 'your leads, bookings, reviews and conversations';
+    clientSlugFilter
+      ? `leads, bookings, reviews and conversations in ${clientSlugFilter}`
+      : scope === 'admin'
+        ? 'leads, bookings, reviews and conversations across all clients'
+        : 'your leads, bookings, reviews and conversations';
 
   // An empty query (or one sanitized to nothing) returns no groups.
   if (query.length === 0) {
@@ -132,7 +135,7 @@ async function fetchSearch(
       .from('leads')
       .select(
         'id, customer_name_snapshot, status, source, created_at, ' +
-          'customer:customers(suburb), client:clients(name), ' +
+          'customer:customers(suburb), client:clients!inner(name, slug), ' +
           'lead_events(kind)',
       )
       .ilike('customer_name_snapshot', like)
@@ -142,7 +145,7 @@ async function fetchSearch(
       .from('bookings')
       .select(
         'id, title, customer_name_snapshot, status, starts_at, price, ' +
-          'customer:customers(suburb), client:clients(name)',
+          'customer:customers(suburb), client:clients!inner(name, slug)',
       )
       .or(`title.ilike.${like},customer_name_snapshot.ilike.${like}`)
       .order('starts_at', { ascending: false })
@@ -151,7 +154,7 @@ async function fetchSearch(
       .from('reviews')
       .select(
         'id, author_name, body, stars, job, reviewed_at, ' +
-          'client:clients(name)',
+          'client:clients!inner(name, slug)',
       )
       .or(`author_name.ilike.${like},body.ilike.${like}`)
       .order('reviewed_at', { ascending: false })
@@ -162,9 +165,18 @@ async function fetchSearch(
   if (bookingsResult.error) throw normalizeError(bookingsResult.error);
   if (reviewsResult.error) throw normalizeError(reviewsResult.error);
 
-  const leads = (leadsResult.data ?? []) as unknown as LeadHit[];
-  const bookings = (bookingsResult.data ?? []) as unknown as BookingHit[];
-  const reviews = (reviewsResult.data ?? []) as unknown as ReviewHit[];
+  let leads = (leadsResult.data ?? []) as unknown as LeadHit[];
+  let bookings = (bookingsResult.data ?? []) as unknown as BookingHit[];
+  let reviews = (reviewsResult.data ?? []) as unknown as ReviewHit[];
+
+  // Sub-account narrowing — operator drilled into one client. The join
+  // already returned client.slug; filter client-side so the join shape
+  // (and the join itself) stays uniform with the agency path.
+  if (clientSlugFilter) {
+    leads = leads.filter((row) => row.client?.slug === clientSlugFilter);
+    bookings = bookings.filter((row) => row.client?.slug === clientSlugFilter);
+    reviews = reviews.filter((row) => row.client?.slug === clientSlugFilter);
+  }
 
   const prefix = (clientName: string | undefined): string | null =>
     scope === 'admin' && clientName ? clientName : null;
@@ -260,10 +272,16 @@ async function fetchSearch(
 }
 
 /** Global search results for the given query. RLS bounds the searchable rows
- *  to the caller's tenant; `scope` only shapes the meta lines + scope label. */
-export function useSearch(query: string, scope: SearchScope) {
+ *  to the caller's tenant; `scope` only shapes the meta lines + scope label.
+ *  Pass `clientSlugFilter` to narrow results to a single client (operator
+ *  in sub-account mode). */
+export function useSearch(
+  query: string,
+  scope: SearchScope,
+  clientSlugFilter: string | null = null,
+) {
   return useQuery({
-    queryKey: ['search', scope, query],
-    queryFn: () => fetchSearch(query, scope),
+    queryKey: ['search', scope, query, clientSlugFilter],
+    queryFn: () => fetchSearch(query, scope, clientSlugFilter),
   });
 }
