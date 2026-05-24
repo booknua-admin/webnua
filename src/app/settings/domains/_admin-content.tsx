@@ -11,13 +11,28 @@ import { AllDomainsTable } from '@/components/admin/domains/AllDomainsTable';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
+import { getClientUuidBySlug, useAdminClients } from '@/lib/clients/clients-store';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 export function AdminDomainsContent() {
   const { activeClient } = useWorkspace();
+  // Subscribe to the clients-store so the slug→UUID resolution re-runs once
+  // the cache hydrates. `AdminClient.id` is the slug (per clients-store.ts
+  // line 55); the table FK is the UUID, so we resolve here at the boundary.
+  useAdminClients();
+
   if (activeClient) {
+    const clientUuid = getClientUuidBySlug(activeClient.id);
+    if (!clientUuid) {
+      // Clients-store is still hydrating — render a slim placeholder.
+      return (
+        <div className="px-10 py-9 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-quiet">
+          {'// Loading…'}
+        </div>
+      );
+    }
     return (
-      <SubAccountDomainsContent clientId={activeClient.id} clientName={activeClient.name} />
+      <SubAccountDomainsContent clientId={clientUuid} clientName={activeClient.name} />
     );
   }
   return <AgencyDomainsView />;

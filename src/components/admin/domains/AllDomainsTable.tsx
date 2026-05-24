@@ -16,7 +16,7 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { Button } from '@/components/ui/button';
-import { useAdminClients } from '@/lib/clients/clients-store';
+import { getClientSlugByUuid, useAdminClients } from '@/lib/clients/clients-store';
 import { useAllDomains } from '@/lib/domains/queries';
 import {
   STATUS_LABEL,
@@ -93,9 +93,11 @@ export function AllDomainsTable() {
   }, [rows]);
 
   const drillIn = (row: CustomDomainRow) => {
-    // setActiveClientId expects the client UUID, not the slug (workspace
-    // stores the row's `id`, which is the UUID).
-    setActiveClientId(row.client_id);
+    // The workspace stub stores client SLUGS (AdminClient.id = slug per
+    // clients-store.ts:55), not UUIDs. Resolve UUID → slug before storing.
+    const slug = getClientSlugByUuid(row.client_id);
+    if (!slug) return;
+    setActiveClientId(slug);
     router.push('/settings/domains');
   };
 

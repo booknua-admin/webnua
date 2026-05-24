@@ -41,6 +41,8 @@ async function readJson(request: Request): Promise<Record<string, unknown> | nul
   }
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function isPhase9Body(body: Record<string, unknown>): body is Phase9Body {
   return typeof body.client_id === 'string' && typeof body.domain === 'string';
 }
@@ -71,10 +73,33 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   if (isPhase9Body(body)) {
+    // Defensive: a slug here would cause an FK violation downstream. Surface
+    // a clean 400 with the actual bad value rather than the raw PG error.
+    if (!UUID_RE.test(body.client_id)) {
+      return NextResponse.json(
+        {
+          error: 'invalid-client-id',
+          message: `client_id must be a UUID, got "${body.client_id}".`,
+        },
+        { status: 400 },
+      );
+    }
     // Phase 9 — create a client_custom_domains row for `client_id`.
     const auth = await authoriseDomainAction(request, body.client_id);
     if (!auth.ok) return unauthorisedResponse(auth);
-    const outcome = await attachDomain(body.client_id, body.domain, auth.userId);
+
+    let outcome;
+    try {
+      outcome = await attachDomain(body.client_id, body.domain, auth.userId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'attach failed';
+      console.error('attachDomain crashed:', err);
+      return NextResponse.json(
+        { error: 'attach-failed', message },
+        { status: 500 },
+      );
+    }
+
     switch (outcome.kind) {
       case 'ok':
         return NextResponse.json({ row: outcome.row });
