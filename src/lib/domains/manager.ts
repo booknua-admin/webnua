@@ -327,7 +327,47 @@ async function applyStatus(
     .select('*')
     .single();
   if (error) throw new Error(`applyStatus: ${error.message}`);
+
+  // Sync the legacy `websites.domain_ssl_status` column so surfaces that
+  // still read it (the /website hub indicator when no Phase 9 row is
+  // explicitly resolved) self-heal. Maps Phase 9 status to the three-state
+  // legacy enum: live → 'live', failed → 'error', everything else → 'pending'.
+  await syncLegacyWebsiteSsl(db, row.client_id, row.domain, changes.status);
+
   return (data as CustomDomainRow) ?? row;
+}
+
+/** Phase 9 status → legacy `domain_ssl_status` mirror, applied to whichever
+ *  `websites` row carries this client's domain on `domain_primary` (or in the
+ *  alias array). Best-effort: a failed update is logged but doesn't undo the
+ *  Phase 9 transition. */
+async function syncLegacyWebsiteSsl(
+  db: ReturnType<typeof getIntegrationDb>,
+  clientId: string,
+  domain: string,
+  status: CustomDomainStatus,
+): Promise<void> {
+  const legacy: 'live' | 'pending' | 'error' =
+    status === 'live' ? 'live' : status === 'failed' ? 'error' : 'pending';
+
+  try {
+    // Update by primary first — that's the canonical column.
+    const byPrimary = await db
+      .from('websites')
+      .update({ domain_ssl_status: legacy })
+      .eq('client_id', clientId)
+      .eq('domain_primary', domain)
+      .select('id');
+    if (byPrimary.data && byPrimary.data.length > 0) return;
+    // Otherwise the domain may be in the aliases array — match on contains.
+    await db
+      .from('websites')
+      .update({ domain_ssl_status: legacy })
+      .eq('client_id', clientId)
+      .contains('domain_aliases', [domain]);
+  } catch (err) {
+    console.warn('syncLegacyWebsiteSsl: best-effort update failed', err);
+  }
 }
 
 async function stampChecked(

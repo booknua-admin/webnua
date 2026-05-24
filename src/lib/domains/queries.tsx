@@ -153,7 +153,12 @@ export function useAttachDomain() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: { clientId: string; domain: string }) => {
-      return (await postJson('/api/domains', input)) as { row: CustomDomainRow };
+      // Route discriminates on snake_case client_id; keep camelCase at the
+      // call site (TS convention) and translate at the wire boundary.
+      return (await postJson('/api/domains', {
+        client_id: input.clientId,
+        domain: input.domain,
+      })) as { row: CustomDomainRow };
     },
     onSuccess: (_data, vars) => invalidateScoped(qc, vars.clientId),
   });

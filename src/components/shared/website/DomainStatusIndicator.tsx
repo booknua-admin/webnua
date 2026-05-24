@@ -29,7 +29,7 @@ import type { WebsiteDomain } from '@/lib/website/types';
 type SslPresentation = { dot: string; label: string; tone: string };
 
 const LEGACY_SSL_META: Record<WebsiteDomain['sslStatus'], SslPresentation> = {
-  live: { dot: 'bg-good', label: 'Secure · SSL live', tone: 'text-good' },
+  live: { dot: 'bg-good', label: '🔒 Secure · SSL live', tone: 'text-good' },
   pending: { dot: 'bg-warn animate-pulse', label: 'SSL provisioning', tone: 'text-warn' },
   error: { dot: 'bg-warn', label: 'SSL error · needs attention', tone: 'text-warn' },
 };
@@ -38,7 +38,8 @@ const PHASE9_SSL_META: Record<CustomDomainStatus, SslPresentation> = {
   pending_dns: { dot: 'bg-warn animate-pulse', label: 'Awaiting DNS', tone: 'text-warn' },
   verifying: { dot: 'bg-warn animate-pulse', label: 'Verifying DNS', tone: 'text-warn' },
   ssl_pending: { dot: 'bg-info animate-pulse', label: 'SSL provisioning', tone: 'text-info' },
-  live: { dot: 'bg-good', label: 'Secure · SSL live', tone: 'text-good' },
+  // Padlock prefix only when live — the customer's "this is real" signal.
+  live: { dot: 'bg-good', label: '🔒 Secure · SSL live', tone: 'text-good' },
   failed: { dot: 'bg-warn', label: 'Failed · needs attention', tone: 'text-warn' },
   removed: { dot: 'bg-rule', label: 'Removed', tone: 'text-ink-quiet' },
 };
