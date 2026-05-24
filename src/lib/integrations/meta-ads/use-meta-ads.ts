@@ -25,6 +25,57 @@ function db(): SupabaseClient {
   return supabase as unknown as SupabaseClient;
 }
 
+/** Resolve the signed-in user's Supabase access token — the Meta routes
+ *  authenticate via `requireClientAccess` / `requireOperatorForClient`,
+ *  both of which read the bearer token from the request. Mirrors the GBP
+ *  use-gbp.ts pattern; previous omission of this header was the source
+ *  of the picker's "unauthenticated" error. */
+async function accessToken(): Promise<string> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error('You are signed out — sign in again.');
+  return token;
+}
+
+/** Map a server error code to a sentence the picker UI can show as-is. */
+function errorMessage(code: string | undefined, status: number): string {
+  switch (code) {
+    case 'meta-not-configured':
+      return 'Meta Ads is not configured yet — its OAuth app credentials are missing.';
+    case 'meta-list-ad-accounts-failed':
+      return 'Could not list ad accounts — try reconnecting Meta.';
+    case 'meta-get-ad-account-failed':
+      return 'Could not load that ad account from Meta — try again.';
+    case 'select-write-failed':
+      return 'Could not save the ad-account selection.';
+    case 'launch-failed':
+      return 'Meta rejected the launch — review the campaign in Ads Manager.';
+    case 'status-flip-failed':
+      return 'Could not change the campaign status on Meta.';
+    case 'forbidden':
+    case 'forbidden-client':
+      return 'You do not have access to this client.';
+    case 'unauthenticated':
+      return 'You are signed out — sign in again.';
+    default:
+      return `Something went wrong (${code ?? status}).`;
+  }
+}
+
+async function postJson(path: string, body: unknown): Promise<Record<string, unknown>> {
+  const token = await accessToken();
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+  const json = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!response.ok) {
+    throw new Error(errorMessage(json.error as string | undefined, response.status));
+  }
+  return json;
+}
+
 /** PGRST205 = schema-cache missing table — treat as "no data yet" so a
  *  deployment that hasn't applied the Meta migrations yet shows the empty
  *  state instead of an error. */
@@ -176,17 +227,10 @@ export type AdAccountPickerResponse = {
 export function useListMetaAdAccounts() {
   return useMutation({
     mutationFn: async (input: { clientId: string }) => {
-      const response = await fetch('/api/integrations/meta_ads/ad-accounts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'list', clientId: input.clientId }),
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body?.error ?? `Failed to list ad accounts (${response.status}).`);
-      }
-      const body = (await response.json()) as AdAccountPickerResponse;
-      return body;
+      return (await postJson('/api/integrations/meta_ads/ad-accounts', {
+        action: 'list',
+        clientId: input.clientId,
+      })) as unknown as AdAccountPickerResponse;
     },
   });
 }
@@ -200,15 +244,10 @@ export function useSelectMetaAdAccount() {
       adAccountId: string;
       customerAgreementEmail: string;
     }) => {
-      const response = await fetch('/api/integrations/meta_ads/ad-accounts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'select', ...input }),
+      await postJson('/api/integrations/meta_ads/ad-accounts', {
+        action: 'select',
+        ...input,
       });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body?.error ?? `Failed to save ad account (${response.status}).`);
-      }
     },
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: adAccountKey(vars.clientId) });
@@ -233,16 +272,10 @@ export function useLaunchMetaCampaign() {
       startDate?: string;
       endDate?: string;
     }) => {
-      const response = await fetch('/api/integrations/meta_ads/campaigns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'launch', ...input }),
+      return await postJson('/api/integrations/meta_ads/campaigns', {
+        action: 'launch',
+        ...input,
       });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body?.error ?? `Launch failed (${response.status}).`);
-      }
-      return response.json();
     },
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: campaignsKey(vars.clientId) });
@@ -260,19 +293,11 @@ export function useSetMetaCampaignStatus() {
       metaCampaignDbId: string;
       status: 'ACTIVE' | 'PAUSED';
     }) => {
-      const response = await fetch('/api/integrations/meta_ads/campaigns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: input.status === 'ACTIVE' ? 'activate' : 'pause',
-          clientId: input.clientId,
-          metaCampaignDbId: input.metaCampaignDbId,
-        }),
+      await postJson('/api/integrations/meta_ads/campaigns', {
+        action: input.status === 'ACTIVE' ? 'activate' : 'pause',
+        clientId: input.clientId,
+        metaCampaignDbId: input.metaCampaignDbId,
       });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body?.error ?? `Status change failed (${response.status}).`);
-      }
     },
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: campaignsKey(vars.clientId) });
@@ -288,15 +313,7 @@ export function useSyncMetaCampaign() {
       clientId: string;
       metaCampaignDbId: string;
     }) => {
-      const response = await fetch('/api/integrations/meta_ads/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input),
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body?.error ?? `Sync failed (${response.status}).`);
-      }
+      await postJson('/api/integrations/meta_ads/sync', input);
     },
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: campaignsKey(vars.clientId) });

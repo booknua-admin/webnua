@@ -1,9 +1,9 @@
 // =============================================================================
 // /api/integrations/meta_ads/ad-accounts
 //
-// The post-OAuth Meta picker surface. Operator-only — the customer's ad
-// account assignment is operator governance (unlike GBP where the customer
-// can run it themselves).
+// The post-OAuth Meta picker surface — client-or-operator. The Meta ad
+// account belongs to the customer, so they may pick it themselves OR the
+// operator may pick on their behalf (mirrors GBP's locations route).
 //
 //   POST { clientId, action: 'list' }
 //     Returns the ad accounts the connected Meta user can manage + the
@@ -12,9 +12,9 @@
 //
 //   POST { clientId, action: 'select', adAccountId, customerAgreementEmail }
 //     Persists the chosen ad account into client_meta_ad_accounts. The
-//     customerAgreementEmail field is the operator-confirmed audit trail
-//     that the customer agreed to (a) Meta billing them direct from
-//     month 2 and (b) Webnua managing campaigns on their behalf.
+//     customerAgreementEmail field is the audit trail that the customer
+//     agreed to (a) Meta billing their card directly for ad spend and
+//     (b) Webnua managing campaigns on their behalf.
 //
 // Returns 503 when Meta is unconfigured (the OAuth callback would have
 // fired but Meta env vars are absent). 502 is reserved for downstream
@@ -33,7 +33,7 @@ import { upsertAdAccount } from '@/lib/integrations/meta-ads/ad-accounts';
 import {
   describeMetaAccountStatus,
 } from '@/lib/integrations/meta-ads/types';
-import { requireOperatorForClient } from '@/lib/integrations/_shared/operator-auth';
+import { requireClientAccess } from '@/lib/integrations/_shared/operator-auth';
 
 export async function POST(request: Request): Promise<Response> {
   let body: { clientId?: unknown; action?: unknown; [k: string]: unknown };
@@ -48,7 +48,7 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: 'missing-clientId' }, { status: 400 });
   }
 
-  const auth = await requireOperatorForClient(request, clientId);
+  const auth = await requireClientAccess(request, clientId);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

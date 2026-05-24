@@ -1,10 +1,11 @@
 // =============================================================================
 // /api/integrations/meta_ads/sync
 //
-// Operator-only manual sync. Same job handlers the cron enqueues — this
-// route just lets the operator force an immediate refresh after a launch
-// or when investigating odd metrics. Fires both jobs (insights + leads)
-// for symmetry with the dashboard widgets.
+// Manual on-demand sync — client-or-operator. Same job handlers the cron
+// enqueues; this route just forces an immediate refresh. A read-only
+// action (pulls latest metrics + leads for the caller's own client), so
+// allowing the client mirrors the GBP "Sync now" pattern. Fires both
+// jobs (insights + leads) for symmetry with the dashboard widgets.
 // =============================================================================
 
 import { NextResponse } from 'next/server';
@@ -18,7 +19,7 @@ import {
   type MetaSyncLeadsPayload,
 } from '@/lib/integrations/meta-ads/job-types';
 import { enqueueJobImmediate } from '@/lib/integrations/_shared/jobs';
-import { requireOperatorForClient } from '@/lib/integrations/_shared/operator-auth';
+import { requireClientAccess } from '@/lib/integrations/_shared/operator-auth';
 
 export async function POST(request: Request): Promise<Response> {
   let body: { clientId?: unknown; metaCampaignDbId?: unknown };
@@ -36,7 +37,7 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: 'missing-metaCampaignDbId' }, { status: 400 });
   }
 
-  const auth = await requireOperatorForClient(request, clientId);
+  const auth = await requireClientAccess(request, clientId);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

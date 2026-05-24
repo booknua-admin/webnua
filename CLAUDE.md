@@ -421,10 +421,10 @@ Components for the operator's cross-client integrations matrix — workspace-wid
 - **`integrations/_shared/oauth.ts`** — generic helpers: `generateAuthorizationUrl`, `exchangeCodeForTokens`, `buildRedirectUri`, and the HMAC-signed `state` token (`signOAuthState` / `verifyOAuthState` — 15-min TTL; the OAuth CSRF defence + the only authenticated context carried into the callback).
 - **`integrations/_shared/tokens.ts`** — token management. Vault RPC wrappers; `storeConnection` (Vault-encrypt then write the row — **Vault failure is fatal, no plaintext fallback**), `getAccessToken` (on-demand refresh, forked on `token_model` — `refresh_access` re-mints from the Vault refresh token, `long_lived` extends the Vault secret in place), `revokeConnection`, `notifyTokenRefreshFailure` (throttled operator alert). Typed errors: `VaultUnavailableError` / `ConnectionNotFoundError` / `TokenExpiredError` / `TokenRefreshFailedError` / `TokenRevokedError`.
 - **`integrations/_shared/api-call-with-token.ts`** — **`callWithToken(clientId, provider, fetchFn)`** — every per-tenant API call goes through this: fresh access token in, 401 → refresh-and-retry-once, marks the connection `refresh_failed` + throws `TokenRefreshFailedError` on a dead token. `fetchFn` itself uses `callExternal()`.
-- **`integrations/_shared/operator-auth.ts`** — two helpers. `requireOperatorForClient(request, clientId)`: bearer-token → operator role + accessible-client check (token-scoped client so the `clients` RLS scopes a junior operator); integration management as operator governance. **`requireClientAccess(request, clientId)`** (Phase 7 GBP UI consolidation): the looser variant — accepts EITHER an operator path (same check) OR a client-role user whose `client_id` matches. Used for the GBP routes + GBP's connect/disconnect leg, because the GBP listing belongs to the customer — they may connect their own without operator delegation. Meta Ads stays on `requireOperatorForClient` because the ad-account contract is operator governance.
+- **`integrations/_shared/operator-auth.ts`** — two helpers. `requireOperatorForClient(request, clientId)`: bearer-token → operator role + accessible-client check (token-scoped client so the `clients` RLS scopes a junior operator); integration management as operator governance. **`requireClientAccess(request, clientId)`** (Phase 7 GBP UI consolidation): the looser variant — accepts EITHER an operator path (same check) OR a client-role user whose `client_id` matches. **Used for every per-tenant OAuth provider** (both GBP and Meta Ads — the third-party account belongs to the customer, so the customer may connect / disconnect / pick the working entity themselves OR the operator may do it on their behalf). `meta_ads/campaigns` is the only Meta route that still gates on `requireOperatorForClient` — launching campaigns + flipping their status is operator governance under the managed-service model, distinct from owning the connection.
 - **`integrations/_shared/job-handlers.ts`** — registers `token_refresh_check` (daily cron, migration `0056`): proactively refreshes `long_lived` connections within 14 days of expiry; `refresh_access` connections need none (on-demand re-mint).
 - **`integrations/use-connections.ts`** — `'use client'` operator-UI data layer: `useClientConnections` (reads `integration_connections`, RLS-scoped), `connectIntegration` (POST connect → navigate to consent), `useDisconnectIntegration`.
-- **`app/api/integrations/[provider]/connect|callback|disconnect/route.ts`** — `connect` (POST, returns `{ authorizationUrl }` JSON — not a 302, since it is `fetch`-ed with a bearer token; auth dispatches on the provider — GBP is client-or-operator via `requireClientAccess`, Meta is operator-only via `requireOperatorForClient`), `callback` (GET, verified by the signed state — a provider redirect carries no auth header), `disconnect` (POST, same per-provider auth split, revokes).
+- **`app/api/integrations/[provider]/connect|callback|disconnect/route.ts`** — `connect` (POST, returns `{ authorizationUrl }` JSON — not a 302, since it is `fetch`-ed with a bearer token; auth is `requireClientAccess` for every per-tenant OAuth provider so the customer may connect their own account OR the operator may connect on their behalf), `callback` (GET, verified by the signed state — a provider redirect carries no auth header), `disconnect` (POST, same auth shape, revokes).
 - **`components/shared/settings/IntegrationConnectionsSection.tsx`** — operator "Connected accounts" panel on sub-account `/settings/integrations` — per-provider status + Connect / Disconnect / Reconnect.
 
 #### Per-tenant OAuth — Google Business Profile setup
@@ -961,17 +961,18 @@ Components for the operator's cross-client integrations matrix — workspace-wid
 > Per-tenant Meta Ads integration — Webnua manages each customer's
 > Facebook / Instagram lead-generation campaigns end to end. Five flows:
 >
-> 1. **Connect + pick ad account + capture customer agreement.** Operator
->    initiates the connect from sub-account `/settings/integrations` (Meta
->    is operator-only, unlike GBP which can be client-driven — the
->    customer agreement and the spend implications are operator
->    governance). The post-OAuth callback redirects back to the
+> 1. **Connect + pick ad account + capture customer agreement.** Either
+>    the client themselves OR the operator initiates the connect from
+>    `/settings/integrations` (Meta sits behind `requireClientAccess`,
+>    same governance shape as GBP — the third-party account belongs to
+>    the customer). The post-OAuth callback redirects back to the
 >    integrations page, the `MetaAdAccountPickerModal` auto-opens (mirror
->    of `GbpLocationPickerModal`), and the operator picks WHICH ad
->    account + records the customer's email as the audit trail for two
->    consents: (a) Meta billing the customer's card direct from month 2,
->    (b) Webnua managing campaigns on their behalf. Selection lands on
->    `client_meta_ad_accounts` (one row per client, migration `0070`).
+>    of `GbpLocationPickerModal`), and the operator (or the customer)
+>    picks WHICH ad account + records the customer's email as the audit
+>    trail for two consents: (a) Meta billing the customer's card
+>    directly for ad spend, (b) Webnua managing campaigns on their
+>    behalf. Selection lands on `client_meta_ad_accounts` (one row per
+>    client, migration `0070`).
 > 2. **Launch a lead-gen campaign from a template.** Operator opens the
 >    admin `/campaigns` page, picks a client from the sidebar (sub-account
 >    mode), clicks **+ Launch Meta campaign**, picks a template (9 trade
@@ -1102,19 +1103,26 @@ Components for the operator's cross-client integrations matrix — workspace-wid
   doesn't have to know Meta's snake_case + nullables) +
   `summariseInsights()` for the dashboard widget.
 - **`app/api/integrations/meta_ads/ad-accounts/route.ts`** — `POST`,
-  operator-only (`requireOperatorForClient`). `action: 'list'` returns
-  the ad accounts the connected user can manage + the FB Pages they
-  own (lead-gen ads need a Page); `action: 'select'` persists the
-  chosen ad account + captures `customer_agreed_by_email` for audit.
-  Returns 503 when Meta is unconfigured.
+  client-or-operator (`requireClientAccess` — the Meta ad account
+  belongs to the customer). `action: 'list'` returns the ad accounts
+  the connected user can manage + the FB Pages they own (lead-gen ads
+  need a Page); `action: 'select'` persists the chosen ad account +
+  captures `customer_agreed_by_email` for audit. Returns 503 when Meta
+  is unconfigured.
 - **`app/api/integrations/meta_ads/campaigns/route.ts`** — `POST`,
-  operator-only. `action: 'launch'` runs `launchCampaign` (returns
-  the structured success / failure shape); `action: 'pause' |
-  'activate'` flips a campaign on Meta + updates the local row.
-  Resolves `created_via` from the client's Stripe subscription anchor.
+  operator-only (`requireOperatorForClient`). `action: 'launch'` runs
+  `launchCampaign` (returns the structured success / failure shape);
+  `action: 'pause' | 'activate'` flips a campaign on Meta + updates the
+  local row. Resolves `created_via` from the client's Stripe
+  subscription anchor. **Operator-only because launching campaigns is
+  governance** under the managed-service model (template + budget +
+  Page + privacy URL — all operator decisions), distinct from owning
+  the underlying Meta connection.
 - **`app/api/integrations/meta_ads/sync/route.ts`** — `POST`,
-  operator-only. Manual on-demand sync. Enqueues both jobs (insights +
-  leads) for one campaign with widened windows (7d insights, 24h leads).
+  client-or-operator (`requireClientAccess` — refreshing metrics for
+  the caller's own client is a read action, same as GBP's "Sync now").
+  Manual on-demand sync. Enqueues both jobs (insights + leads) for one
+  campaign with widened windows (7d insights, 24h leads).
 - **`components/shared/settings/MetaAdAccountPickerModal.tsx`** —
   `'use client'`. Post-OAuth ad-account picker. Auto-opens from
   `IntegrationConnectionsSection` on the Meta success URL. Picks an
@@ -1170,12 +1178,12 @@ Components for the operator's cross-client integrations matrix — workspace-wid
    `META_API_VERSION` (defaults to `v21.0`; bump periodically as Meta
    deprecates older versions), `META_OAUTH_REDIRECT_URI_BASE` (defaults
    to `{app origin}/api/integrations`).
-7. Per client: operator initiates Meta connect on sub-account
-   `/settings/integrations` → customer signs into their own Facebook
-   account → grants permissions on their Business Manager + ad account
-   + the Page that will host ads → callback redirects back to Webnua
-   and `MetaAdAccountPickerModal` auto-opens for the operator to pick
-   the ad account + capture the customer's agreement email.
+7. Per client: either the customer themselves OR the operator initiates
+   Meta connect on `/settings/integrations` → customer signs into their
+   own Facebook account → grants permissions on their Business Manager
+   + ad account + the Page that will host ads → callback redirects back
+   to Webnua and `MetaAdAccountPickerModal` auto-opens to pick the ad
+   account + capture the customer's agreement email.
 8. Operator launches the customer's first campaign from admin
    `/campaigns` → **+ Launch Meta campaign** → picks template +
    Page + budget → confirms the privacy-policy + landing URLs. Default
