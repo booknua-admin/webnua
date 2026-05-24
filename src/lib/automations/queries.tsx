@@ -677,6 +677,35 @@ export function useToggleAutomation() {
 }
 
 // =============================================================================
+// Active-run count — drives the editor's in-flight note.
+//
+// A run is "active" while status ∈ {running, paused}. Reorders / inserts /
+// deletes on an automation's actions never block — they only affect runs
+// triggered after the edit (see migration 0080 + the snapshot contract on
+// automation_runs.action_sequence). The note in the editor surfaces this so
+// an operator isn't surprised when an old-sequence run finishes mid-edit.
+// =============================================================================
+
+async function fetchActiveRunCount(automationId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('automation_runs')
+    .select('id', { count: 'exact', head: true })
+    .eq('automation_id', automationId)
+    .in('status', ['running', 'paused']);
+  if (error) throw normalizeError(error);
+  return count ?? 0;
+}
+
+export function useAutomationActiveRuns(automationId: string) {
+  return useQuery({
+    queryKey: ['automations', 'active-runs', automationId],
+    queryFn: () => fetchActiveRunCount(automationId),
+    enabled: automationId.length > 0,
+    staleTime: 15_000,
+  });
+}
+
+// =============================================================================
 // Action mutations — Phase 8 · Session 3.
 //
 // The editor's action list is now fully editable: add, reorder, remove,

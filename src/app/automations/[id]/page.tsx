@@ -19,6 +19,7 @@ import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
 import {
   useAddAction,
+  useAutomationActiveRuns,
   useAutomationEditor,
   useMoveAction,
   useRemoveAction,
@@ -88,6 +89,7 @@ function EditorBody({ editor }: { editor: AutomationEditor }) {
   const updateBody = useUpdateActionBody();
   const updateConfig = useUpdateActionConfig();
   const toggle = useToggleAutomation();
+  const { data: activeRunCount = 0 } = useAutomationActiveRuns(editor.id);
 
   const [pendingRemoval, setPendingRemoval] =
     useState<AutomationEditorAction | null>(null);
@@ -164,6 +166,11 @@ function EditorBody({ editor }: { editor: AutomationEditor }) {
       <AutomationEditorLayout
         canvas={
           <>
+            {activeRunCount > 0 ? (
+              <p className="mb-4 rounded-md border border-rust-soft bg-rust-soft/30 px-4 py-3 font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-ink-soft">
+                {`// ${activeRunCount} active ${activeRunCount === 1 ? 'run' : 'runs'} — they'll finish with the previous sequence`}
+              </p>
+            ) : null}
             <AutomationTriggerBox trigger={editor.trigger} />
             {actions.map((action, index) => (
               <div key={action.id}>
@@ -263,7 +270,7 @@ function EditorBody({ editor }: { editor: AutomationEditor }) {
           if (!open) setPendingRemoval(null);
         }}
         title={`Remove action ${pendingRemoval?.position ?? ''}?`}
-        description="The remaining actions will renumber. In-flight runs of this automation will continue executing the OLD sequence until they finish."
+        description="The remaining actions will renumber. In-flight runs walk the sequence as it was when they started — removing the action only affects runs triggered after this edit."
         confirmLabel="Remove action"
         cancelLabel="Keep it"
         tone="destructive"

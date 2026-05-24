@@ -132,6 +132,24 @@ export async function onTrigger(
       continue;
     }
 
+    // 3c) Snapshot the current action sequence. The run walks THIS array,
+    //     so a later reorder / insert / remove only affects future runs.
+    //     A zero-action automation produces an empty array → the run
+    //     completes immediately on the next executor tick.
+    const { data: actionIdRows, error: actionIdErr } = await db
+      .from('automation_actions')
+      .select('id')
+      .eq('automation_id', automation.id)
+      .order('position', { ascending: true });
+    if (actionIdErr) {
+      skipped.push({
+        automationId: automation.id,
+        reason: `action_sequence_lookup_failed:${actionIdErr.message}`,
+      });
+      continue;
+    }
+    const actionSequence = (actionIdRows ?? []).map((r) => (r as { id: string }).id);
+
     // 4) Insert the run.
     const { data: runData, error: runError } = await db
       .from('automation_runs')
@@ -142,6 +160,7 @@ export async function onTrigger(
         trigger_event: triggerEvent,
         status: 'running',
         current_action_position: 1,
+        action_sequence: actionSequence,
       } as unknown as never)
       .select('*')
       .single();
@@ -219,18 +238,17 @@ export async function processNextAction(runId: string): Promise<ProcessActionRes
     return { kind: 'run_not_running', runId };
   }
 
-  // 2) Load the action at the current position.
-  const { data: actionData, error: actionError } = await db
-    .from('automation_actions')
-    .select('*')
-    .eq('automation_id', run.automation_id)
-    .eq('position', run.current_action_position)
-    .maybeSingle();
-  if (actionError) {
-    await failRun(runId, `action_lookup_failed:${actionError.message}`);
-    return { kind: 'failed', runId, error: actionError.message };
+  // 2) Resolve the next action via the run's snapshotted sequence
+  //    (`action_sequence` from migration 0080). Walks forward from
+  //    `current_action_position`, skipping any action id whose row has been
+  //    deleted since the run was created. Falls back to the live live-query
+  //    for legacy / pre-0080 runs whose `action_sequence` is empty.
+  const resolved = await resolveActionForRun(run, run.current_action_position);
+  if (resolved === 'lookup_failed') {
+    await failRun(runId, 'action_lookup_failed');
+    return { kind: 'failed', runId, error: 'action_lookup_failed' };
   }
-  if (!actionData) {
+  if (!resolved) {
     // Past the last action — run is complete.
     await db
       .from('automation_runs')
@@ -238,7 +256,18 @@ export async function processNextAction(runId: string): Promise<ProcessActionRes
       .eq('id', runId);
     return { kind: 'no_action_left', runId };
   }
-  const action = actionData as unknown as AutomationActionRow;
+  const { action, position: actionPosition } = resolved;
+
+  // If the resolver skipped past gone-missing actions, advance the stored
+  // position to the slot we're actually about to execute. Keeps the surface
+  // (`/api/leads/[id]/automation-state`) honest about where the run is.
+  if (actionPosition !== run.current_action_position) {
+    await db
+      .from('automation_runs')
+      .update({ current_action_position: actionPosition })
+      .eq('id', runId);
+    run.current_action_position = actionPosition;
+  }
 
   // 3) Pre-flight handoff check for actions that pause on human activity.
   if (action.pauses_on_human_activity) {
@@ -271,16 +300,12 @@ export async function processNextAction(runId: string): Promise<ProcessActionRes
         : run.last_automation_message_at;
 
     // 5) Advance — either to the next action (immediate or deferred for
-    //    wait_for_duration) or to terminal completed.
-    const nextPosition = run.current_action_position + 1;
-    const { data: hasNextRow } = await db
-      .from('automation_actions')
-      .select('id')
-      .eq('automation_id', run.automation_id)
-      .eq('position', nextPosition)
-      .maybeSingle();
-
-    if (!hasNextRow) {
+    //    wait_for_duration) or to terminal completed. Resolve the NEXT
+    //    valid slot via the snapshotted sequence so a mid-run delete of
+    //    a later action doesn't crash the run — the engine skips past
+    //    missing ids and lands on the next still-existing one.
+    const nextResolved = await resolveActionForRun(run, run.current_action_position + 1);
+    if (nextResolved === 'lookup_failed' || !nextResolved) {
       await db
         .from('automation_runs')
         .update({
@@ -291,6 +316,7 @@ export async function processNextAction(runId: string): Promise<ProcessActionRes
         .eq('id', runId);
       return { kind: 'completed', runId };
     }
+    const nextPosition = nextResolved.position;
 
     await db
       .from('automation_runs')
@@ -395,6 +421,63 @@ export async function shouldPauseForHumanActivity(
 }
 
 // --- helpers ---------------------------------------------------------------
+
+/**
+ * Resolve the next executable action for a run, starting from `startPosition`
+ * (1-indexed). Walks the run's snapshotted `action_sequence` forward, returning
+ * the first action whose id still exists in `automation_actions`.
+ *
+ * Skip-missing semantics: an action id that was in the sequence but whose row
+ * has since been deleted is silently skipped — the run continues with the
+ * next still-existing id rather than crashing. This is the one place a
+ * mid-run mutation to the underlying actions can affect a live run: a
+ * delete removes a slot, an insert / reorder doesn't.
+ *
+ * Backwards compat: a run with an empty `action_sequence` (legacy / pre-0080)
+ * falls back to a live `automation_actions` lookup by position.
+ *
+ * Return value:
+ *   • `{ action, position }` — next action + its 1-indexed slot in the sequence.
+ *   • `null`                 — no more actions to execute (run is complete).
+ *   • `'lookup_failed'`      — DB error — caller should fail the run.
+ */
+async function resolveActionForRun(
+  run: AutomationRunRow,
+  startPosition: number,
+): Promise<{ action: AutomationActionRow; position: number } | null | 'lookup_failed'> {
+  const db = getIntegrationDb();
+  const sequence = run.action_sequence ?? [];
+
+  // Legacy / pre-0080: no snapshot, fall back to live query by position.
+  if (sequence.length === 0) {
+    const { data, error } = await db
+      .from('automation_actions')
+      .select('*')
+      .eq('automation_id', run.automation_id)
+      .eq('position', startPosition)
+      .maybeSingle();
+    if (error) return 'lookup_failed';
+    if (!data) return null;
+    return { action: data as unknown as AutomationActionRow, position: startPosition };
+  }
+
+  // Walk the snapshotted ids forward from startPosition. Past the end → done.
+  for (let pos = startPosition; pos <= sequence.length; pos += 1) {
+    const actionId = sequence[pos - 1];
+    if (!actionId) continue;
+    const { data, error } = await db
+      .from('automation_actions')
+      .select('*')
+      .eq('id', actionId)
+      .maybeSingle();
+    if (error) return 'lookup_failed';
+    // Missing row → operator deleted this action after the run started.
+    // Skip and try the next slot.
+    if (!data) continue;
+    return { action: data as unknown as AutomationActionRow, position: pos };
+  }
+  return null;
+}
 
 function readString(obj: Record<string, unknown>, key: string): string | null {
   const v = obj[key];

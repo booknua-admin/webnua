@@ -150,23 +150,38 @@ export async function recordInboundOnLead(leadId: string): Promise<void> {
   // engine's pre-flight will pause it later if the run is about to send.
   const { data: runs } = await db
     .from('automation_runs')
-    .select('id, automation_id, current_action_position')
+    .select('id, automation_id, current_action_position, action_sequence')
     .eq('lead_id', leadId)
     .eq('status', 'running');
   const list = (runs as
-    | { id: string; automation_id: string; current_action_position: number }[]
+    | {
+        id: string;
+        automation_id: string;
+        current_action_position: number;
+        action_sequence: string[] | null;
+      }[]
     | null) ?? [];
   if (list.length === 0) return;
 
   // Resolve which of those runs have a comm-action next. One round-trip per
-  // run — list is short (most leads carry 1-2 active runs).
+  // run — list is short (most leads carry 1-2 active runs). Prefer the run's
+  // snapshotted action_sequence (migration 0080) so a mid-run reorder of the
+  // underlying actions doesn't misread the wrong action_type; fall back to
+  // a live (automation_id, position) lookup for legacy / pre-0080 runs whose
+  // sequence is empty.
   for (const run of list) {
-    const { data: actionData } = await db
-      .from('automation_actions')
-      .select('action_type')
-      .eq('automation_id', run.automation_id)
-      .eq('position', run.current_action_position)
-      .maybeSingle();
+    const sequence = run.action_sequence ?? [];
+    const idAtPosition = sequence[run.current_action_position - 1];
+    const actionQuery =
+      idAtPosition
+        ? db.from('automation_actions').select('action_type').eq('id', idAtPosition).maybeSingle()
+        : db
+            .from('automation_actions')
+            .select('action_type')
+            .eq('automation_id', run.automation_id)
+            .eq('position', run.current_action_position)
+            .maybeSingle();
+    const { data: actionData } = await actionQuery;
     const actionType = (actionData as { action_type: string } | null)?.action_type;
     if (actionType && COMM_ACTION_TYPES.has(actionType)) {
       await db
