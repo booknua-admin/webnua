@@ -1,11 +1,12 @@
 // =============================================================================
 // POST /api/integrations/[provider]/connect — start a per-tenant OAuth flow.
 //
-// Phase 7 Session 2 + Phase 7 GBP UI consolidation. Auth depends on the
-// provider: Google Business Profile is the customer's own listing, so a
-// client-role user (or the operator on their behalf) may initiate connect;
-// Meta Ads stays operator-only (governance over an ad account is the
-// operator's contract decision, not the customer's).
+// Phase 7 Session 2 + GBP UI consolidation + Meta client-or-operator flip.
+// Auth is client-or-operator for every per-tenant OAuth provider — the
+// customer owns the third-party account (their GBP listing, their Meta
+// ad account), so they can connect it themselves OR the operator can
+// connect on their behalf. Campaign launch + status flips stay operator-
+// only (those live on the meta_ads/campaigns route, not here).
 //
 // Returns JSON { authorizationUrl } — NOT an HTTP redirect. Authenticated by
 // the caller's Supabase access token on the Authorization header (the app
@@ -24,7 +25,7 @@ import { NextResponse } from 'next/server';
 import { isOAuthProviderId } from '@/lib/integrations/connections';
 import { generateAuthorizationUrl, buildRedirectUri, signOAuthState } from '@/lib/integrations/_shared/oauth';
 import { isOAuthProviderConfigured } from '@/lib/integrations/_shared/oauth-providers';
-import { requireClientAccess, requireOperatorForClient } from '@/lib/integrations/_shared/operator-auth';
+import { requireClientAccess } from '@/lib/integrations/_shared/operator-auth';
 
 export async function POST(
   request: Request,
@@ -46,12 +47,11 @@ export async function POST(
     return NextResponse.json({ error: 'missing-clientId' }, { status: 400 });
   }
 
-  // GBP is the customer's own listing — allow client-or-operator. Meta
-  // Ads stays operator-only (the operator owns the ad-account contract).
-  const auth =
-    provider === 'google_business_profile'
-      ? await requireClientAccess(request, clientId)
-      : await requireOperatorForClient(request, clientId);
+  // Every per-tenant OAuth provider is the customer's own third-party
+  // account, so the customer may connect it themselves OR the operator
+  // may connect on their behalf. (Meta campaign launch + status flips
+  // are operator-only — but those live on the meta_ads/campaigns route.)
+  const auth = await requireClientAccess(request, clientId);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

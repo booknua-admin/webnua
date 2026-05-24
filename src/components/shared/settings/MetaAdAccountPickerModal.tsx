@@ -11,9 +11,9 @@
 //
 // Sibling of `GbpLocationPickerModal` — same overall flow shape (list →
 // pick → save) but with the additional customer-agreement field; the
-// Meta integration's commercial agreement (Meta billing the customer
-// from month 2; Webnua managing campaigns) is a higher-stakes consent
-// than picking a GBP location.
+// Meta integration's commercial agreement (Meta billing the customer's
+// card for ad spend; Webnua managing campaigns) is a higher-stakes
+// consent than picking a GBP location.
 // =============================================================================
 
 import { useEffect, useState } from 'react';
@@ -96,8 +96,8 @@ export function MetaAdAccountPickerModal({
           <DialogDescription>
             Webnua will create + manage campaigns on this ad account. The
             customer agrees that <strong>Meta bills their card directly</strong>{' '}
-            for ad spend from month 2 onwards, and that <strong>Webnua makes
-            campaign changes on their behalf</strong>.
+            for ad spend, and that <strong>Webnua makes campaign changes on
+            their behalf</strong>.
           </DialogDescription>
         </DialogHeader>
 
@@ -168,8 +168,9 @@ export function MetaAdAccountPickerModal({
               disabled={selectMutation.isPending}
             />
             <span>
-              I confirm the customer agreed to (a) Meta billing them direct
-              from month 2 and (b) Webnua managing campaigns on their behalf.
+              I confirm the customer agreed to (a) Meta billing their card
+              directly for ad spend and (b) Webnua managing campaigns on
+              their behalf.
             </span>
           </label>
           {selectMutation.error ? (
