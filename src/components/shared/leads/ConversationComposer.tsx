@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,6 +42,10 @@ type ConversationComposerProps = {
   onSend?: (draft: ConversationComposerSend) => Promise<void> | void;
   isSending?: boolean;
   errorMessage?: string | null;
+  /** When true on first mount, autofocus the textarea + scroll it into view.
+   *  Used by the lead detail page when entered with `?compose=true` from a
+   *  cold-lead surface. */
+  autoFocus?: boolean;
 };
 
 function ConversationComposer({
@@ -60,7 +64,28 @@ function ConversationComposer({
   onSend,
   isSending,
   errorMessage,
+  autoFocus,
 }: ConversationComposerProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!autoFocus) return;
+    const el = textareaRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      el.focus();
+      try {
+        const end = el.value.length;
+        el.setSelectionRange(end, end);
+      } catch {
+        // setSelectionRange can throw on some browsers/types; ignore.
+      }
+      el.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    });
+    // autoFocus is a one-shot signal at mount; ignore later changes so
+    // composer state doesn't fight the operator after the first focus.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [value, setValue] = useState(defaultValue ?? '');
   const [subject, setSubject] = useState(defaultSubject ?? '');
   const [internalChannel, setInternalChannel] = useState<string | undefined>(
@@ -174,6 +199,7 @@ function ConversationComposer({
           </button>
         ) : null}
         <Textarea
+          ref={textareaRef}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder={placeholder}

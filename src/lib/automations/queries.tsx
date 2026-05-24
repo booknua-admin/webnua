@@ -33,7 +33,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { AppError, normalizeError } from '@/lib/errors';
 import { supabase } from '@/lib/supabase/client';
+import type { Json } from '@/lib/types/database';
 
+import { ACTION_PAUSES_ON_HUMAN_ACTIVITY } from './engine-types';
 import {
   AUTOMATION_VARIABLE_FLAT,
 } from './platform-defaults';
@@ -43,7 +45,9 @@ import type {
   AutomationEditableFilterField,
   AutomationEditableTriggerField,
   AutomationEditor,
+  AutomationEditorAction,
   AutomationEditorActionKind,
+  AutomationEditorActionType,
   AutomationEditorChannel,
   AutomationEditorRun,
   AutomationEditorStats,
@@ -457,6 +461,42 @@ function toEditorStep(action: ActionRow): AutomationEditorStep {
   return base;
 }
 
+/**
+ * Phase 8 · Session 3 — `AutomationEditorAction` projection consumed by the
+ * full editor body (add/reorder/remove + per-action edit). Reads body/subject
+ * straight off `action_config` (inline-body model from Session 2).
+ */
+function actionToEditorAction(a: ActionRow): AutomationEditorAction {
+  const cfg = (a.action_config ?? {}) as Record<string, unknown>;
+  let body: string | null = null;
+  let subject: string | null = null;
+  if (a.action_type === 'send_sms_to_lead') {
+    body = typeof cfg.body === 'string' ? cfg.body : '';
+  } else if (a.action_type === 'send_email_to_lead') {
+    body =
+      typeof cfg.body_text === 'string'
+        ? cfg.body_text
+        : typeof cfg.body_html === 'string'
+          ? cfg.body_html
+          : '';
+    subject = typeof cfg.subject === 'string' ? cfg.subject : '';
+  }
+  const actionType = a.action_type as AutomationEditorActionType;
+  return {
+    id: a.id,
+    position: a.position,
+    actionType,
+    config: cfg,
+    body,
+    subject,
+    // Prefer the DB column (Session 2 schema), fall back to the static map.
+    pausesOnHumanActivity:
+      a.pauses_on_human_activity ??
+      ACTION_PAUSES_ON_HUMAN_ACTIVITY[actionType] ??
+      false,
+  };
+}
+
 function actionDefaultName(kind: AutomationEditorActionKind): string {
   switch (kind) {
     case 'send_sms_to_lead':
@@ -646,7 +686,8 @@ async function fetchAutomationEditor(id: string): Promise<AutomationEditor> {
     triggerFields: buildTriggerFields(row.trigger_type, triggerCfg),
     filterFields: buildFilterFields(triggerFilters),
     steps: actions.map(toEditorStep),
-    addStepLabel: '+ Add another step (planned for V1.1)',
+    actions: actions.map(actionToEditorAction),
+    addStepLabel: '+ Add another step (SMS / Email / Wait)',
     rail: {
       variables: { heading: '// AVAILABLE VARIABLES', items: [...AUTOMATION_VARIABLE_FLAT] },
       testSend: {
@@ -1131,6 +1172,296 @@ export function useUpdateAutomationSteps() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: updateAutomationSteps,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['automations'] });
+    },
+  });
+}
+
+// =============================================================================
+// Active-run count — drives the editor's in-flight note (Phase 8 · Session 3).
+//
+// A run is "active" while status ∈ {running, paused}. Reorders / inserts /
+// deletes on an automation's actions never block — they only affect runs
+// triggered after the edit (see migration 0080 + the snapshot contract on
+// automation_runs.action_sequence). The note in the editor surfaces this so
+// an operator isn't surprised when an old-sequence run finishes mid-edit.
+// =============================================================================
+
+async function fetchActiveRunCount(automationId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('automation_runs')
+    .select('id', { count: 'exact', head: true })
+    .eq('automation_id', automationId)
+    .in('status', ['running', 'paused']);
+  if (error) throw normalizeError(error);
+  return count ?? 0;
+}
+
+export function useAutomationActiveRuns(automationId: string) {
+  return useQuery({
+    queryKey: ['automations', 'active-runs', automationId],
+    queryFn: () => fetchActiveRunCount(automationId),
+    enabled: automationId.length > 0,
+    staleTime: 15_000,
+  });
+}
+
+// =============================================================================
+// Action mutations — Phase 8 · Session 3.
+//
+// The editor's action list is fully editable: add, reorder, remove, update
+// config, and (for comm actions) edit body / subject inline. All write paths
+// land on `automation_actions.action_config` (Session 2's inline-body model);
+// per-client templates are NOT involved.
+// =============================================================================
+
+/** Update body (+ optional subject) of a comm action — thin wrapper around
+ *  `useUpdateAutomationAction`'s write path that picks the right config keys
+ *  per action_type. Use this when the editor knows only "body" / "subject"
+ *  rather than the discriminated `body_text` / `body_html` shape. */
+async function updateActionBody(input: {
+  actionId: string;
+  body: string;
+  subject?: string | null;
+}): Promise<void> {
+  const { data: action, error: aErr } = await supabase
+    .from('automation_actions')
+    .select('action_type, action_config')
+    .eq('id', input.actionId)
+    .single();
+  if (aErr) throw normalizeError(aErr);
+  const a = action as {
+    action_type: string;
+    action_config: Record<string, unknown> | null;
+  };
+  const baseConfig = (a.action_config ?? {}) as Record<string, unknown>;
+  let nextConfig: Record<string, unknown>;
+  if (a.action_type === 'send_sms_to_lead') {
+    nextConfig = { ...baseConfig, body: input.body };
+  } else if (a.action_type === 'send_email_to_lead') {
+    nextConfig = {
+      ...baseConfig,
+      body_text: input.body,
+      body_html: textToHtml(input.body),
+    };
+    if (typeof input.subject === 'string') {
+      nextConfig.subject = input.subject;
+    }
+  } else {
+    throw AppError.validation(
+      { body: `${a.action_type} is not a comm action.` },
+      'This action has no body to edit.',
+    );
+  }
+  const { error } = await supabase
+    .from('automation_actions')
+    .update({ action_config: nextConfig as never })
+    .eq('id', input.actionId);
+  if (error) throw normalizeError(error);
+}
+
+function textToHtml(text: string): string {
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  return escaped
+    .split(/\n{2,}/)
+    .map((para) => `<p>${para.replace(/\n/g, '<br/>')}</p>`)
+    .join('');
+}
+
+/** Hook — update the body (+ subject for email) of one comm action. */
+export function useUpdateActionBody() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateActionBody,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['automations'] });
+    },
+  });
+}
+
+/** Update the action_config jsonb on a non-body action (wait minutes,
+ *  update_lead_field field/value, create_followup_task hint, etc.). */
+async function updateActionConfig(input: {
+  actionId: string;
+  config: Record<string, unknown>;
+}): Promise<void> {
+  const { error } = await supabase
+    .from('automation_actions')
+    .update({ action_config: input.config as Json })
+    .eq('id', input.actionId);
+  if (error) throw normalizeError(error);
+}
+
+export function useUpdateActionConfig() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateActionConfig,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['automations'] });
+    },
+  });
+}
+
+/** Remove one action and shift the higher positions down. Atomic enough:
+ *  the unique (automation_id, position) constraint is enforced via
+ *  DELETE-then-renumber with no overlap window. In-flight runs are untouched
+ *  thanks to the action_sequence snapshot on automation_runs (migration 0080). */
+async function removeAction(input: { actionId: string }): Promise<void> {
+  const { data: action, error: aErr } = await supabase
+    .from('automation_actions')
+    .select('automation_id, position')
+    .eq('id', input.actionId)
+    .single();
+  if (aErr) throw normalizeError(aErr);
+  const a = action as { automation_id: string; position: number };
+
+  const { error: dErr } = await supabase
+    .from('automation_actions')
+    .delete()
+    .eq('id', input.actionId);
+  if (dErr) throw normalizeError(dErr);
+
+  const { data: higher, error: hErr } = await supabase
+    .from('automation_actions')
+    .select('id, position')
+    .eq('automation_id', a.automation_id)
+    .gt('position', a.position)
+    .order('position', { ascending: true });
+  if (hErr) throw normalizeError(hErr);
+
+  for (const r of (higher ?? []) as Array<{ id: string; position: number }>) {
+    const { error } = await supabase
+      .from('automation_actions')
+      .update({ position: r.position - 1 })
+      .eq('id', r.id);
+    if (error) throw normalizeError(error);
+  }
+}
+
+export function useRemoveAction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: removeAction,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['automations'] });
+    },
+  });
+}
+
+/** Move an action one slot up or down. Three-step swap with a parking
+ *  position to dodge the unique (automation_id, position) constraint. */
+async function moveAction(input: {
+  actionId: string;
+  direction: 'up' | 'down';
+}): Promise<void> {
+  const { data: action, error: aErr } = await supabase
+    .from('automation_actions')
+    .select('automation_id, position')
+    .eq('id', input.actionId)
+    .single();
+  if (aErr) throw normalizeError(aErr);
+  const a = action as { automation_id: string; position: number };
+
+  const neighbourPosition = input.direction === 'up' ? a.position - 1 : a.position + 1;
+  if (neighbourPosition < 1) return;
+
+  const { data: neighbour } = await supabase
+    .from('automation_actions')
+    .select('id, position')
+    .eq('automation_id', a.automation_id)
+    .eq('position', neighbourPosition)
+    .maybeSingle();
+  if (!neighbour) return;
+  const n = neighbour as { id: string; position: number };
+
+  const PARK = -1;
+  const m1 = await supabase
+    .from('automation_actions')
+    .update({ position: PARK })
+    .eq('id', input.actionId);
+  if (m1.error) throw normalizeError(m1.error);
+  const m2 = await supabase
+    .from('automation_actions')
+    .update({ position: a.position })
+    .eq('id', n.id);
+  if (m2.error) throw normalizeError(m2.error);
+  const m3 = await supabase
+    .from('automation_actions')
+    .update({ position: n.position })
+    .eq('id', input.actionId);
+  if (m3.error) throw normalizeError(m3.error);
+}
+
+export function useMoveAction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: moveAction,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['automations'] });
+    },
+  });
+}
+
+/** Append a new action at the end of the automation's action list. Config
+ *  is initialised from the per-type default; the operator edits inline. */
+async function addAction(input: {
+  automationId: string;
+  actionType: AutomationEditorActionType;
+}): Promise<{ id: string }> {
+  const { data: existing, error: eErr } = await supabase
+    .from('automation_actions')
+    .select('position')
+    .eq('automation_id', input.automationId)
+    .order('position', { ascending: false })
+    .limit(1);
+  if (eErr) throw normalizeError(eErr);
+  const nextPosition =
+    ((existing as Array<{ position: number }> | null)?.[0]?.position ?? 0) + 1;
+
+  const defaultConfig = defaultActionConfig(input.actionType);
+  const { data, error } = await supabase
+    .from('automation_actions')
+    .insert({
+      automation_id: input.automationId,
+      position: nextPosition,
+      action_type: input.actionType,
+      action_config: defaultConfig as Json,
+      pauses_on_human_activity:
+        ACTION_PAUSES_ON_HUMAN_ACTIVITY[input.actionType] ?? false,
+    } as never)
+    .select('id')
+    .single();
+  if (error) throw normalizeError(error);
+  return { id: (data as { id: string }).id };
+}
+
+function defaultActionConfig(
+  actionType: AutomationEditorActionType,
+): Record<string, unknown> {
+  switch (actionType) {
+    case 'send_sms_to_lead':
+      return { body: '' };
+    case 'send_email_to_lead':
+      return { subject: '', body_text: '', body_html: '' };
+    case 'send_operator_notification':
+      return { variant: 'new_lead' };
+    case 'wait_for_duration':
+      return { minutes: 60 };
+    case 'update_lead_field':
+      return { field: 'status', value: 'contacted' };
+    case 'create_followup_task':
+      return { hint: '' };
+  }
+}
+
+export function useAddAction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: addAction,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['automations'] });
     },

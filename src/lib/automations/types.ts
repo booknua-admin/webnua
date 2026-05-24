@@ -245,6 +245,38 @@ export type AutomationVariable = {
   description: string;
 };
 
+/**
+ * Phase 8 · Session 3 — the rich per-action shape the new editor body
+ * consumes. One row per `automation_actions` row, position-ordered, every
+ * action type represented (comm + non-comm). Comm actions carry the resolved
+ * template `body` (and `subject` for email) the operator edits inline.
+ */
+/**
+ * Alias of {@link AutomationEditorActionKind}. Kept as a separate name
+ * because Session 3's `AutomationEditorAction` shape was introduced under
+ * `actionType` while Session 2's `AutomationEditorStep` was already on
+ * `actionKind`. Both unions are identical — adopt `AutomationEditorActionKind`
+ * for new code.
+ */
+export type AutomationEditorActionType = AutomationEditorActionKind;
+
+export type AutomationEditorAction = {
+  id: string;
+  position: number;
+  actionType: AutomationEditorActionType;
+  /** The action_config jsonb verbatim — the editor body reads the shape it
+   *  needs per type (template_key, minutes, field/value, etc.). */
+  config: Record<string, unknown>;
+  /** Resolved template body for comm actions; null for non-comm. The editor's
+   *  inline textarea reads + writes this directly. */
+  body: string | null;
+  /** Resolved template subject for `send_email_to_lead`; null otherwise. */
+  subject: string | null;
+  /** True for comm actions — surfaces in the editor as a pause-on-handoff
+   *  hint badge. */
+  pausesOnHumanActivity: boolean;
+};
+
 export type AutomationPerformanceMetric = {
   label: string;
   value: ReactNode;
@@ -331,8 +363,12 @@ export type AutomationEditor = {
   /** Editable filter fields (requires_phone, requires_email, etc.). */
   filterFields: AutomationEditableFilterField[];
   steps: AutomationEditorStep[];
-  /** "+ Add another step (Session 2 deferred)" affordance — Session 2 ships
-   *  this disabled with an explainer; add/reorder/delete are V1.1. */
+  /** Phase 8 · Session 3 — full ordered action list. Replaces `steps` (which
+   *  was comm-only) for the new editor body. Existing `steps` is preserved
+   *  for legacy callers (currently nobody — the old body unmounted in this
+   *  session). */
+  actions: AutomationEditorAction[];
+  /** "+ Add another step (SMS / Email / Wait)" affordance label. */
   addStepLabel: string;
   rail: {
     variables: { heading: string; items: AutomationVariable[] };

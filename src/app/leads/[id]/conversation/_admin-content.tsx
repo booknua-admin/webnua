@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 
 import { ConversationHeader } from '@/components/shared/leads/ConversationHeader';
@@ -17,6 +17,10 @@ import { useLeadConversation } from '@/lib/leads/queries';
 function AdminLeadConversationContent() {
   const params = useParams<{ id: string }>();
   const id = params.id ?? '';
+  const searchParams = useSearchParams();
+  // `?compose=true` — entry signal from the cold-lead surface that the
+  // composer should mount focused. One-shot at mount.
+  const autoFocusComposer = searchParams.get('compose') === 'true';
   const { data: conv, isLoading, error } = useLeadConversation(id);
 
   // Lift channel selection so the conversation header tabs and the
@@ -77,6 +81,7 @@ function AdminLeadConversationContent() {
                     hasEmail={conv.hasEmail}
                     activeChannelId={activeChannel}
                     onChannelChange={setActiveChannel}
+                    autoFocus={autoFocusComposer}
                   />
                 </>
               }

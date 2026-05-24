@@ -79,6 +79,16 @@ export type AutomationRunRow = {
   status: AutomationRunStatus;
   paused_reason: AutomationPauseReason | null;
   current_action_position: number;
+  /**
+   * Snapshot of `automation_actions.id` values in position order, captured at
+   * run creation. The engine walks THIS sequence — `current_action_position`
+   * is treated as a 1-indexed slot into the array (position N =
+   * `action_sequence[N - 1]`). A reorder / insert / removal of the
+   * underlying actions after the run started DOES NOT change this run's
+   * trajectory; only future runs pick up the edit. An empty array means
+   * "use live query" (legacy / pre-migration-0080 runs).
+   */
+  action_sequence: string[];
   last_automation_message_at: string | null;
   error_message: string | null;
   created_at: string;

@@ -216,6 +216,7 @@ export type Database = {
       }
       automation_runs: {
         Row: {
+          action_sequence: string[]
           automation_id: string
           client_id: string
           completed_at: string | null
@@ -236,6 +237,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          action_sequence?: string[]
           automation_id: string
           client_id: string
           completed_at?: string | null
@@ -256,6 +258,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          action_sequence?: string[]
           automation_id?: string
           client_id?: string
           completed_at?: string | null
@@ -1205,60 +1208,6 @@ export type Database = {
           {
             foreignKeyName: "email_messages_sent_by_fkey"
             columns: ["sent_by"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      email_templates: {
-        Row: {
-          body_html: string
-          body_text: string
-          client_id: string
-          created_at: string
-          id: string
-          is_default: boolean
-          last_edited_at: string
-          last_edited_by: string | null
-          subject: string
-          template_key: string
-        }
-        Insert: {
-          body_html: string
-          body_text: string
-          client_id: string
-          created_at?: string
-          id?: string
-          is_default?: boolean
-          last_edited_at?: string
-          last_edited_by?: string | null
-          subject: string
-          template_key: string
-        }
-        Update: {
-          body_html?: string
-          body_text?: string
-          client_id?: string
-          created_at?: string
-          id?: string
-          is_default?: boolean
-          last_edited_at?: string
-          last_edited_by?: string | null
-          subject?: string
-          template_key?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "email_templates_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "email_templates_last_edited_by_fkey"
-            columns: ["last_edited_by"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
@@ -2597,6 +2546,47 @@ export type Database = {
         }
         Relationships: []
       }
+      platform_email_templates: {
+        Row: {
+          body_html: string
+          body_text: string
+          created_at: string
+          id: string
+          last_edited_at: string
+          last_edited_by: string | null
+          subject: string
+          template_key: string
+        }
+        Insert: {
+          body_html: string
+          body_text: string
+          created_at?: string
+          id?: string
+          last_edited_at?: string
+          last_edited_by?: string | null
+          subject: string
+          template_key: string
+        }
+        Update: {
+          body_html?: string
+          body_text?: string
+          created_at?: string
+          id?: string
+          last_edited_at?: string
+          last_edited_by?: string | null
+          subject?: string
+          template_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_email_templates_last_edited_by_fkey"
+            columns: ["last_edited_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       policy_overrides: {
         Row: {
           client_id: string
@@ -2948,54 +2938,6 @@ export type Database = {
             columns: ["related_lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      sms_templates: {
-        Row: {
-          body: string
-          client_id: string
-          created_at: string
-          id: string
-          is_default: boolean
-          last_edited_at: string
-          last_edited_by: string | null
-          template_key: string
-        }
-        Insert: {
-          body: string
-          client_id: string
-          created_at?: string
-          id?: string
-          is_default?: boolean
-          last_edited_at?: string
-          last_edited_by?: string | null
-          template_key: string
-        }
-        Update: {
-          body?: string
-          client_id?: string
-          created_at?: string
-          id?: string
-          is_default?: boolean
-          last_edited_at?: string
-          last_edited_by?: string | null
-          template_key?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "sms_templates_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "sms_templates_last_edited_by_fkey"
-            columns: ["last_edited_by"]
-            isOneToOne: false
-            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]

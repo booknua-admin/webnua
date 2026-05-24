@@ -104,12 +104,14 @@ registerJobHandler(SEND_EMAIL_JOB, async (rawPayload, ctx: JobContext) => {
   }
 
   // --- render ---------------------------------------------------------------
-  // Body source priority (Phase 8 Session 2):
-  //   1. Payload-supplied subject + body (customer-facing automation actions).
-  //   2. DEFAULT_EMAIL_TEMPLATES[templateKey] (operator-facing system
-  //      templates — lead_notification / lead_digest). No DB lookup; the
-  //      sms_templates / email_templates tables are gone.
-  const template = resolveTemplateBody(payload, templateKey);
+  // Body source priority (see resolveTemplateBody for full detail):
+  //   1. Payload-supplied subject + body — customer-facing automation actions
+  //      (Phase 8 Session 2 inline-body model).
+  //   2. platform_email_templates row — operator-facing system templates
+  //      (Phase 8 Session 3, `lead_notification` / `lead_digest`).
+  //   3. DEFAULT_EMAIL_TEMPLATES[templateKey] — in-code fallback.
+  // The per-client sms_templates / email_templates tables are gone.
+  const template = await resolveTemplateBody(payload, templateKey);
   const context = await buildRenderContext(clientId, sender, payload);
   const rendered = renderEmail(template, context);
   if (!rendered.subject && !rendered.text && !rendered.html) {
@@ -385,18 +387,49 @@ function isCustomerFacingTemplate(key: EmailTemplateKey): boolean {
   return key === 'lead_followup' || key === 'review_request' || key === 'quote_followup';
 }
 
+/** True for operator-facing templates that live at platform level (one body
+ *  for all clients). Phase 8 · Session 3 added the `platform_email_templates`
+ *  table — when a row exists for one of these keys, it wins over the in-code
+ *  default; absent rows fall through to `DEFAULT_EMAIL_TEMPLATES`. */
+function isPlatformLevelTemplate(key: EmailTemplateKey): boolean {
+  return key === 'lead_notification' || key === 'lead_digest';
+}
+
+async function loadPlatformTemplate(
+  key: EmailTemplateKey,
+): Promise<EmailTemplateBody | null> {
+  const db = getIntegrationDb();
+  const { data, error } = await db
+    .from('platform_email_templates')
+    .select('subject, body_html, body_text')
+    .eq('template_key', key)
+    .maybeSingle();
+  if (error || !data) return null;
+  const row = data as { subject: string; body_html: string; body_text: string };
+  return {
+    subject: row.subject,
+    body_html: row.body_html,
+    body_text: row.body_text,
+  };
+}
+
 /** Pick the email body source.
  *
- * Phase 8 Session 2 replaces the previous `loadTemplate(clientId, key)`
- * (which read `email_templates`) with this pure resolver. Customer-facing
- * automations pass `subject` + `bodyHtml` + `bodyText` on the payload from
- * `automation_actions.action_config`; operator-facing system templates
- * (`lead_notification`, `lead_digest`) carry no payload body and fall back
- * to the in-code defaults. */
-function resolveTemplateBody(
+ * Resolution order:
+ *   1. Payload-supplied subject + body — customer-facing automation actions
+ *      pass the inline body straight from `automation_actions.action_config`
+ *      (Phase 8 Session 2 inline-body model).
+ *   2. Platform-level template row (Phase 8 Session 3) — for operator-facing
+ *      keys (`lead_notification`, `lead_digest`), an operator can override
+ *      the body via `platform_email_templates`.
+ *   3. `DEFAULT_EMAIL_TEMPLATES[key]` — the in-code fallback.
+ *
+ * The per-client `email_templates` table no longer exists (deleted in
+ * Session 2). */
+async function resolveTemplateBody(
   payload: Partial<SendEmailPayload>,
   key: EmailTemplateKey,
-): EmailTemplateBody {
+): Promise<EmailTemplateBody> {
   const hasPayloadBody =
     typeof payload.subject === 'string' &&
     (typeof payload.bodyHtml === 'string' || typeof payload.bodyText === 'string');
@@ -407,6 +440,10 @@ function resolveTemplateBody(
       body_html: payload.bodyHtml ?? '',
       body_text: payload.bodyText ?? '',
     };
+  }
+  if (isPlatformLevelTemplate(key)) {
+    const platform = await loadPlatformTemplate(key);
+    if (platform) return platform;
   }
   return DEFAULT_EMAIL_TEMPLATES[key];
 }

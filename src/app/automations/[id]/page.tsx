@@ -4,39 +4,40 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
-import { AutomationAddStep } from '@/components/admin/automations/AutomationAddStep';
+import { AutomationActionCard } from '@/components/admin/automations/AutomationActionCard';
+import { AutomationAddActionMenu } from '@/components/admin/automations/AutomationAddActionMenu';
 import { AutomationCloneButton } from '@/components/admin/automations/AutomationCloneButton';
 import { AutomationEditorLayout } from '@/components/admin/automations/AutomationEditorLayout';
-import {
-  AutomationEditorStep,
-  type AutomationStepPatch,
-} from '@/components/admin/automations/AutomationEditorStep';
 import { AutomationRunsCard } from '@/components/admin/automations/AutomationRunsCard';
 import { AutomationStatsRailCard } from '@/components/admin/automations/AutomationStatsRailCard';
 import { AutomationStepConnector } from '@/components/admin/automations/AutomationStepConnector';
 import { AutomationTestSendCard } from '@/components/admin/automations/AutomationTestSendCard';
-import {
-  AutomationTriggerEditor,
-} from '@/components/admin/automations/AutomationTriggerEditor';
 import { AutomationTriggerBox } from '@/components/admin/automations/AutomationTriggerBox';
+import { AutomationTriggerEditor } from '@/components/admin/automations/AutomationTriggerEditor';
 import { AutomationVariableList } from '@/components/admin/automations/AutomationVariableList';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { EditorFooterActions } from '@/components/shared/EditorFooterActions';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
 import { useRole } from '@/lib/auth/user-stub';
 import {
+  useAddAction,
+  useAutomationActiveRuns,
   useAutomationEditor,
+  useMoveAction,
+  useRemoveAction,
   useToggleAutomation,
-  useUpdateAutomationAction,
+  useUpdateActionBody,
+  useUpdateActionConfig,
   useUpdateAutomationTrigger,
-  type AutomationActionPatch,
 } from '@/lib/automations/queries';
 import type {
   AutomationEditableFilterField,
   AutomationEditableTriggerField,
   AutomationEditor,
-  AutomationEditorStep as AutomationEditorStepData,
+  AutomationEditorAction,
+  AutomationEditorActionType,
 } from '@/lib/automations/types';
 import { normalizeError } from '@/lib/errors';
 
@@ -45,9 +46,8 @@ export default function AutomationEditorPage() {
   const params = useParams();
   const id = Array.isArray(params.id) ? params.id[0] : (params.id ?? '');
 
-  // Phase 8 Session 2: client-role users can now reach the editor too — they
-  // see a read-only view. Operators get full edit capabilities. The role
-  // resolution is done before the editor mounts so the inner page knows.
+  // Phase 8 Session 2: client-role users can reach the editor (read-only view);
+  // operators get full edit. Role resolution gates the inner mount.
   const { data: editor, isLoading, error } = useAutomationEditor(id ?? '');
 
   if (!hydrated) {
@@ -87,9 +87,10 @@ export default function AutomationEditorPage() {
   );
 }
 
-/** The editor body owns the editable step + trigger state (keyed by
- *  automation id, so switching automations remounts it with fresh state).
- *  Client-role users see the same UI in read-only mode. */
+/** The editor body. Operator-edit and client-read use the same shape; the
+ *  per-card / per-mutation surfaces honour the `readOnly` prop where wired,
+ *  and the operator-only affordances (add / remove / reorder / clone, trigger
+ *  edits) are conditionally rendered. */
 function EditorBody({
   editor,
   isOperator,
@@ -97,38 +98,99 @@ function EditorBody({
   editor: AutomationEditor;
   isOperator: boolean;
 }) {
-  const [steps, setSteps] = useState(editor.steps);
+  // -- Trigger + filter local state (operator-side dirty/save flow) ----------
   const [triggerFields, setTriggerFields] = useState(editor.triggerFields);
   const [filterFields, setFilterFields] = useState(editor.filterFields);
-  const [dirtyStepIds, setDirtyStepIds] = useState<Set<string>>(new Set());
   const [triggerDirty, setTriggerDirty] = useState(false);
 
-  // When the editor fetch refreshes (after a save), re-seed the local state
-  // from the freshly-fetched data. Keyed-by-id outer mount handles initial
-  // load; this effect handles post-save invalidation when the row updates
-  // in place. Intentional "sync local edits with refreshed server state"
-  // pattern; a useReducer would be more ceremony for the same result.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    setSteps(editor.steps);
     setTriggerFields(editor.triggerFields);
     setFilterFields(editor.filterFields);
-    setDirtyStepIds(new Set());
     setTriggerDirty(false);
   }, [editor]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  const updateAction = useUpdateAutomationAction();
+  // -- Mutations -------------------------------------------------------------
+  const addAction = useAddAction();
+  const moveAction = useMoveAction();
+  const removeAction = useRemoveAction();
+  const updateBody = useUpdateActionBody();
+  const updateConfig = useUpdateActionConfig();
   const updateTrigger = useUpdateAutomationTrigger();
   const toggle = useToggleAutomation();
+  const { data: activeRunCount = 0 } = useAutomationActiveRuns(editor.id);
 
-  const patchStep = (stepId: string, patch: AutomationStepPatch) => {
-    setSteps((current) =>
-      current.map((s) => (s.id === stepId ? { ...s, ...patch } : s)),
+  // -- Per-action UI state ---------------------------------------------------
+  const [pendingRemoval, setPendingRemoval] =
+    useState<AutomationEditorAction | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  // -- Per-action handlers ---------------------------------------------------
+  const handleBodyChange = (
+    actionId: string,
+    body: string,
+    subject: string | null,
+  ) => {
+    setStatusMessage(null);
+    updateBody.mutate(
+      { actionId, body, subject },
+      {
+        onError: (err) =>
+          setStatusMessage(`Save failed — ${normalizeError(err).message}`),
+        onSuccess: () => setStatusMessage('Saved'),
+      },
     );
-    setDirtyStepIds((current) => new Set(current).add(stepId));
   };
 
+  const handleConfigChange = (
+    actionId: string,
+    config: Record<string, unknown>,
+  ) => {
+    setStatusMessage(null);
+    updateConfig.mutate(
+      { actionId, config },
+      {
+        onError: (err) =>
+          setStatusMessage(`Save failed — ${normalizeError(err).message}`),
+        onSuccess: () => setStatusMessage('Saved'),
+      },
+    );
+  };
+
+  const handleMove = (actionId: string, direction: 'up' | 'down') => {
+    moveAction.mutate(
+      { actionId, direction },
+      {
+        onError: (err) =>
+          setStatusMessage(`Move failed — ${normalizeError(err).message}`),
+      },
+    );
+  };
+
+  const handleAdd = (actionType: AutomationEditorActionType) => {
+    addAction.mutate(
+      { automationId: editor.id, actionType },
+      {
+        onError: (err) =>
+          setStatusMessage(`Add failed — ${normalizeError(err).message}`),
+      },
+    );
+  };
+
+  const handleRemoveConfirmed = (action: AutomationEditorAction) => {
+    removeAction.mutate(
+      { actionId: action.id },
+      {
+        onError: (err) =>
+          setStatusMessage(`Delete failed — ${normalizeError(err).message}`),
+        onSuccess: () => setStatusMessage('Action removed'),
+      },
+    );
+    setPendingRemoval(null);
+  };
+
+  // -- Trigger handlers ------------------------------------------------------
   const patchTrigger = (next: AutomationEditableTriggerField) => {
     setTriggerFields((current) =>
       current.map((f) => (f.kind === next.kind ? next : f)),
@@ -143,20 +205,9 @@ function EditorBody({
     setTriggerDirty(true);
   };
 
-  const isDirty = dirtyStepIds.size > 0 || triggerDirty;
-  const canSave = isOperator && isDirty && !updateAction.isPending && !updateTrigger.isPending;
-
-  const handleSave = async () => {
-    // 1) Per-action body / subject / body_html / body_text patches.
-    const dirtySteps = steps.filter((s) => dirtyStepIds.has(s.id));
-    for (const step of dirtySteps) {
-      const patch = buildActionPatch(step);
-      if (Object.keys(patch).length === 0) continue;
-      await updateAction.mutateAsync({ actionId: step.id, patch });
-    }
-
-    // 2) Trigger config + filters.
-    if (triggerDirty) {
+  const handleSaveTrigger = async () => {
+    if (!triggerDirty) return;
+    try {
       await updateTrigger.mutateAsync({
         id: editor.id,
         patch: {
@@ -164,10 +215,14 @@ function EditorBody({
           triggerFilters: buildTriggerFiltersPayload(filterFields),
         },
       });
+      setStatusMessage('Trigger saved');
+    } catch (err) {
+      setStatusMessage(`Save failed — ${normalizeError(err).message}`);
     }
   };
 
-  const lastError = updateAction.error ?? updateTrigger.error;
+  const actions = editor.actions ?? [];
+  const variableItems = editor.rail.variables.items;
 
   return (
     <>
@@ -186,16 +241,25 @@ function EditorBody({
           .
         </div>
       ) : null}
-      <div className="mb-4 flex items-center justify-end gap-2">
-        <AutomationCloneButton
-          automationId={editor.id}
-          sourceName={editor.clientName}
-          visible={isOperator}
-        />
-      </div>
+      {isOperator ? (
+        <div className="mb-4 flex items-center justify-end gap-2">
+          <AutomationCloneButton
+            automationId={editor.id}
+            sourceName={editor.clientName}
+            visible={isOperator}
+          />
+        </div>
+      ) : null}
       <AutomationEditorLayout
         canvas={
           <>
+            {activeRunCount > 0 ? (
+              <p className="mb-4 rounded-md border border-rust-soft bg-rust-soft/30 px-4 py-3 font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-ink-soft">
+                {`// ${activeRunCount} active ${
+                  activeRunCount === 1 ? 'run' : 'runs'
+                } — they'll finish with the previous sequence`}
+              </p>
+            ) : null}
             <AutomationTriggerBox trigger={editor.trigger} />
             <AutomationTriggerEditor
               triggerFields={triggerFields}
@@ -204,30 +268,71 @@ function EditorBody({
               onChangeFilter={patchFilter}
               readOnly={!isOperator}
             />
-            {steps.map((step) => (
-              <div key={step.id}>
+            {isOperator && triggerDirty ? (
+              <div className="mt-2 flex justify-end">
+                <Button
+                  variant="secondary"
+                  onClick={handleSaveTrigger}
+                  disabled={updateTrigger.isPending}
+                >
+                  {updateTrigger.isPending ? 'Saving trigger…' : 'Save trigger'}
+                </Button>
+              </div>
+            ) : null}
+            {actions.map((action, index) => (
+              <div key={action.id}>
                 <AutomationStepConnector />
-                <AutomationEditorStep
-                  step={step}
-                  onChange={(patch) => patchStep(step.id, patch)}
-                  readOnly={!isOperator}
+                <AutomationActionCard
+                  action={action}
+                  isFirst={index === 0}
+                  isLast={index === actions.length - 1}
+                  variables={variableItems}
+                  onMove={(direction) => handleMove(action.id, direction)}
+                  onRemove={() => setPendingRemoval(action)}
+                  onChange={(change) => {
+                    if (change.kind === 'body') {
+                      handleBodyChange(
+                        action.id,
+                        change.body,
+                        change.subject ?? null,
+                      );
+                    } else {
+                      handleConfigChange(action.id, change.config);
+                    }
+                  }}
+                  saving={
+                    (updateBody.isPending &&
+                      updateBody.variables?.actionId === action.id) ||
+                    (updateConfig.isPending &&
+                      updateConfig.variables?.actionId === action.id) ||
+                    (moveAction.isPending &&
+                      moveAction.variables?.actionId === action.id) ||
+                    (removeAction.isPending &&
+                      removeAction.variables?.actionId === action.id)
+                  }
                 />
               </div>
             ))}
-            <div className="mt-5">
-              <AutomationAddStep label={editor.addStepLabel} />
-              <p className="mt-2 px-1 font-mono text-[10px] uppercase tracking-[0.1em] text-ink-quiet">
-                {`// Add / reorder / remove actions is planned for V1.1. ` +
-                  `Open a ticket if you need a new action right now.`}
+            {actions.length === 0 ? (
+              <p className="mt-4 rounded-md border border-dashed border-rule bg-paper px-5 py-6 text-center font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-ink-quiet">
+                {'// This automation has no actions yet — add one below'}
               </p>
-            </div>
+            ) : null}
+            {isOperator ? (
+              <div className="mt-5">
+                <AutomationAddActionMenu
+                  onPick={handleAdd}
+                  disabled={addAction.isPending}
+                />
+              </div>
+            ) : null}
           </>
         }
         rail={
           <>
             <AutomationVariableList
               heading={editor.rail.variables.heading}
-              items={editor.rail.variables.items}
+              items={variableItems}
             />
             <AutomationTestSendCard
               heading={editor.rail.testSend.heading}
@@ -242,15 +347,9 @@ function EditorBody({
       />
       <EditorFooterActions
         progress={
-          lastError ? (
-            <>{`Save failed — ${normalizeError(lastError).message}`}</>
-          ) : (updateAction.isSuccess || updateTrigger.isSuccess) && !isDirty ? (
+          statusMessage ? (
             <>
-              {editor.footer.progress} · <strong>saved</strong>
-            </>
-          ) : isDirty ? (
-            <>
-              {editor.footer.progress} · <strong>unsaved changes</strong>
+              {editor.footer.progress} · <strong>{statusMessage}</strong>
             </>
           ) : (
             editor.footer.progress
@@ -272,15 +371,23 @@ function EditorBody({
             >
               {editor.footer.disableLabel}
             </Button>
-            {isOperator ? (
-              <Button onClick={handleSave} disabled={!canSave}>
-                {updateAction.isPending || updateTrigger.isPending
-                  ? 'Saving…'
-                  : editor.footer.saveLabel}
-              </Button>
-            ) : null}
           </>
         }
+      />
+
+      <ConfirmDialog
+        open={pendingRemoval !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingRemoval(null);
+        }}
+        title={`Remove action ${pendingRemoval?.position ?? ''}?`}
+        description="The remaining actions will renumber. In-flight runs walk the sequence as it was when they started — removing the action only affects runs triggered after this edit."
+        confirmLabel="Remove action"
+        cancelLabel="Keep it"
+        tone="destructive"
+        onConfirm={() => {
+          if (pendingRemoval) handleRemoveConfirmed(pendingRemoval);
+        }}
       />
     </>
   );
@@ -292,26 +399,6 @@ function EditorNotice({ children }: { children: React.ReactNode }) {
       {children}
     </p>
   );
-}
-
-// --- Per-action patch builder ----------------------------------------------
-
-function buildActionPatch(step: AutomationEditorStepData): AutomationActionPatch {
-  const patch: AutomationActionPatch = {};
-  if (step.actionKind === 'send_sms_to_lead') {
-    if (typeof step.bodyText === 'string') patch.body = step.bodyText;
-  } else if (step.actionKind === 'send_email_to_lead') {
-    if (typeof step.subject === 'string') patch.subject = step.subject;
-    if (typeof step.bodyHtml === 'string') patch.body_html = step.bodyHtml;
-    // Keep body_text aligned to a plain-text fallback so a reader without an
-    // HTML-capable mail client still sees the message.
-    if (typeof step.bodyHtml === 'string' && step.bodyHtml.length > 0) {
-      patch.body_text = stripHtml(step.bodyHtml);
-    } else if (typeof step.bodyText === 'string') {
-      patch.body_text = step.bodyText;
-    }
-  }
-  return patch;
 }
 
 // --- Trigger config / filter payload builders -----------------------------
@@ -339,19 +426,7 @@ function buildTriggerFiltersPayload(
 ): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
   for (const f of fields) {
-    // We only write the key when true — the resolver treats absent keys as
-    // "no constraint", matching the seed config shape.
     if (f.value) payload[f.kind] = true;
   }
   return payload;
-}
-
-function stripHtml(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(p|div|li|h[1-6])>/gi, '\n\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
 }
