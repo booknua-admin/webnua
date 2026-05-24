@@ -54,6 +54,7 @@ import { randomUUID } from 'node:crypto';
 import { env, getAppBaseUrl } from '@/lib/env';
 import { getServiceClient } from '@/lib/supabase/server';
 
+import { CLIENT_OWNER_DEFAULTS } from './capabilities';
 import { sendWelcomeEmail, type WelcomeEmailOutcome } from './welcome-email';
 
 // --- shared types ------------------------------------------------------------
@@ -189,6 +190,37 @@ export async function provisionPendingSignup(
     );
   }
 
+  // -- 2b. workspace-wide capability grant (Pattern B owner) ----------------
+  //
+  // The new auth user is the OWNER of this workspace. Without an explicit
+  // grant they inherit only CLIENT_DEFAULTS (['viewBuilder']) — they could
+  // view their generated site but every editor affordance (edit copy, edit
+  // media, add sections, publish) would silently hide. Pattern B's promise
+  // of "you publish your own" requires the full owner bundle.
+  //
+  // Stored as a workspace-wide grant (website_id NULL) so it covers every
+  // site the owner ever creates. The clients_update RLS widening (migration
+  // 0087) lets the owner edit their own clients row for profile fields.
+  //
+  // Service-role client bypasses the operator-only capability_grants_insert
+  // policy — same trick the auth-user create uses.
+  const authUserId = created.data.user.id;
+  const { error: grantError } = await svc.from('capability_grants').insert({
+    user_id: authUserId,
+    website_id: null,
+    capabilities: [...CLIENT_OWNER_DEFAULTS],
+  });
+  if (grantError) {
+    // Non-fatal here — the workspace IS provisioned, the user CAN sign in.
+    // We log loudly so an ops review picks up "missing owner grant" and the
+    // operator can re-issue via /settings/access. Throwing would leave a
+    // half-provisioned workspace (auth user exists, magic link sent) that
+    // the route handler's catch can't unwind cleanly.
+    console.error(
+      `[signup-workspace] capability_grants insert failed for user ${authUserId}: ${grantError.message}`,
+    );
+  }
+
   // -- 3. magic link --------------------------------------------------------
   //
   // The link lands the user on /dashboard. By that moment the migration
@@ -317,15 +349,11 @@ export async function markClientActiveOnPublish(
   // see lifecycle_status already 'active' and the UPDATE no-ops (no row
   // changed). Other states (already-active, paused, banned) are LEFT ALONE.
   const svc = getServiceClient();
-  // Cast through `as never` for the new 'active' / 'preview' enum values
-  // (migration 0084 added them; the generated Database type does not yet
-  // know about them — same pattern as the rest of the codebase, e.g.
-  // `client_stripe_customers` writes in this file).
   const { error } = await svc
     .from('clients')
-    .update({ lifecycle_status: 'active' as never })
+    .update({ lifecycle_status: 'active' })
     .eq('id', client.clientId)
-    .eq('lifecycle_status', 'preview' as never);
+    .eq('lifecycle_status', 'preview');
   if (error) {
     throw new Error(`markClientActiveOnPublish: clients update failed: ${error.message}`);
   }

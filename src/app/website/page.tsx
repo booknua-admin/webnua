@@ -446,7 +446,9 @@ function NoWebsiteState({
         {reason === 'no-website-yet' ? (
           <div className="flex flex-wrap items-center gap-2">
             <CapabilityGate capability="editPages" mode="hide">
-              <Button>Scaffold a new website</Button>
+              <Button asChild>
+                <Link href="/clients/new">Scaffold a new website</Link>
+              </Button>
             </CapabilityGate>
             <Button variant="secondary" onClick={() => workspace.clearActiveClient()}>
               ← Back to agency

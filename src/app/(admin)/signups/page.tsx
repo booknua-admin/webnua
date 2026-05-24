@@ -184,10 +184,7 @@ function SignupRow({
       }
       const { error: updateError } = await supabase
         .from('clients')
-        // The 'preview' / 'active' / 'banned' values were added in
-        // migration 0084; the generated Database type doesn't carry them
-        // yet, so cast through `as never`.
-        .update({ lifecycle_status: next as never })
+        .update({ lifecycle_status: next })
         .eq('id', (client as { id: string }).id);
       if (updateError) {
         setError(updateError.message);

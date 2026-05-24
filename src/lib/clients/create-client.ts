@@ -94,9 +94,12 @@ export async function createClientWithGeneration(
         primary_contact_email: brief.business.email || null,
         primary_contact_phone: brief.business.phone || null,
         onboarded_by: user.id,
-        // 'active' is a Pattern B enum addition (migration 0084); cast
-        // until the generated Database type catches up.
-        lifecycle_status: 'active' as never,
+        // The operator concierge path bypasses the verify + pay gates — the
+        // operator is the verifier (we trust they have a real customer); the
+        // payment is collected out-of-band. So this insert sets 'active'
+        // EXPLICITLY rather than relying on the table default (which
+        // Pattern B flipped to 'pending_verification' for self-serve signup).
+        lifecycle_status: 'active',
       })
       .select('id, slug')
       .single();

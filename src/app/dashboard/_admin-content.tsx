@@ -3,6 +3,7 @@
 import { AgencyUrgentBanner } from '@/components/admin/dashboard/AgencyUrgentBanner';
 import { AttentionPanelCard } from '@/components/admin/dashboard/AttentionPanelCard';
 import { ClientPerformanceCard } from '@/components/admin/dashboard/ClientPerformanceCard';
+import { ReviewRequestsPanel } from '@/components/admin/dashboard/ReviewRequestsPanel';
 import { ActivityFeed } from '@/components/shared/ActivityFeed';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { StatCard } from '@/components/shared/StatCard';
@@ -66,6 +67,8 @@ export function AdminDashboardContent() {
             />
 
             {data.urgent ? <AgencyUrgentBanner {...data.urgent} /> : null}
+
+            <ReviewRequestsPanel />
 
             <div className="grid grid-cols-3 gap-3.5">
               <AttentionPanelCard panel={data.panels.cashflow} />

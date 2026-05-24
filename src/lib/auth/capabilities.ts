@@ -68,7 +68,49 @@ export type Role = 'client' | 'admin';
 // Default capability sets per role. Per-user grants apply on top (V1: pre-
 // resolved at user-load time; backend version will resolve at session start).
 export const ADMIN_DEFAULTS: readonly Capability[] = ALL_CAPABILITIES;
+
+// CLIENT_DEFAULTS is the FLOOR for client-role users — every signed-in client
+// gets at least this set from their role alone. Stays at `viewBuilder` only:
+// an invited teammate without an explicit owner grant can SEE the builder but
+// can't change anything until the workspace owner grants them more on
+// /settings/access. Matches the "operator-managed by default" framing the
+// CAP_EXPLAINER strings assume.
 export const CLIENT_DEFAULTS: readonly Capability[] = ['viewBuilder'];
+
+// CLIENT_OWNER_DEFAULTS is the full self-serve capability set granted at
+// signup (Pattern B `provisionPendingSignup`) and to any concierge-invite
+// owner the operator creates on their behalf. The paying owner of a Pattern B
+// workspace can:
+//   - edit copy / media / SEO / layout / sections / theme / pages
+//   - draft + insert lead-capture forms
+//   - use the AI tools
+//   - publish their own changes directly (Pattern B "you publish your own")
+//   - roll back to a prior version
+//   - attach a custom domain
+//
+// Deliberately EXCLUDED: `approve` stays operator-only — review of a junior
+// teammate's pending submission is a governance action, not an ownership
+// action. A workspace owner can publish directly without ever submitting for
+// review, so they don't need `approve` themselves; teammates who DO submit
+// for review surface to the operator queue.
+//
+// Stored as a workspace-wide grant (website_id IS NULL) in `capability_grants`
+// — one row covers every site the owner ever has.
+export const CLIENT_OWNER_DEFAULTS: readonly Capability[] = [
+  'viewBuilder',
+  'editCopy',
+  'editMedia',
+  'editSEO',
+  'editLayout',
+  'editSections',
+  'editTheme',
+  'editPages',
+  'editForms',
+  'useAI',
+  'publish',
+  'rollback',
+  'manageDomain',
+] as const;
 
 // Per-user-per-website capability grant. Shape kept additive-friendly so a
 // future named-preset layer can land later without migrating existing grants
