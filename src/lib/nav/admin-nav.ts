@@ -26,8 +26,6 @@ export const adminWorkspace = {
   name: 'Webnua',
 };
 
-export const adminUser = {
-  initial: 'C',
-  name: 'Craig F.',
-  role: 'Operator',
-};
+// Operator identity (user name / initial / role label) is resolved live from
+// the signed-in user inside AdminSidebar — never via a constant. The previous
+// hardcoded `adminUser` constant was dropped with the sidebar identity fix.

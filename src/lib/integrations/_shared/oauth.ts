@@ -67,6 +67,11 @@ export type OAuthStatePayload = {
   nonce: string;
   /** Issued-at, epoch seconds. */
   iat: number;
+  /** Optional internal path the callback redirects to after success (e.g.
+   *  '/dashboard' for an onboarding-screen-initiated connect, default
+   *  '/settings/integrations'). Validated as a same-origin path on read so a
+   *  forged state cannot redirect to an external host. */
+  returnTo?: string;
 };
 
 // A consent flow should complete well within 15 minutes.
