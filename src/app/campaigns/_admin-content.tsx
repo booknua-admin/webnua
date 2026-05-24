@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
 import { CampaignClientRow } from '@/components/admin/campaigns/CampaignClientRow';
+import { LaunchMetaCampaignButton } from '@/components/admin/campaigns/LaunchMetaCampaignButton';
 import { ClientMultiSelect } from '@/components/shared/ClientMultiSelect';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { StatCard } from '@/components/shared/StatCard';
@@ -62,11 +63,16 @@ function AdminCampaignsContent() {
           </CampaignsNotice>
         ) : (
           <>
-            <PageHeader
-              eyebrow={page.hero.eyebrow}
-              title={page.hero.title}
-              subtitle={page.hero.subtitle}
-            />
+            <div className="flex items-start justify-between gap-4">
+              <PageHeader
+                eyebrow={page.hero.eyebrow}
+                title={page.hero.title}
+                subtitle={page.hero.subtitle}
+              />
+              <div className="flex-shrink-0 pt-1">
+                <LaunchMetaCampaignButton />
+              </div>
+            </div>
 
             {isAgency ? (
               <ClientMultiSelect

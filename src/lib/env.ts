@@ -120,11 +120,15 @@ const envSchema = z.object({
   GOOGLE_OAUTH_CLIENT_ID: optionalStr,
   GOOGLE_OAUTH_CLIENT_SECRET: optionalStr,
   GOOGLE_OAUTH_REDIRECT_URI_BASE: optionalStr,
-  // Meta (Ads). Placeholders until the Meta app exists — the OAuth flow is
-  // scaffolded but Meta connect is deferred to the Meta business session.
+  // Meta (Ads). Phase 7 Meta session. The OAuth flow + the campaign/insights
+  // wiring read these. The API version pins which `graph.facebook.com/{ver}`
+  // path the calls hit — bumped periodically as Meta deprecates older
+  // versions (Meta keeps each version live for ~2 years; check the
+  // platform changelog before bumping).
   META_APP_ID: optionalStr,
   META_APP_SECRET: optionalStr,
   META_OAUTH_REDIRECT_URI_BASE: optionalStr,
+  META_API_VERSION: optionalStr,
   // HMAC key for signing the OAuth `state` token. Optional — falls back to
   // SUPABASE_SERVICE_ROLE_KEY (always present server-side, high entropy).
   OAUTH_STATE_SECRET: optionalStr,
