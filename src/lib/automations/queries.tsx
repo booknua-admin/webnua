@@ -421,20 +421,18 @@ const VARIABLE_CATALOG = [
   { code: '{rebook_link}', description: 'Rebooking page URL' },
 ];
 
-/** Convert a comm action to the editor's step shape. Body text resolves to
- *  the referenced template_key — Session 2 fetches the template body inline;
- *  for now we display a placeholder pointing at the template. */
-function toEditorStep(
-  action: ActionRow,
-  templates: Map<string, { subject: string | null; body: string }>,
-): AutomationEditorStep {
+function toEditorStep(action: ActionRow): AutomationEditorStep {
   const channel = actionToChannel(action.action_type) ?? 'sms';
-  const cfg = (action.action_config ?? {}) as { template_key?: string };
-  const templateKey = cfg.template_key ?? '';
-  const resolved = templateKey
-    ? templates.get(`${channel}:${templateKey}`)
-    : null;
-  const bodyText = resolved?.body ?? '';
+  const cfg = (action.action_config ?? {}) as {
+    body?: string;
+    body_text?: string;
+    body_html?: string;
+    subject?: string;
+  };
+  const bodyText =
+    channel === 'sms'
+      ? (cfg.body ?? '')
+      : (cfg.body_text ?? cfg.body_html ?? '');
   const step: AutomationEditorStep = {
     id: action.id,
     number: action.position,
@@ -446,75 +444,24 @@ function toEditorStep(
     footerMeta: '// Awaiting send data',
     variables: [],
   };
-  if (channel === 'email') step.subject = resolved?.subject ?? '';
+  if (channel === 'email') step.subject = cfg.subject ?? '';
   return step;
 }
 
-async function fetchTemplateBodies(
-  clientId: string,
-  actions: ActionRow[],
-): Promise<Map<string, { subject: string | null; body: string }>> {
-  // Resolve template_key for every comm action, then look up the
-  // per-client template body in a single round-trip per channel.
-  const smsKeys = new Set<string>();
-  const emailKeys = new Set<string>();
-  for (const a of actions) {
-    const k = ((a.action_config ?? {}) as { template_key?: string }).template_key;
-    if (!k) continue;
-    if (a.action_type === 'send_sms_to_lead') smsKeys.add(k);
-    else if (a.action_type === 'send_email_to_lead') emailKeys.add(k);
-  }
-  const map = new Map<string, { subject: string | null; body: string }>();
-  if (smsKeys.size > 0) {
-    const { data: smsRows } = await supabase
-      .from('sms_templates')
-      .select('template_key, body')
-      .eq('client_id', clientId)
-      .in('template_key', [...smsKeys]);
-    for (const r of (smsRows ?? []) as Array<{ template_key: string; body: string }>) {
-      map.set(`sms:${r.template_key}`, { subject: null, body: r.body });
-    }
-  }
-  if (emailKeys.size > 0) {
-    const { data: emailRows } = await supabase
-      .from('email_templates')
-      .select('template_key, subject, body_text, body_html')
-      .eq('client_id', clientId)
-      .in('template_key', [...emailKeys]);
-    for (const r of (emailRows ?? []) as Array<{
-      template_key: string;
-      subject: string;
-      body_text: string;
-      body_html: string;
-    }>) {
-      // Editor edits plain text — the send path renders both, with the
-      // HTML reflowed from the text on save.
-      map.set(`email:${r.template_key}`, {
-        subject: r.subject,
-        body: r.body_text || r.body_html,
-      });
-    }
-  }
-  return map;
-}
-
-function actionToEditorAction(
-  a: ActionRow,
-  templates: Map<string, { subject: string | null; body: string }>,
-): AutomationEditorAction {
+function actionToEditorAction(a: ActionRow): AutomationEditorAction {
   const cfg = (a.action_config ?? {}) as Record<string, unknown>;
-  const templateKey = typeof cfg.template_key === 'string' ? cfg.template_key : null;
   let body: string | null = null;
   let subject: string | null = null;
-  if (templateKey) {
-    if (a.action_type === 'send_sms_to_lead') {
-      const t = templates.get(`sms:${templateKey}`);
-      body = t?.body ?? '';
-    } else if (a.action_type === 'send_email_to_lead') {
-      const t = templates.get(`email:${templateKey}`);
-      body = t?.body ?? '';
-      subject = t?.subject ?? '';
-    }
+  if (a.action_type === 'send_sms_to_lead') {
+    body = typeof cfg.body === 'string' ? cfg.body : '';
+  } else if (a.action_type === 'send_email_to_lead') {
+    body =
+      typeof cfg.body_text === 'string'
+        ? cfg.body_text
+        : typeof cfg.body_html === 'string'
+          ? cfg.body_html
+          : '';
+    subject = typeof cfg.subject === 'string' ? cfg.subject : '';
   }
   const actionType = a.action_type as AutomationEditorActionType;
   return {
@@ -546,8 +493,7 @@ async function fetchAutomationEditor(id: string): Promise<AutomationEditor> {
   const clientName = row.client?.name ?? 'Client';
   const allActions = sortedActions(row.automation_actions);
   const commActions = allActions.filter((a) => isCommAction(a.action_type));
-  const templates = await fetchTemplateBodies(row.client_id, allActions);
-  const editorActions = allActions.map((a) => actionToEditorAction(a, templates));
+  const editorActions = allActions.map((a) => actionToEditorAction(a));
 
   return {
     id: row.id,
@@ -571,7 +517,7 @@ async function fetchAutomationEditor(id: string): Promise<AutomationEditor> {
       name: TRIGGER_NAME[row.trigger_type] ?? row.trigger_type,
       changeLabel: 'Change trigger →',
     },
-    steps: commActions.map((a) => toEditorStep(a, templates)),
+    steps: commActions.map((a) => toEditorStep(a)),
     actions: editorActions,
     addStepLabel: '+ Add another step',
     rail: {
@@ -624,7 +570,7 @@ async function fetchAutomationEditor(id: string): Promise<AutomationEditor> {
       sendToHint: 'Add another test recipient in Settings.',
       phoneBar: 'Test send · from your business number',
       smsPreview: commActions[0]
-        ? (toEditorStep(commActions[0], templates).body as ReactNode)
+        ? (toEditorStep(commActions[0]).body as ReactNode)
         : 'This automation has no comm actions.',
       smsVariablesLine: <>Variables are filled with sample values for the test.</>,
       options: {
@@ -724,62 +670,38 @@ async function updateActionBody(input: {
 }): Promise<void> {
   const { data: action, error: aErr } = await supabase
     .from('automation_actions')
-    .select('action_type, action_config, automation_id')
+    .select('action_type, action_config')
     .eq('id', input.actionId)
     .single();
   if (aErr) throw normalizeError(aErr);
   const a = action as {
     action_type: string;
     action_config: Record<string, unknown> | null;
-    automation_id: string;
   };
-  const templateKey = ((a.action_config ?? {}) as { template_key?: string })
-    .template_key;
-  if (!templateKey) {
-    throw AppError.validation(
-      { body: 'Action has no template_key configured.' },
-      'Cannot edit body — no template reference.',
-    );
-  }
-  const { data: automation, error: amErr } = await supabase
-    .from('automations')
-    .select('client_id')
-    .eq('id', a.automation_id)
-    .single();
-  if (amErr) throw normalizeError(amErr);
-  const clientId = (automation as { client_id: string }).client_id;
-
+  const baseConfig = (a.action_config ?? {}) as Record<string, unknown>;
+  let nextConfig: Record<string, unknown>;
   if (a.action_type === 'send_sms_to_lead') {
-    const { error } = await supabase
-      .from('sms_templates')
-      .update({ body: input.body, last_edited_at: new Date().toISOString() })
-      .eq('client_id', clientId)
-      .eq('template_key', templateKey);
-    if (error) throw normalizeError(error);
+    nextConfig = { ...baseConfig, body: input.body };
   } else if (a.action_type === 'send_email_to_lead') {
-    const update: {
-      body_text: string;
-      body_html: string;
-      last_edited_at: string;
-      subject?: string;
-    } = {
+    nextConfig = {
+      ...baseConfig,
       body_text: input.body,
       body_html: textToHtml(input.body),
-      last_edited_at: new Date().toISOString(),
     };
-    if (typeof input.subject === 'string') update.subject = input.subject;
-    const { error } = await supabase
-      .from('email_templates')
-      .update(update)
-      .eq('client_id', clientId)
-      .eq('template_key', templateKey);
-    if (error) throw normalizeError(error);
+    if (typeof input.subject === 'string') {
+      nextConfig.subject = input.subject;
+    }
   } else {
     throw AppError.validation(
       { body: `${a.action_type} is not a comm action.` },
       'This action has no body to edit.',
     );
   }
+  const { error } = await supabase
+    .from('automation_actions')
+    .update({ action_config: nextConfig as never })
+    .eq('id', input.actionId);
+  if (error) throw normalizeError(error);
 }
 
 function textToHtml(text: string): string {
