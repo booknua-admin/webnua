@@ -16,12 +16,14 @@
 // Stripe Customer Portal), and cancels themselves.
 // =============================================================================
 
+import { CancellationBanner } from '@/components/shared/CancellationBanner';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { StripeSubscriptionSection } from '@/components/shared/settings/StripeSubscriptionSection';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
+import { isCancelled } from '@/lib/auth/lifecycle';
 import { useUser } from '@/lib/auth/user-stub';
-import { useAdminClients } from '@/lib/clients/clients-store';
+import { getClientUuidBySlug, useAdminClients } from '@/lib/clients/clients-store';
 
 export function ClientBillingContent() {
   const user = useUser();
@@ -34,6 +36,8 @@ export function ClientBillingContent() {
     ? (clients.find((c) => c.id === user.clientId) ?? null)
     : null;
   const clientName = client?.name ?? 'your account';
+  const clientUuid = client ? getClientUuidBySlug(client.id) : null;
+  const cancelled = client ? isCancelled(client.lifecycleStatus) : false;
 
   return (
     <>
@@ -52,6 +56,11 @@ export function ClientBillingContent() {
           </>
         }
       >
+        {cancelled && clientUuid ? (
+          <div className="mb-5">
+            <CancellationBanner clientId={clientUuid} clientName={clientName} />
+          </div>
+        ) : null}
         <SettingsPanel>
           {client ? (
             <StripeSubscriptionSection clientSlug={client.id} clientName={client.name} />
