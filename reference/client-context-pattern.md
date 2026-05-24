@@ -9,8 +9,9 @@
 > Audit input: `reference/client-context-audit.md` enumerates every route
 > and classifies it. Phase 9b · Session 1 made four routes (`/tickets`,
 > `/leads`, `/calendar`, `/search`) conform; Session 2 brought
-> `/automations` and `/reviews` into line (see §7 for per-route notes).
-> `/campaigns` and `/(admin)/websites` remain — see §10.
+> `/automations` and `/reviews` into line (see §7); Session 3 closed out
+> `/campaigns` and `/(admin)/websites` (see §13). **The pattern is now
+> applied consistently across every shared route in the app.**
 
 ---
 
@@ -536,15 +537,14 @@ For each migration session:
   `useAutomationStatsBatch`. See §7a for notes.
 - ✅ **`/reviews`** — DONE (Phase 9b · S2). Page-level stats row pattern
   established via `useSubAccountReviews`. See §7b for notes.
-- ⏳ **`/campaigns`** — Session 3 (next). The client deep-dive is rich
-  (managed band + hero card + 4-week trend chart + activity log + change
-  CTA); the operator additions are the launch / sync Meta affordances +
-  the pause/resume control. See §7's "What `/campaigns` (Session 3)
-  should copy" for concrete recommendations.
-- ⏳ **`/(admin)/websites`** — small, optional cleanup. Add a layout-
-  guard redirect: operator in sub-account mode hitting `/websites`
-  gets routed to `/website`. Sibling of the `/settings/layout.tsx`
-  wrong-mode guard. Bundle into Session 3 or a later cleanup.
+- ✅ **`/campaigns`** — DONE (Phase 9b · S3). Operator action strip +
+  reused `CampaignMetricTile` row as Flavour A stats surface. See §13a.
+- ✅ **`/(admin)/websites`** — DONE (Phase 9b · S3). Sub-account-mode
+  redirect to `/website`. See §13b.
+
+**The pattern is now applied consistently across every shared route in
+the app.** New shared routes follow §1's canonical dispatcher template;
+inconsistencies should be flagged as bugs, not opt-out judgement calls.
 
 ---
 
@@ -614,3 +614,130 @@ relitigate without a concrete trigger.
   `useWorkspace()`, `useActiveClient()`, `useIsAgencyMode()`.
 - **The audit:** `reference/client-context-audit.md` — full route
   inventory + classifications + the original migration plan.
+
+---
+
+## 13. Per-route notes: `/campaigns`, `/(admin)/websites` (Phase 9b · S3)
+
+Notes from the routes Phase 9b · S3 brought into line. These complete the
+migration — every shared route in the app now follows the pattern.
+
+### 13a. `/campaigns`
+
+**Sub-account shape**: same `CampaignHeroCard` + `CampaignTrendChart` +
+`CampaignActivityCard` deep-dive the client view consumes, scoped to the
+picked client via a new `useSubAccountCampaigns(clientSlug)` hook.
+
+**The data-layer extension was a third query shape** (§7 recommendation 4
+flagged this as the biggest risk; the audit confirmed it). The existing
+`fetchClientCampaigns` reads via `supabase.auth.getUser()` + RLS-bounded
+`clients` (returns the signed-in client's row); the existing
+`fetchAdminCampaigns` reads ALL campaigns across every accessible client.
+Sub-account drilled-in needs a third path: one specific client by slug,
+joined to that client's campaigns. The new hook:
+
+```ts
+export type SubAccountCampaignsPage = {
+  hero: ClientCampaignsPage['hero'];
+  active: ClientCampaignsPage['active'];
+  trend?: ClientCampaignsPage['trend'];
+  activity: ClientCampaignsPage['activity'];
+  clientId: string;  // for future Meta hook wiring
+};
+
+export function useSubAccountCampaigns(clientSlug: string | null);
+```
+
+It returns a SUBSET of `ClientCampaignsPage` — intentionally dropping the
+`managedBand` and `changeCard` fields. Those are client-facing reassurance
+("Webnua handles your strategy", "Text Craig") that doesn't make sense on
+an operator view where the operator IS Webnua. The operator action strip
+(see below) replaces them as the operator's affordance surface. Performance
+characteristics: two sequential queries (`clients` by slug → `campaigns`
+by client_id) plus the same Meta-side stitching the client hook does. RLS
+refuses the slug lookup if it's outside the operator's accessible set,
+which surfaces as a row-not-found error.
+
+**Did `_sub-account-content` and `_client-content` end up sharing
+implementation?** No. The two siblings stayed independent — at 80–120
+lines each, both are mostly composition over the same canonical components
+(`CampaignHeroCard`, `CampaignTrendChart`, `CampaignActivityCard`), and
+the operator chrome (action strip + dropped client-facing blocks) makes
+the two layouts diverge enough that conditional internal branching would
+have been the §11c anti-pattern. The pattern doc's §4 Strategy A default
+held: explicit siblings, modest duplication, shared via the underlying
+primitive components rather than a shared layout shell.
+
+**Operator action strip**: the existing `admin/hub/OperatorActionBar`'s
+typed `OperatorAction[]` chip array couldn't host the stateful
+`LaunchMetaCampaignButton` (which owns sync mutation state + computes
+Ads-Manager deep-link URLs from the connected ad-account row). So the
+sub-account content carries an `OperatorActionStrip` local component
+that visually mirrors `OperatorActionBar` (paper-2 surface, rust mono
+`// OPERATOR ACTIONS` label, "Viewing as operator" right-aligned note)
+but mounts `LaunchMetaCampaignButton` directly. The button already
+handles both states (no ad account → "Wire Meta first"; ad account wired
+→ Sync + Open Ads Manager pair). Pause/resume per-campaign was scoped out
+— Meta Ads Manager itself is the canonical edit surface (V1 model), and
+the launch button IS one click away from it.
+
+**Stats**: per §7 recommendation 2, the existing `CampaignMetricTile` row
+inside `CampaignHeroCard` IS the Flavour A stats surface. No additional
+4-up `StatCard` row above the deep-dive — that would have been duplication
++ visual noise. The hero card's leads / cost-per-lead / spend / conversion
+tiles cover the same questions a separate row would have.
+
+**Agency mode** keeps the cross-client roster with the per-row
+`CampaignClientRow`. The `ClientMultiSelect` was dropped (§9); a status
+filter (`all / active / paused / pending`) using the shared `FilterChips`
+replaced it — per §7 recommendation 1's framing "filter by status /
+platform, not by client". The `LaunchMetaCampaignButton` was also dropped
+from agency mode — it's a per-client action that lives on the sub-account
+view's action strip; in agency mode it would be a permanently-disabled
+"Pick a client" affordance (= noise).
+
+### 13b. `/(admin)/websites`
+
+The matrix is the operator's agency-mode birds-eye over every client's
+website state. A sub-account-mode operator hitting it should land on
+that client's `/website` hub directly, without a "click into the matrix,
+find your row, drill in again" hop.
+
+The fix is a top-of-page `useEffect` that redirects when
+`workspace.hydrated && workspace.activeClientId`. While hydrating or
+mid-redirect the page returns `null` so the matrix doesn't flash. Query
+strings + hash fragments forward through (`router.replace(`/website${search}${hash}`)`).
+
+Hooks-order discipline: the effect + the redirect-window early return
+sit AFTER the data hooks (`useAdminClients`, `useAllWebsites`,
+`useAllWebsiteVersions`) so hook order is preserved across the
+redirect-vs-render branch. Doing the early return BEFORE the hooks
+would have broken rules-of-hooks.
+
+This is NOT a layout-level guard (which is what the original audit
+suggestion contemplated). A layout guard would need its own
+`useEffect` + `null`-render in `/(admin)/layout.tsx`, only to special-
+case the one route that needs it — disproportionate scaffolding for a
+single redirect. Page-level effect is the lower-cost answer.
+
+### What's left
+
+Nothing on the client-context axis. The pattern is universal across every
+shared-route surface in the app:
+
+- Every 3-way candidate route has the three siblings.
+- Every 2-way route uses the 2-way template.
+- No `ClientMultiSelect` survives on a roster.
+- No `WorkspaceContextBanner` sits redundantly above a client-named hero.
+
+Future work the audit didn't surface but is worth flagging:
+
+- The shared `OperatorActionStrip`-style chrome (`/campaigns`'s strip,
+  `/dashboard`'s `OperatorActionBar`) could fold into one component
+  with a `children` slot for stateful actions — defer to the third use
+  per CLAUDE.md's "extract on the third use" rule.
+- `CampaignManagedBand` + `CampaignChangeCard` continue to exist as
+  client-facing components, used only by `_client-content`. Re-evaluate
+  the split if a future operator surface wants the "managed by Webnua"
+  framing for a different audience (e.g. embedded operator-overview
+  cards in a billing surface).
