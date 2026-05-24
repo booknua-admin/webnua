@@ -1,9 +1,14 @@
 // =============================================================================
-// team-invite store — in-memory cache hydrated from Supabase.
+// team-invite store — in-memory cache hydrated from Supabase + a fetch-based
+// writer.
 //
-// Reads `team_invites` + `team_invite_clients` join; writes INSERT new rows.
-// The TeamInviteModal previously console.log'd on send — it now calls
-// addTeamInvite which persists to Supabase.
+// Writes now go through POST /api/invites/team (the server route inserts the
+// row + sends the email + fans the team_invite_clients joins). The previous
+// direct Supabase INSERT here had no way to send the real magic-link email,
+// so it shipped a fabricated link the customer could never use. The
+// component-side path is unchanged: `await addTeamInvite(draft)` returns the
+// real persisted invite (with token + magic link); the cache is updated
+// optimistically.
 //
 // Snapshot discipline (CLAUDE.md): getAllTeamInvites() is reference-stable.
 // =============================================================================
@@ -11,7 +16,7 @@
 import { supabase } from '@/lib/supabase/client';
 import { normalizeError } from '@/lib/errors';
 import { getClientUuidBySlug, getClientSlugByUuid } from '@/lib/clients/clients-store';
-import type { TeamInvite } from './types';
+import type { TeamInvite, TeamInviteDraft } from './types';
 
 const CHANGE_EVENT = 'webnua:team-invites-change';
 
@@ -34,7 +39,9 @@ function dispatch() {
 export async function hydrateTeamInvites(): Promise<void> {
   const { data: invites, error: invError } = await supabase
     .from('team_invites')
-    .select('id, email, full_name, role, invited_by, invited_at, expires_at, magic_link, status, personal_note');
+    .select(
+      'id, email, full_name, role, invited_by, invited_at, expires_at, magic_link, status, personal_note',
+    );
 
   if (invError) {
     console.error('[team-invites] hydrate failed:', normalizeError(invError).message);
@@ -89,59 +96,146 @@ export function getAllTeamInvites(): TeamInvite[] {
 
 // --- Writes ------------------------------------------------------------------
 
-/** Persist a new team invite (INSERT team_invites + team_invite_clients). */
-export function addTeamInvite(invite: TeamInvite): void {
+export type AddTeamInviteResult =
+  | { ok: true; invite: TeamInvite; emailOutcome: 'sent' | 'failed' | 'skipped' }
+  | { ok: false; error: string; status: number };
+
+/**
+ * Persist a new team invite via POST /api/invites/team. Updates the cache
+ * optimistically on success. The caller awaits and renders the success
+ * step using the returned `invite` (which carries the real magic link).
+ */
+export async function addTeamInvite(
+  draft: TeamInviteDraft,
+): Promise<AddTeamInviteResult> {
+  const token = await currentAccessToken();
+  if (!token) return { ok: false, error: 'unauthenticated', status: 401 };
+
+  // Junior assignments are passed as SLUGS in the UI; the API takes UUIDs.
+  const uuidAssignments = (draft.assignedClientIds ?? [])
+    .map((slug) => getClientUuidBySlug(slug))
+    .filter((u): u is string => Boolean(u));
+
+  const response = await fetch('/api/invites/team', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      email: draft.email.trim(),
+      fullName: draft.fullName.trim(),
+      role: draft.role,
+      assignedClientIds: uuidAssignments,
+      personalNote: draft.personalNote.trim(),
+    }),
+  });
+
+  const body = (await response.json().catch(() => ({}))) as {
+    ok?: boolean;
+    invite?: ServerInvite;
+    emailOutcome?: 'sent' | 'failed' | 'skipped';
+    error?: string;
+  };
+  if (!response.ok || !body.ok || !body.invite) {
+    return {
+      ok: false,
+      error: body.error ?? 'invite-failed',
+      status: response.status,
+    };
+  }
+
+  const invite = serverInviteToTeam(body.invite);
   cache = [invite, ...cache];
   dispatch();
-
-  // INSERT the invite row.
-  void supabase
-    .from('team_invites')
-    .insert({
-      id: invite.id,
-      email: invite.email,
-      full_name: invite.fullName,
-      role: invite.role,
-      invited_by: invite.invitedBy,
-      invited_at: invite.invitedAt,
-      expires_at: invite.expiresAt,
-      magic_link: invite.magicLink,
-      status: invite.status,
-      personal_note: invite.personalNote || '',
-    })
-    .then(async (result: { error: unknown }) => {
-      if (result.error) {
-        console.error('[team-invites] addTeamInvite INSERT failed:', normalizeError(result.error).message);
-        return;
-      }
-
-      // INSERT the client assignments (for junior role).
-      if (invite.assignedClientIds.length > 0) {
-        const clientRows = invite.assignedClientIds
-          .map((slug) => {
-            const uuid = getClientUuidBySlug(slug);
-            if (!uuid) {
-              console.error('[team-invites] addTeamInvite: unknown client slug', slug);
-              return null;
-            }
-            return { invite_id: invite.id, client_id: uuid };
-          })
-          .filter((r): r is { invite_id: string; client_id: string } => r !== null);
-
-        if (clientRows.length > 0) {
-          const { error: clientError } = await supabase
-            .from('team_invite_clients')
-            .insert(clientRows);
-          if (clientError) {
-            console.error('[team-invites] team_invite_clients INSERT failed:', normalizeError(clientError).message);
-          }
-        }
-      }
-    });
+  return { ok: true, invite, emailOutcome: body.emailOutcome ?? 'sent' };
 }
+
+// --- resend / cancel --------------------------------------------------------
+
+export async function resendTeamInvite(
+  id: string,
+): Promise<{ ok: true; invite: TeamInvite } | { ok: false; error: string; status: number }> {
+  const token = await currentAccessToken();
+  if (!token) return { ok: false, error: 'unauthenticated', status: 401 };
+  const response = await fetch(`/api/invites/${encodeURIComponent(id)}/resend`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}` },
+  });
+  const body = (await response.json().catch(() => ({}))) as {
+    ok?: boolean;
+    invite?: ServerInvite;
+    error?: string;
+  };
+  if (!response.ok || !body.ok || !body.invite) {
+    return { ok: false, error: body.error ?? 'resend-failed', status: response.status };
+  }
+  const invite = serverInviteToTeam(body.invite);
+  cache = cache.map((i) => (i.id === invite.id ? invite : i));
+  dispatch();
+  return { ok: true, invite };
+}
+
+export async function cancelTeamInvite(
+  id: string,
+): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
+  const token = await currentAccessToken();
+  if (!token) return { ok: false, error: 'unauthenticated', status: 401 };
+  const response = await fetch(`/api/invites/${encodeURIComponent(id)}/cancel`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}` },
+  });
+  const body = (await response.json().catch(() => ({}))) as { error?: string };
+  if (!response.ok) {
+    return { ok: false, error: body.error ?? 'cancel-failed', status: response.status };
+  }
+  // Update local cache — flip the row to revoked.
+  cache = cache.map((i) => (i.id === id ? { ...i, status: 'revoked' as const } : i));
+  dispatch();
+  return { ok: true };
+}
+
+// --- subscribe + helpers ----------------------------------------------------
 
 export function subscribeTeamInvites(callback: () => void): () => void {
   if (typeof window === 'undefined') return () => {};
   window.addEventListener(CHANGE_EVENT, callback);
   return () => window.removeEventListener(CHANGE_EVENT, callback);
+}
+
+async function currentAccessToken(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
+type ServerInvite = {
+  id: string;
+  email: string;
+  fullName: string;
+  role: TeamInvite['role'];
+  assignedClientIds: string[]; // UUIDs from the server
+  invitedBy: string;
+  invitedAt: string;
+  expiresAt: string;
+  token: string;
+  magicLink: string;
+  status: TeamInvite['status'];
+  personalNote: string | null;
+};
+
+function serverInviteToTeam(server: ServerInvite): TeamInvite {
+  return {
+    id: server.id,
+    email: server.email,
+    fullName: server.fullName,
+    role: server.role,
+    assignedClientIds: server.assignedClientIds
+      .map((uuid) => getClientSlugByUuid(uuid) ?? uuid),
+    personalNote: server.personalNote ?? '',
+    invitedBy: server.invitedBy,
+    invitedAt: server.invitedAt,
+    expiresAt: server.expiresAt,
+    magicLink: server.magicLink,
+    status: server.status,
+  };
 }

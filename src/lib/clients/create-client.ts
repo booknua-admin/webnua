@@ -229,6 +229,45 @@ export async function createWebsiteForClient(
 ): Promise<string> {
   const { clientId, clientSlug, brief, createdByUserId } = input;
 
+  // Brand-seed guard. Two callers reach this function: the operator concierge
+  // path (createClientWithGeneration above) which ALWAYS inserts a brand
+  // first, and ScaffoldWebsiteButton on /website — which may run against a
+  // workspace whose brand row was never seeded (a Pattern B signup pre-
+  // hotfix, or a future entry point that bypasses the signup seed). The
+  // website SectionEditor hard-gates on the brand row's existence, so a
+  // freshly-scaffolded site with no brand row is unusable. We backfill a
+  // placeholder brand here from the same brief the website generator uses,
+  // matching the shape of `provisionPendingSignup`'s placeholder. If a
+  // brand row already exists, this no-ops via ON CONFLICT — the operator
+  // path's richer values stay put.
+  const { data: existingBrand } = await supabase
+    .from('brands')
+    .select('client_id')
+    .eq('client_id', clientId)
+    .maybeSingle();
+  if (!existingBrand) {
+    const { error: brandErr } = await supabase.from('brands').insert({
+      client_id: clientId,
+      accent_color: brief.brand.accentColor || '#d24317',
+      logo_url: brief.brand.logoUrl,
+      favicon_url: brief.brand.faviconUrl,
+      voice_formality: brief.brand.voice.formality,
+      voice_urgency: brief.brand.voice.urgency,
+      voice_technicality: brief.brand.voice.technicality,
+      audience_line: brief.brand.audienceLine,
+      industry_category: brief.brand.industryCategory,
+      top_jobs_to_be_booked: brief.brand.topJobsToBeBooked,
+    });
+    if (brandErr) {
+      // Non-fatal — the website CAN still be created. The brand-missing
+      // gate will show up on the editor, but log loudly so an operator
+      // review picks it up.
+      console.error(
+        `[create-client] scaffold brand seed failed for client ${clientId}: ${brandErr.message}`,
+      );
+    }
+  }
+
   // Real Claude generation via /api/generate-site; falls back to the
   // deterministic generator if ANTHROPIC_API_KEY is unset. Passing clientId
   // lets the route attribute generation_log rows to this client.

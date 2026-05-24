@@ -221,6 +221,42 @@ export async function provisionPendingSignup(
     );
   }
 
+  // -- 2c. placeholder brand row --------------------------------------------
+  //
+  // Pattern B's editing surfaces (/settings/brand, the website SectionEditor)
+  // ALL hard-block when no `brands` row exists for the workspace. Without
+  // this insert the customer lands in a half-provisioned state where every
+  // editor refuses to mount with "No brand registered for this client." —
+  // the canonical Pattern B regression closed by this hotfix.
+  //
+  // The shape mirrors `lib/clients/create-client.ts` (the operator-concierge
+  // path) but with PLACEHOLDER defaults the customer overrides via the
+  // upcoming onboarding wizard (Session C) or the brand editor. NOT NULL
+  // columns get a sane minimum: accent_color = Webnua rust, voice axes = 3
+  // (neutral midpoint), audience_line = '' (the editor's `<Textarea>`
+  // tolerates empty), industry_category = the signup-captured category
+  // (a real string from the form).
+  //
+  // Non-fatal — if the insert fails, the workspace IS still provisioned and
+  // an operator can heal it from /settings/access. Throwing here would leave
+  // a half-provisioned workspace (auth user + magic link sent) the route
+  // handler's catch can't unwind cleanly. Same discipline as 2b.
+  const { error: brandError } = await svc.from('brands').insert({
+    client_id: clientId,
+    accent_color: '#d24317',
+    voice_formality: 3,
+    voice_urgency: 3,
+    voice_technicality: 3,
+    audience_line: '',
+    industry_category: industry,
+    top_jobs_to_be_booked: [],
+  });
+  if (brandError) {
+    console.error(
+      `[signup-workspace] brands insert failed for client ${clientId}: ${brandError.message}`,
+    );
+  }
+
   // -- 3. magic link --------------------------------------------------------
   //
   // The link lands the user on /dashboard. By that moment the migration

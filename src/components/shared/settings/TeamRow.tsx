@@ -9,7 +9,7 @@ type TeamRowProps = {
   roleSub: string;
   status: 'active' | 'pending';
   statusLabel: string;
-  actions: { label: string; tone?: 'default' | 'danger' }[];
+  actions: { label: string; tone?: 'default' | 'danger'; onClick?: () => void }[];
   className?: string;
 };
 
@@ -67,19 +67,36 @@ function TeamRow({
         {statusLabel}
       </span>
       <div className="flex justify-end gap-1.5">
-        {actions.map((action) => (
-          <span
-            key={action.label}
-            data-slot="team-action-btn"
-            data-tone={action.tone ?? 'default'}
-            className={cn(
-              'cursor-pointer rounded-md border border-rule bg-paper-2 px-2.5 py-[5px] font-mono text-[10px] font-bold uppercase tracking-[0.06em] text-ink-soft hover:bg-ink hover:text-paper',
-              action.tone === 'danger' && 'hover:border-warn hover:bg-warn',
-            )}
-          >
-            {action.label}
-          </span>
-        ))}
+        {actions.map((action) => {
+          const baseClass = cn(
+            'cursor-pointer rounded-md border border-rule bg-paper-2 px-2.5 py-[5px] font-mono text-[10px] font-bold uppercase tracking-[0.06em] text-ink-soft hover:bg-ink hover:text-paper',
+            action.tone === 'danger' && 'hover:border-warn hover:bg-warn',
+          );
+          if (action.onClick) {
+            return (
+              <button
+                key={action.label}
+                type="button"
+                data-slot="team-action-btn"
+                data-tone={action.tone ?? 'default'}
+                onClick={action.onClick}
+                className={baseClass}
+              >
+                {action.label}
+              </button>
+            );
+          }
+          return (
+            <span
+              key={action.label}
+              data-slot="team-action-btn"
+              data-tone={action.tone ?? 'default'}
+              className={baseClass}
+            >
+              {action.label}
+            </span>
+          );
+        })}
       </div>
     </div>
   );
