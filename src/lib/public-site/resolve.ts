@@ -146,6 +146,36 @@ async function brandForClient(clientId: string): Promise<BrandObject> {
 
 async function findWebsiteByDomain(host: string): Promise<WebsiteRow | null> {
   const svc = getServiceClient();
+  // Phase 9 — `client_custom_domains` is the new (multi-domain, status-
+  // tracked) source. The legacy `websites.domain_primary` + `domain_aliases`
+  // remain authoritative for any rows created before Phase 9 OR by the
+  // legacy single-domain ConnectDomainButton flow on /website. Both are
+  // checked. Order: new table first (the canonical Phase 9 path), then
+  // legacy columns. The new table isn't in the generated Database type yet,
+  // hence the unknown cast (same pattern as the per-tenant integration
+  // hooks).
+  const untyped = svc as unknown as {
+    from: (t: string) => {
+      select: (s: string) => {
+        eq: (k: string, v: unknown) => {
+          eq: (k: string, v: unknown) => {
+            maybeSingle: () => Promise<{ data: { client_id: string } | null }>;
+          };
+        };
+      };
+    };
+  };
+  const byCustom = await untyped
+    .from('client_custom_domains')
+    .select('client_id')
+    .eq('domain', host)
+    .eq('status', 'live')
+    .maybeSingle();
+  if (byCustom.data) {
+    const clientId = byCustom.data.client_id;
+    const website = await findWebsiteByClient(clientId);
+    if (website) return website;
+  }
   const byPrimary = await svc
     .from('websites')
     .select('*')
@@ -159,6 +189,37 @@ async function findWebsiteByDomain(host: string): Promise<WebsiteRow | null> {
     .limit(1);
   return (byAlias.data?.[0] as unknown as WebsiteRow) ?? null;
 }
+
+/** Phase 9 — the live primary domain a client has set, used by middleware to
+ *  301-redirect requests on the `.webnua.dev` host to the custom host for
+ *  SEO consolidation. Returns null when no primary live custom domain exists.
+ */
+async function findPrimaryDomainForClient(clientId: string): Promise<string | null> {
+  const svc = getServiceClient();
+  const untyped = svc as unknown as {
+    from: (t: string) => {
+      select: (s: string) => {
+        eq: (k: string, v: unknown) => {
+          eq: (k: string, v: unknown) => {
+            eq: (k: string, v: unknown) => {
+              maybeSingle: () => Promise<{ data: { domain: string } | null }>;
+            };
+          };
+        };
+      };
+    };
+  };
+  const { data } = await untyped
+    .from('client_custom_domains')
+    .select('domain')
+    .eq('client_id', clientId)
+    .eq('is_primary', true)
+    .eq('status', 'live')
+    .maybeSingle();
+  return data ? data.domain : null;
+}
+
+export { findPrimaryDomainForClient };
 
 async function findWebsiteByClient(clientId: string): Promise<WebsiteRow | null> {
   const svc = getServiceClient();

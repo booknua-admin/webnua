@@ -10,6 +10,7 @@ export const subAccountSettingsNav: SettingsNavItem[] = [
   { label: 'Access', href: '/settings/access', icon: '⌗' },
   { label: 'Team', href: '/settings/team', icon: '⌥' },
   { label: 'Integrations', href: '/settings/integrations', icon: '⊠' },
+  { label: 'Domains', href: '/settings/domains', icon: '◉' },
   { label: 'Notifications', href: '/settings/notifications', icon: '🔔' },
   { label: 'Email', href: '/settings/email', icon: '✉' },
   { label: 'SMS', href: '/settings/sms', icon: '☏' },

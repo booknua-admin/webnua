@@ -56,4 +56,9 @@ import '@/lib/integrations/twilio/job-handlers';
 // executor can dispatch the engine.
 import '@/lib/automations/job-handlers';
 
+// Phase 9 — custom-domain attachment. Registers check_domain_verification,
+// the every-5-min poller (migration 0082 cron) that reconciles in-flight
+// client_custom_domains rows against Vercel.
+import '@/lib/domains/job-handlers';
+
 export {};
