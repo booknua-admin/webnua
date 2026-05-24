@@ -263,27 +263,17 @@ values
    now() - interval '9 days', 'gbp', 'gbp-rev-0003');
 
 -- ===== campaigns =============================================================
-insert into public.campaigns (id, client_id, name, status, budget, starts_at,
-  ends_at, external_ref)
-values
-  ('1a000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001',
-   '$99 emergency call-out', 'pending', 1200.00, null, null, null),
-  ('1a000000-0000-4000-8000-000000000002', 'c0000000-0000-4000-8000-000000000002',
-   'Fortnightly clean — Perth western suburbs', 'active', 1800.00,
-   now() - interval '21 days', null, 'meta-camp-88421');
+-- No seed campaigns. Meta Ads is the source-of-truth for campaign records;
+-- the `meta_sync_campaigns` ingest job (server: meta-ads/job-handlers.ts;
+-- cron: migration 0075) discovers campaigns built in Meta Ads Manager
+-- + writes public.campaigns + meta_campaigns rows. A fresh client roster
+-- shows "Awaiting Meta Ads" until they connect a Meta ad account and the
+-- first sync runs (auto-fires post-pick from the picker route).
+-- The previous demo campaigns ($99 emergency call-out / Fortnightly clean
+-- — Perth western suburbs) were removed because they looked like real
+-- live campaigns but had no Meta backing — once Meta became the source
+-- of truth, the seeds were misleading.
 
--- ===== campaign_activity_events ==============================================
-insert into public.campaign_activity_events (campaign_id, category, actor_user_id,
-  payload, occurred_at)
-values
-  ('1a000000-0000-4000-8000-000000000002', 'creative',
-   'a0000000-0000-4000-8000-000000000001',
-   '{"summary":"Swapped in a new before/after image set."}',
-   now() - interval '4 days'),
-  ('1a000000-0000-4000-8000-000000000002', 'budget',
-   'a0000000-0000-4000-8000-000000000001',
-   '{"summary":"Raised daily budget","from":50,"to":65}',
-   now() - interval '2 days');
 
 -- ===== automations ===========================================================
 -- FreshHome 24-hour follow-up flow (admin Screen 17).

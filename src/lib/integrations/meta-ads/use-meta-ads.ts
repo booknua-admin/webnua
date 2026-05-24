@@ -317,6 +317,24 @@ export function useSetMetaCampaignStatus() {
   });
 }
 
+/** Discover campaigns on the connected ad account + upsert
+ *  public.campaigns + meta_campaigns rows. Whole-account scope (no
+ *  metaCampaignDbId); the per-campaign sync is `useSyncMetaCampaign`
+ *  below. Same /sync route, different body shape. */
+export function useSyncMetaAccountCampaigns() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { clientId: string }) => {
+      await postJson('/api/integrations/meta_ads/sync', { clientId: input.clientId });
+    },
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: campaignsKey(vars.clientId) });
+      qc.invalidateQueries({ queryKey: ['campaigns', 'admin'] });
+      qc.invalidateQueries({ queryKey: ['campaigns', 'client'] });
+    },
+  });
+}
+
 /** Manual on-demand sync — enqueues the same jobs the cron does. */
 export function useSyncMetaCampaign() {
   const qc = useQueryClient();

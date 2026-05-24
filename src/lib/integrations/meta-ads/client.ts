@@ -462,6 +462,40 @@ export function activateAd(clientId: string, metaAdId: string) {
 
 // --- read ops ----------------------------------------------------------------
 
+/** List all campaigns on an ad account. Used by the `meta_sync_campaigns`
+ *  ingest job to discover campaigns built in Meta Ads Manager and bring
+ *  them into Webnua's `public.campaigns` + `meta_campaigns` tables.
+ *
+ *  The `act_*` prefixed ad-account id (Webnua's canonical form) is fine to
+ *  pass — Meta accepts both `act_NNNNN` and the bare numeric id on this
+ *  endpoint. Paging is handled by Meta automatically up to `limit`. */
+export async function listCampaignsForAdAccount(
+  clientId: string,
+  adAccountId: string,
+): Promise<IntegrationResult<MetaCampaign[]>> {
+  return callWithToken<MetaCampaign[]>(
+    clientId,
+    'meta_ads',
+    async (accessToken) => {
+      const url = `${GRAPH}/${adAccountId}/campaigns?${form({
+        access_token: accessToken,
+        fields:
+          'id,name,objective,status,effective_status,daily_budget,lifetime_budget,start_time,stop_time,created_time',
+        limit: 200,
+      })}`;
+      const result = await callExternal<{ data?: MetaCampaign[] }>({
+        provider: 'meta_ads',
+        operation: 'list_campaigns_for_ad_account',
+        url,
+        method: 'GET',
+        clientId,
+      });
+      if (!result.ok) return result;
+      return { ok: true, data: result.data.data ?? [], status: result.status };
+    },
+  );
+}
+
 /** Fetch the live campaign object (status, effective_status, budget,
  *  schedule). Used by the daily insights sync to refresh local status. */
 export async function getCampaign(
