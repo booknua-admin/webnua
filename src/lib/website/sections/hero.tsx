@@ -3,7 +3,7 @@
 import { BuilderFormSection } from '@/components/shared/builder/BuilderField';
 import { FormBlock } from '@/components/shared/website/FormBlock';
 
-import { setBrandStyleValue } from '../brand-style-stub';
+import { setBrandStyleValue } from '../brand-style';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
 import { heroMeta } from './registry-meta';
 import { brandThemeDefaults, resolveTheme, type SectionTheme } from '../section-theme';

@@ -5,7 +5,7 @@ import {
   BuilderFormSection,
 } from '@/components/shared/builder/BuilderField';
 
-import { setBrandStyleValue } from '../brand-style-stub';
+import { setBrandStyleValue } from '../brand-style';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
 import { thanksConfirmationMeta } from './registry-meta';
 import { getSectionIcon } from '../section-icons';

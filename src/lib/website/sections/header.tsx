@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/select';
 import { useCan } from '@/lib/auth/user-stub';
 
-import { setBrandStyleValue } from '../brand-style-stub';
+import { setBrandStyleValue } from '../brand-style';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
 import { headerMeta } from './registry-meta';
 import {
