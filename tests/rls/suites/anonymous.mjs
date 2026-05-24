@@ -27,6 +27,27 @@ const TENANT_TABLES = [
   'generation_log',
   'analytics_events',
   'signup_submissions',
+  // Phase 7 — every integration / messaging table denies anon SELECT
+  'integration_connections',
+  'integration_call_log',
+  'integration_jobs',
+  'client_sms_senders',
+  'client_email_senders',
+  'client_stripe_customers',
+  'notifications_outbound',
+  'sms_messages',
+  'sms_templates',
+  'email_messages',
+  'email_templates',
+  'notification_preferences',
+  'client_gbp_locations',
+  'gbp_reviews',
+  'gbp_review_requests',
+  'client_meta_ad_accounts',
+  'meta_lead_forms',
+  'meta_campaigns',
+  'meta_ads_insights',
+  'platform_email_templates',
 ];
 
 export default {
@@ -66,6 +87,15 @@ export default {
           await ctx.operator.from('website_versions').delete().eq('id', id);
           fail('HOLE — anon wrote a website_versions row');
         }
+      },
+    );
+
+    // Phase 7 Vault wrappers — EXECUTE explicitly revoked from anon.
+    t(
+      { table: 'public.webnua_vault_read_secret', policy: 'vault_wrapper_execute', category: 'anon', kind: 'negative', scenario: 'anon cannot call the vault wrappers' }, // prettier-ignore
+      async () => {
+        const { error } = await ctx.anon.rpc('webnua_vault_read_secret', { secret_id: randomUUID() });
+        if (!error) fail('HOLE — anon executed a Vault wrapper');
       },
     );
 
