@@ -105,7 +105,7 @@ function IntegrationOnboarding({
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb current="Get started" />} />
-      <div className="flex flex-col gap-7 px-10 py-10">
+      <div className="flex flex-col gap-7 px-4 py-6 md:px-10 md:py-10">
         <PageHeader
           className="mb-0"
           eyebrow="// Welcome to Webnua"
@@ -269,7 +269,7 @@ function PendingVerificationSurface({
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb current="Verify your email" />} />
-      <div className="flex flex-col gap-7 px-10 py-10">
+      <div className="flex flex-col gap-7 px-4 py-6 md:px-10 md:py-10">
         <PageHeader
           className="mb-0"
           eyebrow="// Almost there"

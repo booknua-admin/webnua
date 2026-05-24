@@ -74,7 +74,7 @@ function NotificationBell() {
             aria-hidden
             onClick={() => setOpen(false)}
           />
-          <div className="absolute right-0 top-[calc(100%+10px)] z-50 w-[420px]">
+          <div className="fixed inset-x-2 top-[68px] z-50 sm:absolute sm:inset-x-auto sm:right-0 sm:top-[calc(100%+10px)] sm:w-[420px]">
             <NotificationPanel
               items={items}
               readIds={readIds}

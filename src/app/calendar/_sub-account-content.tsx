@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { AddBookingButton } from '@/components/shared/bookings/AddBookingButton';
 import { CalendarGrid } from '@/components/shared/calendar/CalendarGrid';
@@ -13,6 +13,7 @@ import { useAdminCalendar } from '@/lib/bookings/queries';
 import { shiftAnchor, todayIso } from '@/lib/calendar/anchor';
 import type { CalendarView } from '@/lib/calendar/types';
 import { normalizeError } from '@/lib/errors';
+import { useIsMobile } from '@/lib/use-is-mobile';
 import { useActiveClient, useWorkspace } from '@/lib/workspace/workspace-stub';
 
 /**
@@ -27,9 +28,19 @@ import { useActiveClient, useWorkspace } from '@/lib/workspace/workspace-stub';
 function SubAccountCalendarContent() {
   const activeClient = useActiveClient();
   const { activeClientId } = useWorkspace();
+  const isMobile = useIsMobile();
   const [view, setView] = useState<CalendarView>('week');
   const [anchorIso, setAnchorIso] = useState(todayIso);
   const { data, error } = useAdminCalendar(view, anchorIso);
+
+  // Mobile auto-defaults to day-view — see `_admin-content.tsx` for rationale.
+  const [autoSwitchedToDay, setAutoSwitchedToDay] = useState(false);
+  useEffect(() => {
+    if (isMobile && !autoSwitchedToDay && view === 'week') {
+      setView('day');
+      setAutoSwitchedToDay(true);
+    }
+  }, [isMobile, autoSwitchedToDay, view]);
 
   const inFilter = (slug?: string) =>
     slug != null && slug === activeClientId;
@@ -75,7 +86,7 @@ function SubAccountCalendarContent() {
           <TopbarBreadcrumb trail={[clientName]} current="Calendar" />
         }
       />
-      <div className="flex flex-col gap-3.5 px-10 py-10">
+      <div className="flex flex-col gap-3.5 px-4 py-6 md:px-10 md:py-10">
         <PageHeader
           eyebrow={`// ${clientName.toUpperCase()} · CALENDAR`}
           title={

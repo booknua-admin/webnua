@@ -92,7 +92,7 @@ function CampaignHeroCard({ data, className }: CampaignHeroCardProps) {
           {data.statusLabel}
         </span>
       </div>
-      <div className="grid grid-cols-4 gap-px bg-paper-2">
+      <div className="grid grid-cols-2 gap-px bg-paper-2 md:grid-cols-4">
         {data.metrics.map((metric) => (
           <CampaignMetricTile
             key={metric.label}

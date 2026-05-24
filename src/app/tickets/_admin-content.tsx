@@ -111,7 +111,7 @@ function AdminTicketsContent() {
           <TopbarBreadcrumb trail={['Workspace']} current="Tickets" />
         }
       />
-      <div className="flex flex-col gap-5 px-10 py-10">
+      <div className="flex flex-col gap-5 px-4 py-6 md:px-10 md:py-10">
         <TicketsHero
           tag={adminTicketsHero.tag}
           title={adminTicketsHero.title}
@@ -183,7 +183,7 @@ function RegularTicketsList({
 }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-ink/8 bg-card">
-      <div className="grid grid-cols-[20px_180px_1fr_110px_120px_110px_80px] items-center gap-3 border-b border-ink/8 bg-paper-2/40 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
+      <div className="hidden items-center gap-3 border-b border-ink/8 bg-paper-2/40 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet md:grid md:grid-cols-[20px_180px_1fr_110px_120px_110px_80px]">
         <div />
         <div>{'// Client'}</div>
         <div>{'// Subject'}</div>

@@ -59,7 +59,7 @@ export default function WebsiteHubPage() {
     return (
       <>
         <Topbar breadcrumb={<TopbarBreadcrumb current="Website" />} />
-        <div className="px-10 py-10">
+        <div className="px-4 py-6 md:px-10 md:py-10">
           <p className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
             {'// Resolving workspace…'}
           </p>
@@ -80,7 +80,7 @@ export default function WebsiteHubPage() {
     return (
       <>
         <Topbar breadcrumb={<TopbarBreadcrumb current="Website" />} />
-        <div className="px-10 py-10">
+        <div className="px-4 py-6 md:px-10 md:py-10">
           <p className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
             {'// Loading website…'}
           </p>
@@ -115,7 +115,7 @@ function WebsiteHub({ website }: { website: Website }) {
     return (
       <>
         <Topbar breadcrumb={<TopbarBreadcrumb current="Website" />} />
-        <div className="px-10 py-10">
+        <div className="px-4 py-6 md:px-10 md:py-10">
           <p className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
             {'// Loading website…'}
           </p>
@@ -128,7 +128,7 @@ function WebsiteHub({ website }: { website: Website }) {
     return (
       <>
         <Topbar breadcrumb={<TopbarBreadcrumb current="Website" />} />
-        <div className="px-10 py-10">
+        <div className="px-4 py-6 md:px-10 md:py-10">
           <p className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-warn">
             No draft version on this website.
           </p>
@@ -328,7 +328,7 @@ function AgencyEmptyState() {
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb current="Website" />} />
-      <div className="px-10 py-10">
+      <div className="px-4 py-6 md:px-10 md:py-10">
         <div className="mb-6">
           <p className="mb-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-rust">
             {'// AGENCY MODE'}
@@ -420,7 +420,7 @@ function NoWebsiteState({
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb current="Website" />} />
-      <div className="px-10 py-10">
+      <div className="px-4 py-6 md:px-10 md:py-10">
         <div className="mb-6">
           <p className="mb-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-rust">
             {reason === 'no-website-yet' ? '// NO WEBSITE YET' : '// NO WORKSPACE'}

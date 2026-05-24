@@ -40,7 +40,7 @@ function ClientTicketDetailContent() {
           />
         }
       />
-      <div className="px-10 py-10">
+      <div className="px-4 py-6 md:px-10 md:py-10">
         {isLoading ? (
           <DetailNotice>{'// Loading ticket…'}</DetailNotice>
         ) : error || !t ? (

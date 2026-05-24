@@ -8,6 +8,7 @@
 
 import Link from 'next/link';
 
+import { EditorMobileGuard } from '@/components/shared/EditorMobileGuard';
 import { SectionEditor } from '@/components/shared/website/SectionEditor';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/lib/auth/user-stub';
@@ -21,6 +22,14 @@ import {
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 export default function WebsiteHeaderEditorPage() {
+  return (
+    <EditorMobileGuard>
+      <WebsiteHeaderEditorInner />
+    </EditorMobileGuard>
+  );
+}
+
+function WebsiteHeaderEditorInner() {
   const user = useUser();
   const workspace = useWorkspace();
 

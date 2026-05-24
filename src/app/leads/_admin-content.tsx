@@ -69,7 +69,7 @@ function AdminLeadsContent() {
         hideSearch
         breadcrumb={<TopbarBreadcrumb trail={['Workspace']} current="Leads" />}
       />
-      <div className="flex flex-col gap-5 px-10 py-10">
+      <div className="flex flex-col gap-5 px-4 py-6 md:px-10 md:py-10">
         <LeadsHero
           tag={adminLeadsHero.eyebrow}
           title={adminLeadsHero.title}
@@ -99,7 +99,7 @@ function AdminLeadsContent() {
           {showingColdTab ? (
             <ColdHeaderRow />
           ) : (
-            <div className="grid grid-cols-[36px_180px_1fr_110px_80px_80px_100px] items-center gap-3 border-b border-ink/8 bg-paper-2/40 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
+            <div className="hidden items-center gap-3 border-b border-ink/8 bg-paper-2/40 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet md:grid md:grid-cols-[36px_180px_1fr_110px_80px_80px_100px]">
               <div />
               <div>{'// Lead'}</div>
               <div>{'// Preview'}</div>
@@ -164,7 +164,7 @@ function InboxNotice({ children }: { children: React.ReactNode }) {
  *  the dominant signal is "needs nudging now". */
 function ColdHeaderRow() {
   return (
-    <div className="grid grid-cols-[4px_36px_1fr_140px_120px_auto] items-center gap-3 border-b border-ink/8 bg-warn-soft/30 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
+    <div className="hidden items-center gap-3 border-b border-ink/8 bg-warn-soft/30 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet md:grid md:grid-cols-[4px_36px_1fr_140px_120px_auto]">
       <div />
       <div />
       <div>{'// Lead'}</div>

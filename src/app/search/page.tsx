@@ -13,7 +13,7 @@ import { useActiveClient, useWorkspace } from '@/lib/workspace/workspace-stub';
 
 function SearchNotice({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-10 py-10">
+    <div className="px-4 py-6 md:px-10 md:py-10">
       <p className="rounded-xl border border-rule bg-card px-5.5 py-12 text-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
         {children}
       </p>

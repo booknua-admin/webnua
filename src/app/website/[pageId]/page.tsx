@@ -17,6 +17,7 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
+import { EditorMobileGuard } from '@/components/shared/EditorMobileGuard';
 import { SectionEditor } from '@/components/shared/website/SectionEditor';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/lib/auth/user-stub';
@@ -24,6 +25,14 @@ import { useEffectiveDraft, useWebsiteForClient } from '@/lib/website/queries';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 export default function WebsitePageEditorPage() {
+  return (
+    <EditorMobileGuard>
+      <WebsitePageEditorInner />
+    </EditorMobileGuard>
+  );
+}
+
+function WebsitePageEditorInner() {
   const params = useParams<{ pageId: string }>();
   const pageId = params?.pageId;
   const user = useUser();

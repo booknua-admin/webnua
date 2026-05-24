@@ -115,7 +115,7 @@ function SubAccountTicketsContent() {
         hideSearch
         breadcrumb={<TopbarBreadcrumb trail={[clientName]} current="Tickets" />}
       />
-      <div className="flex flex-col gap-5 px-10 py-10">
+      <div className="flex flex-col gap-5 px-4 py-6 md:px-10 md:py-10">
         <TicketsHero
           tag={`// ${clientName.toUpperCase()} · TICKETS`}
           title={

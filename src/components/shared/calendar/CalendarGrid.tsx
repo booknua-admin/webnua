@@ -14,18 +14,27 @@ function CalendarGrid({ week, className }: CalendarGridProps) {
   const gridCols = {
     gridTemplateColumns: `70px repeat(${week.days.length}, minmax(0, 1fr))`,
   };
+  // Multi-day weeks need a minimum width to stay legible — 6 days × ~95px
+  // main column = unusable. CSS-only patch: horizontal scroll on mobile with
+  // a min-width that keeps each day cell tappable. Day-timeline rebuild is
+  // V1.1 (mobile audit §7 item 8).
+  const needsScroll = week.days.length > 1;
   return (
     <div
-      data-slot="calendar-grid"
-      className={cn(
-        'relative overflow-hidden rounded-[10px] border border-rule bg-card',
-        className,
-      )}
+      data-slot="calendar-grid-scroll"
+      className={cn(needsScroll && 'overflow-x-auto', className)}
     >
       <div
-        className="grid border-b border-rule bg-paper-2"
-        style={gridCols}
+        data-slot="calendar-grid"
+        className={cn(
+          'relative overflow-hidden rounded-[10px] border border-rule bg-card',
+          needsScroll && 'min-w-[640px]',
+        )}
       >
+        <div
+          className="grid border-b border-rule bg-paper-2"
+          style={gridCols}
+        >
         <div className="flex items-center justify-center border-r border-rule-soft px-2 py-3.5 text-center font-mono text-[9px] font-bold uppercase tracking-[0.1em] text-ink-quiet">
           {week.cornerLabel}
         </div>
@@ -102,6 +111,7 @@ function CalendarGrid({ week, className }: CalendarGridProps) {
             ) : null}
           </div>
         ))}
+        </div>
       </div>
     </div>
   );

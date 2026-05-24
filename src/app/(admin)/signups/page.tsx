@@ -78,7 +78,7 @@ export default function AdminSignupsPage() {
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb current="Signups" />} />
-      <div className="flex flex-col gap-7 px-10 py-10">
+      <div className="flex flex-col gap-7 px-4 py-6 md:px-10 md:py-10">
         <PageHeader
           className="mb-0"
           eyebrow="// Pattern B · operator visibility"

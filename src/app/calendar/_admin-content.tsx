@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { CalendarLegend } from '@/components/admin/calendar/CalendarLegend';
 import { CalendarTodayPanel } from '@/components/admin/calendar/CalendarTodayPanel';
@@ -15,6 +15,7 @@ import { shiftAnchor, todayIso } from '@/lib/calendar/anchor';
 import { adminCalendar } from '@/lib/calendar/admin-calendar';
 import type { CalendarView } from '@/lib/calendar/types';
 import { normalizeError } from '@/lib/errors';
+import { useIsMobile } from '@/lib/use-is-mobile';
 
 /**
  * Operator agency-mode calendar — cross-client week / month grid.
@@ -26,9 +27,22 @@ import { normalizeError } from '@/lib/errors';
  */
 function AdminCalendarContent() {
   const { hero } = adminCalendar;
+  const isMobile = useIsMobile();
   const [view, setView] = useState<CalendarView>('week');
   const [anchorIso, setAnchorIso] = useState(todayIso);
   const { data, error } = useAdminCalendar(view, anchorIso);
+
+  // Mobile auto-defaults to day-view — a 6-day week-grid is unusable on a
+  // 375px viewport (each day cell would be ~50px). Operator can still flip
+  // back to week via the toolbar; the auto-switch fires once on first
+  // mobile mount and any subsequent rotation INTO mobile width.
+  const [autoSwitchedToDay, setAutoSwitchedToDay] = useState(false);
+  useEffect(() => {
+    if (isMobile && !autoSwitchedToDay && view === 'week') {
+      setView('day');
+      setAutoSwitchedToDay(true);
+    }
+  }, [isMobile, autoSwitchedToDay, view]);
 
   return (
     <>
@@ -37,7 +51,7 @@ function AdminCalendarContent() {
           <TopbarBreadcrumb trail={['Workspace']} current="Calendar" />
         }
       />
-      <div className="flex flex-col gap-3.5 px-10 py-10">
+      <div className="flex flex-col gap-3.5 px-4 py-6 md:px-10 md:py-10">
         <PageHeader
           eyebrow={hero.eyebrow}
           title={hero.title}

@@ -46,7 +46,7 @@ export function AdminDashboardContent() {
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb current="Dashboard" />} />
-      <div className="flex flex-col gap-7 px-10 py-10">
+      <div className="flex flex-col gap-7 px-4 py-6 md:px-10 md:py-10">
         {isLoading ? (
           <DashboardNotice>{'// Loading agency overview…'}</DashboardNotice>
         ) : error || !data ? (
@@ -70,13 +70,13 @@ export function AdminDashboardContent() {
 
             <ReviewRequestsPanel />
 
-            <div className="grid grid-cols-3 gap-3.5">
+            <div className="grid grid-cols-1 gap-3.5 md:grid-cols-3">
               <AttentionPanelCard panel={data.panels.cashflow} />
               <AttentionPanelCard panel={data.panels.onboarding} />
               <AttentionPanelCard panel={data.panels.support} />
             </div>
 
-            <div className="grid grid-cols-4 gap-3.5">
+            <div className="grid grid-cols-2 gap-3.5 md:grid-cols-4">
               {data.stats.map((stat) => (
                 <StatCard
                   key={stat.label}
@@ -110,7 +110,7 @@ export function AdminDashboardContent() {
               )}
             </section>
 
-            <div className="grid grid-cols-[1.6fr_1fr] items-start gap-3.5">
+            <div className="grid grid-cols-1 items-start gap-3.5 lg:grid-cols-[1.6fr_1fr]">
               <ActivityFeed
                 title="Recent activity · all clients"
                 items={data.recentActivity}

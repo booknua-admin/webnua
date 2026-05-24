@@ -71,7 +71,7 @@ export default function AutomationEditorPage() {
           />
         }
       />
-      <div className="flex flex-col px-10 py-10">
+      <div className="flex flex-col px-4 py-6 md:px-10 md:py-10">
         {isLoading ? (
           <EditorNotice>{'// Loading automation…'}</EditorNotice>
         ) : error || !editor ? (

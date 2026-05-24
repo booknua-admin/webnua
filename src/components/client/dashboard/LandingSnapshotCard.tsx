@@ -25,7 +25,7 @@ function LandingSnapshotCard({ snapshot, className }: LandingSnapshotCardProps) 
           {snapshot.meta}
         </span>
       </div>
-      <div className="grid grid-cols-4 gap-3.5">
+      <div className="grid grid-cols-2 gap-3.5 md:grid-cols-4">
         {snapshot.stats.map((stat) => (
           <StatCard
             key={stat.label}
