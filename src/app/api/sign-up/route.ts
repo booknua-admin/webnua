@@ -1,38 +1,43 @@
 // =============================================================================
-// POST /api/sign-up — start a self-serve Webnua signup.
+// POST /api/sign-up — Pattern B: free signup, verify email, build a preview.
 //
-// Locked Q2 (subscribe-before-workspace): the flow ends at Stripe Checkout,
-// NOT at a workspace creation. The actual workspace is provisioned by the
-// Stripe webhook AFTER `customer.subscription.created` arrives — see
-// `app/api/integrations/stripe/webhook/route.ts` and
-// `lib/auth/signup-workspace.ts`. This route's only job is to:
+// Architectural shift from Session 1 (Pattern A): Stripe Checkout is GONE
+// from this endpoint. The flow now is:
 //
-//   1. Validate the captured signup details (business name + email + category).
-//   2. Refuse a re-signup whose email already has an auth.users row — we
-//      surface a clear "already registered, sign in instead" error rather
-//      than blast the webhook with a guaranteed-to-fail createUser later.
-//   3. Mint a Stripe Checkout session in subscription mode with our metadata
-//      (`kind=signup` + the captured details) AND the captured email pre-
-//      filled. Stripe creates the Customer at Checkout completion.
-//   4. Return the Checkout URL — the browser navigates to it.
+//   1. Validate the captured signup (business name + email + category).
+//   2. Refuse disposable-email domains (mailinator, tempmail, etc.).
+//   3. IP rate-limit (10 attempts/IP/hour; 3 successes/IP/24h) via the
+//      DB-backed rate_limit_hits table (migration 0085).
+//   4. Refuse a re-signup whose email already has an auth.users row.
+//   5. `provisionPendingSignup` — inserts the clients row with
+//      lifecycle_status='pending_verification', creates the unconfirmed auth
+//      user, generates the magic link. The clients row's AFTER INSERT
+//      triggers fan templates + automations.
+//   6. Send the verification email (Resend platform send) with the magic
+//      link.
+//   7. Respond with the "check your email" success state — the form swaps
+//      to a check-your-email screen.
 //
-// The route is UNAUTHENTICATED — a stranger landing on /sign-up is signed
-// out. The Supabase service-role client (used by the email-precheck) and the
-// Stripe API are the only writes; both run server-side only.
+// The recipient clicks the magic link → Supabase confirms the email + sets
+// a session → the migration 0085 trigger advances the client from
+// 'pending_verification' to 'preview' → user lands on /dashboard which
+// mounts the IntegrationOnboarding wizard for the 'preview' state.
 //
-// Mild abuse protection: rate-limit by IP via a tiny in-memory window. The
-// real signal — a fake signup that completes Checkout with a stolen card —
-// is Stripe's own fraud layer; this just defangs trivial spamming the
-// Checkout-URL mint.
+// Stripe Checkout fires from the dashboard's "Publish to go live" CTA in
+// a SEPARATE moment — handled by the existing /api/integrations/stripe/checkout
+// route (widened to requireClientAccess in Session 1). When that subscription
+// payment succeeds, the webhook calls `markClientActiveOnPublish` which
+// flips the client from 'preview' → 'active'.
+//
+// SERVER-ONLY (route handler).
 // =============================================================================
 
 import { NextResponse } from 'next/server';
 
-import { emailAlreadyRegistered } from '@/lib/auth/signup-workspace';
-import {
-  createSignupCheckoutSession,
-  isStripeConfigured,
-} from '@/lib/integrations/stripe/client';
+import { provisionPendingSignup, emailAlreadyRegistered } from '@/lib/auth/signup-workspace';
+import { sendVerificationEmail } from '@/lib/auth/verification-email';
+import { isDisposableEmail } from '@/lib/email/disposable-domains';
+import { checkAndRecord } from '@/lib/rate-limit';
 
 // --- input shape -------------------------------------------------------------
 
@@ -65,31 +70,6 @@ function validate(body: SignupBody): { ok: true; data: Validated } | { ok: false
   return { ok: true, data: { businessName: name, businessEmail: email, businessCategory: category } };
 }
 
-// --- rate limit --------------------------------------------------------------
-//
-// In-memory token bucket: 5 signups per IP per 10 minutes. Per-edge-instance
-// only (the rate limit is best-effort; a real serverside store would be a
-// later concern — Stripe's own checks are the real defence). A burst above
-// this rate is almost certainly script abuse, not real product use.
-
-const RATE_LIMIT_MAX = 5;
-const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
-const rateLimiter = new Map<string, { count: number; resetAt: number }>();
-
-function rateLimit(ip: string): { ok: boolean; resetAt?: number } {
-  const now = Date.now();
-  const entry = rateLimiter.get(ip);
-  if (!entry || entry.resetAt <= now) {
-    rateLimiter.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return { ok: true };
-  }
-  if (entry.count >= RATE_LIMIT_MAX) {
-    return { ok: false, resetAt: entry.resetAt };
-  }
-  entry.count += 1;
-  return { ok: true };
-}
-
 function callerIp(request: Request): string {
   const fwd = request.headers.get('x-forwarded-for');
   if (fwd) return fwd.split(',')[0].trim();
@@ -112,63 +92,93 @@ export async function POST(request: Request): Promise<Response> {
   }
   const { businessName, businessEmail, businessCategory } = validation.data;
 
-  const rate = rateLimit(callerIp(request));
-  if (!rate.ok) {
+  const ip = callerIp(request);
+
+  // --- 1. signup_attempt rate limit (counts EVERY attempt) ---
+  //
+  // The attempt-limit (10/IP/hour) fires before any other guard. Failed
+  // validations don't count (we already returned 400 above); the limit
+  // counts attempts that reached this point AND every later failure mode.
+  const attemptDecision = await checkAndRecord('signup_attempt', { key: ip, ip });
+  if (!attemptDecision.allowed) {
     return NextResponse.json(
-      { error: 'rate-limited', retryAfter: rate.resetAt },
+      {
+        error: 'rate-limited-attempt',
+        detail: attemptDecision.message,
+        retryAfterSeconds: attemptDecision.retryAfterSeconds,
+      },
       { status: 429 },
     );
   }
 
-  if (!isStripeConfigured()) {
-    return NextResponse.json({ error: 'stripe-not-configured' }, { status: 503 });
+  // --- 2. disposable email check ---
+  if (isDisposableEmail(businessEmail)) {
+    return NextResponse.json({ error: 'disposable-email' }, { status: 400 });
   }
 
-  // Refuse a re-signup whose email already has an auth row. Without this
-  // check the webhook would fail when it tries to createUser later; better
-  // to fail the signup BEFORE creating a Stripe Customer + Checkout session.
+  // --- 3. duplicate email check ---
+  //
+  // Refuse a re-signup BEFORE inserting any DB rows. Without this guard the
+  // auth.admin.createUser call would 422 with a duplicate-email error,
+  // leaving an orphan clients row behind.
   if (await emailAlreadyRegistered(businessEmail)) {
     return NextResponse.json({ error: 'email-already-registered' }, { status: 409 });
   }
 
-  // --- mint the Checkout session ------------------------------------------
+  // --- 4. signup_success rate limit (counts successful workspace creates) ---
   //
-  // We do NOT create a Stripe Customer first (the operator path does because
-  // it has a clients row to attach to; we do not yet). Stripe creates the
-  // Customer at Checkout completion from the pre-filled customer_email.
+  // We check BEFORE provisioning so a blocked attempt doesn't leak through
+  // as a half-created workspace. The narrower limit (3/IP/24h) catches
+  // sustained signup abuse the attempt-limit would let through.
+  const successDecision = await checkAndRecord('signup_success', { key: ip, ip });
+  if (!successDecision.allowed) {
+    return NextResponse.json(
+      {
+        error: 'rate-limited-success',
+        detail: successDecision.message,
+        retryAfterSeconds: successDecision.retryAfterSeconds,
+      },
+      { status: 429 },
+    );
+  }
+
+  // --- 5. provision the pending workspace + auth user + magic link ---
+  let result: Awaited<ReturnType<typeof provisionPendingSignup>>;
+  try {
+    result = await provisionPendingSignup({
+      businessName,
+      businessEmail,
+      businessCategory,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('[sign-up] provisionPendingSignup failed', message);
+    return NextResponse.json(
+      { error: 'provision-failed', detail: message },
+      { status: 500 },
+    );
+  }
+
+  // --- 6. send the verification email ---
   //
-  // Both session metadata AND subscription_data.metadata are stamped — the
-  // webhook reads from the subscription (it carries the metadata on the
-  // `subscription.created` event directly). The session metadata is a
-  // safety belt for reconciliation from session id.
-  const origin = new URL(request.url).origin;
-  const result = await createSignupCheckoutSession({
+  // The send is best-effort — if Resend fails OR the API key is unset, the
+  // workspace still exists. We surface the outcome on the response so the
+  // form can decide whether to recommend the user check their inbox or
+  // contact support. The 'skipped' state is dev-mode (no Resend key) and
+  // looks like 'sent' to the user (they should still try checking their
+  // email in case the SMTP fallback worked).
+  const emailOutcome = await sendVerificationEmail({
+    recipientEmail: businessEmail,
     businessName,
-    businessEmail,
-    businessCategory,
-    successUrl: `${origin}/sign-up/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancelUrl: `${origin}/sign-up?cancelled=1`,
+    magicLink: result.magicLink,
   });
 
-  if (!result.ok) {
-    // Forward Stripe's actual error message in `detail` so the form can
-    // surface what specifically went wrong (mode mismatch on the price,
-    // missing keys, etc.). Without this the user just sees a generic
-    // "Could not start checkout" and we have to crawl logs to diagnose.
-    console.error('[sign-up] Checkout session mint failed', result.error.message);
-    return NextResponse.json(
-      { error: 'stripe-checkout-failed', detail: result.error.message },
-      { status: 502 },
-    );
-  }
-
-  if (!result.data.url) {
-    console.error('[sign-up] Checkout session returned no URL');
-    return NextResponse.json(
-      { error: 'stripe-checkout-failed', detail: 'Checkout session returned no URL.' },
-      { status: 502 },
-    );
-  }
-
-  return NextResponse.json({ checkoutUrl: result.data.url });
+  return NextResponse.json({
+    ok: true,
+    emailOutcome,
+    clientSlug: result.clientSlug,
+    // The magic link is NEVER returned to the public browser — only via the
+    // Resend send above. A client losing their email today re-runs signup
+    // (with a fresh email or after the 7-day pending-verification sweep).
+  });
 }

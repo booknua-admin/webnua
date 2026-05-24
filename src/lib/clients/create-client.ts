@@ -72,6 +72,14 @@ export async function createClientWithGeneration(
   }
 
   // -- 1. client row (retry the slug on a unique clash) --
+  //
+  // Pattern B: the operator concierge path bypasses the verify + pay gates.
+  // The operator is the verifier (we trust they have a real customer); the
+  // payment is collected out-of-band (Stripe Invoice, bank transfer, or
+  // operator picks "Set up billing" from the sub-account /settings/billing
+  // later). So this insert sets lifecycle_status='active' EXPLICITLY rather
+  // than relying on the table default (which Pattern B flipped to
+  // 'pending_verification' for self-serve signups).
   const base = slugify(brief.business.name);
   let client: { id: string; slug: string } | null = null;
   for (const slug of [base, `${base}-${rand()}`, `${base}-${rand()}`]) {
@@ -86,6 +94,9 @@ export async function createClientWithGeneration(
         primary_contact_email: brief.business.email || null,
         primary_contact_phone: brief.business.phone || null,
         onboarded_by: user.id,
+        // 'active' is a Pattern B enum addition (migration 0084); cast
+        // until the generated Database type catches up.
+        lifecycle_status: 'active' as never,
       })
       .select('id, slug')
       .single();

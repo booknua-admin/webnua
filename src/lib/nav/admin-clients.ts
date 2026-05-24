@@ -4,7 +4,15 @@ export type AdminClient = {
   name: string;
   meta: string;
   badge?: { text: string; tone?: 'default' | 'muted' };
+  /** Legacy two-value bucket — kept for surfaces that just want to know
+   *  "is this client in setup vs not". `lifecycleStatus` below is the raw
+   *  enum value the `lib/auth/lifecycle.ts` helpers consume — prefer it
+   *  for new code (Pattern B dispatch reads it). */
   status?: 'active' | 'setup';
+  /** The raw `clients.lifecycle_status` enum value. Drives Pattern B
+   *  dispatching (pending_verification / preview / active / banned / …)
+   *  via the `lib/auth/lifecycle.ts` helpers. */
+  lifecycleStatus: string;
 };
 
 // The seat limit is no longer carried here — it is the `defaultSeatLimit`

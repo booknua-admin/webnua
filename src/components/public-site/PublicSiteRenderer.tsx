@@ -30,6 +30,20 @@ import {
 import type { BrandObject, NavLink, Page, Section } from '@/lib/website/types';
 
 import { PopupHost } from './PopupHost';
+import { PreviewBanner } from './PreviewBanner';
+
+/** APP_HOST is server-side env; we read NEXT_PUBLIC_ vars at client mount.
+ *  The renderer is `'use client'`, but it RUNS server-side first (RSC). Both
+ *  the env and process.env work in either context for NEXT_PUBLIC_ keys. */
+function dashboardHref(): string {
+  const base =
+    process.env.NEXT_PUBLIC_APP_BASE_URL ??
+    (typeof process !== 'undefined' && process.env.APP_BASE_URL) ??
+    null;
+  if (base) return `${base.replace(/\/+$/, '')}/dashboard`;
+  const appHost = process.env.NEXT_PUBLIC_APP_HOST ?? 'app.webnua.com';
+  return `https://${appHost}/dashboard`;
+}
 
 type Props =
   | {
@@ -41,6 +55,10 @@ type Props =
       nav: NavLink[];
       pages: Page[];
       page: Page;
+      /** Pattern B preview gating — when true, mounts the preview banner +
+       *  disables form submission (the form slot's `publicSubmit.isPreview`
+       *  flag carries it to FormBlock). Resolver-set. */
+      isPreview: boolean;
     }
   | {
       kind: 'funnel';
@@ -49,6 +67,7 @@ type Props =
       brand: BrandObject;
       step: FunnelStep;
       nextStepHref: string | null;
+      isPreview: boolean;
     };
 
 function RenderedSection({
@@ -58,6 +77,7 @@ function RenderedSection({
   surfaceKind,
   funnelId,
   nextStepHref,
+  isPreview,
 }: {
   section: Section;
   brand: BrandObject;
@@ -65,6 +85,7 @@ function RenderedSection({
   surfaceKind: 'website' | 'funnel';
   funnelId?: string | null;
   nextStepHref?: string | null;
+  isPreview: boolean;
 }) {
   if (section.enabled === false) return null;
   const def = getSectionDefinition(section.type);
@@ -73,7 +94,10 @@ function RenderedSection({
   let node: ReactNode = <Preview data={section.data} brand={brand} />;
 
   // Attached form → provide the slot so SectionShell / the hero render
-  // FormBlock, wired to submit against the public endpoint.
+  // FormBlock, wired to submit against the public endpoint. `isPreview`
+  // rides the publicSubmit context so FormBlock can disable submission +
+  // render a "preview mode — publish to capture leads" notice without a
+  // separate prop chain.
   if (section.form) {
     const label = def.label.replace(/^\/\/\s*/, '').toLowerCase();
     node = (
@@ -87,6 +111,7 @@ function RenderedSection({
             funnelId: surfaceKind === 'funnel' ? funnelId ?? null : null,
             sourceLabel: `Form · ${label}`,
             nextStepHref,
+            isPreview,
           },
         }}
       >
@@ -128,15 +153,17 @@ export function PublicSiteRenderer(props: Props) {
                 surfaceKind="funnel"
                 funnelId={props.funnelId}
                 nextStepHref={props.nextStepHref}
+                isPreview={props.isPreview}
               />
             ))}
           </main>
+          {props.isPreview ? <PreviewBanner dashboardHref={dashboardHref()} /> : null}
         </PopupHost>
       </LiveSurfaceProvider>
     );
   }
 
-  const { brand, clientId, header, footer, nav, pages, page } = props;
+  const { brand, clientId, header, footer, nav, pages, page, isPreview } = props;
   // Resolve Website.nav into real links and hand them to the header section
   // through the nav slot — the header renders the site's one navigation bar.
 
@@ -158,7 +185,13 @@ export function PublicSiteRenderer(props: Props) {
           : null;
 
   const headerNode = (
-    <RenderedSection section={header} brand={brand} clientId={clientId} surfaceKind="website" />
+    <RenderedSection
+      section={header}
+      brand={brand}
+      clientId={clientId}
+      surfaceKind="website"
+      isPreview={isPreview}
+    />
   );
   const mainNode = (
     <main>
@@ -169,12 +202,19 @@ export function PublicSiteRenderer(props: Props) {
           brand={brand}
           clientId={clientId}
           surfaceKind="website"
+          isPreview={isPreview}
         />
       ))}
     </main>
   );
   const footerNode = (
-    <RenderedSection section={footer} brand={brand} clientId={clientId} surfaceKind="website" />
+    <RenderedSection
+      section={footer}
+      brand={brand}
+      clientId={clientId}
+      surfaceKind="website"
+      isPreview={isPreview}
+    />
   );
 
   return (
@@ -201,6 +241,7 @@ export function PublicSiteRenderer(props: Props) {
           )}
           {footerNode}
         </WebsiteNavProvider>
+        {isPreview ? <PreviewBanner dashboardHref={dashboardHref()} /> : null}
       </PopupHost>
     </LiveSurfaceProvider>
   );

@@ -1,6 +1,7 @@
 'use client';
 
 import { IntegrationOnboarding } from '@/components/shared/onboarding/IntegrationOnboarding';
+import { dashboardIsInPreOnboarding } from '@/lib/auth/lifecycle';
 import { useRole, useUser } from '@/lib/auth/user-stub';
 import { useAdminClients } from '@/lib/clients/clients-store';
 import { useIsAgencyMode, useWorkspace } from '@/lib/workspace/workspace-stub';
@@ -24,15 +25,21 @@ export default function DashboardPage() {
     ? (clients.find((c) => c.id === activeSlug) ?? null)
     : null;
 
-  // A client still in the `onboarding` lifecycle gets the integration
-  // onboarding flow instead of a dashboard of zeros — for the client and for
-  // an operator drilled into that sub-account.
-  if (activeClient?.status === 'setup') {
+  // Pattern B: a client in pending_verification / preview / legacy onboarding
+  // lifecycle gets the IntegrationOnboarding wizard surface (with the
+  // "Publish to go live" CTA when their site has been generated). The
+  // dispatch goes through `dashboardIsInPreOnboarding` so the lifecycle
+  // helper is the SoT for which states are "pre-published". `activeClient.
+  // status` is the legacy two-value field ('setup' | 'active') from
+  // clients-store; the helper reads the live lifecycle_status indirectly via
+  // a new prop wired into AdminClient.
+  if (activeClient && dashboardIsInPreOnboarding(activeClient.lifecycleStatus)) {
     return (
       <IntegrationOnboarding
         clientName={activeClient.name}
         clientSlug={activeClient.id}
         isOperator={role === 'admin'}
+        lifecycleStatus={activeClient.lifecycleStatus}
       />
     );
   }

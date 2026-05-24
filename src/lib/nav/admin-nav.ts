@@ -4,6 +4,7 @@ export const adminWorkspaceNav: NavSection = {
   label: 'Workspace',
   items: [
     { label: 'Dashboard', href: '/dashboard', icon: '⊞' },
+    { label: 'Signups', href: '/signups', icon: '☞' },
     {
       label: 'Leads',
       href: '/leads',

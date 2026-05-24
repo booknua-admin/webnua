@@ -37,6 +37,13 @@ export async function generateMetadata({
   const { host, slug } = await params;
   const target = await resolveSite(decodeURIComponent(host), pathOf(slug));
 
+  // Pattern B preview state: inject `noindex,nofollow` so a preview URL the
+  // customer happens to share publicly does NOT get indexed by Google.
+  const robots =
+    (target.status === 'website' || target.status === 'funnel') && target.isPreview
+      ? { index: false, follow: false }
+      : undefined;
+
   if (target.status === 'website') {
     const title = target.page.seo.title || target.page.title || target.siteName;
     return {
@@ -50,6 +57,7 @@ export async function generateMetadata({
           ? [target.page.seo.ogImageUrl]
           : undefined,
       },
+      robots,
     };
   }
   if (target.status === 'funnel') {
@@ -58,6 +66,7 @@ export async function generateMetadata({
       title,
       description: target.step.seo.description,
       icons: target.faviconUrl ? { icon: target.faviconUrl } : undefined,
+      robots,
     };
   }
   return {
@@ -160,6 +169,7 @@ export default async function PublishedPage({
           nav={target.nav}
           pages={target.pages}
           page={target.page}
+          isPreview={target.isPreview}
         />
         <TrackingScript tracking={target.tracking} />
       </>
@@ -174,6 +184,7 @@ export default async function PublishedPage({
         brand={target.brand}
         step={target.step}
         nextStepHref={target.nextStepHref}
+        isPreview={target.isPreview}
       />
       <TrackingScript tracking={target.tracking} />
     </>

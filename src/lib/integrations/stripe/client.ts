@@ -172,55 +172,11 @@ export function createCheckoutSession(input: {
   });
 }
 
-/** Create a hosted Checkout Session for a self-serve /sign-up — sibling of
- *  `createCheckoutSession` for the case where NO Stripe Customer or Webnua
- *  client exists yet. Stripe creates the Customer at Checkout completion from
- *  the pre-filled `customer_email`. Both the session metadata AND the
- *  resulting subscription's metadata are stamped with `kind=signup` + the
- *  captured signup details — the webhook handler reads
- *  `customer.subscription.created` `metadata.kind=signup` to fan out to
- *  `provisionSignupWorkspace`.
- *
- *  Routes through the same `stripeCall` machinery as the operator path so the
- *  encoding + retry + Idempotency-Key behaviour matches.
- *
- *  NOTE — does NOT set `customer_creation`; that parameter is for `mode=payment`
- *  Checkout (where a customer is optional). In `mode=subscription` a Customer
- *  is always created, and explicitly setting `customer_creation` produces a
- *  Stripe 400 (`invalid integer parameter` / unsupported field). */
-export function createSignupCheckoutSession(input: {
-  businessName: string;
-  businessEmail: string;
-  businessCategory: string;
-  successUrl: string;
-  cancelUrl: string;
-}): Promise<IntegrationResult<StripeCheckoutSession>> {
-  const signupMeta = {
-    kind: 'signup',
-    signup_business_name: input.businessName,
-    signup_business_email: input.businessEmail,
-    signup_business_category: input.businessCategory,
-  };
-  return stripeCall<StripeCheckoutSession>({
-    operation: 'create_signup_checkout_session',
-    method: 'POST',
-    path: '/checkout/sessions',
-    params: {
-      mode: 'subscription',
-      customer_email: input.businessEmail,
-      success_url: input.successUrl,
-      cancel_url: input.cancelUrl,
-      line_items: [{ price: standardPriceId(), quantity: 1 }],
-      // Session-level metadata — useful for reconciliation from a session id.
-      metadata: signupMeta,
-      // Subscription-level metadata — what the webhook reads from
-      // `customer.subscription.created`. Stripe forwards this to the
-      // subscription Stripe creates as part of the Checkout completion.
-      subscription_data: { metadata: signupMeta },
-    },
-    clientId: null,
-  });
-}
+// (Session 1's `createSignupCheckoutSession` was removed with the Pattern B
+// refactor — signup no longer mints a Checkout at /sign-up. Pattern B's
+// publish-pay path reuses the existing `createCheckoutSession` above, called
+// from /api/integrations/stripe/checkout after the customer hits Publish on
+// the dashboard. Git history preserves the function for any future revival.)
 
 /** Create a subscription directly (no hosted Checkout). The Webnua flow uses
  *  Checkout; this is here for programmatic / future use. */

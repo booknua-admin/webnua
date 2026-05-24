@@ -127,6 +127,11 @@ export function FormBlock({
   const slot = useSectionFormSlot();
   const publicSubmit = slot?.publicSubmit ?? null;
   const isPublic = !!publicSubmit && !testSubmitCtx;
+  // Pattern B preview gating: the form RENDERS so the customer can see the
+  // styling + interact with fields, but the submit is disabled. A non-paying
+  // workspace must not capture real leads. Fields stay interactive (typing
+  // is fine — nothing is sent).
+  const isPreviewSubmit = isPublic && publicSubmit?.isPreview === true;
 
   const [values, setValues] = useState<Record<string, string>>({});
   const [files, setFiles] = useState<Record<string, File>>({});
@@ -366,11 +371,26 @@ export function FormBlock({
             ref={formRef}
             onSubmit={(e) => {
               e.preventDefault();
+              // Preview-mode forms NEVER submit — defence in depth on top of
+              // the disabled submit button below. A keyboard Enter or a
+              // bypass extension can't slip a real lead through.
+              if (isPreviewSubmit) return;
               if (isPublic) void handlePublicSubmit();
             }}
             className="flex w-full flex-col gap-4"
             noValidate
           >
+            {isPreviewSubmit ? (
+              <div
+                role="note"
+                className="rounded-md border border-rust/30 bg-rust-soft/40 px-3 py-2 text-[12px] leading-[1.45]"
+                style={{ color: '#2a2a28' }}
+              >
+                <strong style={{ color: '#d24317' }}>Preview mode.</strong> This
+                form is disabled until you publish — your leads stay in your
+                inbox, not lost.
+              </div>
+            ) : null}
             {form.showTitle ? (
               <SelectableElement
                 id={FORM_TITLE_ELEMENT}
@@ -414,14 +434,21 @@ export function FormBlock({
             {isPublic ? (
               <button
                 type="submit"
-                disabled={busy}
-                className="block w-full rounded-lg py-3 text-center text-[14px] font-bold transition-opacity hover:opacity-90 disabled:opacity-60"
+                disabled={busy || isPreviewSubmit}
+                className="block w-full rounded-lg py-3 text-center text-[14px] font-bold transition-opacity hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
                 style={{
                   backgroundColor: colors.buttonBackground,
                   color: colors.buttonText,
                 }}
+                title={
+                  isPreviewSubmit ? 'Publish to enable lead capture' : undefined
+                }
               >
-                {busy ? 'Sending…' : form.submitLabel}
+                {isPreviewSubmit
+                  ? `${form.submitLabel} (preview — disabled)`
+                  : busy
+                    ? 'Sending…'
+                    : form.submitLabel}
               </button>
             ) : (
               <SelectableElement
