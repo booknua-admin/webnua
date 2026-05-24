@@ -143,12 +143,22 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   // --- 5. provision the pending workspace + auth user + magic link ---
+  //
+  // Pass the request origin as the redirectToBase — `new URL(request.url).
+  // origin` is always the actual deployed URL, so the magic link lands on
+  // the same host the user signed up at, regardless of env-var setup. The
+  // origin MUST also be in the Supabase project's "Redirect URLs" allow-
+  // list (Authentication → URL Configuration) — otherwise Supabase falls
+  // back to the project's Site URL (which is `http://localhost:3000` by
+  // default, the root cause of the pre-fix bug).
+  const requestOrigin = new URL(request.url).origin;
   let result: Awaited<ReturnType<typeof provisionPendingSignup>>;
   try {
     result = await provisionPendingSignup({
       businessName,
       businessEmail,
       businessCategory,
+      redirectToBase: requestOrigin,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
