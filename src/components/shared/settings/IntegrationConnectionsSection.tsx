@@ -25,6 +25,8 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { GbpLocationPickerModal } from '@/components/shared/settings/GbpLocationPickerModal';
+import { MetaAdAccountFooter } from '@/components/shared/settings/MetaAdAccountFooter';
+import { MetaAdAccountPickerModal } from '@/components/shared/settings/MetaAdAccountPickerModal';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { Button } from '@/components/ui/button';
@@ -79,12 +81,13 @@ export function IntegrationConnectionsSection({
     byProvider.set(connection.provider, connection);
   }
 
-  // Post-OAuth GBP picker — when the callback redirect lands the operator
-  // back here with a successful GBP connect, auto-mount the location
-  // picker so the operational layer (which GBP location to manage) is one
-  // step away from the connection itself.
+  // Post-OAuth picker — when the callback redirect lands the operator
+  // back here with a successful connect, auto-mount the operational layer
+  // (which GBP location / which Meta ad account) one step from the
+  // connection itself.
   const search = useLocationSearch();
   const [gbpPickerOpen, setGbpPickerOpen] = useState(false);
+  const [metaPickerOpen, setMetaPickerOpen] = useState(false);
   useEffect(() => {
     const params = new URLSearchParams(search);
     if (
@@ -93,6 +96,20 @@ export function IntegrationConnectionsSection({
       clientId
     ) {
       setGbpPickerOpen(true);
+    }
+  }, [search, clientId]);
+  // Meta picker auto-open — sibling to the GBP one above (same lint-flagged
+  // setState-in-effect pattern; consistent with the GBP block already
+  // here). The two blocks live separately so each provider's behaviour is
+  // easy to find when revisiting.
+  useEffect(() => {
+    const params = new URLSearchParams(search);
+    if (
+      params.get('integration') === 'meta_ads' &&
+      params.get('integration_status') === 'connected' &&
+      clientId
+    ) {
+      setMetaPickerOpen(true);
     }
   }, [search, clientId]);
 
@@ -128,6 +145,11 @@ export function IntegrationConnectionsSection({
       <GbpLocationPickerModal
         open={gbpPickerOpen}
         onOpenChange={setGbpPickerOpen}
+        clientId={clientId ?? null}
+      />
+      <MetaAdAccountPickerModal
+        open={metaPickerOpen}
+        onOpenChange={setMetaPickerOpen}
         clientId={clientId ?? null}
       />
     </SettingsPanel>
@@ -223,6 +245,11 @@ function ConnectionRow({
               than on a separate tab. */}
           {provider.id === 'google_business_profile' && state === 'connected' && clientId ? (
             <GbpConnectionFooter clientId={clientId} />
+          ) : null}
+          {/* Meta-only: ad-account summary + balance + Pick / Change. Same
+              shape as GBP — operational layer co-located with connection. */}
+          {provider.id === 'meta_ads' && state === 'connected' && clientId ? (
+            <MetaAdAccountFooter clientId={clientId} />
           ) : null}
         </div>
       </div>

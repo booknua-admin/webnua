@@ -10,12 +10,16 @@
 // model) and meta_ads (Meta's long_lived model). Google Ads is intentionally
 // not registered (operator decision: not building it).
 //
-// META IS STUBBED. The Meta token-exchange + refresh endpoints below are the
-// documented Graph API ones and are written to work — but they have NOT been
-// verified against a live Meta app (no Meta app exists yet; see CLAUDE.md and
-// the integration-foundation audit). The contract exists so the Meta business
-// session has a complete foundation to build on; `TODO(meta)` flags every
-// spot a real app is needed to confirm.
+// META — the OAuth flow + business-logic data layer landed in the Phase 7
+// Meta Ads session. The Graph version is env-driven (META_API_VERSION;
+// defaults to v21.0) and the scope set covers ads_management +
+// business_management + pages_show_list + pages_manage_ads +
+// leads_retrieval. The token exchange + refresh + revoke + fetchAccountId
+// have not yet been smoke-tested against a real Meta app in production
+// (live verification requires the operator to complete Meta business
+// verification + App Review for each sensitive scope — see CLAUDE.md
+// "Google Business Profile — operator setup" parallel for the
+// Meta-equivalent steps).
 //
 // SERVER-ONLY — every call routes through callExternal(), which holds the
 // service-role client for logging.
@@ -258,19 +262,40 @@ const googleBusinessProfile: OAuthProvider = {
 };
 
 // =============================================================================
-// Meta Ads — token model: long_lived.  STUBBED — see the module header.
+// Meta Ads — token model: long_lived.
+//
+// Phase 7 Meta Ads session — the OAuth scaffolding shipped in Session 2 is
+// now connected to a real per-tenant token flow + the campaign/insights
+// data layer (see lib/integrations/meta-ads/).
 // =============================================================================
 
-// TODO(meta): pin the Graph API version with the Meta team when the app is
-// created. v21.0 is current at time of writing.
-const META_GRAPH_VERSION = 'v21.0';
+// Graph API version. Read from env (META_API_VERSION) so the operator can
+// bump it without a code change; defaults to v21.0 (current at time of
+// writing — Meta keeps each version live for ~2 years, see the platform
+// changelog at developers.facebook.com/docs/graph-api/changelog).
+const META_GRAPH_VERSION = env.META_API_VERSION ?? 'v21.0';
 const META_AUTH_URL = `https://www.facebook.com/${META_GRAPH_VERSION}/dialog/oauth`;
 const META_TOKEN_URL = `https://graph.facebook.com/${META_GRAPH_VERSION}/oauth/access_token`;
 const META_GRAPH_BASE = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
 
-// TODO(meta): confirm the final scope set with the Meta business session —
-// ad management + read is the foundation set.
-const META_SCOPES = ['ads_read', 'ads_management', 'business_management'] as const;
+// The Webnua scope set:
+//   • ads_read / ads_management        — read + write campaigns, ad sets, ads, insights
+//   • business_management              — read the user's Business Manager accounts
+//   • pages_show_list / pages_manage_ads — list the FB Pages the user owns +
+//                                          attach ads to them (lead-gen ads
+//                                          require a Page)
+//   • leads_retrieval                  — pull lead-form submissions
+// All sensitive — each requires Meta App Review approval before the app can
+// request them from real customers. Webnua's own "test users" added on the
+// Developer dashboard can grant them without review.
+const META_SCOPES = [
+  'ads_read',
+  'ads_management',
+  'business_management',
+  'pages_show_list',
+  'pages_manage_ads',
+  'leads_retrieval',
+] as const;
 
 // A Meta long-lived token lasts ~60 days; the response sometimes omits
 // expires_in, so this is the fallback.

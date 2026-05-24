@@ -35,10 +35,18 @@
 //   • gbp_send_review_request   — picks an SMS or email channel and enqueues
 //                                  the underlying send job, with a row on
 //                                  gbp_review_requests for the audit log.
+//
+// Phase 7 Meta Ads adds:
+//   • meta_sync_insights        — daily insights-pull from Meta + upsert
+//                                  into meta_ads_insights (cron 04:00 UTC).
+//   • meta_sync_leads           — every-15-min lead-pull from Meta lead
+//                                  forms; new leads land in public.leads
+//                                  with source_kind='meta'.
 // =============================================================================
 
 import '@/lib/integrations/_shared/job-handlers';
 import '@/lib/integrations/gbp/job-handlers';
+import '@/lib/integrations/meta-ads/job-handlers';
 import '@/lib/integrations/resend/job-handlers';
 import '@/lib/integrations/stripe/job-handlers';
 import '@/lib/integrations/twilio/job-handlers';
