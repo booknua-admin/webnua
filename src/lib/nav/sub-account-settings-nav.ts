@@ -7,6 +7,7 @@ import type { SettingsNavItem } from './types';
 // surface (agency birds-eye vs the drilled-in cap grid).
 export const subAccountSettingsNav: SettingsNavItem[] = [
   { label: 'Profile', href: '/settings/profile', icon: '⊕' },
+  { label: 'Brand', href: '/settings/brand', icon: '✦' },
   { label: 'Access', href: '/settings/access', icon: '⌗' },
   { label: 'Team', href: '/settings/team', icon: '⌥' },
   { label: 'Integrations', href: '/settings/integrations', icon: '⊠' },

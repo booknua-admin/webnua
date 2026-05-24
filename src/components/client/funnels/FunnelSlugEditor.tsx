@@ -5,12 +5,12 @@
 // operator edit the slug inline. The slug is unique per client; a clash comes
 // back from updateFunnelSlug as a friendly message.
 //
-// Also surfaces the funnel's publish state to operators: a contextual button
-// to the right of the URL row — "Unpublish" when live, "Publish →" (linking
-// to the /funnels/[id]/review surface) when draft-only. Operator-only via
-// the `publish` capability + role='admin' guard; clients see the row without
-// the publish/unpublish affordance (their publish path is the review
-// surface, reached via the editor toolbar).
+// Also surfaces the funnel's publish state: a contextual button to the
+// right of the URL row — "Unpublish" when live, "Publish →" (linking to
+// the /funnels/[id]/review surface) when draft-only. Gated on the
+// `publish` capability (Pattern B critical fixes — clients hold the cap
+// via CLIENT_OWNER_DEFAULTS; operators via ADMIN_DEFAULTS); the funnels
+// RLS was widened in migration 0088 so an owner's update no longer 403s.
 //
 // On a successful slug save the builder event fires, so the funnel detail
 // page (useFunnelWithDraft) refetches and re-renders this with the new slug.
@@ -65,9 +65,12 @@ export function FunnelSlugEditor({
 
   const liveUrl = `${host}/${slug}`;
   const isLive = Boolean(publishedVersionId);
-  const canPublish = Boolean(
-    user && user.role === 'admin' && user.capabilities.has('publish'),
-  );
+  // The funnel publish lane is `publish`-cap gated, not role-gated. Both
+  // operators (workspace-wide via ADMIN_DEFAULTS) and client owners (via
+  // CLIENT_OWNER_DEFAULTS — Pattern B critical fixes) hold the cap. The
+  // funnels_update RLS was widened in migration 0088 so a client owner's
+  // UPDATE no longer 403s; this UI gate now matches.
+  const canPublish = Boolean(user && user.capabilities.has('publish'));
 
   async function save() {
     setSaving(true);

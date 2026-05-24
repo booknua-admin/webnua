@@ -26,6 +26,7 @@ import { ManagePagesPanel } from '@/components/shared/website/ManagePagesPanel';
 import { NewPageEntry } from '@/components/shared/website/NewPageEntry';
 import { OpenRequestsCard } from '@/components/shared/website/OpenRequestsCard';
 import { PageGridCard } from '@/components/shared/website/PageGridCard';
+import { ScaffoldWebsiteButton } from '@/components/shared/website/ScaffoldWebsiteButton';
 import { SingletonStrip } from '@/components/shared/website/SingletonStrip';
 import { VersionHistoryCard } from '@/components/shared/website/VersionHistoryCard';
 import { WebsiteActivityCard } from '@/components/shared/website/WebsiteActivityCard';
@@ -444,11 +445,12 @@ function NoWebsiteState({
           </p>
         </div>
         {reason === 'no-website-yet' ? (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-start gap-2">
             <CapabilityGate capability="editPages" mode="hide">
-              <Button asChild>
-                <Link href="/clients/new">Scaffold a new website</Link>
-              </Button>
+              <ScaffoldWebsiteButton
+                activeClientSlug={clientId ?? null}
+                activeClientName={clientName ?? null}
+              />
             </CapabilityGate>
             <Button variant="secondary" onClick={() => workspace.clearActiveClient()}>
               ← Back to agency

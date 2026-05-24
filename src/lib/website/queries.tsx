@@ -322,18 +322,37 @@ async function fetchBrandForClient(slug: string): Promise<BrandObject | null> {
     .maybeSingle();
   if (error) throw normalizeError(error);
   if (!data) return null;
+  // brand_colors / heading_font / body_font / heading_color / body_color /
+  // background_color landed as optional columns in migration 0088 (brand
+  // editor). They surface on BrandObject as optional fields; NULL on the
+  // row resolves to `undefined` so existing readers fall back cleanly.
+  const row = data as typeof data & {
+    brand_colors: string[] | null;
+    heading_font: string | null;
+    body_font: string | null;
+    heading_color: string | null;
+    body_color: string | null;
+    background_color: string | null;
+  };
   return {
-    accentColor: data.accent_color,
-    logoUrl: data.logo_url,
-    faviconUrl: data.favicon_url,
+    accentColor: row.accent_color,
+    brandColors:
+      row.brand_colors && row.brand_colors.length > 0 ? row.brand_colors : undefined,
+    logoUrl: row.logo_url,
+    faviconUrl: row.favicon_url,
     voice: {
-      formality: data.voice_formality as VoiceToneAxis,
-      urgency: data.voice_urgency as VoiceToneAxis,
-      technicality: data.voice_technicality as VoiceToneAxis,
+      formality: row.voice_formality as VoiceToneAxis,
+      urgency: row.voice_urgency as VoiceToneAxis,
+      technicality: row.voice_technicality as VoiceToneAxis,
     },
-    audienceLine: data.audience_line,
-    industryCategory: data.industry_category,
-    topJobsToBeBooked: data.top_jobs_to_be_booked,
+    audienceLine: row.audience_line,
+    industryCategory: row.industry_category,
+    topJobsToBeBooked: row.top_jobs_to_be_booked,
+    headingFont: row.heading_font ?? undefined,
+    bodyFont: row.body_font ?? undefined,
+    headingColor: row.heading_color ?? undefined,
+    bodyColor: row.body_color ?? undefined,
+    backgroundColor: row.background_color ?? undefined,
   };
 }
 

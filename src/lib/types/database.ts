@@ -478,10 +478,17 @@ export type Database = {
         Row: {
           accent_color: string
           audience_line: string
+          background_color: string | null
+          body_color: string | null
+          body_font: string | null
+          brand_colors: string[]
           client_id: string
           favicon_url: string | null
+          heading_color: string | null
+          heading_font: string | null
           industry_category: string
           logo_url: string | null
+          tagline: string | null
           top_jobs_to_be_booked: string[]
           updated_at: string
           voice_formality: number
@@ -491,10 +498,17 @@ export type Database = {
         Insert: {
           accent_color: string
           audience_line: string
+          background_color?: string | null
+          body_color?: string | null
+          body_font?: string | null
+          brand_colors?: string[]
           client_id: string
           favicon_url?: string | null
+          heading_color?: string | null
+          heading_font?: string | null
           industry_category: string
           logo_url?: string | null
+          tagline?: string | null
           top_jobs_to_be_booked?: string[]
           updated_at?: string
           voice_formality: number
@@ -504,10 +518,17 @@ export type Database = {
         Update: {
           accent_color?: string
           audience_line?: string
+          background_color?: string | null
+          body_color?: string | null
+          body_font?: string | null
+          brand_colors?: string[]
           client_id?: string
           favicon_url?: string | null
+          heading_color?: string | null
+          heading_font?: string | null
           industry_category?: string
           logo_url?: string | null
+          tagline?: string | null
           top_jobs_to_be_booked?: string[]
           updated_at?: string
           voice_formality?: number
