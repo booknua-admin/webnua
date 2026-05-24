@@ -4,12 +4,13 @@
 > operator in agency mode vs an operator drilled into one client vs a
 > client-role user. Every new shared route follows this pattern; every fix
 > session bringing an inconsistent route into line follows the migration
-> recipe in §8.
+> recipe in §10.
 >
 > Audit input: `reference/client-context-audit.md` enumerates every route
 > and classifies it. Phase 9b · Session 1 made four routes (`/tickets`,
-> `/leads`, `/calendar`, `/search`) conform. `/automations`, `/reviews`,
-> `/campaigns`, `/(admin)/websites` follow in future sessions per §8.
+> `/leads`, `/calendar`, `/search`) conform; Session 2 brought
+> `/automations` and `/reviews` into line (see §7 for per-route notes).
+> `/campaigns` and `/(admin)/websites` remain — see §10.
 
 ---
 
@@ -273,7 +274,182 @@ When NOT to:
 
 ---
 
-## 6. `WorkspaceContextBanner` — when to drop, when to keep
+## 6. Stats cards in sub-account mode (the "stats-cards-per-flow" pattern)
+
+Sub-account mode reframes a roster into a single-business view. Beyond just
+filtering the data, the operator wants **headline metrics for what they're
+drilled into** — a 4-up `StatCard` row above (or per-card stats below) the
+single-business deep-dive. The pattern is settled enough now that future
+routes copy it directly.
+
+### Two flavours of the same pattern
+
+The pattern shows up two ways. Both use the same visual chrome
+(`StatCard` / `AutomationStatTile` rendered in a `grid grid-cols-4 gap-3.5`
+row of paper-bg `rounded-lg` tiles, mono uppercase label + Inter Tight
+value); they differ in **where** they sit.
+
+**Flavour A — page-level stats row.** A single 4-up `StatCard` row above
+the deep-dive content. Used when the page's primary content is a single
+deep-dive (`/reviews`: summary header + distribution + reviews list).
+Sub-account `/reviews` lands a 4-up row above the summary card with:
+
+- `// AVG RATING` — `4.7 ★`
+- `// TOTAL REVIEWS` — `47`
+- `// NEW · 30D` — `12` (good tone if > 0)
+- `// RESPONSE RATE` — `83%` (good tone if ≥ 80%)
+
+**Flavour B — per-flow stats grid.** One `AutomationStatsCard` per item,
+each carrying its own 4-tile stats grid in the card footer. Used when the
+page's primary content is a LIST of similar items, each with its own
+performance signal (`/automations`: one card per flow). Sub-account
+`/automations` lands one card per automation with:
+
+- `// LAST FIRED` — `2d` (relative time, or `—` if never)
+- `// RUNS · 30D` — `47`
+- `// COMPLETED` — `42`
+- `// COMPLETION` — `89%`
+
+The card's existing `enabled` flag hides the stats grid when off (the
+zero-state is "this flow is disabled" not "this flow has no data").
+
+### Data shape
+
+Both flavours read the same kind of data: a small fixed set of derived
+metrics per entity (the picked client, or each flow within it). The data
+hook should return them already-derived:
+
+```ts
+// Flavour A (page-level)
+type SubAccountStat = {
+  label: string;       // mono uppercase: '// AVG RATING'
+  value: ReactNode;    // Inter Tight value, <em> for rust accent
+  trend?: ReactNode;   // small caption
+  trendTone?: 'good' | 'quiet';
+};
+
+// Flavour B (per-item) — re-uses the existing AutomationStat shape
+type AutomationStat = {
+  label: string;
+  value: ReactNode;
+  tone?: 'default' | 'accent';
+};
+```
+
+The metrics themselves come from one query (Flavour A — extend the
+existing page query to compute them server-side) or one batched query
+(Flavour B — a separate hook keyed on the list of ids, see
+`useAutomationStatsBatch`). Avoid N+1 per-card queries.
+
+### When to use which
+
+- The page is a SINGLE deep-dive surface → Flavour A.
+- The page is a LIST of items, each meaningfully comparable → Flavour B.
+- The page is a roster spread across many tenants (agency mode) → no
+  stats-card row; the existing `StatCard` workspace row stays in
+  `_admin-content` where it already lives.
+
+### What NOT to do
+
+- Don't add stats for stats' sake. Every tile should answer a question
+  the operator would otherwise ask (e.g. "is this flow firing?", "how
+  often does it succeed?", "how recent is the last review?").
+- Don't fetch stats per-card with N separate hooks. Batch in one query.
+- Don't render fake / placeholder values. If the data isn't there yet,
+  render `—` and add an honest label ("no runs yet") rather than `0` or
+  a misleading 0%.
+- Don't reuse the agency-mode workspace stats row verbatim — its labels
+  ("// CLIENTS") are cross-tenant; sub-account stats are single-tenant
+  and labels should reflect that.
+
+---
+
+## 7. Per-route notes: `/automations`, `/reviews`
+
+Notes from the routes Phase 9b · S2 brought into line. These exist to
+inform `/campaigns` (S3) — read them before designing that session.
+
+### 7a. `/automations`
+
+**Sub-account shape**: stacked `AutomationStatsCard` per flow (Flavour B
+of §6). The same card the client view uses, fed by a
+`useSubAccountAutomations(clientSlug)` hook that filters the operator's
+existing `fetchAutomations` query post-fetch (§3a). Each card stays
+toggleable (clients AND operators can toggle here — the parked decision
+"client tier mutations preserved" still applies) with the same
+`useAutomationGbpGuard` guard the client view uses. Click-through to
+`/automations/[id]` is the editor entry — the per-card `href` is the only
+operator-side affordance bolted on (the GBP guard works for both roles).
+
+The per-card stats grid is wired through a NEW batched hook
+`useAutomationStatsBatch(ids[])` that runs ONE `automation_runs` query
+across all the picked client's automations and groups client-side. This
+is the answer to the previously-parked "per-card stats are expensive
+because they're per-id" — batched, the cost is one query per page load.
+
+Hero copy uses the client name verbatim: `Voltline's automations.` (not
+"Your automations" — the operator isn't Voltline). The info banner is a
+rust-soft `AutomationInfoBanner` (same component the client view uses)
+with operator-tilted copy explaining the toggle + editor entry.
+
+**Agency mode** keeps the trigger-type-grouped roster (`AutomationGroup`).
+The `ClientMultiSelect` is gone — the sidebar picker is canonical. The
+per-flow GBP guard still fires inside the roster (the operator can toggle
+flows for any client from the agency-mode view via the row toggles).
+
+### 7b. `/reviews`
+
+**Sub-account shape**: page-level 4-up `StatCard` row (Flavour A) above
+the SAME client deep-dive composition (`ReviewSummaryHeader` +
+`ReviewDistributionBars` + `ReviewCallout` + the reviews list with
+`ReviewItem`'s built-in inline reply UI). The reply UI is keyed on
+`review.clientId` — the sub-account view passes the picked client's
+UUID, so the inline composer dispatches replies through
+`useReplyToGbpReview(clientId)` for the right tenant. No extra reply
+chrome was needed — the existing primitive already covers operator AND
+client.
+
+GBP "Sync now" / "Change location" affordances are NOT mounted here —
+they live on `/settings/integrations` (the connection-management surface).
+The empty state (`!gbpConnected`) renders `GbpConnectPanel` exactly as
+the client view does, with the picked client's UUID — operator can drive
+the OAuth flow on the customer's behalf from this entry point.
+
+The data layer adds a `useSubAccountReviews(clientSlug)` hook returning
+`ClientReviewsPage & { clientId, stats }` — the same shape `useClientReviews`
+returns plus the augmentations (`clientId` for the GBP hooks, `stats` for
+the 4-up row).
+
+### What `/campaigns` (Session 3) should copy
+
+The patterns settled here that `/campaigns` slots into directly:
+
+1. **Sub-account hook shape**: `useSubAccountCampaigns(clientSlug)`
+   that fetches the operator's accessible-clients pool, filters to the
+   picked client, and returns the SAME `ClientCampaignsPage` shape the
+   client view consumes (extended with `clientId` if Meta hooks need it).
+   No second projection — mirror the client shape.
+2. **Stats row**: campaigns has a richer existing client deep-dive
+   (managed band + hero card + 4-week trend chart). Don't bolt a 4-up
+   `StatCard` row ON TOP of all that — the existing `CampaignMetricTile`
+   row inside `CampaignHeroCard` already IS the stats surface. Treat it
+   as Flavour A satisfied by the existing primitive. The hero card's
+   metrics already include leads / spend / CPL / ROAS; reusing them
+   avoids duplication.
+3. **Operator chrome**: launch + sync + pause/resume Meta affordances
+   bolt on as a top-of-page `OperatorActionBar` (mirror of
+   `admin/hub/OperatorActionBar` from the dashboard hub). Don't squeeze
+   them into the existing card chrome — they're metadata.
+4. **The data-layer extension is the biggest risk.** Meta integration
+   joins live in `lib/campaigns/queries.tsx`; the existing query
+   returns a single campaign for the client deep-dive but ALL campaigns
+   for admin roster. The sub-account hook needs ALL campaigns for the
+   picked client — possibly a third query shape. Audit first; don't
+   assume the existing two cover it.
+
+---
+
+## 8. `WorkspaceContextBanner` — when to drop, when to keep
 
 `WorkspaceContextBanner` was useful when half-dispatched views needed to
 tell the operator "you've narrowed down to X client". Once the route
@@ -296,7 +472,7 @@ are surface-named, not client-named.
 
 ---
 
-## 7. In-page `ClientMultiSelect` — kill on rosters
+## 9. In-page `ClientMultiSelect` — kill on rosters
 
 The sidebar `AdminClientPicker` is **canonical** for narrowing scope.
 The in-page `ClientMultiSelect` predates the workspace-mode pattern; once
@@ -316,19 +492,19 @@ operator need. So:
 Phase 9b · S1 dropped the multi-select from `/leads`, `/calendar`, and
 `/tickets` (the tickets ClientMultiSelect was orphaned the moment the
 3-way dispatcher landed — the agency-mode roster shows every client by
-default; if narrowing is needed, drill in via sidebar).
+default; if narrowing is needed, drill in via sidebar). Phase 9b · S2
+dropped it from `/automations` and `/reviews`.
 
-`/reviews` and `/campaigns` still carry the multi-select — they get
-revisited in future sessions per §8.
+`/campaigns` is the last roster still carrying the multi-select — it
+gets revisited in Session 3 per §10.
 
 ---
 
-## 8. Migration recipe for the remaining routes
+## 10. Migration recipe for the remaining routes
 
-The audit identifies three routes still half-dispatched as of Phase 9b ·
-S1: `/automations`, `/reviews`, `/campaigns`. Plus the agency-only
-`/(admin)/websites` matrix should redirect operators in sub-account mode
-to `/website`.
+After Phase 9b · S2, `/campaigns` is the last shared-route surface still
+half-dispatched. The agency-only `/(admin)/websites` matrix should also
+redirect operators in sub-account mode to `/website`.
 
 ### Recipe per route
 
@@ -347,45 +523,36 @@ For each migration session:
    slug filter; bolt operator chrome where appropriate.
 3. **Convert `page.tsx` to a 3-way dispatcher** (§1, canonical
    template).
-4. **Drop `ClientMultiSelect`** from `_admin-content.tsx` (§7), unless
+4. **Drop `ClientMultiSelect`** from `_admin-content.tsx` (§9), unless
    a concrete multi-client narrowing case is documented.
 5. **Drop redundant `WorkspaceContextBanner`** from
    `_sub-account-content.tsx` if the hero already carries the client
-   name (§6).
+   name (§8).
 
-### Recommended order
+### Status + recommended order
 
-Order by data dependency + shape complexity:
-
-1. **`/automations`** — medium. Operator addition is non-trivial (Test
-   send, editor entry, GBP guard) but the client shape exists and the
-   admin query already exposes the data per-flow. Settles the pattern
-   for routes whose client view is "stats cards per flow".
-2. **`/reviews`** — medium. Client shape is the rating headline + dist
-   bars + recent reviews. Operator addition is the reply composer (which
-   already mounts for clients too via `ReviewItem`'s shared reply UI —
-   so the only delta is the GBP "Sync now" / "Change location"
-   affordances, both already on `/settings/integrations`). Smaller
-   delta than `/campaigns` and could plausibly land first if a session's
-   risk budget is small.
-3. **`/campaigns`** — largest. The client deep-dive is rich (managed
-   band + hero card + 4-week trend chart + activity log + change CTA);
-   the operator additions are the launch / sync Meta affordances + the
-   pause/resume control. Take this last — the pattern is settled by
-   then, and the data dependencies are the biggest (Meta integration
-   joins).
-4. **`/(admin)/websites`** — small, optional cleanup. Add a layout-
-   guard redirect: operator in sub-account mode hitting `/websites`
-   gets routed to `/website`. Sibling of the `/settings/layout.tsx`
-   wrong-mode guard.
+- ✅ **`/automations`** — DONE (Phase 9b · S2). Stats-cards-per-flow
+  pattern established via `useSubAccountAutomations` +
+  `useAutomationStatsBatch`. See §7a for notes.
+- ✅ **`/reviews`** — DONE (Phase 9b · S2). Page-level stats row pattern
+  established via `useSubAccountReviews`. See §7b for notes.
+- ⏳ **`/campaigns`** — Session 3 (next). The client deep-dive is rich
+  (managed band + hero card + 4-week trend chart + activity log + change
+  CTA); the operator additions are the launch / sync Meta affordances +
+  the pause/resume control. See §7's "What `/campaigns` (Session 3)
+  should copy" for concrete recommendations.
+- ⏳ **`/(admin)/websites`** — small, optional cleanup. Add a layout-
+  guard redirect: operator in sub-account mode hitting `/websites`
+  gets routed to `/website`. Sibling of the `/settings/layout.tsx`
+  wrong-mode guard. Bundle into Session 3 or a later cleanup.
 
 ---
 
-## 9. Anti-patterns
+## 11. Anti-patterns
 
 These are the failure modes the discipline guards against. Don't:
 
-### 9a. Numbered suffixes (`AutomationCard2`)
+### 11a. Numbered suffixes (`AutomationCard2`)
 
 Means a duplicate that should have been a reuse. If a component "needs"
 a second variant for the operator-in-sub-account case, the right path is
@@ -393,7 +560,7 @@ either (a) a `variant` prop discriminating two render modes on the
 **same** component, or (b) a sibling component with a clearly different
 name describing what it does, not which copy it is.
 
-### 9b. Parallel cross-client + per-client components
+### 11b. Parallel cross-client + per-client components
 
 A `LeadsAdminRoster` and a `LeadsAdminClientView` (same operator,
 different framings) implemented as fully separate components, not as
@@ -401,7 +568,7 @@ two siblings of one `LeadsPage` dispatcher. The split should be at the
 page level (dispatcher → siblings), not at the component level
 (component → conditional internal branches).
 
-### 9c. `viewerRole`-style internal branching that should be dispatch
+### 11c. `viewerRole`-style internal branching that should be dispatch
 
 A component that takes `viewerRole: 'operator' | 'client'` and then
 internally renders 60% different chrome based on that prop is a
@@ -412,7 +579,7 @@ The right time to use `viewerRole`: the component is small (≤100
 lines), the per-role differences are 1-2 affordances, and the underlying
 data shape is identical (§4 Strategy B).
 
-### 9d. Reaching into `useRole()` / `useWorkspace()` from deep components
+### 11d. Reaching into `useRole()` / `useWorkspace()` from deep components
 
 The dispatcher should resolve these once at the page level and pass
 behavioural props down — `LeadRow` doesn't need to know the workspace
@@ -423,7 +590,7 @@ Exception: `Topbar` reads `useRole()` because the chrome is shared
 across every route — there is no per-page dispatch to make that
 decision.
 
-### 9e. URL-based scoping (`/clients/[id]/leads`)
+### 11e. URL-based scoping (`/clients/[id]/leads`)
 
 Three reasons not to: breaks every existing `/leads` deep-link, doubles
 the route tree (every shared surface gets a `/clients/[id]/` mirror),
@@ -434,13 +601,15 @@ relitigate without a concrete trigger.
 
 ---
 
-## 10. Reference points
+## 12. Reference points
 
 - **Gold-standard dispatcher:** `src/app/dashboard/page.tsx` (3-way
   with the `_hub-content` legacy name).
 - **Phase 9b · S1 dispatchers:** `src/app/tickets/page.tsx`,
   `src/app/leads/page.tsx`, `src/app/calendar/page.tsx`,
   `src/app/search/page.tsx`.
+- **Phase 9b · S2 dispatchers:** `src/app/automations/page.tsx`,
+  `src/app/reviews/page.tsx`.
 - **Workspace API:** `src/lib/workspace/workspace-stub.tsx` — exports
   `useWorkspace()`, `useActiveClient()`, `useIsAgencyMode()`.
 - **The audit:** `reference/client-context-audit.md` — full route

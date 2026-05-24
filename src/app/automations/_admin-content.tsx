@@ -1,26 +1,33 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 
 import { AutomationGroup } from '@/components/admin/automations/AutomationGroup';
 import { useAutomationGbpGuard } from '@/components/shared/automations/AutomationGbpGuard';
-import { ClientMultiSelect } from '@/components/shared/ClientMultiSelect';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { StatCard } from '@/components/shared/StatCard';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
-import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
 import {
   useAdminAutomations,
   useToggleAutomation,
 } from '@/lib/automations/queries';
 import { normalizeError } from '@/lib/errors';
-import { useIsAgencyMode, useWorkspace } from '@/lib/workspace/workspace-stub';
 
+/**
+ * Operator agency-mode automations roster — cross-client, grouped by trigger
+ * type.
+ *
+ * The sidebar `AdminClientPicker` is canonical for narrowing scope; the
+ * in-page `ClientMultiSelect` was dropped (Phase 9b · Session 2). When an
+ * operator drills into a client the `/automations` dispatcher hands off to
+ * `_sub-account-content.tsx` instead.
+ */
 function AdminAutomationsContent() {
   const { data: page, isLoading, error } = useAdminAutomations();
   const toggle = useToggleAutomation();
   const { guardEnable, GbpGuardDialog } = useAutomationGbpGuard();
-  const [selectedClients, setSelectedClients] = useState<string[]>([]);
+
+  const groups = useMemo(() => page?.groups ?? [], [page]);
 
   const handleToggleFlow = (id: string, enabled: boolean) => {
     const fire = () => toggle.mutate({ id, enabled });
@@ -29,7 +36,7 @@ function AdminAutomationsContent() {
       return;
     }
     // Find the row we're enabling so we can read its GBP prereq.
-    for (const g of page?.groups ?? []) {
+    for (const g of groups) {
       const f = g.flows.find((flow) => flow.id === id);
       if (f) {
         guardEnable(
@@ -41,43 +48,6 @@ function AdminAutomationsContent() {
     }
     fire();
   };
-
-  const groups = useMemo(() => page?.groups ?? [], [page]);
-
-  // Workspace context: agency mode → cross-client roster + the multi-select
-  // filter; sub-account mode → the page scopes to the picked client.
-  const isAgency = useIsAgencyMode();
-  const { activeClientId } = useWorkspace();
-  const effectiveClients = useMemo(
-    () => (isAgency || !activeClientId ? selectedClients : [activeClientId]),
-    [isAgency, activeClientId, selectedClients],
-  );
-
-  // Per-client flow counts across every group, keyed on client slug.
-  const clientCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const g of groups) {
-      for (const f of g.flows) {
-        counts[f.clientSlug] = (counts[f.clientSlug] ?? 0) + 1;
-      }
-    }
-    return counts;
-  }, [groups]);
-
-  // Filtering narrows each group's flows to the selected clients and drops
-  // groups with nothing left; the count badge is recomputed to match.
-  const visibleGroups = useMemo(() => {
-    if (effectiveClients.length === 0) return groups;
-    return groups
-      .map((group) => {
-        const flows = group.flows.filter((f) =>
-          effectiveClients.includes(f.clientSlug),
-        );
-        const enabled = flows.filter((f) => f.enabled).length;
-        return { ...group, flows, countBadge: `${enabled} / ${flows.length}` };
-      })
-      .filter((group) => group.flows.length > 0);
-  }, [effectiveClients, groups]);
 
   return (
     <>
@@ -101,17 +71,6 @@ function AdminAutomationsContent() {
               subtitle={page.hero.subtitle}
             />
 
-            {isAgency ? (
-              <ClientMultiSelect
-                label="// CLIENT"
-                value={selectedClients}
-                onChange={setSelectedClients}
-                counts={clientCounts}
-              />
-            ) : (
-              <WorkspaceContextBanner />
-            )}
-
             <div className="grid grid-cols-4 gap-3.5">
               {page.stats.map((stat) => (
                 <StatCard
@@ -125,12 +84,12 @@ function AdminAutomationsContent() {
             </div>
 
             <div className="flex flex-col gap-3.5">
-              {visibleGroups.length === 0 ? (
+              {groups.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-rule bg-paper px-10 py-12 text-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
-                  {'// No automations for this client'}
+                  {'// No automations configured'}
                 </div>
               ) : (
-                visibleGroups.map((group) => (
+                groups.map((group) => (
                   <AutomationGroup
                     key={group.id}
                     group={group}

@@ -304,6 +304,65 @@ export function useClientAutomations() {
 }
 
 // =============================================================================
+// Sub-account `/automations` — operator drilled into one client.
+//
+// Renders the same client-shape cards (stats-cards-per-flow pattern, see
+// reference/client-context-pattern.md §6) for the picked client only. The
+// admin-side data hook backs this (RLS bounds to accessible clients), with a
+// post-fetch filter on `client.slug` per the pattern doc §3a default.
+// =============================================================================
+
+function buildSubAccountAutomations(
+  rows: AutomationJoinRow[],
+  clientSlug: string,
+): ClientAutomations {
+  const filtered = rows.filter((r) => r.client?.slug === clientSlug);
+  const clientName = filtered[0]?.client?.name ?? 'This client';
+  const activeCount = filtered.filter((r) => r.is_enabled).length;
+  const total = filtered.length;
+
+  return {
+    hero: {
+      eyebrow: `// ${clientName.toUpperCase()} · ${activeCount} active ${
+        activeCount === 1 ? 'flow' : 'flows'
+      }`,
+      title: (
+        <>
+          {clientName}&apos;s <em>automations</em>.
+        </>
+      ),
+      subtitle: (
+        <>
+          Every flow Webnua runs for <strong>{clientName}</strong>.{' '}
+          {total === 0
+            ? 'No automations are configured for this client yet.'
+            : `${activeCount} of ${total} ${
+                total === 1 ? 'flow' : 'flows'
+              } are active — click any card to open the editor.`}
+        </>
+      ),
+    },
+    banner: (
+      <>
+        <strong>You&apos;re viewing {clientName}&apos;s automations as the operator.</strong>{' '}
+        Toggle a flow on or off, or click a card to edit its copy and cadence.
+      </>
+    ),
+    cards: filtered.map(toStatsCard),
+  };
+}
+
+export function useSubAccountAutomations(clientSlug: string | null) {
+  return useQuery({
+    queryKey: ['automations', 'list'],
+    queryFn: fetchAutomations,
+    select: (rows: AutomationJoinRow[]) =>
+      buildSubAccountAutomations(rows, clientSlug ?? ''),
+    enabled: clientSlug != null && clientSlug.length > 0,
+  });
+}
+
+// =============================================================================
 // Admin `/automations` — the cross-client roster, grouped by trigger type.
 // =============================================================================
 
@@ -1156,6 +1215,77 @@ export function useAutomationStats(automationId: string) {
     queryKey: ['automations', 'stats', automationId],
     queryFn: () => fetchAutomationStats(automationId),
     enabled: automationId.length > 0,
+  });
+}
+
+// =============================================================================
+// Batched per-automation stats — drives the stats-cards-per-flow pattern in
+// sub-account mode (see reference/client-context-pattern.md §6). One query
+// instead of N — joins the last-30-day `automation_runs` for every passed id
+// and groups client-side. Empty / no-runs automations resolve to a zero row.
+// =============================================================================
+
+export type AutomationFlowStats = {
+  totalRuns: number;
+  completedRuns: number;
+  completionRate: number;
+  lastFiredAt: string | null;
+};
+
+async function fetchAutomationStatsBatch(
+  automationIds: string[],
+): Promise<Map<string, AutomationFlowStats>> {
+  const out = new Map<string, AutomationFlowStats>();
+  if (automationIds.length === 0) return out;
+
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from('automation_runs')
+    .select('automation_id, status, started_at')
+    .in('automation_id', automationIds)
+    .gte('started_at', thirtyDaysAgo);
+  if (error) throw normalizeError(error);
+
+  type Row = { automation_id: string; status: string; started_at: string };
+  const rows = data as unknown as Row[];
+
+  // Seed every id so cards with zero runs still resolve to a row.
+  for (const id of automationIds) {
+    out.set(id, {
+      totalRuns: 0,
+      completedRuns: 0,
+      completionRate: 0,
+      lastFiredAt: null,
+    });
+  }
+
+  for (const row of rows) {
+    const existing = out.get(row.automation_id);
+    if (!existing) continue;
+    existing.totalRuns += 1;
+    if (row.status === 'completed') existing.completedRuns += 1;
+    if (!existing.lastFiredAt || row.started_at > existing.lastFiredAt) {
+      existing.lastFiredAt = row.started_at;
+    }
+  }
+
+  for (const stats of out.values()) {
+    stats.completionRate =
+      stats.totalRuns === 0
+        ? 0
+        : Math.round((stats.completedRuns / stats.totalRuns) * 100);
+  }
+
+  return out;
+}
+
+export function useAutomationStatsBatch(automationIds: string[]) {
+  const key = [...automationIds].sort().join(',');
+  return useQuery({
+    queryKey: ['automations', 'stats-batch', key],
+    queryFn: () => fetchAutomationStatsBatch(automationIds),
+    enabled: automationIds.length > 0,
+    staleTime: 30_000,
   });
 }
 

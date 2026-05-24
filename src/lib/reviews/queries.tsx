@@ -151,31 +151,57 @@ function isMissingTableError(error: unknown): boolean {
 // Client `/reviews` — the signed-in client's own reviews.
 // =============================================================================
 
-async function fetchClientReviews(): Promise<ClientReviewsPage> {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw AppError.auth();
-
-  // RLS scopes `clients` to the caller's own client; `gbp_reviews` likewise.
-  const [clientResult, reviewsResult] = await Promise.all([
-    supabase.from('clients').select('id, name, slug, industry'),
-    db()
-      .from('gbp_reviews')
-      .select(REVIEW_SELECT)
-      .is('deleted_at_google', null)
-      .order('created_at_google', { ascending: false }),
-  ]);
-
-  if (clientResult.error) throw normalizeError(clientResult.error);
-  if (reviewsResult.error && !isMissingTableError(reviewsResult.error)) {
-    throw normalizeError(reviewsResult.error);
+/** Build a `ClientReviewsPage` from a client row + the matched gbp_reviews
+ *  for that client. Shared by `useClientReviews` (signed-in client, RLS-
+ *  scoped) and `useSubAccountReviews` (operator drilled into a client). The
+ *  two hooks differ only in WHICH client to read; the deep-dive shape is
+ *  identical. */
+function buildClientReviewsPage(
+  clientName: string,
+  reviews: ReviewRow[],
+  variant: 'client' | 'sub-account',
+): ClientReviewsPage {
+  if (variant === 'sub-account') {
+    return {
+      hero: {
+        eyebrow: `// ${clientName.toUpperCase()} · GOOGLE REVIEWS`,
+        title: (
+          <>
+            {clientName}&apos;s <em>reviews</em>.
+          </>
+        ),
+        subtitle: (
+          <>
+            Every Google review collected for <strong>{clientName}</strong>.{' '}
+            The review request automation fires on job completion — manage the
+            GBP connection from <strong>/settings/integrations</strong>.
+          </>
+        ),
+      },
+      summary: summaryFor(reviews),
+      distribution: distribution(reviews),
+      callout: {
+        headline: (
+          <>
+            Asked, not <em>begged</em>.
+          </>
+        ),
+        sub: `${clientName}'s review request automation runs on every "Completed" job — no manual outreach needed.`,
+        link: { label: 'View on Google ↗', href: '#' },
+      },
+      listHeader: (
+        <>
+          {'// '}
+          <strong>
+            {reviews.length} {reviews.length === 1 ? 'review' : 'reviews'}
+          </strong>{' '}
+          · newest first
+        </>
+      ),
+      listAside: 'Auto-collected via Webnua',
+      reviews: reviews.map(mapReviewItem),
+    };
   }
-
-  const client = (clientResult.data as ClientRow[])[0];
-  const reviews = (reviewsResult.data as ReviewRow[] | null) ?? [];
-  const clientName = client?.name ?? 'Your business';
-
   return {
     hero: {
       eyebrow: `// ${clientName} · Google reviews`,
@@ -218,11 +244,152 @@ async function fetchClientReviews(): Promise<ClientReviewsPage> {
   };
 }
 
+async function fetchClientReviews(): Promise<ClientReviewsPage> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw AppError.auth();
+
+  // RLS scopes `clients` to the caller's own client; `gbp_reviews` likewise.
+  const [clientResult, reviewsResult] = await Promise.all([
+    supabase.from('clients').select('id, name, slug, industry'),
+    db()
+      .from('gbp_reviews')
+      .select(REVIEW_SELECT)
+      .is('deleted_at_google', null)
+      .order('created_at_google', { ascending: false }),
+  ]);
+
+  if (clientResult.error) throw normalizeError(clientResult.error);
+  if (reviewsResult.error && !isMissingTableError(reviewsResult.error)) {
+    throw normalizeError(reviewsResult.error);
+  }
+
+  const client = (clientResult.data as ClientRow[])[0];
+  const reviews = (reviewsResult.data as ReviewRow[] | null) ?? [];
+  const clientName = client?.name ?? 'Your business';
+
+  return buildClientReviewsPage(clientName, reviews, 'client');
+}
+
 /** The client reviews page — RLS bounds rows to the signed-in client. */
 export function useClientReviews() {
   return useQuery({
     queryKey: ['reviews', 'client'],
     queryFn: fetchClientReviews,
+  });
+}
+
+// =============================================================================
+// Sub-account `/reviews` — operator drilled into one client.
+//
+// Renders the client deep-dive shape (summary + distribution + reviews list)
+// for the picked client only — see reference/client-context-pattern.md §4
+// (Strategy A: mirror the client shape; use operator's query hook + a client
+// filter; bolt operator chrome where appropriate). `clientId` (UUID) drives
+// the GBP location + connect CTA; `clientSlug` resolves the row.
+// =============================================================================
+
+/** Operator headline stats rendered above the deep-dive summary card (the
+ *  "stats-cards-per-flow" pattern applied at the page level — see
+ *  reference/client-context-pattern.md §6). 4-up `StatCard` row: avg rating,
+ *  total reviews, new in last 30 days, operator response rate. */
+export type SubAccountReviewsStats = {
+  label: string;
+  value: ReactNode;
+  trend?: ReactNode;
+  trendTone?: 'good' | 'quiet';
+}[];
+
+export type SubAccountReviewsPage = ClientReviewsPage & {
+  clientId: string;
+  stats: SubAccountReviewsStats;
+};
+
+function statsFor(reviews: ReviewRow[]): SubAccountReviewsStats {
+  const total = reviews.length;
+  const avg = averageStars(reviews);
+  const monthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const newCount = reviews.filter(
+    (r) => new Date(r.created_at_google).getTime() >= monthAgo,
+  ).length;
+  const withReply = reviews.filter((r) => r.reply_text && r.reply_text.length > 0).length;
+  const responseRate =
+    total === 0 ? 0 : Math.round((withReply / total) * 100);
+
+  return [
+    {
+      label: '// AVG RATING',
+      value: total === 0 ? <>—</> : ratingNode(avg),
+      trend: total === 0 ? 'no reviews yet' : 'across all reviews',
+      trendTone: 'quiet',
+    },
+    {
+      label: '// TOTAL REVIEWS',
+      value: String(total),
+      trend: total === 1 ? 'review' : 'reviews',
+      trendTone: 'quiet',
+    },
+    {
+      label: '// NEW · 30D',
+      value: String(newCount),
+      trend: 'last 30 days',
+      trendTone: newCount > 0 ? 'good' : 'quiet',
+    },
+    {
+      label: '// RESPONSE RATE',
+      value: total === 0 ? '—' : `${responseRate}%`,
+      trend: `${withReply} of ${total} replied`,
+      trendTone: responseRate >= 80 ? 'good' : 'quiet',
+    },
+  ];
+}
+
+async function fetchSubAccountReviews(
+  clientSlug: string,
+): Promise<SubAccountReviewsPage> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw AppError.auth();
+
+  // Operator may have multiple accessible clients — narrow by slug. RLS still
+  // refuses if this slug isn't in the operator's accessible set, in which
+  // case `single()` raises a row-not-found error.
+  const { data: clientRow, error: clientError } = await supabase
+    .from('clients')
+    .select('id, name, slug, industry')
+    .eq('slug', clientSlug)
+    .single();
+  if (clientError) throw normalizeError(clientError);
+  const client = clientRow as ClientRow;
+
+  const { data: reviewsData, error: reviewsError } = await db()
+    .from('gbp_reviews')
+    .select(REVIEW_SELECT)
+    .eq('client_id', client.id)
+    .is('deleted_at_google', null)
+    .order('created_at_google', { ascending: false });
+  if (reviewsError && !isMissingTableError(reviewsError)) {
+    throw normalizeError(reviewsError);
+  }
+  const reviews = (reviewsData as ReviewRow[] | null) ?? [];
+
+  return {
+    ...buildClientReviewsPage(client.name, reviews, 'sub-account'),
+    clientId: client.id,
+    stats: statsFor(reviews),
+  };
+}
+
+/** The operator-in-sub-account reviews page — picks the active client by
+ *  slug. Returns the same client deep-dive shape PLUS a `clientId` UUID for
+ *  the GBP location + reply hooks, AND a 4-up operator stats row. */
+export function useSubAccountReviews(clientSlug: string | null) {
+  return useQuery({
+    queryKey: ['reviews', 'sub-account', clientSlug],
+    queryFn: () => fetchSubAccountReviews(clientSlug as string),
+    enabled: clientSlug != null && clientSlug.length > 0,
   });
 }
 

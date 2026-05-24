@@ -1,40 +1,25 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-
-import { ClientMultiSelect } from '@/components/shared/ClientMultiSelect';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { ReviewClientCard } from '@/components/shared/reviews/ReviewClientCard';
 import { StatCard } from '@/components/shared/StatCard';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
-import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
 import { normalizeError } from '@/lib/errors';
 import { useAdminReviews } from '@/lib/reviews/queries';
-import { useIsAgencyMode, useWorkspace } from '@/lib/workspace/workspace-stub';
 
+/**
+ * Operator agency-mode reviews roster — one card per accessible client
+ * (`empty` for clients with no reviews yet) + a 4-up workspace stat row.
+ *
+ * The sidebar `AdminClientPicker` is canonical for narrowing scope; the
+ * in-page `ClientMultiSelect` was dropped (Phase 9b · Session 2). When an
+ * operator drills into a client, the `/reviews` dispatcher hands off to
+ * `_sub-account-content.tsx` instead.
+ */
 function AdminReviewsContent() {
   const { data: page, isLoading, error } = useAdminReviews();
-  const [selectedClients, setSelectedClients] = useState<string[]>([]);
 
-  const clientCards = useMemo(() => page?.clientCards ?? [], [page]);
-
-  // Workspace context: agency mode → cross-client roster + the multi-select
-  // filter; sub-account mode → the page scopes to the picked client.
-  const isAgency = useIsAgencyMode();
-  const { activeClientId } = useWorkspace();
-  const effectiveClients = useMemo(
-    () => (isAgency || !activeClientId ? selectedClients : [activeClientId]),
-    [isAgency, activeClientId, selectedClients],
-  );
-
-  // Each client card's `id` is the client slug.
-  const visibleCards = useMemo(
-    () =>
-      effectiveClients.length === 0
-        ? clientCards
-        : clientCards.filter((card) => effectiveClients.includes(card.id)),
-    [effectiveClients, clientCards],
-  );
+  const clientCards = page?.clientCards ?? [];
 
   return (
     <>
@@ -58,16 +43,6 @@ function AdminReviewsContent() {
               subtitle={page.hero.subtitle}
             />
 
-            {isAgency ? (
-              <ClientMultiSelect
-                label="// CLIENT"
-                value={selectedClients}
-                onChange={setSelectedClients}
-              />
-            ) : (
-              <WorkspaceContextBanner />
-            )}
-
             <div className="grid grid-cols-4 gap-3.5">
               {page.stats.map((stat) => (
                 <StatCard
@@ -80,13 +55,13 @@ function AdminReviewsContent() {
               ))}
             </div>
 
-            {visibleCards.length === 0 ? (
+            {clientCards.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-rule bg-paper px-10 py-12 text-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
-                {'// No reviews for this client'}
+                {'// No clients yet'}
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-4">
-                {visibleCards.map((card) => (
+                {clientCards.map((card) => (
                   <ReviewClientCard key={card.id} card={card} />
                 ))}
               </div>
