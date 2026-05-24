@@ -66,4 +66,9 @@ import '@/lib/domains/job-handlers';
 // in 'preview' state 7+ days without publishing.
 import '@/lib/auth/re-engagement-handler';
 
+// Pattern B two-stage cancellation — Registers send_cancellation_warning_email,
+// fired by the daily webnua_cancellation_lifecycle cron (migration 0091)
+// on day 83 of the cancellation grace (7 days before hard delete).
+import '@/lib/billing/cancellation-warning-handler';
+
 export {};

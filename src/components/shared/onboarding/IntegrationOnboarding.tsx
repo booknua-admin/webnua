@@ -154,9 +154,14 @@ function IntegrationOnboarding({
                 </p>
               </div>
               <Button asChild size="lg">
-                {/* /website carries the Scaffold button today. Once Session
-                    C ships the wizard, point this at /onboarding instead. */}
-                <Link href="/website">Start setup →</Link>
+                {/* Session C wired the wizard at /onboarding. The wizard
+                    captures industry / business / brand / etc., then fires
+                    background site + funnel generation on step 4 — so by
+                    the time the customer reaches step 7 there's a draft
+                    ready. If they already completed the wizard but somehow
+                    have no draft (edge), /onboarding's own gate hands them
+                    off cleanly. */}
+                <Link href="/onboarding">Start setup →</Link>
               </Button>
             </div>
           </div>

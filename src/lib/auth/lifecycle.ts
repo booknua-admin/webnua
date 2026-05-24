@@ -41,6 +41,19 @@
 //
 //   banned               — Operator-imposed terminal state for abuse. Public
 //                          site stops rendering, dashboard locked out.
+//
+//   cancelled            — Stage 1 of Pattern B's two-stage cancellation.
+//                          Set by the Stripe webhook on subscription.deleted.
+//                          Customer can still log in; sees a read-only banner
+//                          with a "Reactivate" CTA. After 30 days the daily
+//                          cron (migration 0091) promotes to 'deleted'.
+//                          Public site stops rendering immediately.
+//
+//   deleted              — Stage 2 (soft-deleted). Customer locked out;
+//                          operator-only recovery for an additional 60 days.
+//                          The cron sends a 7-day-warning email on day 83
+//                          and HARD-deletes the row on day 90 (the only
+//                          irreversible step).
 // =============================================================================
 
 export const CLIENT_LIFECYCLE_VALUES = [
@@ -52,6 +65,8 @@ export const CLIENT_LIFECYCLE_VALUES = [
   'paused',
   'churned',
   'banned',
+  'cancelled',
+  'deleted',
 ] as const;
 
 export type ClientLifecycle = (typeof CLIENT_LIFECYCLE_VALUES)[number];
@@ -74,6 +89,8 @@ export const LIFECYCLE_LABEL: Record<ClientLifecycle, string> = {
   paused: 'Paused',
   churned: 'Churned',
   banned: 'Banned',
+  cancelled: 'Cancelled',
+  deleted: 'Deleted (soft)',
 };
 
 /** A short verb-phrase suitable for the AdminClient meta line, e.g.
@@ -89,6 +106,8 @@ export function lifecyclePhrase(value: string): string {
     case 'paused': return 'paused';
     case 'churned': return 'churned';
     case 'banned': return 'banned';
+    case 'cancelled': return 'cancelled';
+    case 'deleted': return 'deleted';
   }
 }
 
@@ -111,15 +130,17 @@ export function publicSiteIsPreview(value: string): boolean {
 }
 
 /** A client whose public site should render at ALL. False for the pre-verify
- *  state (nothing to show), the terminal states (banned/churned), and for
- *  values we don't recognise. True for 'preview' (with watermark) and the
- *  published states ('active'/'live'/'paused'). */
+ *  state (nothing to show), the terminal states (banned/churned/cancelled/
+ *  deleted), and for values we don't recognise. True for 'preview' (with
+ *  watermark) and the published states ('active'/'live'/'paused'). */
 export function publicSiteIsServable(value: string): boolean {
   if (!isClientLifecycle(value)) return false;
   switch (value) {
     case 'pending_verification':
     case 'banned':
     case 'churned':
+    case 'cancelled':
+    case 'deleted':
       return false;
     case 'preview':
     case 'onboarding':
@@ -130,12 +151,13 @@ export function publicSiteIsServable(value: string): boolean {
   }
 }
 
-/** A client who can sign into the dashboard. False for banned (locked out)
- *  and unrecognised; pending_verification users CAN sign in (the magic link
- *  flow is what gets them there — the dashboard shows the wizard). */
+/** A client who can sign into the dashboard. False for the locked-out
+ *  terminal states (banned / deleted) and unrecognised; cancelled clients
+ *  CAN sign in (the grace period is the entire point — they need access to
+ *  reactivate via Stripe). */
 export function dashboardIsAccessible(value: string): boolean {
   if (!isClientLifecycle(value)) return false;
-  return value !== 'banned';
+  return value !== 'banned' && value !== 'deleted';
 }
 
 /** A client that the publish-to-go-live CTA should fire for. The CTA mounts
@@ -149,4 +171,21 @@ export function isEligibleForPublish(value: string): boolean {
 export function isActivelyPaying(value: string): boolean {
   if (!isClientLifecycle(value)) return false;
   return value === 'active' || value === 'live';
+}
+
+/** True when the client is in the two-stage cancellation lifecycle and the
+ *  dashboard should mount the read-only cancellation banner + reactivate
+ *  CTA. False for 'deleted' — that state locks the dashboard out entirely
+ *  (`dashboardIsAccessible` returns false), so there is no UI to mount the
+ *  banner on. */
+export function isCancelled(value: string): boolean {
+  if (!isClientLifecycle(value)) return false;
+  return value === 'cancelled';
+}
+
+/** True when the client is soft-deleted (post grace, pre hard delete).
+ *  Recoverable only via operator out-of-band action. */
+export function isSoftDeleted(value: string): boolean {
+  if (!isClientLifecycle(value)) return false;
+  return value === 'deleted';
 }

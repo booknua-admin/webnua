@@ -1,0 +1,35 @@
+-- =============================================================================
+-- Webnua backend — Pattern B onboarding wizard · two-stage cancellation enum
+-- additions.
+--
+-- The Pattern B cancellation flow has two terminal-grade states beyond what
+-- migrations 0001 / 0084 carried:
+--
+--   'cancelled' — Stage 1 of the cancellation lifecycle. A paying customer
+--                 cancelled via the Stripe Customer Portal. Set by the
+--                 customer.subscription.deleted webhook. The customer can
+--                 still log in; sees a read-only banner with a "Reactivate"
+--                 CTA that re-runs Stripe Checkout. After 30 days of being
+--                 in this state, the daily cron promotes them to 'deleted'.
+--
+--   'deleted'   — Stage 2 (soft-deleted). Customer can no longer log in;
+--                 dashboards / public site stop serving. Operator-only
+--                 recovery for an additional 60 days (out-of-band — support
+--                 call → operator runs a manual restore script). On day 83
+--                 the cron sends a 7-day-warning email; on day 90 it
+--                 HARD-deletes the row + cascades. This is the only
+--                 irreversible step in the chain.
+--
+-- Why a dedicated migration: Postgres requires `ALTER TYPE ... ADD VALUE`
+-- to commit BEFORE any other statement references the new enum value, so
+-- this migration cannot land schema/triggers/cron that reference
+-- 'cancelled' or 'deleted' in the same file. Migration 0091 (which sets
+-- WHERE lifecycle_status = 'cancelled' / 'deleted' in its cron jobs) reads
+-- these values; it must run AFTER this migration commits.
+--
+-- `IF NOT EXISTS` so a re-run / partial environment with one value already
+-- added stays idempotent.
+-- =============================================================================
+
+alter type client_lifecycle add value if not exists 'cancelled';
+alter type client_lifecycle add value if not exists 'deleted';

@@ -302,6 +302,84 @@ export type Database = {
           },
         ]
       }
+      automation_suppression_log: {
+        Row: {
+          action_id: string
+          automation_id: string
+          automation_run_id: string
+          channel: string | null
+          client_id: string
+          context: Json
+          deferred_until: string | null
+          id: string
+          lead_id: string | null
+          reason: Database["public"]["Enums"]["automation_suppression_reason"]
+          suppressed_at: string
+        }
+        Insert: {
+          action_id: string
+          automation_id: string
+          automation_run_id: string
+          channel?: string | null
+          client_id: string
+          context?: Json
+          deferred_until?: string | null
+          id?: string
+          lead_id?: string | null
+          reason: Database["public"]["Enums"]["automation_suppression_reason"]
+          suppressed_at?: string
+        }
+        Update: {
+          action_id?: string
+          automation_id?: string
+          automation_run_id?: string
+          channel?: string | null
+          client_id?: string
+          context?: Json
+          deferred_until?: string | null
+          id?: string
+          lead_id?: string | null
+          reason?: Database["public"]["Enums"]["automation_suppression_reason"]
+          suppressed_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_suppression_log_action_id_fkey"
+            columns: ["action_id"]
+            isOneToOne: false
+            referencedRelation: "automation_actions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_suppression_log_automation_id_fkey"
+            columns: ["automation_id"]
+            isOneToOne: false
+            referencedRelation: "automations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_suppression_log_automation_run_id_fkey"
+            columns: ["automation_run_id"]
+            isOneToOne: false
+            referencedRelation: "automation_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_suppression_log_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_suppression_log_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       automations: {
         Row: {
           automation_key: string
@@ -1004,6 +1082,7 @@ export type Database = {
       client_user_invites: {
         Row: {
           client_id: string
+          consumed_at: string | null
           email: string
           expires_at: string
           full_name: string
@@ -1013,9 +1092,11 @@ export type Database = {
           magic_link: string
           personal_note: string | null
           status: Database["public"]["Enums"]["invite_status"]
+          token: string
         }
         Insert: {
           client_id: string
+          consumed_at?: string | null
           email: string
           expires_at: string
           full_name?: string
@@ -1025,9 +1106,11 @@ export type Database = {
           magic_link: string
           personal_note?: string | null
           status?: Database["public"]["Enums"]["invite_status"]
+          token: string
         }
         Update: {
           client_id?: string
+          consumed_at?: string | null
           email?: string
           expires_at?: string
           full_name?: string
@@ -1037,6 +1120,7 @@ export type Database = {
           magic_link?: string
           personal_note?: string | null
           status?: Database["public"]["Enums"]["invite_status"]
+          token?: string
         }
         Relationships: [
           {
@@ -1057,7 +1141,10 @@ export type Database = {
       }
       clients: {
         Row: {
+          cancelled_at: string | null
           created_at: string
+          data_deletion_scheduled_at: string | null
+          hard_delete_warning_sent_at: string | null
           id: string
           industry: string
           lifecycle_status: Database["public"]["Enums"]["client_lifecycle"]
@@ -1066,15 +1153,23 @@ export type Database = {
           primary_contact_email: string | null
           primary_contact_name: string | null
           primary_contact_phone: string | null
+          quiet_hours_end: string | null
+          quiet_hours_start: string | null
+          quiet_hours_timezone: string
           re_engagement_sent_at: string | null
           review_requested_at: string | null
           service_area: string | null
           slug: string
           tracking_consent_mode: string
           updated_at: string
+          wizard_completed_at: string | null
+          wizard_state: Json | null
         }
         Insert: {
+          cancelled_at?: string | null
           created_at?: string
+          data_deletion_scheduled_at?: string | null
+          hard_delete_warning_sent_at?: string | null
           id?: string
           industry: string
           lifecycle_status?: Database["public"]["Enums"]["client_lifecycle"]
@@ -1083,15 +1178,23 @@ export type Database = {
           primary_contact_email?: string | null
           primary_contact_name?: string | null
           primary_contact_phone?: string | null
+          quiet_hours_end?: string | null
+          quiet_hours_start?: string | null
+          quiet_hours_timezone?: string
           re_engagement_sent_at?: string | null
           review_requested_at?: string | null
           service_area?: string | null
           slug: string
           tracking_consent_mode?: string
           updated_at?: string
+          wizard_completed_at?: string | null
+          wizard_state?: Json | null
         }
         Update: {
+          cancelled_at?: string | null
           created_at?: string
+          data_deletion_scheduled_at?: string | null
+          hard_delete_warning_sent_at?: string | null
           id?: string
           industry?: string
           lifecycle_status?: Database["public"]["Enums"]["client_lifecycle"]
@@ -1100,12 +1203,17 @@ export type Database = {
           primary_contact_email?: string | null
           primary_contact_name?: string | null
           primary_contact_phone?: string | null
+          quiet_hours_end?: string | null
+          quiet_hours_start?: string | null
+          quiet_hours_timezone?: string
           re_engagement_sent_at?: string | null
           review_requested_at?: string | null
           service_area?: string | null
           slug?: string
           tracking_consent_mode?: string
           updated_at?: string
+          wizard_completed_at?: string | null
+          wizard_state?: Json | null
         }
         Relationships: [
           {
@@ -3108,6 +3216,7 @@ export type Database = {
       }
       team_invites: {
         Row: {
+          consumed_at: string | null
           email: string
           expires_at: string
           full_name: string
@@ -3118,8 +3227,10 @@ export type Database = {
           personal_note: string
           role: Database["public"]["Enums"]["team_role"]
           status: Database["public"]["Enums"]["invite_status"]
+          token: string
         }
         Insert: {
+          consumed_at?: string | null
           email: string
           expires_at: string
           full_name: string
@@ -3130,8 +3241,10 @@ export type Database = {
           personal_note?: string
           role: Database["public"]["Enums"]["team_role"]
           status?: Database["public"]["Enums"]["invite_status"]
+          token: string
         }
         Update: {
+          consumed_at?: string | null
           email?: string
           expires_at?: string
           full_name?: string
@@ -3142,6 +3255,7 @@ export type Database = {
           personal_note?: string
           role?: Database["public"]["Enums"]["team_role"]
           status?: Database["public"]["Enums"]["invite_status"]
+          token?: string
         }
         Relationships: [
           {
@@ -3617,6 +3731,11 @@ export type Database = {
         | "failed"
         | "cancelled"
         | "paused"
+      automation_suppression_reason:
+        | "frequency_cap_hourly"
+        | "frequency_cap_daily"
+        | "quiet_hours"
+        | "priority_cancelled"
       automation_trigger_type:
         | "lead_created"
         | "job_completed"
@@ -3659,6 +3778,8 @@ export type Database = {
         | "preview"
         | "banned"
         | "active"
+        | "cancelled"
+        | "deleted"
       delay_unit: "minutes" | "hours" | "days"
       draft_scope_kind: "page" | "header" | "footer" | "funnel_step"
       funnel_step_type: "landing" | "schedule" | "thanks" | "optin" | "upsell"
@@ -3894,6 +4015,12 @@ export const Constants = {
         "cancelled",
         "paused",
       ],
+      automation_suppression_reason: [
+        "frequency_cap_hourly",
+        "frequency_cap_daily",
+        "quiet_hours",
+        "priority_cancelled",
+      ],
       automation_trigger_type: [
         "lead_created",
         "job_completed",
@@ -3939,6 +4066,8 @@ export const Constants = {
         "preview",
         "banned",
         "active",
+        "cancelled",
+        "deleted",
       ],
       delay_unit: ["minutes", "hours", "days"],
       draft_scope_kind: ["page", "header", "footer", "funnel_step"],

@@ -1,9 +1,17 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+
+import { CancellationBanner } from '@/components/shared/CancellationBanner';
 import { IntegrationOnboarding } from '@/components/shared/onboarding/IntegrationOnboarding';
-import { dashboardIsInPreOnboarding } from '@/lib/auth/lifecycle';
+import {
+  dashboardIsInPreOnboarding,
+  isCancelled,
+  isSoftDeleted,
+} from '@/lib/auth/lifecycle';
 import { useRole, useUser } from '@/lib/auth/user-stub';
-import { useAdminClients } from '@/lib/clients/clients-store';
+import { getClientUuidBySlug, useAdminClients } from '@/lib/clients/clients-store';
 import { useIsAgencyMode, useWorkspace } from '@/lib/workspace/workspace-stub';
 
 import { AdminDashboardContent } from './_admin-content';
@@ -11,6 +19,7 @@ import { ClientDashboardContent } from './_client-content';
 import { ClientHubContent } from './_hub-content';
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { role } = useRole();
   const user = useUser();
   const isAgencyMode = useIsAgencyMode();
@@ -25,15 +34,110 @@ export default function DashboardPage() {
     ? (clients.find((c) => c.id === activeSlug) ?? null)
     : null;
 
-  // Pattern B: a client in pending_verification / preview / legacy onboarding
-  // lifecycle gets the IntegrationOnboarding wizard surface (with the
-  // "Publish to go live" CTA when their site has been generated). The
-  // dispatch goes through `dashboardIsInPreOnboarding` so the lifecycle
-  // helper is the SoT for which states are "pre-published". `activeClient.
-  // status` is the legacy two-value field ('setup' | 'active') from
-  // clients-store; the helper reads the live lifecycle_status indirectly via
-  // a new prop wired into AdminClient.
-  if (activeClient && dashboardIsInPreOnboarding(activeClient.lifecycleStatus)) {
+  // Pattern B onboarding gate: when a client-role user is in 'preview' and
+  // hasn't completed the wizard, redirect them to /onboarding. The wizard
+  // is the explicit step 1 of Pattern B. We only redirect for clients —
+  // operators drilled in see the operator IntegrationOnboarding surface
+  // (with the manual "Mark active" affordance) which is the right tool
+  // for concierge close.
+  //
+  // We have to async-check `clients.wizard_completed_at` because the
+  // clients-store doesn't carry it (column added in migration 0091, not
+  // worth a store-wide field for one redirect). The check fires once on
+  // mount per (role, activeSlug) and caches the result. While the check
+  // is in-flight we render the current IntegrationOnboarding (no flash of
+  // wrong UI; the moment the check returns we redirect or stay).
+  const shouldOnboard =
+    role === 'client' &&
+    activeClient !== null &&
+    dashboardIsInPreOnboarding(activeClient.lifecycleStatus);
+
+  // The wizard-completion check is async (no client-store column for
+  // wizard_completed_at). While the check is in-flight we render `null`
+  // rather than IntegrationOnboarding; the moment the check resolves we
+  // either redirect to /onboarding OR flip `wizardCheckedAt` so the
+  // rendered surface unblocks. We track the resolution via a non-null
+  // timestamp so the React-Hooks "no sync setState in effect" rule
+  // (every setState call below sits AFTER an `await`) is satisfied.
+  const [wizardCheckedAt, setWizardCheckedAt] = useState<number | null>(null);
+  const wizardCompletionResolved = !shouldOnboard || wizardCheckedAt !== null;
+
+  useEffect(() => {
+    if (!shouldOnboard || !user?.clientId) return;
+    let cancelled = false;
+    async function check() {
+      const uuid = getClientUuidBySlug(user!.clientId!);
+      if (!uuid) {
+        // Roster not hydrated yet — wait for the next render with the
+        // clients-store subscription re-firing the effect.
+        return;
+      }
+      const res = await fetch(`/api/clients/${uuid}/wizard-state`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (cancelled) return;
+      if (res.ok) {
+        const body = (await res.json()) as { completed?: boolean };
+        if (body.completed === false) {
+          router.replace('/onboarding');
+          return; // route change unmounts; no setState needed
+        }
+      }
+      // Either completed === true OR the route 404'd / errored — let
+      // IntegrationOnboarding mount and surface what's there.
+      setWizardCheckedAt(Date.now());
+    }
+    void check();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldOnboard, user?.clientId, router]);
+
+  // Cancellation Stage 2 ('deleted') — the customer should not have reached
+  // here (dashboardIsAccessible returns false), but if they did via a stale
+  // session, redirect them off and let the auth layer handle the lock-out.
+  if (activeClient && isSoftDeleted(activeClient.lifecycleStatus)) {
+    // Lazy redirect — replace not push so they can't back-button into here.
+    if (typeof window !== 'undefined') {
+      router.replace('/(auth)/login?from=deleted');
+    }
+    return null;
+  }
+
+  // Cancellation Stage 1 ('cancelled') — render the regular dashboard with
+  // a high-visibility banner on top + a reactivate CTA. The customer can
+  // still see (read-only-ish) what's in their workspace, so they understand
+  // what reactivating would restore. The banner self-fetches the
+  // cancellation timestamps.
+  if (activeClient && isCancelled(activeClient.lifecycleStatus)) {
+    const clientUuid = getClientUuidBySlug(activeClient.id);
+    return (
+      <>
+        {clientUuid ? (
+          <div className="px-4 pt-4 md:px-10 md:pt-10">
+            <CancellationBanner clientId={clientUuid} clientName={activeClient.name} />
+          </div>
+        ) : null}
+        {role === 'admin' ? (
+          isAgencyMode ? <AdminDashboardContent /> : <ClientHubContent />
+        ) : (
+          <ClientDashboardContent />
+        )}
+      </>
+    );
+  }
+
+  // Pattern B onboarding wizard gate: a client in pre-onboarding lifecycle
+  // who hasn't completed the wizard yet gets redirected (above). Once the
+  // wizard is done, fall through to the regular IntegrationOnboarding
+  // (which surfaces the publish CTA + integration cards + custom domain).
+  if (
+    activeClient &&
+    dashboardIsInPreOnboarding(activeClient.lifecycleStatus) &&
+    wizardCompletionResolved
+  ) {
     return (
       <IntegrationOnboarding
         clientName={activeClient.name}
@@ -42,6 +146,12 @@ export default function DashboardPage() {
         lifecycleStatus={activeClient.lifecycleStatus}
       />
     );
+  }
+
+  // In-flight wizard check — render nothing rather than flash the wrong
+  // screen. The redirect lands within ~1 round-trip.
+  if (activeClient && dashboardIsInPreOnboarding(activeClient.lifecycleStatus)) {
+    return null;
   }
 
   if (role === 'admin') {

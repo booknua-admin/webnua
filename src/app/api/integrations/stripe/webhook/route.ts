@@ -27,6 +27,7 @@
 import { NextResponse } from 'next/server';
 
 import { markClientActiveOnPublish } from '@/lib/auth/signup-workspace';
+import { applyStripeCancellation, reactivateClient } from '@/lib/billing/cancellation';
 import { env } from '@/lib/env';
 import { getIntegrationDb } from '@/lib/integrations/_shared/db-types';
 import { firePaymentFailed } from '@/lib/automations/triggers';
@@ -34,6 +35,7 @@ import {
   applyInvoiceFailed,
   applyInvoicePaid,
   applySubscriptionEvent,
+  getStripeCustomerByStripeId,
 } from '@/lib/integrations/stripe/customers';
 import type {
   StripeEvent,
@@ -129,9 +131,26 @@ async function handleEvent(event: StripeEvent): Promise<{ clientId: string | nul
       // and flips it from 'preview' to 'active'. The UPDATE is guarded on
       // lifecycle_status='preview' so a webhook retry is an idempotent
       // no-op. Returns null if no mapping exists (Pattern A leftover above).
+      //
+      // **Also handles Pattern B reactivation** (subscription.created on a
+      // previously-cancelled customer). After `markClientActiveOnPublish`
+      // we attempt `reactivateClient` — it's a no-op for any client not in
+      // 'cancelled' state (the WHERE clause filters), and the publish path
+      // has already flipped 'preview'→'active' so `reactivateClient`'s
+      // own predicate stops it from firing a second time. Together: one
+      // event covers the publish-pay AND the reactivate-pay paths without
+      // either path interfering with the other.
       if (event.type === 'customer.subscription.created') {
         try {
           await markClientActiveOnPublish(sub.customer);
+          // Resolve clientId for the reactivate predicate. We re-read here
+          // (rather than threading the result through) so this stays
+          // robust even when markClientActiveOnPublish no-ops (the row
+          // was already 'active' from a previous delivery).
+          const mapping = await getStripeCustomerByStripeId(sub.customer);
+          if (mapping) {
+            await reactivateClient(mapping.client_id);
+          }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           console.error('[stripe/webhook] markClientActiveOnPublish failed', message);
@@ -149,9 +168,34 @@ async function handleEvent(event: StripeEvent): Promise<{ clientId: string | nul
       return { clientId: result.clientId };
     }
     case 'customer.subscription.deleted': {
-      const result = await applySubscriptionEvent(object as unknown as StripeSubscription, {
-        deleted: true,
-      });
+      const sub = object as unknown as StripeSubscription;
+      const result = await applySubscriptionEvent(sub, { deleted: true });
+
+      // Pattern B two-stage cancellation, Stage 1: flip lifecycle_status
+      // 'active'/'live'/'paused'/etc. → 'cancelled', stamp cancelled_at
+      // and data_deletion_scheduled_at (= now() + 30 days). Idempotent —
+      // a duplicate delivery refuses to reset the grace clock (the WHERE
+      // filter on prior state guards). The daily cron (migration 0091)
+      // takes over from here.
+      //
+      // We resolve the clientId from the mapping table because the existing
+      // `applySubscriptionEvent` already returns it; we use that directly
+      // to avoid a second round-trip. Fails open — a non-tracked customer
+      // (no client_stripe_customers row) means there's no workspace to
+      // cancel, and we leave the existing call-log behaviour to surface
+      // it.
+      if (result.clientId) {
+        const cancellation = await applyStripeCancellation(result.clientId);
+        if (!cancellation.ok) {
+          console.error(
+            `[stripe/webhook] applyStripeCancellation failed for ${result.clientId}: ${cancellation.reason}`,
+          );
+          // Don't throw — the subscription state HAS been applied; the
+          // lifecycle flip can re-attempt on next delivery (Stripe
+          // resends until 200). Logging is enough.
+        }
+      }
+
       return { clientId: result.clientId };
     }
     case 'invoice.payment_succeeded': {
