@@ -2,7 +2,7 @@
 
 import { BuilderFormSection } from '@/components/shared/builder/BuilderField';
 
-import { setBrandStyleValue } from '../brand-style-stub';
+import { setBrandStyleValue } from '../brand-style';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
 import { schedulePickerMeta } from './registry-meta';
 import {

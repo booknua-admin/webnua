@@ -18,7 +18,7 @@ import { useState, type ReactNode } from 'react';
 import { ApplyToAllModal } from '@/components/shared/website/ApplyToAllModal';
 import { BuilderField } from '@/components/shared/builder/BuilderField';
 import { CapabilityGate } from '@/components/shared/CapabilityGate';
-import { isApplyToAllDismissed } from '@/lib/website/brand-style-stub';
+import { isApplyToAllDismissed } from '@/lib/website/apply-to-all-dismissal';
 import {
   matchPresetId,
   THEME_PRESETS,

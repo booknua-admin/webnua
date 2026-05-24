@@ -10,7 +10,7 @@ import {
 import { CapabilityGate } from '@/components/shared/CapabilityGate';
 import { Button } from '@/components/ui/button';
 
-import { setBrandStyleValue } from '../brand-style-stub';
+import { setBrandStyleValue } from '../brand-style';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
 import { trustMeta } from './registry-meta';
 import { DEFAULT_SECTION_ICON, getSectionIcon } from '../section-icons';

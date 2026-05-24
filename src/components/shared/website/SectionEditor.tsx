@@ -52,7 +52,7 @@ import type {
   Website,
 } from '@/lib/website/types';
 import { useAutosave } from '@/lib/website/use-autosave';
-import { useBrandStyle } from '@/lib/website/use-brand-style';
+import { migrateLegacyBrandStyle } from '@/lib/website/brand-style-legacy-migrate';
 import { useUndoableState } from '@/lib/website/use-undoable-state';
 import { useUserPendingSubmission } from '@/lib/website/use-publish-state';
 
@@ -139,17 +139,21 @@ function containerForMode(mode: SectionEditorMode): ContainerKind {
 export function SectionEditor({ mode }: SectionEditorProps) {
   const clientId = clientIdForMode(mode);
   const brandQuery = useBrandForClient(clientId);
-  // Brand-level style (fonts + colour defaults) is edited site-wide via the
-  // font menu and the "apply to all" path; the overlay is merged over the
-  // resolved brand so every section preview re-renders live.
-  const brandStyleOverride = useBrandStyle(clientId);
+  // Brand-level style (fonts + colour defaults) is the brands row — every
+  // in-editor write goes through setBrandStyleValue, which updates the row
+  // + fires the builder event so this query refetches. No localStorage
+  // overlay since the sunset of brand-style-stub.
+  //
+  // One-shot legacy migration: any browser carrying pre-sunset localStorage
+  // data writes it through to the brands row on first mount, then clears
+  // the local entry.
+  useEffect(() => {
+    if (clientId) migrateLegacyBrandStyle(clientId);
+  }, [clientId]);
   // A funnel is served on the website's host — resolve it so the toolbar's
   // "View live" link points where the funnel actually lives.
   const websiteForHost = useWebsiteForClient(mode.kind === 'funnelStep' ? clientId : null);
-  const brand = useMemo(
-    () => (brandQuery.data ? { ...brandQuery.data, ...brandStyleOverride } : null),
-    [brandQuery.data, brandStyleOverride],
-  );
+  const brand = brandQuery.data ?? null;
   const slot = useMemo(() => slotForMode(mode), [mode]);
   // The mode carries a client SLUG; a form test-submit writes a lead against
   // the client UUID, so resolve it.

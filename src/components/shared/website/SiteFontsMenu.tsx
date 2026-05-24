@@ -14,7 +14,7 @@
 
 import { useState } from 'react';
 
-import { setBrandStyleValue } from '@/lib/website/brand-style-stub';
+import { setBrandStyleValue } from '@/lib/website/brand-style';
 import { CURATED_FONTS, DEFAULT_FONT_ID } from '@/lib/website/google-fonts';
 import { GoogleFontLoader } from '@/lib/website/sections/_shared/GoogleFontLoader';
 import { CapabilityGate } from '@/components/shared/CapabilityGate';

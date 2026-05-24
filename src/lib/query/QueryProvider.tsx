@@ -12,29 +12,15 @@
 // that invalidates query keys on postgres_changes; not here.
 // =============================================================================
 
-import { useState } from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-
-import { isAppError } from '@/lib/errors';
-
-function makeQueryClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: {
-        staleTime: 30_000,
-        // An `auth`/`forbidden`/`not_found` AppError will never succeed on
-        // retry — only retry the genuinely-transient `unexpected` kind, once.
-        retry: (failureCount, error) => {
-          if (isAppError(error) && error.kind !== 'unexpected') return false;
-          return failureCount < 1;
-        },
-      },
-    },
-  });
-}
+import { getQueryClient } from './getQueryClient';
 
 export function QueryProvider({ children }: { children: React.ReactNode }) {
-  const [client] = useState(makeQueryClient);
+  // Singleton on the browser (memoised in getQueryClient); fresh per request
+  // on the server. Module-level callers reach the same client via
+  // getQueryClient() so writes outside React (e.g. brand-style mutations)
+  // can update the cache.
+  const client = getQueryClient();
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }

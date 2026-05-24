@@ -6,7 +6,7 @@
 // a brand-level default, so every section that has not overridden it inherits
 // the change. "Just this one" keeps it as a per-section override.
 //
-// The "don't ask again" preference is per-browser (brand-style-stub).
+// The "don't ask again" preference is per-browser (apply-to-all-dismissal).
 // =============================================================================
 
 import { useState } from 'react';
@@ -20,7 +20,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { dismissApplyToAll } from '@/lib/website/brand-style-stub';
+import { dismissApplyToAll } from '@/lib/website/apply-to-all-dismissal';
 
 export type ApplyToAllModalProps = {
   open: boolean;
