@@ -46,6 +46,10 @@ import {
   formatSectionShape,
   voiceToneToProse,
 } from './generation-prompt';
+import {
+  renderIndustryPromptBlock,
+  resolveIndustryTemplate,
+} from './industry-templates';
 import { getSectionMeta } from './sections/registry-meta';
 import type { BrandObject, Section, SectionType } from './types';
 import type { FallbackLogEntry } from './generation-stub';
@@ -307,6 +311,8 @@ Rules:
 - Item arrays (offer.inclusions, offer.items, offer.signals, features.items, trust.items, trust.badges, reviews.items) MUST be arrays of objects matching the shape given in the catalog. Every item needs a short unique "id" string (e.g. "feat-1", "rev-2"). Do not emit items as bare strings.
 - \`headlineAccent\` / \`titleAccent\` is an OPTIONAL SECOND LINE in the accent colour — never duplicate the headline into it. If no second-line emphasis adds value, leave it empty.
 - Honour the brand voice exactly. Length: headlines <= 72 chars, subheadings <= 140 chars, body copy <= 400 chars unless explicitly a paragraph.
+- The Industry context block above tells you the customer mindset and conversion levers for this trade. Weave the value-proposition and proof-point patterns into copy naturally — paraphrase, never repeat them verbatim, and never claim a certification the brief does not establish (no "Gas Safe" if we don't know the trade does gas).
+- Match the trade's urgency mode from the Industry context. \`emergency-callout\` trades (electrician / plumber / locksmith) lead with response time and same-day framing. \`scheduled\` trades (cleaner / gardener) lead with reliability and easy-to-book framing — never use emergency urgency. \`project\` trades (painter / carpenter / roofer) lead with craft and free-quote framing. \`mixed\` trades lead with whichever the brief emphasises.
 - Hrefs: every "Book / Get / Buy" CTA href is "#form". Every "Call" CTA href is "tel:" + the operator's phone if available.
 - The \`form\` section's \`fields\` array is built deterministically in code — do NOT output a \`fields\` array on the form section. Populate only \`eyebrow\`, \`heading\`.`;
 
@@ -488,6 +494,8 @@ Rules:
 - Item arrays (reviews.items, features.items) MUST be arrays of objects matching the shape given in the catalog. Every item needs a short unique "id" string.
 - \`headlineAccent\` / \`titleAccent\` is an OPTIONAL SECOND LINE in the accent colour — never duplicate the headline into it. Leave empty when no second-line emphasis adds value.
 - Honour the brand voice. Headlines <= 72 chars; subheadings <= 140; body copy <= 400.
+- The Industry context block above tells you the customer mindset and conversion levers for this trade. Weave its value-proposition and proof-point patterns into copy naturally — paraphrase, never repeat them verbatim. Never claim a certification the brief does not establish.
+- Match the trade's urgency mode from the Industry context. \`emergency-callout\` trades reinforce response-time framing; \`scheduled\` trades reinforce reliability and easy-to-book; \`project\` trades reinforce craft and process honesty.
 - Hrefs: any CTA href is "#form".
 - The \`form\` section's \`fields\` array is built deterministically in code — do NOT output a \`fields\` array. Populate only \`eyebrow\`, \`heading\`.`;
 
@@ -637,6 +645,12 @@ function composeUserMessage(brief: LiveBrief, cfg: RunConfig): string {
     brief.brand.topJobsToBeBooked.length > 0
       ? `Top jobs: ${brief.brand.topJobsToBeBooked.join('; ')}`
       : '',
+    '',
+    `## Industry context`,
+    '',
+    renderIndustryPromptBlock(
+      resolveIndustryTemplate(brief.industry || brief.brand.industryCategory),
+    ),
     '',
     `## Funnel brief`,
     '',

@@ -11,11 +11,17 @@ import type { BrandObject, PageType, SectionType, VoiceTone } from './types';
 import type { GenerationContext, PrimaryIntent } from './generation-context';
 import { describeAudience, describeIntent, describePageType } from './generation-context';
 import { SECTION_REGISTRY_META, type SectionMeta } from './sections/registry-meta';
+import {
+  renderIndustryPromptBlock,
+  resolveIndustryTemplate,
+  type IndustryTemplate,
+} from './industry-templates';
 
 export type PromptBlock = {
   id:
     | 'system'
     | 'brand'
+    | 'industry'
     | 'page-questions'
     | 'existing-pages'
     | 'registry-catalog'
@@ -38,6 +44,11 @@ export function buildPromptBlocks(ctx: GenerationContext): PromptBlock[] {
       id: 'brand',
       heading: 'Brand context',
       body: buildBrandBlock(ctx.brand),
+    },
+    {
+      id: 'industry',
+      heading: 'Industry context',
+      body: buildIndustryBlock(ctx.brand),
     },
     {
       id: 'page-questions',
@@ -91,6 +102,8 @@ function buildSystemPreamble(): string {
     '- `headlineAccent` / `titleAccent` is an optional SECOND LINE rendered in the brand accent colour beneath the main heading. It is not a substring of the headline and not a duplicate of it. Leave empty when no second-line emphasis adds value.',
     '- Headlines: ≤72 chars. Subheadings: ≤140 chars. Bodies: ≤400 chars unless the field is explicitly a paragraph.',
     '- Match the brand voice exactly as described.',
+    "- The Industry context block tells you the customer mindset and conversion levers for this trade. Weave the value-proposition and proof-point patterns into copy naturally — paraphrase, never repeat them verbatim, and never claim a certification the brief does not establish (no \"Gas Safe\" if we don't know the trade does gas).",
+    "- Match the trade's urgency mode. `emergency-callout` trades (electrician, plumber, locksmith) should lead with response time and route to `Call now`. `scheduled` trades (cleaner, gardener) should lead with reliability and route to `Book a visit` / `Get a quote` — NEVER use emergency-callout urgency framing on scheduled trades. `project` trades (painter, carpenter, roofer) should lead with craft and route to `Get a quote`. `mixed` trades lead with whichever the brief emphasises.",
     '- For every text field you populate, the system will tag it as AI-drafted.',
   ].join('\n');
 }
@@ -116,6 +129,19 @@ function buildBrandBlock(brand: BrandObject): string {
     'Top jobs to be booked:',
     jobsList,
   ].join('\n');
+}
+
+/** Industry-aware context block. Resolves `brand.industryCategory` (free
+ *  text) to a closed `IndustryKey` via `mapIndustry`, then renders the
+ *  template's context + value-prop / proof-point / objection patterns + CTA
+ *  framing. Unknown industries fall back to `generic` — a strong neutral
+ *  template, never broken behaviour. The model is told these are PATTERNS to
+ *  weave in, not literal copy to repeat. */
+function buildIndustryBlock(brand: BrandObject): string {
+  const template: IndustryTemplate = resolveIndustryTemplate(
+    brand.industryCategory,
+  );
+  return renderIndustryPromptBlock(template);
 }
 
 /** The conversion job each page type has to do — appended to the questions
