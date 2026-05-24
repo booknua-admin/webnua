@@ -28,13 +28,12 @@ import { NextResponse } from 'next/server';
 
 import { env } from '@/lib/env';
 import { getIntegrationDb } from '@/lib/integrations/_shared/db-types';
-import { enqueueJobImmediate } from '@/lib/integrations/_shared/jobs';
+import { firePaymentFailed } from '@/lib/automations/triggers';
 import {
   applyInvoiceFailed,
   applyInvoicePaid,
   applySubscriptionEvent,
 } from '@/lib/integrations/stripe/customers';
-import { STRIPE_PAYMENT_FAILED_JOB } from '@/lib/integrations/stripe/job-types';
 import type {
   StripeEvent,
   StripeInvoice,
@@ -101,13 +100,12 @@ async function handleEvent(event: StripeEvent): Promise<{ clientId: string | nul
       const invoice = object as unknown as StripeInvoice;
       const result = await applyInvoiceFailed(invoice);
       if (result.outcome === 'applied' && result.clientId) {
-        // Notify the operator(s) — fast path via immediate dispatch, with the
-        // pg_cron poller as the fallback.
-        await enqueueJobImmediate(
-          STRIPE_PAYMENT_FAILED_JOB,
-          { clientId: result.clientId, invoiceId: invoice.id },
-          { provider: 'stripe', clientId: result.clientId },
-        );
+        // Phase 8 Session 1 — orchestrated through the automation engine. The
+        // payment_failed_notification automation (seeded by 0077) has one
+        // send_operator_notification action with variant=payment_failed; the
+        // action handler enqueues the existing STRIPE_PAYMENT_FAILED_JOB so
+        // the email-sending code is unchanged.
+        await firePaymentFailed(result.clientId, { invoiceId: invoice.id });
       }
       return { clientId: result.clientId };
     }
