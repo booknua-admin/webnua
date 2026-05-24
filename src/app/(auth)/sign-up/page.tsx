@@ -41,8 +41,11 @@ import {
 import { Eyebrow } from '@/components/ui/eyebrow';
 import { Input } from '@/components/ui/input';
 
-/** Friendly translation of the API error codes. */
-function describeError(code: string | undefined): string {
+/** Friendly translation of the API error codes. `detail` (if present)
+ *  carries the upstream provider's specific error message — for
+ *  `stripe-checkout-failed` we append it so the operator can diagnose
+ *  without crawling server logs. */
+function describeError(code: string | undefined, detail?: string | null): string {
   switch (code) {
     case 'business-name-required':
       return 'Please enter your business name.';
@@ -63,7 +66,9 @@ function describeError(code: string | undefined): string {
     case 'stripe-not-configured':
       return 'Billing is temporarily unavailable. Try again in a moment.';
     case 'stripe-checkout-failed':
-      return 'Could not start checkout — please try again. If this keeps happening, get in touch.';
+      return detail
+        ? `Stripe could not start checkout: ${detail}`
+        : 'Could not start checkout — please try again. If this keeps happening, get in touch.';
     case 'invalid-body':
       return 'Something went wrong with the form. Refresh and try again.';
     default:
@@ -111,8 +116,11 @@ function SignUpForm() {
     }
 
     if (!response.ok) {
-      const body = (await response.json().catch(() => ({}))) as { error?: string };
-      setError(describeError(body.error));
+      const body = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        detail?: string;
+      };
+      setError(describeError(body.error, body.detail));
       setSubmitting(false);
       return;
     }

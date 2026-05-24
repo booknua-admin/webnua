@@ -29,7 +29,10 @@
 import { NextResponse } from 'next/server';
 
 import { emailAlreadyRegistered } from '@/lib/auth/signup-workspace';
-import { isStripeConfigured } from '@/lib/integrations/stripe/client';
+import {
+  createSignupCheckoutSession,
+  isStripeConfigured,
+} from '@/lib/integrations/stripe/client';
 
 // --- input shape -------------------------------------------------------------
 
@@ -88,8 +91,6 @@ function rateLimit(ip: string): { ok: boolean; resetAt?: number } {
 }
 
 function callerIp(request: Request): string {
-  // X-Forwarded-For is the canonical Vercel header; fall back to the remote
-  // address surrogate if for some reason the chain is empty.
   const fwd = request.headers.get('x-forwarded-for');
   if (fwd) return fwd.split(',')[0].trim();
   return request.headers.get('x-real-ip') ?? 'unknown';
@@ -130,100 +131,44 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: 'email-already-registered' }, { status: 409 });
   }
 
-  // -- mint the Checkout session --
+  // --- mint the Checkout session ------------------------------------------
   //
-  // We do NOT create a Stripe Customer first (the operator path does, because
+  // We do NOT create a Stripe Customer first (the operator path does because
   // it has a clients row to attach to; we do not yet). Stripe creates the
-  // Customer at Checkout completion based on the email collected on the
-  // hosted page (we pre-fill it via customer_email).
+  // Customer at Checkout completion from the pre-filled customer_email.
   //
-  // Both `metadata` (on the session) AND `subscription_data.metadata` (on
-  // the subscription Stripe creates) are stamped — the webhook reads from
-  // the subscription, since `customer.subscription.created` carries it
-  // directly. The session's own metadata is a safety belt for the rare
-  // event where we need to reconcile from the session id.
+  // Both session metadata AND subscription_data.metadata are stamped — the
+  // webhook reads from the subscription (it carries the metadata on the
+  // `subscription.created` event directly). The session metadata is a
+  // safety belt for reconciliation from session id.
   const origin = new URL(request.url).origin;
-  const session = await createSignupCheckoutSession({
-    origin,
+  const result = await createSignupCheckoutSession({
     businessName,
     businessEmail,
     businessCategory,
+    successUrl: `${origin}/sign-up/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancelUrl: `${origin}/sign-up?cancelled=1`,
   });
-  if (!session.ok) {
-    console.error('[sign-up] Checkout session mint failed', session.error);
+
+  if (!result.ok) {
+    // Forward Stripe's actual error message in `detail` so the form can
+    // surface what specifically went wrong (mode mismatch on the price,
+    // missing keys, etc.). Without this the user just sees a generic
+    // "Could not start checkout" and we have to crawl logs to diagnose.
+    console.error('[sign-up] Checkout session mint failed', result.error.message);
     return NextResponse.json(
-      { error: 'stripe-checkout-failed', detail: session.error },
+      { error: 'stripe-checkout-failed', detail: result.error.message },
       { status: 502 },
     );
   }
 
-  return NextResponse.json({ checkoutUrl: session.url });
-}
+  if (!result.data.url) {
+    console.error('[sign-up] Checkout session returned no URL');
+    return NextResponse.json(
+      { error: 'stripe-checkout-failed', detail: 'Checkout session returned no URL.' },
+      { status: 502 },
+    );
+  }
 
-// --- Stripe wrapper -----------------------------------------------------------
-
-type SignupCheckoutInput = {
-  origin: string;
-  businessName: string;
-  businessEmail: string;
-  businessCategory: string;
-};
-
-async function createSignupCheckoutSession(
-  input: SignupCheckoutInput,
-): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
-  // We can't call `createCheckoutSession` from `lib/integrations/stripe/client.ts`
-  // directly — it requires a pre-existing stripeCustomerId + clientId. Build
-  // our own session with the params we need: customer_email + metadata kind,
-  // no pre-existing customer.
-  //
-  // Importing the lower-level `stripeCall` would couple us tighter than
-  // helpful; instead we model the call shape inline.
-  const { env } = await import('@/lib/env');
-  const { callExternal } = await import('@/lib/integrations/_shared/call');
-
-  const secretKey = env.STRIPE_SECRET_KEY;
-  const priceId = env.STRIPE_PRICE_ID_STANDARD;
-  if (!secretKey || !priceId) return { ok: false, error: 'stripe-not-configured' };
-
-  const params: Record<string, string> = {
-    mode: 'subscription',
-    customer_email: input.businessEmail,
-    'line_items[0][price]': priceId,
-    'line_items[0][quantity]': '1',
-    success_url: `${input.origin}/sign-up/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${input.origin}/sign-up?cancelled=1`,
-    // Tell Stripe to always create a Customer (default behaviour for
-    // subscription mode, but explicit here so the customer exists in the
-    // subscription event we react to).
-    customer_creation: 'always',
-    // Session-level metadata — useful for reconciliation from session id.
-    'metadata[kind]': 'signup',
-    'metadata[signup_business_name]': input.businessName,
-    'metadata[signup_business_email]': input.businessEmail,
-    'metadata[signup_business_category]': input.businessCategory,
-    // Subscription-level metadata — what the webhook handler reads from
-    // `customer.subscription.created`.
-    'subscription_data[metadata][kind]': 'signup',
-    'subscription_data[metadata][signup_business_name]': input.businessName,
-    'subscription_data[metadata][signup_business_email]': input.businessEmail,
-    'subscription_data[metadata][signup_business_category]': input.businessCategory,
-  };
-
-  const result = await callExternal<{ id: string; url: string | null }>({
-    provider: 'stripe',
-    operation: 'create_signup_checkout',
-    url: 'https://api.stripe.com/v1/checkout/sessions',
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${secretKey}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Idempotency-Key': crypto.randomUUID(),
-    },
-    rawBody: new URLSearchParams(params).toString(),
-  });
-
-  if (!result.ok) return { ok: false, error: result.error.message };
-  if (!result.data.url) return { ok: false, error: 'no-checkout-url' };
-  return { ok: true, url: result.data.url };
+  return NextResponse.json({ checkoutUrl: result.data.url });
 }
