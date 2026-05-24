@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
@@ -72,6 +73,17 @@ function AutomationStatsCard({
               value={stat.value}
             />
           ))}
+        </div>
+      ) : null}
+
+      {automation.href ? (
+        <div className="flex items-center justify-end border-t border-paper-2 px-5.5 py-2.5">
+          <Link
+            href={automation.href}
+            className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-rust hover:text-rust-light"
+          >
+            View flow details →
+          </Link>
         </div>
       ) : null}
     </div>

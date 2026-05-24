@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { useEffect } from 'react';
 
 import { GbpSendRequestButton } from '@/components/shared/gbp/GbpSendRequestButton';
+import { LeadAutomationPanel } from '@/components/shared/leads/LeadAutomationPanel';
 import { LeadDetailHeader } from '@/components/shared/leads/LeadDetailHeader';
 import { LeadQuickActions } from '@/components/shared/leads/LeadQuickActions';
 import { LeadStatusSwitcher } from '@/components/shared/leads/LeadStatusSwitcher';
@@ -94,6 +95,7 @@ function ClientLeadDetailContent() {
                       />
                     </div>
                   </RailCard>
+                  <LeadAutomationPanel leadId={id} />
                   {lead.rail.map((card) => (
                     <RailCard
                       key={card.heading}

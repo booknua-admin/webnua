@@ -1,19 +1,22 @@
 // =============================================================================
-// SMS templates — the closed set of template keys + their default bodies.
+// SMS template key vocabulary.
 //
-// Four transactional moments, one template each. Every client is seeded with
-// these defaults (migration 0060's trigger + backfill); an operator can then
-// customise any of them per client through the SMS template editor.
+// Phase 8 Session 2: the `sms_templates` table was dropped (migration 0079).
+// SMS bodies now live inline on `automation_actions.action_config.body`, with
+// the platform defaults captured in `src/lib/automations/platform-defaults.ts`.
 //
-// DEFAULT_SMS_TEMPLATES MUST stay in lockstep with the seed bodies in
-// supabase/migrations/0060_sms_templates.sql — the migration seeds the rows,
-// this constant is the runtime fallback the send_sms job uses if a template
-// row is somehow absent. Editing a default message: change both.
+// This module is kept as the home for the closed `SmsTemplateKey` vocabulary
+// — the small set of string keys the engine and observability logs use to
+// label SMS sends ("this send corresponds to a lead_acknowledgment-style
+// automation"). The keys outlive the table: the engine tags `action_config`
+// with one of these so the integration_call_log and per-row diagnostics stay
+// readable. A new key in this list is a deliberate expansion — the platform
+// defaults + the editor variable picker key off this vocabulary.
 //
 // SERVER + CLIENT safe — pure data, no imports.
 // =============================================================================
 
-/** The closed set of SMS template keys. A new key needs a migration. */
+/** The closed set of SMS template keys. */
 export const SMS_TEMPLATE_KEYS = [
   'lead_acknowledgment',
   'job_confirmation',
@@ -28,7 +31,8 @@ export function isSmsTemplateKey(value: unknown): value is SmsTemplateKey {
   return typeof value === 'string' && (SMS_TEMPLATE_KEYS as readonly string[]).includes(value);
 }
 
-/** Operator-facing label + description for each template key. */
+/** Operator-facing label + description for each template key. Used by the
+ *  Session 2 editor to title the SMS step inside a multi-action automation. */
 export const SMS_TEMPLATE_META: Record<SmsTemplateKey, { label: string; description: string }> = {
   lead_acknowledgment: {
     label: 'Lead acknowledgment',
@@ -48,24 +52,6 @@ export const SMS_TEMPLATE_META: Record<SmsTemplateKey, { label: string; descript
   },
 };
 
-/** The default body for each template key. Keep in lockstep with the
- *  seed bodies in migration 0060. */
-export const DEFAULT_SMS_TEMPLATES: Record<SmsTemplateKey, string> = {
-  lead_acknowledgment:
-    'Hi {{lead.firstName}}, {{client.shortName}} here. Got your enquiry about ' +
-    "{{lead.service}}. We'll be in touch within {{client.responseTime}}.",
-  job_confirmation:
-    '{{client.shortName}}: Confirming your appointment for {{job.date}} at ' +
-    "{{job.time}}. We'll text when we're on the way.",
-  arrival_notification:
-    "{{client.shortName}}: We're on the way to {{job.address}}. ETA {{job.eta}}. " +
-    'Any questions, ring {{client.phone}}.',
-  review_request:
-    'Hi {{lead.firstName}}, hope the work went well today. If you have 30 seconds, ' +
-    'would you mind leaving a quick Google review? {{review.link}} Thanks - ' +
-    '{{client.shortName}}.',
-};
-
-/** The hard maximum template body length — 2 GSM-7 segments. A template over
- *  this cannot be saved (the editor blocks it; the API route re-checks it). */
+/** The hard maximum SMS template body length — 2 GSM-7 segments. The Session 2
+ *  editor blocks save above this; the engine handler also re-checks at send. */
 export const MAX_TEMPLATE_LENGTH = 320;

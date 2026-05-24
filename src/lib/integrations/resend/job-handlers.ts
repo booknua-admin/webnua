@@ -36,6 +36,10 @@ import {
   type EmailTemplateBody,
 } from '@/lib/email/default-templates';
 import { renderEmail, type EmailRenderContext } from '@/lib/email/templates';
+// Phase 8 Session 2: the sms_templates / email_templates tables are gone.
+// Bodies live on the originating automation_action's action_config (or in
+// DEFAULT_EMAIL_TEMPLATES for operator-facing keys). The previous
+// `getTemplate` lookup is no longer used.
 import {
   composeReplyToAddress,
   generateThreadToken,
@@ -68,7 +72,6 @@ import {
   listNewLeadRecipients,
 } from './preferences';
 import { getSenderByClientId } from './senders';
-import { getTemplate } from './templates';
 import type {
   ClientEmailSenderRow,
   EmailMessageStatus,
@@ -101,7 +104,12 @@ registerJobHandler(SEND_EMAIL_JOB, async (rawPayload, ctx: JobContext) => {
   }
 
   // --- render ---------------------------------------------------------------
-  const template = await loadTemplate(clientId, templateKey);
+  // Body source priority (Phase 8 Session 2):
+  //   1. Payload-supplied subject + body (customer-facing automation actions).
+  //   2. DEFAULT_EMAIL_TEMPLATES[templateKey] (operator-facing system
+  //      templates — lead_notification / lead_digest). No DB lookup; the
+  //      sms_templates / email_templates tables are gone.
+  const template = resolveTemplateBody(payload, templateKey);
   const context = await buildRenderContext(clientId, sender, payload);
   const rendered = renderEmail(template, context);
   if (!rendered.subject && !rendered.text && !rendered.html) {
@@ -377,16 +385,27 @@ function isCustomerFacingTemplate(key: EmailTemplateKey): boolean {
   return key === 'lead_followup' || key === 'review_request' || key === 'quote_followup';
 }
 
-async function loadTemplate(
-  clientId: string,
+/** Pick the email body source.
+ *
+ * Phase 8 Session 2 replaces the previous `loadTemplate(clientId, key)`
+ * (which read `email_templates`) with this pure resolver. Customer-facing
+ * automations pass `subject` + `bodyHtml` + `bodyText` on the payload from
+ * `automation_actions.action_config`; operator-facing system templates
+ * (`lead_notification`, `lead_digest`) carry no payload body and fall back
+ * to the in-code defaults. */
+function resolveTemplateBody(
+  payload: Partial<SendEmailPayload>,
   key: EmailTemplateKey,
-): Promise<EmailTemplateBody> {
-  const row = await getTemplate(clientId, key);
-  if (row) {
+): EmailTemplateBody {
+  const hasPayloadBody =
+    typeof payload.subject === 'string' &&
+    (typeof payload.bodyHtml === 'string' || typeof payload.bodyText === 'string');
+
+  if (hasPayloadBody) {
     return {
-      subject: row.subject,
-      body_html: row.body_html,
-      body_text: row.body_text,
+      subject: payload.subject ?? '',
+      body_html: payload.bodyHtml ?? '',
+      body_text: payload.bodyText ?? '',
     };
   }
   return DEFAULT_EMAIL_TEMPLATES[key];

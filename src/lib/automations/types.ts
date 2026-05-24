@@ -127,30 +127,117 @@ export type AutomationEditorTrigger = {
 };
 
 /**
+ * Per-step action-kind metadata. Drives the editor's per-step header pill +
+ * which fields to render. Phase 8 Session 2 widens the editor from comm-only
+ * to every action type the engine supports; non-comm steps still render
+ * (with their config in read-only form) so the operator sees the full action
+ * sequence rather than a misleading "comm actions only" subset.
+ */
+export type AutomationEditorActionKind =
+  | 'send_sms_to_lead'
+  | 'send_email_to_lead'
+  | 'send_operator_notification'
+  | 'wait_for_duration'
+  | 'update_lead_field'
+  | 'create_followup_task';
+
+/**
  * Single editable step inside the editor canvas. Step 2 of FreshHome's
  * follow-up is in editing state per the prototype.
+ *
+ * Phase 8 Session 2: the body / subject reflect the live values stored on
+ * `automation_actions.action_config`. Editing them and saving writes the same
+ * jsonb back. Non-comm steps (`actionKind` not in send_sms_to_lead /
+ * send_email_to_lead) render in `readOnly` form — the editor explains the
+ * limitation honestly rather than silently hiding them.
  */
 export type AutomationEditorStep = {
   id: string;
   number: number;
-  channel: AutomationEditorChannel;
+  /** The action_type from the engine — drives the editor's per-step UI. */
+  actionKind: AutomationEditorActionKind;
+  /** Comms-only convenience: 'sms' / 'email'. Undefined for non-comm steps. */
+  channel?: AutomationEditorChannel;
   /** Display text on the delay pill (e.g. "Delay: 24 hrs"). */
   delay: string;
   /** Editable step name, e.g. "Soft follow-up · check-in". */
   name: string;
   /** Email-only subject line — present iff channel === 'email'. */
   subject?: string;
-  /** Message body. Wrap variable spans in `[data-slot=var]` for highlight. */
-  body: ReactNode;
-  /** Raw plain-text body template (with `{placeholder}` tokens) — the value
-   *  the editor textarea edits. Optional so the legacy stub still type-checks. */
+  /** Email HTML body — sent alongside the plain-text variant. */
+  bodyHtml?: string;
+  /** Email plain-text body — also used as the SMS body for SMS steps. */
   bodyText?: string;
+  /** A human-readable summary of this step for non-comm action kinds (wait
+   *  N minutes, fire operator alert, etc.). Drives the read-only display. */
+  readOnlySummary?: ReactNode;
   /** Footer reply meta, e.g. "// 28% reply · 142 sent · last 7d". */
   footerMeta: string;
   /** Variable chips shown in the footer (excluding the "+ Insert variable" leader, which is always rendered). */
   variables: string[];
   /** When true, flips the step to the rust-bordered editing state + "// EDITING · auto-saved 8s ago" footer. */
   isEditing?: boolean;
+  /** True when the operator/client can edit this step's copy. Currently true
+   *  for comm steps, false for everything else (V1 — see Session 2 spec). */
+  canEditBody: boolean;
+  /** True when the operator/client can edit the SMS body. SMS steps only. */
+  canEditSms: boolean;
+};
+
+/**
+ * Trigger configuration editing — per-trigger-type editable fields. The
+ * editor renders a small form depending on which fields exist for the
+ * automation's trigger type (delay_minutes for review-request, to_status
+ * for arrival, etc.). Session 2 keeps this scope tight: only the fields
+ * the platform default carries are editable.
+ */
+export type AutomationEditableTriggerField =
+  | { kind: 'delay_minutes'; label: string; value: number; min: number; max: number }
+  | { kind: 'days_after_last_outbound'; label: string; value: number; min: number; max: number }
+  | { kind: 'max_nudges'; label: string; value: number; min: number; max: number }
+  | { kind: 'to_status'; label: string; value: string; options: { value: string; label: string }[] };
+
+export type AutomationEditableFilterField =
+  | { kind: 'requires_phone'; label: string; value: boolean }
+  | { kind: 'requires_email'; label: string; value: boolean }
+  | { kind: 'requires_gbp_location'; label: string; value: boolean };
+
+/**
+ * Per-automation run row exposed in the editor's "Recent runs" rail.
+ */
+export type AutomationEditorRun = {
+  id: string;
+  startedAt: string;
+  completedAt: string | null;
+  status: 'running' | 'completed' | 'failed' | 'cancelled' | 'paused';
+  pausedReason: 'lead_replied' | 'client_took_over' | 'manually_cancelled' | null;
+  /** Human-readable trigger event summary (e.g. "Lead created · Sarah Davies"). */
+  triggerSummary: string;
+  /** Lead id when the run is bound to a lead, else null. */
+  leadId: string | null;
+  /** The action position the run reached (1-indexed) — drives "stopped at step N". */
+  currentActionPosition: number;
+  /** Failure detail, when status='failed'. */
+  errorMessage: string | null;
+};
+
+/** Stats panel computed from the last 30 days of automation_runs. */
+export type AutomationEditorStats = {
+  /** Total runs in the last 30 days. */
+  totalRuns: number;
+  /** Number of `completed` runs in the last 30 days. */
+  completedRuns: number;
+  /** Number of `paused` runs in the last 30 days. */
+  pausedRuns: number;
+  /** Number of `failed` runs in the last 30 days. */
+  failedRuns: number;
+  /** Completed / total as a percentage (0–100). */
+  completionRate: number;
+  /** Paused / total as a percentage. */
+  pauseRate: number;
+  /** Mean time from started_at to completed_at across completed runs, in
+   *  seconds. Null when there are no completed runs (no signal). */
+  avgCompletionSeconds: number | null;
 };
 
 export type AutomationVariable = {
@@ -200,11 +287,37 @@ export type AutomationTestSendData = {
 
 /**
  * Top-level admin editor stub. Drives `/automations/[id]` for admin.
+ *
+ * Phase 8 Session 2 widens this shape considerably: the editor now exposes
+ * every action type (not just comm), surfaces the live action_config so the
+ * inline editor can write to it, exposes the trigger config + filters as
+ * editable, and adds the recent runs + stats rails. The previous shape's
+ * comm-only `steps` field is preserved but now includes non-comm action
+ * entries with `canEditBody: false` instead of hiding them.
  */
 export type AutomationEditor = {
   id: string;
+  /** Stable per-client key (e.g. `lead_acknowledgment_sms`). Used by the
+   *  clone flow + the "is this a platform default" badge. */
+  automationKey: string;
+  /** True for the nine platform-seeded automations; false for clones /
+   *  operator-built variants. */
+  isDefault: boolean;
+  /** Engine trigger type — used by the trigger-config editor to pick which
+   *  fields are editable. */
+  triggerType:
+    | 'lead_created'
+    | 'job_scheduled'
+    | 'job_status_changed'
+    | 'job_completed'
+    | 'payment_failed'
+    | 'lead_inactive';
   /** Whether the flow is currently enabled — drives the footer toggle. */
   enabled: boolean;
+  /** The client this automation belongs to (UUID, for capability gating). */
+  clientId: string;
+  /** Display client name — for the editor breadcrumb + clone-target. */
+  clientName: string;
   /** Page-header eyebrow, e.g. "// FreshHome · 24-hour follow-up sequence". */
   eyebrow: string;
   /** Page-header title (ReactNode — `<em>` renders rust). */
@@ -212,8 +325,14 @@ export type AutomationEditor = {
   /** Page-header subtitle (ReactNode — `<strong>` renders ink-bold). */
   subtitle: ReactNode;
   trigger: AutomationEditorTrigger;
+  /** Currently-editable trigger-config fields (subset of the trigger's
+   *  schema). Each field has its own editor in the Trigger section. */
+  triggerFields: AutomationEditableTriggerField[];
+  /** Editable filter fields (requires_phone, requires_email, etc.). */
+  filterFields: AutomationEditableFilterField[];
   steps: AutomationEditorStep[];
-  /** "+ Add another step (SMS / Email / Wait)" affordance label. */
+  /** "+ Add another step (Session 2 deferred)" affordance — Session 2 ships
+   *  this disabled with an explainer; add/reorder/delete are V1.1. */
   addStepLabel: string;
   rail: {
     variables: { heading: string; items: AutomationVariable[] };
