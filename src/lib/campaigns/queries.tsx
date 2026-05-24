@@ -577,6 +577,154 @@ export function useClientCampaigns() {
 }
 
 // =============================================================================
+// Sub-account `/campaigns` — operator drilled into one client.
+//
+// Renders the SAME `CampaignHeroCard` + trend + activity deep-dive the client
+// view consumes, scoped to the picked client (see
+// reference/client-context-pattern.md §4 Strategy A + §7 "What `/campaigns`
+// (Session 3) should copy"). The hook fetches by slug (RLS still refuses if
+// the slug isn't in the operator's accessible set) and returns the
+// `ClientCampaignsPage` shape extended with `clientId` (UUID) so the operator
+// action strip can wire to Meta hooks.
+//
+// `managedBand` and `changeCard` are intentionally NOT returned — they're
+// client-facing reassurance / "text Craig" copy that doesn't fit an operator
+// view. The operator chrome (launch + sync Meta affordances) lives in the
+// page-level operator action strip instead.
+// =============================================================================
+
+/** The data shape `_sub-account-content` consumes. Mirrors `ClientCampaignsPage`
+ *  minus the client-facing reassurance blocks (`managedBand` / `changeCard`),
+ *  plus the `clientId` UUID for Meta hooks. */
+export type SubAccountCampaignsPage = {
+  hero: ClientCampaignsPage['hero'];
+  active: ClientCampaignsPage['active'];
+  trend?: ClientCampaignsPage['trend'];
+  activity: ClientCampaignsPage['activity'];
+  clientId: string;
+};
+
+async function fetchSubAccountCampaigns(
+  clientSlug: string,
+): Promise<SubAccountCampaignsPage> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw AppError.auth();
+
+  // RLS scopes `clients` to the operator's accessible set; a slug outside that
+  // set raises a row-not-found error via .single().
+  const { data: clientRow, error: clientError } = await supabase
+    .from('clients')
+    .select('id, name, slug')
+    .eq('slug', clientSlug)
+    .single();
+  if (clientError) throw normalizeError(clientError);
+  const client = clientRow as ClientRow;
+
+  const { data: campaignData, error: campaignsError } = await supabase
+    .from('campaigns')
+    .select(CAMPAIGN_SELECT)
+    .eq('client_id', client.id)
+    .order('created_at', { ascending: false });
+  if (campaignsError) throw normalizeError(campaignsError);
+  const campaigns = campaignData as unknown as CampaignRow[];
+
+  const clientName = client.name;
+  const hero = {
+    eyebrow: `// ${clientName.toUpperCase()} · META ADS · OPERATOR VIEW`,
+    title: (
+      <>
+        {clientName}&apos;s <em>campaigns</em>.
+      </>
+    ),
+    subtitle: (
+      <>
+        What Webnua is running for <strong>{clientName}</strong>.{' '}
+        Edits + new launches happen in <strong>Meta Ads Manager</strong> —
+        every change syncs back to this page.
+      </>
+    ),
+  };
+
+  // The deep-dive shows one campaign — the running one, else the most recent.
+  const campaign =
+    campaigns.find((c) => c.status === 'active') ?? campaigns[0] ?? null;
+
+  if (!campaign) {
+    return {
+      hero,
+      active: {
+        eyebrow: '// NO CAMPAIGN YET',
+        name: <>No active campaign</>,
+        meta: (
+          <>
+            Launch the first campaign for <strong>{clientName}</strong> from
+            Meta Ads Manager. Once live, the record + performance metrics
+            surface here automatically.
+          </>
+        ),
+        statusLabel: 'Not launched',
+        metrics: PLACEHOLDER_METRICS,
+        plainEnglish: PLACEHOLDER_PLAIN_ENGLISH,
+      },
+      activity: {
+        title: <>{'// Recent activity'}</>,
+        sub: <>Operator changes to this client&apos;s campaigns.</>,
+        items: [],
+      },
+      clientId: client.id,
+    };
+  }
+
+  // Phase 7 Meta — fill in real metrics + trend.
+  const metaMetricsMap = await fetchMetaMetricsByCampaignId([campaign.id]);
+  const metaMetrics = metaMetricsMap.get(campaign.id);
+  const trend = await fetchMetaWeeklyTrend(campaign.id);
+
+  const active: CampaignHeroData = {
+    eyebrow: `// ${(STATUS_LABEL[campaign.status] ?? campaign.status).toUpperCase()}`,
+    name: <>{campaign.name}</>,
+    meta: (
+      <>
+        Budget <strong>{formatBudget(campaign.budget)}</strong> ·{' '}
+        {STATUS_LABEL[campaign.status] ?? campaign.status}
+      </>
+    ),
+    statusLabel: STATUS_LABEL[campaign.status] ?? campaign.status,
+    metrics: metaMetrics ? buildLiveMetrics(metaMetrics) : PLACEHOLDER_METRICS,
+    plainEnglish: metaMetrics ? buildLivePlainEnglish(metaMetrics) : PLACEHOLDER_PLAIN_ENGLISH,
+  };
+
+  const events = [...campaign.campaign_activity_events].sort((a, b) =>
+    b.occurred_at.localeCompare(a.occurred_at),
+  );
+
+  return {
+    hero,
+    active,
+    ...(trend ? { trend } : {}),
+    activity: {
+      title: <>{'// Recent activity'}</>,
+      sub: <>Every change to this campaign, newest first.</>,
+      items: events.map(mapActivityEvent),
+    },
+    clientId: client.id,
+  };
+}
+
+/** The operator-in-sub-account campaigns page — RLS bounds the slug lookup
+ *  to the operator's accessible clients, then fetches that one client's
+ *  campaign deep-dive. */
+export function useSubAccountCampaigns(clientSlug: string | null) {
+  return useQuery({
+    queryKey: ['campaigns', 'sub-account', clientSlug],
+    queryFn: () => fetchSubAccountCampaigns(clientSlug as string),
+    enabled: clientSlug != null && clientSlug.length > 0,
+  });
+}
+
+// =============================================================================
 // Admin `/campaigns` — the cross-client campaign roster.
 // =============================================================================
 

@@ -13,6 +13,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
@@ -38,6 +39,28 @@ export default function AdminWebsitesPage() {
   const adminClients = useAdminClients();
   const websitesQuery = useAllWebsites();
   const versionsQuery = useAllWebsiteVersions();
+
+  // Sub-account-mode redirect — see reference/client-context-pattern.md §10.
+  // The websites matrix is an agency-mode birds-eye; an operator drilled into
+  // a sub-account should land on that client's `/website` hub directly,
+  // without a "click into the matrix, find your row, drill in again" hop.
+  // Query strings + hash fragments forward through the redirect — anything
+  // currently on this URL is being preserved across the routing change.
+  useEffect(() => {
+    if (!workspace.hydrated) return;
+    if (!workspace.activeClientId) return;
+    const search =
+      typeof window !== 'undefined' ? window.location.search : '';
+    const hash = typeof window !== 'undefined' ? window.location.hash : '';
+    router.replace(`/website${search}${hash}`);
+  }, [workspace.hydrated, workspace.activeClientId, router]);
+
+  // While the workspace context is hydrating, OR while the redirect is in
+  // flight, render nothing. Stops the matrix from flashing in front of an
+  // operator on their way to /website.
+  if (!workspace.hydrated || workspace.activeClientId) {
+    return null;
+  }
 
   const websites = websitesQuery.data ?? [];
   const versions = versionsQuery.data ?? [];

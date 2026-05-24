@@ -4,47 +4,75 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
 import { CampaignClientRow } from '@/components/admin/campaigns/CampaignClientRow';
-import { LaunchMetaCampaignButton } from '@/components/admin/campaigns/LaunchMetaCampaignButton';
-import { ClientMultiSelect } from '@/components/shared/ClientMultiSelect';
+import { FilterChips } from '@/components/shared/FilterChips';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { StatCard } from '@/components/shared/StatCard';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
-import { WorkspaceContextBanner } from '@/components/shared/WorkspaceContextBanner';
 import { Button } from '@/components/ui/button';
 import { normalizeError } from '@/lib/errors';
 import { useAdminCampaigns } from '@/lib/campaigns/queries';
-import { useIsAgencyMode, useWorkspace } from '@/lib/workspace/workspace-stub';
+import type { AdminCampaignStatus } from '@/lib/campaigns/types';
 
+type StatusFilterId = AdminCampaignStatus | 'all';
+
+const STATUS_FILTERS: { id: StatusFilterId; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'active', label: 'Active' },
+  { id: 'paused', label: 'Paused' },
+  { id: 'pending', label: 'Pending' },
+];
+
+/**
+ * Cross-client campaign roster — the operator's agency-mode view.
+ *
+ * Pure birds-eye: every campaign across every accessible client, with a
+ * single status filter. Per-client narrowing happens via the sidebar
+ * `AdminClientPicker` (drilling in routes here → `_sub-account-content`).
+ *
+ * Workspace context note: this body only renders in agency mode — the
+ * dispatcher (`page.tsx`) routes sub-account operators to
+ * `_sub-account-content`. So no `ClientMultiSelect` and no
+ * `WorkspaceContextBanner` (the hero already says "All campaigns" /
+ * "Workspace · campaigns").
+ *
+ * The `LaunchMetaCampaignButton` is intentionally NOT mounted here — launch
+ * is a per-client action, so it lives on the sub-account view's operator
+ * action strip. In agency mode it would be a permanently-disabled "Pick a
+ * client" affordance — noise.
+ */
 function AdminCampaignsContent() {
   const { data: page, isLoading, error } = useAdminCampaigns();
-  const [selectedClients, setSelectedClients] = useState<string[]>([]);
+  const [statusFilter, setStatusFilter] = useState<StatusFilterId>('all');
 
   const rows = useMemo(() => page?.rows ?? [], [page]);
 
-  // Workspace context: agency mode → cross-client roster + the multi-select
-  // filter; sub-account mode → the page scopes to the picked client.
-  const isAgency = useIsAgencyMode();
-  const { activeClientId } = useWorkspace();
-  const effectiveClients = useMemo(
-    () => (isAgency || !activeClientId ? selectedClients : [activeClientId]),
-    [isAgency, activeClientId, selectedClients],
-  );
-
-  // Per-client campaign counts, keyed on client slug — shown in the dropdown.
-  const clientCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const row of rows) {
-      counts[row.clientId] = (counts[row.clientId] ?? 0) + 1;
-    }
+  const statusCounts = useMemo(() => {
+    const counts: Record<StatusFilterId, number> = {
+      all: rows.length,
+      active: 0,
+      paused: 0,
+      pending: 0,
+    };
+    for (const row of rows) counts[row.status] += 1;
     return counts;
   }, [rows]);
 
+  const chips = useMemo(
+    () =>
+      STATUS_FILTERS.map((f) => ({
+        id: f.id,
+        label: f.label,
+        count: statusCounts[f.id],
+      })),
+    [statusCounts],
+  );
+
   const visibleRows = useMemo(
     () =>
-      effectiveClients.length === 0
+      statusFilter === 'all'
         ? rows
-        : rows.filter((row) => effectiveClients.includes(row.clientId)),
-    [effectiveClients, rows],
+        : rows.filter((row) => row.status === statusFilter),
+    [rows, statusFilter],
   );
 
   return (
@@ -63,27 +91,18 @@ function AdminCampaignsContent() {
           </CampaignsNotice>
         ) : (
           <>
-            <div className="flex items-start justify-between gap-4">
-              <PageHeader
-                eyebrow={page.hero.eyebrow}
-                title={page.hero.title}
-                subtitle={page.hero.subtitle}
-              />
-              <div className="flex-shrink-0 pt-1">
-                <LaunchMetaCampaignButton />
-              </div>
-            </div>
+            <PageHeader
+              eyebrow={page.hero.eyebrow}
+              title={page.hero.title}
+              subtitle={page.hero.subtitle}
+            />
 
-            {isAgency ? (
-              <ClientMultiSelect
-                label="// CLIENT"
-                value={selectedClients}
-                onChange={setSelectedClients}
-                counts={clientCounts}
-              />
-            ) : (
-              <WorkspaceContextBanner />
-            )}
+            <FilterChips
+              label="// STATUS"
+              chips={chips}
+              value={statusFilter}
+              onChange={(id) => setStatusFilter(id as StatusFilterId)}
+            />
 
             <div className="grid grid-cols-4 gap-3.5">
               {page.stats.map((stat) => (
@@ -100,7 +119,9 @@ function AdminCampaignsContent() {
             <div className="flex flex-col gap-2.5">
               {visibleRows.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-rule bg-paper px-10 py-12 text-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
-                  {'// No campaigns for this client'}
+                  {statusFilter === 'all'
+                    ? '// No campaigns yet'
+                    : `// No ${statusFilter} campaigns`}
                 </div>
               ) : (
                 visibleRows.map((row) => (

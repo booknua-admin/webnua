@@ -313,6 +313,7 @@ export function useSetMetaCampaignStatus() {
       qc.invalidateQueries({ queryKey: campaignsKey(vars.clientId) });
       qc.invalidateQueries({ queryKey: ['campaigns', 'admin'] });
       qc.invalidateQueries({ queryKey: ['campaigns', 'client'] });
+      qc.invalidateQueries({ queryKey: ['campaigns', 'sub-account'] });
     },
   });
 }
@@ -331,6 +332,7 @@ export function useSyncMetaAccountCampaigns() {
       qc.invalidateQueries({ queryKey: campaignsKey(vars.clientId) });
       qc.invalidateQueries({ queryKey: ['campaigns', 'admin'] });
       qc.invalidateQueries({ queryKey: ['campaigns', 'client'] });
+      qc.invalidateQueries({ queryKey: ['campaigns', 'sub-account'] });
     },
   });
 }
@@ -350,6 +352,7 @@ export function useSyncMetaCampaign() {
       qc.invalidateQueries({ queryKey: insightsKey(vars.clientId, 30) });
       qc.invalidateQueries({ queryKey: ['campaigns', 'admin'] });
       qc.invalidateQueries({ queryKey: ['campaigns', 'client'] });
+      qc.invalidateQueries({ queryKey: ['campaigns', 'sub-account'] });
     },
   });
 }
