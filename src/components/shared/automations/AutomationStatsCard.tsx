@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 
 import { Switch } from '@/components/ui/switch';
@@ -19,7 +18,9 @@ function AutomationStatsCard({
   automation,
   onToggle,
 }: AutomationStatsCardProps) {
-  const [enabled, setEnabled] = useState(automation.enabled);
+  // Controlled — `enabled` mirrors the live query so a GBP-guard rejection
+  // doesn't leave the Switch ON visually while the DB stays OFF.
+  const enabled = automation.enabled;
   const stats = automation.stats;
 
   return (
@@ -54,7 +55,6 @@ function AutomationStatsCard({
         <Switch
           checked={enabled}
           onCheckedChange={(value) => {
-            setEnabled(value);
             onToggle?.(value);
           }}
           label={enabled ? 'ON' : 'OFF'}
