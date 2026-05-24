@@ -266,6 +266,7 @@ export async function updateMetaCampaignSync(
     end_date: string;
     last_synced_at: string;
     last_insights_synced_at: string;
+    meta_lead_form_id: string | null;
   }>,
 ): Promise<void> {
   const db = getIntegrationDb();

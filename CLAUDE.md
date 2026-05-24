@@ -995,12 +995,22 @@ Components for the operator's cross-client integrations matrix — workspace-wid
 >    newly-connected customer sees their campaigns within seconds. The
 >    operator `/campaigns` page also carries a "↻ Sync campaigns"
 >    button (`SyncCampaignsButton`) that fires the same job manually.
->    V1 fills `meta_ad_set_id` / `meta_ad_id` / `meta_creative_id` /
->    `meta_lead_form_id` as null on ingest — the existing
->    `meta_sync_insights` job (#4) attaches to the discovered rows; the
->    `meta_sync_leads` job (#5) does NOT yet attach (lead-form
->    discovery requires walking the campaign → ad-set → ad → creative
->    chain, deferred to a follow-up).
+>    V1 fills `meta_ad_set_id` / `meta_ad_id` / `meta_creative_id` as
+>    null on ingest (those auxiliary references aren't needed by any
+>    consumer yet). **`meta_lead_form_id` IS resolved during ingest** —
+>    the handler walks `/{campaign_id}/ads` → each ad's
+>    `creative.form_id` (or the legacy nested
+>    `creative.object_story_spec.link_data.lead_gen_form_id`); the
+>    first match wins. The form's detail (name + page id + question
+>    array) is then fetched via `GET /{form_id}` and upserted into
+>    `meta_lead_forms`, and `meta_campaigns.meta_lead_form_id` is
+>    patched. After this both downstream jobs attach: `meta_sync_insights`
+>    (#4) for metrics, `meta_sync_leads` (#5) for actual leads (the
+>    every-15-min cron's INNER JOIN on `meta_lead_form_id` now matches).
+>    The discovery walk is skipped on subsequent syncs once the form is
+>    linked — campaigns rarely switch forms; if an operator swaps one
+>    in Ads Manager they can force a re-resolve by clearing
+>    `meta_lead_form_id` on the row (a future polish surface).
 > 4. **Daily insights sync.** `pg_cron` at 04:00 UTC fires
 >    `meta_sync_insights` per active campaign (migration `0074`). The
 >    handler calls Meta's `/insights` endpoint via `callWithToken()`,
@@ -1079,11 +1089,20 @@ Components for the operator's cross-client integrations matrix — workspace-wid
     `meta_campaign_id`, writes BOTH `public.campaigns` (the operator-
     facing row the `/campaigns` reader joins to) AND `meta_campaigns`
     (the Meta-side companion). Sets `created_via='external'` since
-    Webnua didn't launch the campaign. Auto-fires post-pick from the
-    ad-accounts route + the `/api/integrations/meta_ads/sync` route
-    when called without `metaCampaignDbId` (the "↻ Sync campaigns"
-    button). One bad row in the sweep logs + skips; the rest still
-    upsert.
+    Webnua didn't launch the campaign. **Per fresh campaign**, also
+    walks the lead-form chain: `listAdsForCampaign` (in `client.ts`,
+    GET `/{campaign_id}/ads` with `creative{form_id,
+    object_story_spec{link_data{lead_gen_form_id}}}`) → pick the first
+    ad with a non-null form id → `getLeadForm(formId)` → upsert via
+    `upsertLeadFormFromMeta` (in `meta-ads/lead-forms.ts`, idempotent
+    on `meta_form_id`) → patch `meta_campaigns.meta_lead_form_id`. The
+    walk is skipped on campaigns that already have a form linked.
+    Auto-fires post-pick from the ad-accounts route + the
+    `/api/integrations/meta_ads/sync` route when called without
+    `metaCampaignDbId` (the "↻ Sync campaigns" button). One bad row
+    in the sweep logs + skips; the rest still upsert. Returns
+    `{ discovered, inserted, updated, skipped, leadFormsLinked }` for
+    job observability.
   - **`meta_sync_insights`** — daily per-campaign insights pull. Two-step:
     (1) refresh local status from `getCampaign().effective_status`;
     (2) pull `/insights` for the date range (default yesterday-only;
@@ -1910,10 +1929,11 @@ The Phase 6 generator pair, called via the `/api/generate-site` route. See the p
   migrations `0066`–`0069`.
   **Meta Ads — DONE (FINAL Phase 7 session).** Per-tenant Meta Ads
   integration: the API client (`listAdAccounts` / `listPages` /
-  `listCampaignsForAdAccount` / `pause`+`activate` / `getCampaign` /
-  `getCampaignInsights` / `getLeads`, all through `callWithToken` —
-  the `create*` family is exported but un-called, kept for a future
-  in-app launch path if one ever ships), the post-OAuth ad-account
+  `listCampaignsForAdAccount` / `listAdsForCampaign` / `getLeadForm` /
+  `pause`+`activate` / `getCampaign` / `getCampaignInsights` /
+  `getLeads`, all through `callWithToken` — the `create*` family is
+  exported but un-called, kept for a future in-app launch path if one
+  ever ships), the post-OAuth ad-account
   picker + customer-agreement capture (`MetaAdAccountPickerModal`),
   the **Open Meta Ads Manager →** deep-link button +
   **↻ Sync campaigns** trigger (`LaunchMetaCampaignButton`), the
@@ -1929,16 +1949,20 @@ The Phase 6 generator pair, called via the `/api/generate-site` route. See the p
   `/campaigns` (auto-fires post-pick, hourly thereafter, manual
   trigger via the "↻ Sync campaigns" button). The in-app launch
   wizard + 9 trade templates + 5-step orchestrator were removed in a
-  follow-up once that V1 model settled. The **€200 month-1 ad-credit
-  funding transfer is a manual operator process** (V2 to automate via
-  Meta's funding APIs). **Outstanding follow-up**: lead-form discovery
-  — the campaign ingest fills `meta_lead_form_id` as null, so the
-  `meta_sync_leads` job has nothing to attach to for Ads-Manager-
-  launched campaigns. Discovering lead forms requires walking the
-  campaign → ad-set → ad → creative chain or pulling per-Page; not in
-  the campaign-ingest session. See the "Meta Ads (Phase 7 — FINAL
-  Phase 7 session)" inventory + "Meta Ads — operator setup" steps;
-  migrations `0070`–`0075`. **Phase 7 — DONE.**
+  follow-up once that V1 model settled. **Lead-form discovery is
+  wired** — the campaign-ingest handler walks `/{campaign_id}/ads` →
+  each ad's `creative.form_id` (or the legacy
+  `creative.object_story_spec.link_data.lead_gen_form_id`), fetches
+  the form's detail (name / page id / question array), upserts into
+  `meta_lead_forms`, and patches `meta_campaigns.meta_lead_form_id`.
+  Once linked, `meta_sync_leads` (every 15 min) picks up the campaign
+  on its next tick — the INNER JOIN on `meta_lead_form_id` matches.
+  Skipped on subsequent syncs (campaigns rarely switch forms; the
+  manual sync button re-runs the whole walk if needed). The **€200
+  month-1 ad-credit funding transfer is a manual operator process**
+  (V2 to automate via Meta's funding APIs). See the "Meta Ads (Phase 7
+  — FINAL Phase 7 session)" inventory + "Meta Ads — operator setup"
+  steps; migrations `0070`–`0075`. **Phase 7 — DONE.**
 - **Phase 8 — Automation / messaging execution engine.** Automations are
   definitions only — nothing sends. Needs a scheduler (edge function + cron),
   a `messaging_events` send-log table, and the suppression / anti-spam rules
@@ -2100,5 +2124,5 @@ first.
 
 - **Twilio SMS — V1 scope + minimal-on-purpose choices.** The Twilio SMS session shipped one-way alphanumeric SMS sending; each stop-short below is a conscious V1 call. (1) **Per-segment cost is a single flat constant** — `SMS_SEGMENT_COST_EUR = 0.05` (`lib/sms/pricing.ts`), a representative IE/UK transactional rate, NOT a real per-country rate table. The estimate ("~€0.05/send") and the `sms_messages.cost_eur` column are good-enough operator-facing approximations. **Trigger to revisit:** when volume or multi-country destinations matter, replace the constant with a per-country rate lookup. (2) **No two-way SMS** — alphanumeric senders are one-way by nature; there is no inbound webhook, no SMS inbox. Two-way is WhatsApp / a direct call, deferred. (3) **No per-customer phone numbers** — one alphanumeric sender per client; long-code/short-code numbers are not modelled. (4) **Sender registration** — `registerSenderID()` adds the alphanumeric string to the Messaging Service AlphaSender pool (instant, usable in non-regulated countries). The regulated-country Sender ID *registration* (the genuine "1–3 business days" carrier process) is completed by the operator in the Twilio Console — the app does not drive it; "Refresh status" polls Twilio and flips the row to `approved` once the AlphaSender resolves. (5) **Webhook status updates are last-write-wins** — not ordering-aware; an out-of-order older callback could in theory overwrite a newer status. Transactional SMS statuses arrive in order in practice; revisit with a status-rank guard only if operators report a row reverting. (6) **The lead-acknowledgment SMS fires only from the public `/api/forms/submit` flow**, not from the editor test-submit (`submitLead`) — a test submission must not fire a real customer SMS. (7) **`{{client.responseTime}}`** has no schema column — the `send_sms` handler defaults it to `'1 hour'`; override per-send via the job payload's `contextOverrides`. (8) **`sms_messages` / `sms_templates` / `client_sms_senders` have no `tests/rls/` coverage** — the "new RLS resource → new RLS test" rule (above) is triggered by `0059`/`0060`'s new tables; a follow-up RLS-harness pass should add `clientScoped` probes for all three (all are operator-SELECT-or-own-client + service-role-write, low risk, but the rule stands). (9) **Verification gap:** this session could not run the live test SMS / webhook round-trip the brief asks for — no Twilio credentials, no deployed app in the build environment. The pure modules (validator / renderer / estimator) are fully exercisable offline; the Twilio-dependent paths need a deployment with credentials.
 
-- **Meta Ads — V1 scope + minimal-on-purpose choices.** V1 shipped the per-tenant Meta Ads integration with a deliberate division of labour: **Webnua handles connection + ingest + observability**; **the operator builds campaigns directly in Meta Ads Manager** (the customer's OAuth grant gives Webnua business-manager access). (1) **No in-app campaign builder** — `LaunchMetaCampaignButton` deep-links to `business.facebook.com/adsmanager/manage/campaigns?act={id}` for the connected ad account. The previous in-app wizard (template picker + Page picker + budget + privacy + landing URL) + the 5-step orchestrator + the 9 trade templates + the `launch` route action were removed once this V1 model settled. The `create*` API functions in `client.ts` are kept exported (un-called) for a future in-app launch path if one ever ships. (2) **Campaign ingest is wired; lead-form ingest is not.** `meta_sync_campaigns` (server: `meta-ads/job-handlers.ts`; cron: migration `0075`, hourly at minute 7; immediate trigger after ad-account pick + the "↻ Sync campaigns" button) discovers campaigns built in Ads Manager and upserts both `public.campaigns` + `meta_campaigns`. **`meta_lead_form_id` is null on ingest** — discovering lead forms means walking the campaign → ad-set → ad → creative chain (or pulling per-Page), which is a separate follow-up. Without it, `meta_sync_leads` does not pull leads for Ads-Manager-launched campaigns; the campaigns themselves + their insights + their on-Meta posture appear correctly. (3) **One ad account per client** — `client_meta_ad_accounts` is UNIQUE on `client_id`. An agency client managing multiple ad accounts needs the unique loosened + a `primary` flag (same forcing function as GBP); defer until the first real customer hits the constraint. (4) **€200 month-1 ad-credit funding is manual** — the `meta_campaigns.created_via` tagging (`webnua_month_1` / `webnua_ongoing` / `external`) is set to `external` on every ingest (Webnua didn't launch them); manual operator accounting drives the €200 transfer from Webnua to the customer's ad account out-of-band (Stripe Transfer / SEPA + the customer manually tops up their Meta funding source). V2 will automate via Meta's funding APIs (which themselves require additional App Review). (5) **Per-row sparkline = lead counts, not spend** — the admin `/campaigns` row sparkline shows the last 14 days of daily lead counts. Spend trends live on the client deep-dive's 4-week chart only. (6) **`client_meta_ad_accounts` / `meta_campaigns` / `meta_ads_insights` / `meta_lead_forms` have no `tests/rls/` coverage** — the "new RLS resource → new RLS test" rule (above) is triggered by migrations `0070`–`0073`; a follow-up RLS-harness pass should add `clientScoped` probes for all four. (7) **Verification gap:** this session could not run the live test (connect a real customer's Meta ad account, verify insights + leads syncing) — Meta business verification + App Review for the sensitive scopes (`ads_management`, `business_management`, `pages_manage_ads`, `leads_retrieval`) is the operator's responsibility and takes weeks. Until App Review approves Webnua for Advanced Access on each scope, only test users added on the Developer dashboard can connect. The pure modules (status mapping, lead-data extraction) work offline; every Meta-dependent path needs the App approved + a customer's real ad account.
+- **Meta Ads — V1 scope + minimal-on-purpose choices.** V1 shipped the per-tenant Meta Ads integration with a deliberate division of labour: **Webnua handles connection + ingest + observability**; **the operator builds campaigns directly in Meta Ads Manager** (the customer's OAuth grant gives Webnua business-manager access). (1) **No in-app campaign builder** — `LaunchMetaCampaignButton` deep-links to `business.facebook.com/adsmanager/manage/campaigns?act={id}` for the connected ad account. The previous in-app wizard (template picker + Page picker + budget + privacy + landing URL) + the 5-step orchestrator + the 9 trade templates + the `launch` route action were removed once this V1 model settled. The `create*` API functions in `client.ts` are kept exported (un-called) for a future in-app launch path if one ever ships. (2) **Campaign + lead-form ingest are both wired.** `meta_sync_campaigns` (server: `meta-ads/job-handlers.ts`; cron: migration `0075`, hourly at minute 7; immediate trigger after ad-account pick + the "↻ Sync campaigns" button) discovers campaigns built in Ads Manager, upserts both `public.campaigns` + `meta_campaigns`, AND walks each new campaign's ads to resolve its `lead_gen_form_id` (either modern `creative.form_id` or legacy `creative.object_story_spec.link_data.lead_gen_form_id`). The form is then fetched via `GET /{form_id}` and upserted into `meta_lead_forms` with its questions array, and `meta_campaigns.meta_lead_form_id` is patched. After that the existing `meta_sync_leads` cron (every 15 min) attaches automatically — its INNER JOIN on `meta_lead_form_id` now matches. The walk is skipped on subsequent syncs once the form is linked (campaigns rarely switch forms; a manual sync button or a future "clear form" affordance can force a re-resolve). Auxiliary references (`meta_ad_set_id` / `meta_ad_id` / `meta_creative_id`) are still null on ingest — no consumer reads them today. (3) **One ad account per client** — `client_meta_ad_accounts` is UNIQUE on `client_id`. An agency client managing multiple ad accounts needs the unique loosened + a `primary` flag (same forcing function as GBP); defer until the first real customer hits the constraint. (4) **€200 month-1 ad-credit funding is manual** — the `meta_campaigns.created_via` tagging (`webnua_month_1` / `webnua_ongoing` / `external`) is set to `external` on every ingest (Webnua didn't launch them); manual operator accounting drives the €200 transfer from Webnua to the customer's ad account out-of-band (Stripe Transfer / SEPA + the customer manually tops up their Meta funding source). V2 will automate via Meta's funding APIs (which themselves require additional App Review). (5) **Per-row sparkline = lead counts, not spend** — the admin `/campaigns` row sparkline shows the last 14 days of daily lead counts. Spend trends live on the client deep-dive's 4-week chart only. (6) **`client_meta_ad_accounts` / `meta_campaigns` / `meta_ads_insights` / `meta_lead_forms` have no `tests/rls/` coverage** — the "new RLS resource → new RLS test" rule (above) is triggered by migrations `0070`–`0073`; a follow-up RLS-harness pass should add `clientScoped` probes for all four. (7) **Verification gap:** this session could not run the live test (connect a real customer's Meta ad account, verify insights + leads syncing) — Meta business verification + App Review for the sensitive scopes (`ads_management`, `business_management`, `pages_manage_ads`, `leads_retrieval`) is the operator's responsibility and takes weeks. Until App Review approves Webnua for Advanced Access on each scope, only test users added on the Developer dashboard can connect. The pure modules (status mapping, lead-data extraction) work offline; every Meta-dependent path needs the App approved + a customer's real ad account.
 - **Stripe billing — V1 scope + minimal-on-purpose choices.** The Stripe billing session shipped subscription billing (€299/month) and deliberately stopped short in several places; each is a conscious V1 call, not an omission. (1) **The €99 + €200 month-1 split is UI copy, not Stripe.** Stripe charges a flat €299 every month; the "€99 platform fee + €200 Meta ad credit" framing lives only in `StripeSubscriptionSection`'s description, and the ad credit is applied OUTSIDE Stripe by the Meta ads integration. There is no month-1 discount Price, Coupon, or column. **Trigger to revisit:** if finance wants the month-1 split to actually appear on the Stripe invoice, that needs a one-off €99 Price + a €200 negative-amount line or a Coupon — a real model change. **Follow-up (dynamic plan info):** the displayed PRICE is no longer hardcoded — `usePlanInfo()` resolves name/amount/currency/interval live from the Stripe Price object (`lib/integrations/stripe/plan-info.ts`, 5-min cache). The €99/€200 month-1 sentence is the ONE remaining hardcoded plan figure — it is sanctioned marketing prose (Stripe never had €99 or €200, so it cannot drift *from Stripe*), but it assumes a €299 total: if the Stripe Price ever changes, that sentence needs a manual copy edit. Move it to a Stripe Price `metadata` key if it should become dynamic too. (2) **Webhook events are applied idempotently but NOT ordering-aware.** Each `customer.subscription.*` event carries the full subscription object, so applying any one gives correct state — but a delayed/out-of-order older `.updated` arriving after a newer one would write stale state. No event-dedup table, no `created`-timestamp compare. **Trigger:** if operators report a status flickering or going stale, add an event-sequence guard. (3) **The payment-failed alert emails every admin-role user**, not operators scoped to that client's `accessible_client_ids` — fine for the single-operator V1; revisit when junior-operator scoping matters. (4) **The Resend send in `notify.ts` is a minimal inline send**, not the full Resend integration (a later session) — when `RESEND_API_KEY` is unset the alert job records `skipped` and the operator sees nothing. (5) **`client_stripe_customers` has no `tests/rls/` coverage** — this session added columns to it but no new table and no new policy (the existing operator-SELECT / service-role-write policy is column-agnostic), so the "new RLS resource → new RLS test" rule above is not triggered. The pre-existing gap (the table got no RLS test when migration `0052` created it) should be closed in a future RLS-harness pass — it is operator-only + service-role-write, low risk. (6) **Pricing is env config** (`STRIPE_PRICE_ID_STANDARD`), not a `stripe_prices` table — promote to a table when there is more than one tier (migration `0057`'s comment carries the plan).
