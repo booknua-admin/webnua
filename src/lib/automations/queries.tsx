@@ -564,11 +564,9 @@ async function toggleAutomation(input: {
   id: string;
   enabled: boolean;
 }): Promise<void> {
-  // is_enabled isn't in the generated DB types yet (regen after 0076);
-  // cast through never so the typed client doesn't reject the column.
   const { error } = await supabase
     .from('automations')
-    .update({ is_enabled: input.enabled } as unknown as never)
+    .update({ is_enabled: input.enabled })
     .eq('id', input.id);
   if (error) throw normalizeError(error);
 }
