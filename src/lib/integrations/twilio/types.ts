@@ -14,7 +14,6 @@
 // =============================================================================
 
 import type { SegmentEncoding } from '@/lib/sms/character-validator';
-import type { SmsTemplateKey } from '@/lib/sms/default-templates';
 
 // --- Twilio API object slices ------------------------------------------------
 
@@ -90,14 +89,8 @@ export type SmsMessageInsert = {
   cost_eur?: number | null;
 };
 
-/** An sms_templates row (migration 0060). */
-export type SmsTemplateRow = {
-  id: string;
-  client_id: string;
-  template_key: SmsTemplateKey;
-  body: string;
-  is_default: boolean;
-  last_edited_at: string;
-  last_edited_by: string | null;
-  created_at: string;
-};
+// Phase 8 Session 2: the `sms_templates` table was dropped (migration 0079).
+// SMS bodies now live inline on `automation_actions.action_config.body`.
+// `SmsTemplateRow` is gone with the table; the matching `SmsTemplateKey`
+// type alias still lives in `lib/sms/default-templates.ts` as a string union
+// used for diagnostic labelling on jobs + audit rows.

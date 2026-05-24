@@ -18,6 +18,16 @@ export type SendEmailPayload = {
   recipientEmail: string;
   recipientName?: string;
   relatedLeadId?: string | null;
+  /** Phase 8 Session 2: pre-rendered email subject / body, used by automation
+   *  action handlers that source the copy from `action_config`. When unset,
+   *  the handler falls back to `DEFAULT_EMAIL_TEMPLATES[templateKey]` — the
+   *  operator-facing templates (`lead_notification`, `lead_digest`) live in
+   *  code, not on automation actions, so the fallback is load-bearing for
+   *  those paths. Customer-facing automations always carry an explicit
+   *  subject + body. */
+  subject?: string;
+  bodyHtml?: string;
+  bodyText?: string;
   /** Override values for specific template variables. Merged over the auto-
    *  resolved render context. */
   contextOverrides?: Record<string, string>;

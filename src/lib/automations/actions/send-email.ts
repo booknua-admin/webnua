@@ -1,14 +1,18 @@
 // =============================================================================
-// Action handler — send_email_to_lead (Phase 8 Session 1).
+// Action handler — send_email_to_lead (Phase 8 Session 1; Session 2 inline body).
 //
-// Enqueues the existing send_email job (Phase 7 Resend session). Sibling of
-// send-sms.ts: same shape, email channel. When the action is a review-request
-// fallback (no-phone path), writes a gbp_review_requests audit row with
-// channel='email'.
+// Sibling of send-sms.ts. Phase 8 Session 2: the subject + body_html +
+// body_text now travel with the payload; `action_config` is the source of
+// truth (defaults from `lib/automations/platform-defaults.ts`). The
+// email_templates table is gone.
+//
+// When the action is a review-request fallback (no-phone path), writes a
+// gbp_review_requests audit row with channel='email'.
 // =============================================================================
 
 import { enqueueJobImmediate } from '@/lib/integrations/_shared/jobs';
-import { SEND_EMAIL_JOB } from '@/lib/integrations/resend/job-types';
+import { SEND_EMAIL_JOB, type SendEmailPayload } from '@/lib/integrations/resend/job-types';
+import type { EmailTemplateKey } from '@/lib/integrations/resend/types';
 import { insertReviewRequest } from '@/lib/integrations/gbp/review-requests';
 import { getReviewLinkForClient } from '@/lib/integrations/gbp/locations';
 import { getIntegrationDb } from '@/lib/integrations/_shared/db-types';
@@ -16,12 +20,25 @@ import { getIntegrationDb } from '@/lib/integrations/_shared/db-types';
 import { recordOutboundOnLead } from '../handoff';
 
 import type { ActionContext, ActionOutcome } from './dispatch';
-import type { SendEmailActionConfig } from '../engine-types';
+
+type SendEmailActionConfig = {
+  template_key?: string;
+  subject?: string;
+  body_html?: string;
+  body_text?: string;
+  writes_gbp_review_request_audit?: boolean;
+};
 
 export async function runSendEmailToLead(ctx: ActionContext): Promise<ActionOutcome> {
   const cfg = ctx.action.action_config as SendEmailActionConfig;
-  if (!cfg.template_key) {
-    return { kind: 'skipped', reason: 'missing_template_key' };
+
+  // An email needs a subject + at least one body variant. Skip honestly if
+  // either is missing rather than send half a message.
+  const hasBody =
+    (typeof cfg.body_html === 'string' && cfg.body_html.trim().length > 0) ||
+    (typeof cfg.body_text === 'string' && cfg.body_text.trim().length > 0);
+  if (!cfg.subject || !hasBody) {
+    return { kind: 'skipped', reason: 'missing_subject_or_body' };
   }
 
   const event = ctx.run.trigger_event as Record<string, unknown>;
@@ -71,21 +88,30 @@ export async function runSendEmailToLead(ctx: ActionContext): Promise<ActionOutc
     }
   }
 
-  await enqueueJobImmediate(
-    SEND_EMAIL_JOB,
-    {
-      clientId: ctx.run.client_id,
-      templateKey: cfg.template_key,
-      recipientEmail: email,
-      recipientName: name || 'there',
-      relatedLeadId: leadId,
-    },
-    {
-      provider: 'resend',
-      clientId: ctx.run.client_id,
-      correlationId: ctx.run.id,
-    },
-  );
+  // The send_email job handler accepts customer-facing keys (lead_followup
+  // and review_request). For the review-request flow we tag as
+  // `review_request`; everything else flows as `lead_followup`. The exact
+  // key drives the inbound-reply threading + the audit's templateName.
+  const templateKey: EmailTemplateKey = cfg.writes_gbp_review_request_audit
+    ? 'review_request'
+    : (cfg.template_key as EmailTemplateKey | undefined) ?? 'lead_followup';
+
+  const payload: SendEmailPayload = {
+    clientId: ctx.run.client_id,
+    templateKey,
+    recipientEmail: email,
+    recipientName: name || 'there',
+    relatedLeadId: leadId,
+    subject: cfg.subject,
+    bodyHtml: cfg.body_html,
+    bodyText: cfg.body_text,
+  };
+
+  await enqueueJobImmediate(SEND_EMAIL_JOB, payload, {
+    provider: 'resend',
+    clientId: ctx.run.client_id,
+    correlationId: ctx.run.id,
+  });
 
   // Update the lead's last_outbound_at so the cold-lead scanner sees it.
   await recordOutboundOnLead(leadId);
