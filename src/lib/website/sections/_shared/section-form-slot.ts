@@ -34,6 +34,13 @@ export type PublicFormSubmit = {
   sourceLabel: string;
   /** Funnel-only — where an `afterSubmit: nextStep` form advances to. */
   nextStepHref?: string | null;
+  /** Pattern B preview gating — when true the form RENDERS but the submit
+   *  button is disabled and clicking it surfaces a "preview mode — publish
+   *  to capture leads" notice. The site is served from a 'preview'-state
+   *  client; a real submission must not land in their inbox while they are
+   *  not paying. The fields stay interactive so the customer can experience
+   *  the form's UX in preview. */
+  isPreview?: boolean;
 };
 
 export type SectionFormSlot = {

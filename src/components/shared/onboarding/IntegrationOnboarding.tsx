@@ -1,35 +1,27 @@
 'use client';
 
 // =============================================================================
-// IntegrationOnboarding — the post-sign-in onboarding flow.
+// IntegrationOnboarding — Pattern B's pre-published workspace surface.
 //
-// A brand-new client (lifecycle_status = 'onboarding') lands here instead of
-// the dashboard. Their inbox is empty; a dashboard of zeros is noise. The
-// screen guides them through the three setup decisions that actually unlock
-// the platform:
+// Mounted by /dashboard when the client is in a pre-onboarding lifecycle
+// state ('pending_verification' / 'preview' / legacy 'onboarding'). What
+// the user sees depends on the EXACT state:
 //
-//   1. Billing — start the Stripe subscription so the workspace is active.
-//   2. Connect their business accounts (Google Business Profile, Meta Ads) —
-//      the per-tenant OAuth flows. Each Connect button triggers the SAME
-//      real OAuth flow used on /settings/integrations; on return, the
-//      post-OAuth picker auto-opens (location picker / ad-account picker)
-//      via `IntegrationCallbackPickers`, which is mounted inside
-//      `IntegrationConnectionsSection`. The OAuth callback `returnTo` is
-//      set to `/dashboard` so the user lands back here rather than on
-//      `/settings/integrations`.
-//   3. Their own domain (optional, link to `/settings/domains`).
+//   pending_verification → "Check your email" message. The user must click
+//                          the magic link from their verification email to
+//                          flip the workspace to 'preview' before the rest
+//                          of the surface unlocks.
+//   preview              → The wizard surface (Stripe billing, integration
+//                          connect cards, custom domain link), plus the
+//                          PublishToGoLiveCTA at the TOP — the moment the
+//                          customer's site looks good they hit Publish and
+//                          pay. This is the conversion surface.
+//   onboarding (legacy)  → Treated as 'preview' (Session 1 clients keep
+//                          their existing experience but also see Publish).
 //
-// AUDIT REMEDIATION. The audit (reference/onboarding-flow-audit.md §3 Step 4)
-// flagged the previous screen — five `IntegrationCard` stubs that opened the
-// fake `ConnectIntegrationModal` — as Critical: a client clicking Connect saw
-// a fake 4-step modal that closed without doing anything, with the workspace
-// then blocked behind operator activation. The new surface uses the real
-// Phase 7 OAuth + Stripe flows. The Connect buttons are wired; clicks now
-// produce real DB writes and integration state.
-//
-// An operator drilled into the sub-account sees the same surface, plus a
-// "Mark client active" button (the workspace's onboarding exit; gated by RLS
-// to the `admin` role).
+// An operator drilled into the sub-account sees the same surface PLUS the
+// manual "Mark client active" panel — for concierge close (operator
+// collected payment out-of-band).
 // =============================================================================
 
 import Link from 'next/link';
@@ -44,17 +36,38 @@ import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
 import { activateClient } from '@/lib/clients/clients-store';
 
+import { PublishToGoLiveCTA } from './PublishToGoLiveCTA';
+
 type IntegrationOnboardingProps = {
   clientName: string;
   clientSlug: string;
   isOperator: boolean;
+  /** The client's raw lifecycle_status. Drives the per-state surface:
+   *  pending_verification → "check your email" gate; preview/onboarding →
+   *  full wizard + publish CTA. */
+  lifecycleStatus: string;
 };
 
 function IntegrationOnboarding({
   clientName,
   clientSlug,
   isOperator,
+  lifecycleStatus,
 }: IntegrationOnboardingProps) {
+  // Pending-verification state: the user clicked the magic link OR an
+  // operator just created this client; the auth-confirm trigger has not yet
+  // run. Show a "check your email" gate rather than a half-functional
+  // wizard, so the customer's first impression is clear.
+  if (lifecycleStatus === 'pending_verification') {
+    return (
+      <PendingVerificationSurface
+        clientName={clientName}
+        isOperator={isOperator}
+        clientSlug={clientSlug}
+      />
+    );
+  }
+
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb current="Get started" />} />
@@ -64,41 +77,39 @@ function IntegrationOnboarding({
           eyebrow="// Welcome to Webnua"
           title={
             <>
-              Let&rsquo;s get {clientName} <em>set up</em>.
+              Let&rsquo;s get {clientName} <em>live</em>.
             </>
           }
           subtitle={
             <>
-              Three steps unlock the platform: start your subscription, connect your business
-              accounts so Webnua can run reviews + ads on your behalf, and (optional) point your
-              own domain at your new site.{' '}
-              <strong>Each Connect button below opens the real provider — no stubs.</strong>
+              Connect your business accounts so Webnua can run reviews + ads on
+              your behalf — then hit <strong>Publish to go live</strong> when
+              you&rsquo;re ready. Your site is already up at your preview URL.
             </>
           }
         />
 
-        {/* 1 — Stripe subscription. The Stripe checkout + portal routes were
-            widened to `requireClientAccess` in this session — the client
-            subscribes themselves; the operator can also do it from here. */}
-        <SettingsPanel>
-          <StripeSubscriptionSection clientSlug={clientSlug} clientName={clientName} />
-        </SettingsPanel>
+        {/* PUBLISH CTA — the conversion moment. Mounted at the top so the
+            customer sees it whenever they return to the dashboard. */}
+        <PublishToGoLiveCTA clientSlug={clientSlug} clientName={clientName} />
 
-        {/* 2 — Per-tenant OAuth (GBP + Meta Ads). The same component the
-            sub-account /settings/integrations view uses — same real OAuth
-            calls, same post-OAuth picker auto-open. `returnTo` lands the
-            callback back on /dashboard so the pickers open here, not on
-            /settings/integrations. */}
+        {/* Per-tenant OAuth (GBP + Meta Ads). Reuses the sub-account
+            settings component, with returnTo='/dashboard' so the post-OAuth
+            callback lands back here (not on /settings/integrations). */}
         <IntegrationConnectionsSection
           clientSlug={clientSlug}
           clientName={clientName}
           returnTo="/dashboard"
         />
 
-        {/* 3 — Optional custom domain. The real attach flow lives on
-            /settings/domains (Phase 9). We surface it as a link rather than
-            inline so the onboarding screen stays focused on the critical
-            path — most clients can skip this and use {slug}.webnua.dev. */}
+        {/* Stripe billing — visible here too so the customer can pre-fill
+            their card if they want to, even before hitting Publish. The
+            Publish CTA above is the primary conversion path. */}
+        <SettingsPanel>
+          <StripeSubscriptionSection clientSlug={clientSlug} clientName={clientName} />
+        </SettingsPanel>
+
+        {/* Optional custom domain — defers to /settings/domains. */}
         <SettingsPanel>
           <SettingsSection
             heading={
@@ -108,8 +119,9 @@ function IntegrationOnboarding({
             }
             description={
               <>
-                Point a domain you already own (e.g. <strong>{clientName.toLowerCase()}.com</strong>)
-                at your Webnua site. You can do this now or later — your{' '}
+                Point a domain you already own (e.g.{' '}
+                <strong>{clientName.toLowerCase()}.com</strong>) at your Webnua site.
+                You can do this now or later — your{' '}
                 <strong>{clientSlug}.webnua.dev</strong> address works either way.
               </>
             }
@@ -120,8 +132,9 @@ function IntegrationOnboarding({
                   Attach a custom domain
                 </div>
                 <p className="mt-1 text-[13px] leading-[1.5] text-ink-quiet">
-                  We&apos;ll show you the exact DNS records to add at your registrar and
-                  watch the verification + SSL until your site goes live on it.
+                  We&rsquo;ll show you the exact DNS records to add at your
+                  registrar and watch the verification + SSL until your site goes
+                  live on it.
                 </p>
               </div>
               <Button asChild variant="outline" size="sm">
@@ -138,11 +151,67 @@ function IntegrationOnboarding({
           />
         ) : (
           <p className="rounded-xl border border-dashed border-rule bg-paper-2 px-6 py-5 text-[13.5px] leading-[1.55] text-ink-quiet [&_strong]:font-semibold [&_strong]:text-ink">
-            Once your subscription is live and your accounts are connected, your operator
-            switches your workspace into live mode — your dashboard, leads inbox and funnels
-            light up with real data. <strong>Need a hand? Open a ticket anytime.</strong>
+            Want to see what your site looks like first?{' '}
+            <strong>Open {clientSlug}.webnua.dev</strong> in a new tab — every
+            edit you make in the editor lands there immediately (preview mode,
+            so forms stay disabled). Hit Publish above when you&rsquo;re ready
+            to go live.
           </p>
         )}
+      </div>
+    </>
+  );
+}
+
+/** Pending-verification gate. The user can technically reach the dashboard
+ *  if they paste in their magic link (the auth session is set), but the
+ *  AFTER UPDATE trigger on auth.users.email_confirmed_at takes a beat to
+ *  propagate. If they land here in 'pending_verification' state, show a
+ *  short "we're waiting for verification" message rather than a half-built
+ *  wizard. An operator drilled in sees the same screen + the manual
+ *  activate panel below it. */
+function PendingVerificationSurface({
+  clientName,
+  isOperator,
+  clientSlug,
+}: {
+  clientName: string;
+  isOperator: boolean;
+  clientSlug: string;
+}) {
+  return (
+    <>
+      <Topbar breadcrumb={<TopbarBreadcrumb current="Verify your email" />} />
+      <div className="flex flex-col gap-7 px-10 py-10">
+        <PageHeader
+          className="mb-0"
+          eyebrow="// Almost there"
+          title={
+            <>
+              Confirm your <em>email</em>.
+            </>
+          }
+          subtitle={
+            <>
+              We&rsquo;ve sent a sign-in link to your inbox.{' '}
+              <strong>Click the link to confirm your email</strong> — your
+              workspace ({clientName}) unlocks the moment you do.
+            </>
+          }
+        />
+
+        <div className="rounded-xl border border-dashed border-rule bg-paper-2 px-6 py-5 text-[13.5px] leading-[1.55] text-ink-quiet [&_strong]:font-semibold [&_strong]:text-ink">
+          <strong>Can&rsquo;t find the email?</strong> Check your spam folder. If
+          it never arrives, sign out and run the sign-in flow again — Webnua
+          will send a fresh link.
+        </div>
+
+        {isOperator ? (
+          <OperatorActivatePanel
+            clientName={clientName}
+            clientSlug={clientSlug}
+          />
+        ) : null}
       </div>
     </>
   );
@@ -176,18 +245,19 @@ function OperatorActivatePanel({
     <div className="flex items-center justify-between gap-4 rounded-xl border border-rule bg-card px-6 py-5">
       <div>
         <div className="text-[15px] font-extrabold tracking-[-0.02em] text-ink">
-          Finished onboarding {clientName}?
+          Concierge close for {clientName}?
         </div>
         <p className="mt-1 text-[13px] leading-[1.5] text-ink-quiet">
-          Mark the client active to take them out of onboarding — their
-          dashboard and surfaces switch to the live workspace view.
+          If payment was collected out-of-band (Stripe Invoice, bank
+          transfer), mark the client active to take them out of preview —
+          their public site goes live + the publish CTA disappears.
         </p>
         {error ? (
           <p className="mt-1.5 text-[13px] font-semibold text-warn">{error}</p>
         ) : null}
       </div>
-      <Button onClick={activate} disabled={pending}>
-        {pending ? 'Activating…' : 'Mark client active →'}
+      <Button onClick={activate} disabled={pending} variant="outline">
+        {pending ? 'Activating…' : 'Mark active (concierge) →'}
       </Button>
     </div>
   );

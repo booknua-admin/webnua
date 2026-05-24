@@ -12,6 +12,10 @@
 
 'use client';
 
+import {
+  dashboardIsInPreOnboarding,
+  lifecyclePhrase,
+} from '@/lib/auth/lifecycle';
 import { normalizeError } from '@/lib/errors';
 import { supabase } from '@/lib/supabase/client';
 import type { AdminClient } from '@/lib/nav/admin-clients';
@@ -40,23 +44,17 @@ let snapshotValue: AdminClient[] = [];
 let uuidToSlug: Map<string, string> = new Map();
 let slugToUuid: Map<string, string> = new Map();
 
-function lifecyclePhrase(status: string): string {
-  switch (status) {
-    case 'onboarding': return 'in setup';
-    case 'active': return 'active';
-    case 'paused': return 'paused';
-    case 'churned': return 'churned';
-    default: return status;
-  }
-}
-
 function rowToAdminClient(row: ClientRow): AdminClient {
   return {
     id: row.slug, // public id = slug
     initial: row.name[0].toUpperCase(),
     name: row.name,
     meta: `${row.industry.charAt(0).toUpperCase() + row.industry.slice(1)} · ${lifecyclePhrase(row.lifecycle_status)}`,
-    status: row.lifecycle_status === 'onboarding' ? 'setup' : 'active',
+    // Legacy `status` bucket: any pre-published state collapses to 'setup'
+    // so old surfaces that key on this binary still work; the raw
+    // lifecycle_status (Pattern B's source of truth) lives on lifecycleStatus.
+    status: dashboardIsInPreOnboarding(row.lifecycle_status) ? 'setup' : 'active',
+    lifecycleStatus: row.lifecycle_status,
   };
 }
 
@@ -121,9 +119,15 @@ export async function deleteClient(
 }
 
 /**
- * Move a client out of onboarding into the active lifecycle. Operator-only
- * (enforced by RLS — `clients_update` requires `is_operator()`). Used to
- * dismiss the new-client integration onboarding flow once setup is done.
+ * Move a client to the active (published) lifecycle. Operator-only (RLS
+ * `clients_update` requires `is_operator()`). Used both by:
+ *   • Pattern B's operator "concierge close" — payment was collected
+ *     out-of-band, manually flip a 'preview' workspace to 'active'.
+ *   • Session 1's legacy operator-activate-after-onboarding panel.
+ *
+ * Writes 'active' (Pattern B's canonical published state). Existing 'live'
+ * rows (Session 1 default) keep that value — the lifecycle helpers treat
+ * both 'active' and 'live' as published.
  */
 export async function activateClient(
   slug: string,
@@ -135,7 +139,9 @@ export async function activateClient(
 
   const { error } = await supabase
     .from('clients')
-    .update({ lifecycle_status: 'live' })
+    // 'active' is a Pattern B addition (migration 0084); cast until the
+    // generated Database type catches up.
+    .update({ lifecycle_status: 'active' as never })
     .eq('id', uuid);
   if (error) {
     return { ok: false, message: normalizeError(error).message };

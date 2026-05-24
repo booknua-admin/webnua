@@ -26,6 +26,7 @@
 
 import { NextResponse } from 'next/server';
 
+import { checkAndRecord } from '@/lib/rate-limit';
 import {
   generateFunnelLandingLive,
   generateFunnelQualificationLive,
@@ -57,6 +58,19 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: 'invalid-body' }, { status: 400 });
   }
   const { clientId, ...brief } = body;
+
+  // Pattern B per-workspace AI rate limit — 3 funnel-gens per client per 24h.
+  // Same shape as /api/generate-site. Skipped when no clientId (dev preview).
+  if (clientId) {
+    const decision = await checkAndRecord('ai_funnel_gen', { key: clientId, clientId });
+    if (!decision.allowed) {
+      return NextResponse.json(
+        { error: 'rate-limited', detail: decision.message, retryAfterSeconds: decision.retryAfterSeconds },
+        { status: 429 },
+      );
+    }
+  }
+
 
   const generationId = crypto.randomUUID();
 

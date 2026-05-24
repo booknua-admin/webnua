@@ -19,6 +19,7 @@
 
 import { NextResponse } from 'next/server';
 
+import { checkAndRecord } from '@/lib/rate-limit';
 import { fillFooterSection, fillHeaderSection } from '@/lib/website/generation-stub';
 import type { FallbackLogEntry } from '@/lib/website/generation-stub';
 import { generatePageLive } from '@/lib/website/generate-live';
@@ -50,6 +51,20 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: 'invalid-body' }, { status: 400 });
   }
   const { clientId, ...brief } = body;
+
+  // Pattern B per-workspace AI rate limit — 3 site-gens per client per 24h.
+  // The check happens AFTER body parsing so a malformed request doesn't
+  // consume quota. Limit is only enforced for requests carrying a clientId;
+  // the dev preview surface (no clientId) is unmetered.
+  if (clientId) {
+    const decision = await checkAndRecord('ai_site_gen', { key: clientId, clientId });
+    if (!decision.allowed) {
+      return NextResponse.json(
+        { error: 'rate-limited', detail: decision.message, retryAfterSeconds: decision.retryAfterSeconds },
+        { status: 429 },
+      );
+    }
+  }
 
   // One id per site-generation run; all four per-page calls share it so the
   // generation_log rows are queryable as one group (schema 0011's intent).

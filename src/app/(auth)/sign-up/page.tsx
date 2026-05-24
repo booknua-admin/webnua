@@ -1,28 +1,28 @@
 'use client';
 
 // =============================================================================
-// /sign-up — the self-serve signup form.
+// /sign-up — Pattern B: free signup with email verification.
 //
-// Locked Q2: subscribe-before-workspace. This form captures three fields, then
-// sends them to /api/sign-up which mints a Stripe Checkout session. The
-// browser is then redirected to Stripe's hosted page; on successful payment,
-// Stripe fires `customer.subscription.created` which the webhook handler
-// catches to create the actual workspace + email a magic link to sign in.
+// The form captures three fields, POSTs to /api/sign-up, then swaps to a
+// "check your email" success state. No payment, no Stripe Checkout
+// redirect — that moves to the dashboard's "Publish to go live" CTA, after
+// the customer has verified + run the wizard + seen what their site looks
+// like.
 //
 // What we capture:
 //   - business name (clients.name)
 //   - business email (clients.primary_contact_email + auth.users.email)
 //   - business category / trade — one-liner (clients.industry)
 //
-// What we DELIBERATELY don't capture here:
-//   - service area / contact name / phone — Session 2 (the onboarding wizard)
-//     collects these into the brief that drives website + funnel generation.
-//   - a password — sign-in is magic-link. The audit (§3 Step 2b) flagged the
-//     dead "Forgot password?" button; a passwordless flow sidesteps it.
+// What the API does (per /api/sign-up/route.ts):
+//   1. Rate-limits + disposable-domain checks
+//   2. Refuses duplicate email
+//   3. Creates pending_verification workspace + unconfirmed auth user
+//   4. Generates magic link + emails it via Resend
 //
-// Mobile responsiveness: single-column flex with `w-full max-w-md` — the
-// auth layout already centres + caps width. Touch targets ≥ 44px (the Button
-// primitive ships h-10 on default / h-11 on lg).
+// Mobile responsiveness: the auth layout centres + caps width
+// (`max-w-md`); Inputs are h-10 with 14px placeholders; Button defaults to
+// h-10 (h-11 with `size="lg"`) — touch targets above the 44px floor.
 // =============================================================================
 
 import { Suspense, useState } from 'react';
@@ -42,9 +42,8 @@ import { Eyebrow } from '@/components/ui/eyebrow';
 import { Input } from '@/components/ui/input';
 
 /** Friendly translation of the API error codes. `detail` (if present)
- *  carries the upstream provider's specific error message — for
- *  `stripe-checkout-failed` we append it so the operator can diagnose
- *  without crawling server logs. */
+ *  carries an upstream message — surfaced for rate-limit errors so the
+ *  user sees the retry timer. */
 function describeError(code: string | undefined, detail?: string | null): string {
   switch (code) {
     case 'business-name-required':
@@ -59,16 +58,17 @@ function describeError(code: string | undefined, detail?: string | null): string
       return 'Please add a one-line description of what you do.';
     case 'business-category-too-long':
       return 'Keep the description under 120 characters.';
+    case 'disposable-email':
+      return 'Please use your real business email address — disposable email services are not accepted.';
     case 'email-already-registered':
       return 'An account already exists for this email. Sign in instead.';
-    case 'rate-limited':
-      return 'Too many signups from this network — wait a few minutes and try again.';
-    case 'stripe-not-configured':
-      return 'Billing is temporarily unavailable. Try again in a moment.';
-    case 'stripe-checkout-failed':
+    case 'rate-limited-attempt':
+    case 'rate-limited-success':
+      return detail ?? 'Too many signups from this network. Please wait and try again.';
+    case 'provision-failed':
       return detail
-        ? `Stripe could not start checkout: ${detail}`
-        : 'Could not start checkout — please try again. If this keeps happening, get in touch.';
+        ? `Could not create your workspace: ${detail}`
+        : 'Could not create your workspace — please try again.';
     case 'invalid-body':
       return 'Something went wrong with the form. Refresh and try again.';
     default:
@@ -77,6 +77,14 @@ function describeError(code: string | undefined, detail?: string | null): string
         : 'Something went wrong. Try again.';
   }
 }
+
+type SuccessState = {
+  email: string;
+  /** Whether Resend actually sent (or 'skipped' in dev / 'failed' if a
+   *  Resend hiccup). Shown subtly so the user knows whether to refresh
+   *  their inbox. */
+  outcome: 'sent' | 'skipped' | 'failed';
+};
 
 function SignUpForm() {
   const search = useSearchParams();
@@ -87,10 +95,11 @@ function SignUpForm() {
   const [businessCategory, setBusinessCategory] = useState('');
   const [error, setError] = useState<string | null>(
     cancelled
-      ? 'No problem — checkout was cancelled, no charge was made. Try again whenever you are ready.'
+      ? "Cancelled. Want to try again? Fill in the form below."
       : null,
   );
   const [submitting, setSubmitting] = useState(false);
+  const [success, setSuccess] = useState<SuccessState | null>(null);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -125,15 +134,20 @@ function SignUpForm() {
       return;
     }
 
-    const { checkoutUrl } = (await response.json()) as { checkoutUrl?: string };
-    if (!checkoutUrl) {
-      setError('We could not start checkout — please try again in a moment.');
-      setSubmitting(false);
-      return;
-    }
-    // Browser navigation to the hosted Stripe Checkout page.
-    window.location.assign(checkoutUrl);
+    const body = (await response.json()) as {
+      ok: boolean;
+      emailOutcome: 'sent' | 'failed' | 'skipped';
+    };
+    setSuccess({
+      email: businessEmail.trim(),
+      outcome: body.emailOutcome ?? 'sent',
+    });
+    setSubmitting(false);
   };
+
+  if (success) {
+    return <CheckYourEmail email={success.email} outcome={success.outcome} />;
+  }
 
   return (
     <div className="flex w-full max-w-md flex-col items-stretch gap-8">
@@ -144,14 +158,15 @@ function SignUpForm() {
 
       <Card className="gap-7 py-8">
         <CardHeader className="gap-2">
-          <Eyebrow tone="rust">{'// Start your subscription'}</Eyebrow>
+          <Eyebrow tone="rust">{'// Start free'}</Eyebrow>
           <CardTitle className="text-[28px] leading-[1.1] font-extrabold tracking-[-0.03em] text-ink">
-            Get your business <em className="font-extrabold not-italic text-rust">live in Webnua</em>.
+            Get your business{' '}
+            <em className="font-extrabold not-italic text-rust">live in Webnua</em>.
           </CardTitle>
-          <CardDescription className="text-sm text-ink-quiet">
-            Three quick details, then you&rsquo;ll head over to Stripe to start your subscription.
-            We&rsquo;ll email you a sign-in link as soon as payment is confirmed — no password to
-            remember.
+          <CardDescription className="text-sm leading-[1.55] text-ink-quiet">
+            Three quick details and we&rsquo;ll email you a sign-in link.{' '}
+            <strong className="font-semibold text-ink">No payment yet</strong> — you&rsquo;ll
+            build a preview of your site first, then pay once you&rsquo;re ready to go live.
           </CardDescription>
         </CardHeader>
 
@@ -208,17 +223,13 @@ function SignUpForm() {
               </p>
             ) : null}
 
-            <Button
-              type="submit"
-              size="lg"
-              className="w-full"
-              disabled={submitting}
-            >
-              {submitting ? 'Starting checkout…' : 'Continue to checkout →'}
+            <Button type="submit" size="lg" className="w-full" disabled={submitting}>
+              {submitting ? 'Creating your workspace…' : 'Start free — email me a link →'}
             </Button>
 
             <p className="text-center text-[12px] leading-[1.5] text-ink-quiet">
-              By continuing you agree to Webnua&rsquo;s subscription terms. Cancel any time.
+              No card needed. You only pay when you click <strong>Publish to go live</strong>{' '}
+              from your dashboard.
             </p>
           </form>
         </CardContent>
@@ -234,11 +245,61 @@ function SignUpForm() {
   );
 }
 
+function CheckYourEmail({ email, outcome }: SuccessState) {
+  return (
+    <div className="flex w-full max-w-md flex-col items-stretch gap-8">
+      <div className="flex flex-col items-center gap-3 text-ink">
+        <BrandMark size="lg" />
+        <Eyebrow tone="quiet">{'// Webnua platform'}</Eyebrow>
+      </div>
+
+      <Card className="gap-7 py-8">
+        <CardHeader className="gap-2">
+          <Eyebrow tone="rust">{'// Check your email'}</Eyebrow>
+          <CardTitle className="text-[28px] leading-[1.1] font-extrabold tracking-[-0.03em] text-ink">
+            Workspace <em className="font-extrabold not-italic text-rust">created</em>.
+          </CardTitle>
+          <CardDescription className="text-sm leading-[1.55] text-ink-quiet">
+            We&rsquo;ve emailed a sign-in link to{' '}
+            <strong className="font-semibold text-ink">{email}</strong>. Click the link to
+            confirm your email and start building. The link is good for one hour.
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent className="flex flex-col gap-4">
+          <div className="rounded-md border border-dashed border-rule bg-paper-2 px-4 py-3 text-[13px] leading-[1.55] text-ink-quiet [&_strong]:font-semibold [&_strong]:text-ink">
+            <strong>Can&rsquo;t find it?</strong> Check your spam folder. The email comes from{' '}
+            <strong>welcome@mail.webnua.com</strong>.
+          </div>
+
+          {outcome === 'failed' ? (
+            <p className="rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn">
+              We had trouble sending the email. Wait a minute, then try signing in below — the
+              standard sign-in flow will send a fresh link.
+            </p>
+          ) : null}
+          {outcome === 'skipped' ? (
+            <p className="rounded-md border border-rule bg-paper-2 px-3 py-2 text-xs text-ink-quiet">
+              Note for development: RESEND_API_KEY is not configured, so the email did not
+              actually send. Sign in below with a fresh email request.
+            </p>
+          ) : null}
+
+          <Button asChild variant="outline" size="lg" className="w-full">
+            <Link href="/login">Open the sign-in page →</Link>
+          </Button>
+        </CardContent>
+      </Card>
+
+      <p className="text-center font-mono text-[10px] font-bold tracking-[0.14em] uppercase text-ink-quiet/70">
+        &copy; Webnua &middot; Perth
+      </p>
+    </div>
+  );
+}
+
 export default function SignUpPage() {
   // useSearchParams requires Suspense at the page boundary on the App Router.
-  // The fallback renders the form without query-param-driven state — fine for
-  // the initial paint, the real `?cancelled=1` framing shows once Suspense
-  // resolves.
   return (
     <Suspense fallback={<div className="text-[12px] text-ink-quiet">Loading…</div>}>
       <SignUpForm />

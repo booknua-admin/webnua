@@ -1,47 +1,62 @@
 // =============================================================================
-// signup-workspace — provision a Webnua workspace for a self-serve signup.
+// signup-workspace — Pattern B's signup + publish-pay infrastructure.
 //
-// Phase 7 / onboarding-foundation session. The order — locked Q2:
-// subscribe-before-workspace — is "Stripe Checkout completes → we create the
-// workspace → we email the new client a magic link to sign in". This module
-// is the workspace-creation half: called from the Stripe webhook handler
-// when `customer.subscription.created` lands carrying our `kind=signup`
-// metadata.
+// Pattern B refactors signup from "pay first, then onboard" (Session 1) to
+// "sign up free, build a preview, pay to publish". Two operations live here:
 //
-// Insert order (locked by FK / trigger fan-out):
-//   1. clients row with an explicit UUID. The three AFTER INSERT triggers
-//      (migrations 0060 / 0062 / 0077) fan out four SMS templates + five
-//      email templates + nine automations automatically. RLS bypass: this
-//      runs with the service-role client (anon would be refused).
-//   2. auth.admin.createUser({ email, email_confirm: true, user_metadata:
-//      { role:'client', client_id: <uuid>, display_name: <business> }})
-//      — fires the 0017 trigger that inserts the public.users row with
-//      the right shape.
-//   3. client_stripe_customers row mapping clientId → stripe_customer_id.
-//      This row is the idempotency anchor for webhook retries: if it
-//      already exists for a given stripe_customer_id when the webhook
-//      runs, the workspace has already been created and we skip.
-//   4. auth.admin.generateLink({ type:'magiclink', email }) → URL.
-//      Email the URL via sendWelcomeEmail (Resend).
+//   provisionPendingSignup    — called from /api/sign-up. NO payment yet.
+//                              Inserts the clients row (lifecycle_status =
+//                              'pending_verification', the new default),
+//                              creates the unconfirmed auth user, generates
+//                              the magic link, hands the link back to the
+//                              caller. The route then emails it via
+//                              `verification-email.ts`.
 //
-// Idempotency. `customer.subscription.created` may fire more than once for
-// the same subscription if Stripe retries. The caller (the webhook handler)
-// checks for an existing client_stripe_customers row by stripe_customer_id
-// BEFORE invoking this function — if present, the workspace was already
-// created, so we run the standard apply-subscription-event path and skip
-// the provisioning. This module also defends in depth: every insert is
-// guarded by a precondition check, so a race that gets past the caller's
-// guard still degrades to a partial-state replay rather than a duplicate.
+//   markClientActiveOnPublish — called from the Stripe webhook on
+//                              `customer.subscription.created` IF a matching
+//                              client_stripe_customers row already exists
+//                              (i.e. Checkout was initiated from the
+//                              dashboard's "Publish to go live" CTA, not
+//                              from /sign-up). Transitions
+//                              clients.lifecycle_status from 'preview' to
+//                              'active' and fires the post-publish welcome
+//                              email.
+//
+// Insert order for provisionPendingSignup (locked by FK / trigger fan-out):
+//   1. clients row with an explicit UUID + lifecycle_status='pending_verification'.
+//      The three AFTER INSERT triggers (0060/0062/0077) seed 4 SMS templates +
+//      5 email templates + 9 automations automatically.
+//   2. auth.admin.createUser({ email, email_confirm: false, user_metadata:
+//      { role:'client', client_id: <uuid>, display_name: <business> }}) —
+//      fires the 0017 trigger that inserts the public.users row. The user is
+//      UNCONFIRMED — clicking the verification email is what confirms them.
+//      The 0085 trigger on auth.users.email_confirmed_at then transitions
+//      the client from 'pending_verification' to 'preview'.
+//   3. auth.admin.generateLink({ type:'magiclink', email }) → URL. Returned
+//      to the caller so the verification email can carry it.
+//
+// Note — there is NO client_stripe_customers insert in the signup path.
+// That row is created the first time the customer hits "Publish to go live"
+// from the dashboard (the existing /api/integrations/stripe/checkout route
+// inserts it before redirecting to Stripe Checkout).
+//
+// Idempotency. `provisionPendingSignup` is invoked synchronously from the
+// route handler — there is no webhook retry to defend against here (the
+// retry guard for Pattern A's webhook-driven provisioning is GONE; that
+// code path has been removed). The /api/sign-up route handles duplicate
+// emails via `emailAlreadyRegistered` BEFORE this function is called.
 //
 // SERVER-ONLY — uses the service-role Supabase client.
 // =============================================================================
 
 import { randomUUID } from 'node:crypto';
 
-import { getAppBaseUrl } from '@/lib/env';
+import { env, getAppBaseUrl } from '@/lib/env';
 import { getServiceClient } from '@/lib/supabase/server';
 
 import { sendWelcomeEmail, type WelcomeEmailOutcome } from './welcome-email';
+
+// --- shared types ------------------------------------------------------------
 
 export type SignupWorkspaceInput = {
   businessName: string;
@@ -49,23 +64,19 @@ export type SignupWorkspaceInput = {
   /** A short one-line trade / category, e.g. "Residential electrician".
    *  Stored in `clients.industry`. */
   businessCategory: string;
-  /** The Stripe Customer this signup paid through — used both as
-   *  attribution and the row this workspace is keyed to in
-   *  client_stripe_customers. */
-  stripeCustomerId: string;
 };
 
 export type SignupWorkspaceResult = {
   clientId: string;
   clientSlug: string;
-  /** Whether the welcome email reached Resend. 'skipped' = RESEND_API_KEY
-   *  not configured; the magic link still exists in Supabase. */
-  emailOutcome: WelcomeEmailOutcome;
+  /** The magic-link URL produced by Supabase. The caller emails it via
+   *  `sendVerificationEmail`. NEVER returned to the public browser. */
+  magicLink: string;
 };
 
-/** Slugify a business name. Same shape as `lib/clients/create-client.ts`
- *  `slugify` — kept local to avoid pulling that whole module (which uses
- *  the browser Supabase client) into a server-only file. */
+/** Slugify a business name — mirrors `lib/clients/create-client.ts` slugify.
+ *  Kept local to avoid pulling that module (which uses the browser Supabase
+ *  client) into this server-only file. */
 function slugify(value: string): string {
   return (
     value
@@ -80,13 +91,19 @@ function shortRand(): string {
   return Math.random().toString(36).slice(2, 6);
 }
 
+function publicSiteDomain(): string {
+  return (env.PUBLIC_SITE_DOMAIN ?? 'webnua.dev').toLowerCase();
+}
+
+// --- 1. provisionPendingSignup (called from /api/sign-up) ------------------
+
 /**
- * Provision a workspace for a freshly-paid signup. Returns the new client's
- * slug + the welcome-email send outcome. Throws on any unrecoverable failure
- * (a 5xx propagates up to the webhook handler which surfaces 500 → Stripe
- * retries the delivery so the state self-heals).
+ * Provision a 'pending_verification' workspace + auth user + magic link for
+ * a fresh /sign-up submission. Returns the magic link the caller emails to
+ * the user. Throws on any unrecoverable failure — the caller returns a 500
+ * to the browser (the form surfaces a retry).
  */
-export async function provisionSignupWorkspace(
+export async function provisionPendingSignup(
   input: SignupWorkspaceInput,
 ): Promise<SignupWorkspaceResult> {
   const svc = getServiceClient();
@@ -96,14 +113,10 @@ export async function provisionSignupWorkspace(
   const industry = input.businessCategory.trim();
 
   if (!businessName || !businessEmail || !industry) {
-    throw new Error('signup-workspace: missing required signup metadata');
+    throw new Error('signup-workspace: missing required signup details');
   }
 
-  // -- 1. clients row (explicit id; retry the slug on a unique clash) ----
-  //
-  // We pre-generate the UUID so the auth.admin.createUser call below can
-  // hand it to the handle_new_user trigger as user_metadata.client_id. The
-  // service-role client bypasses the operator-only `clients_insert` RLS.
+  // -- 1. clients row -------------------------------------------------------
   const clientId = randomUUID();
   const baseSlug = slugify(businessName);
   const candidates = [baseSlug, `${baseSlug}-${shortRand()}`, `${baseSlug}-${shortRand()}`];
@@ -119,7 +132,8 @@ export async function provisionSignupWorkspace(
         slug,
         industry,
         primary_contact_email: businessEmail,
-        // `onboarded_by` is nullable; a self-serve signup has no operator.
+        // lifecycle_status defaults to 'pending_verification' (migration 0085).
+        // onboarded_by stays NULL — self-serve, no operator attribution.
       })
       .select('slug')
       .single();
@@ -127,29 +141,32 @@ export async function provisionSignupWorkspace(
       clientSlug = data.slug;
       break;
     }
-    // 23505 = unique-violation. Try the next slug candidate.
     if (error?.code === '23505') {
+      // Unique-violation on slug — try the next candidate.
       lastError = { code: error.code, message: error.message };
       continue;
     }
-    if (error) throw new Error(`signup-workspace: clients insert failed: ${error.message}`);
+    if (error) {
+      throw new Error(`signup-workspace: clients insert failed: ${error.message}`);
+    }
   }
   if (!clientSlug) {
     throw new Error(
-      `signup-workspace: could not allocate a unique client slug (last: ${lastError?.message ?? 'unknown'})`,
+      `signup-workspace: could not allocate a unique client slug (last: ${
+        lastError?.message ?? 'unknown'
+      })`,
     );
   }
 
-  // The three AFTER INSERT triggers (0060 sms_templates, 0062 email_templates,
-  // 0077 automations) have now fired against `clientId`.
-
-  // -- 2. auth user + public.users (via the 0017 trigger) ----------------
+  // -- 2. auth user (unconfirmed) ------------------------------------------
   //
-  // `email_confirm: true` skips Supabase's "click to confirm" flow — the
-  // user authenticates instead via the magic link we email below.
+  // `email_confirm: false` means the user exists but is NOT yet allowed to
+  // sign in via password — they must click the magic link first. Clicking
+  // the link sets `email_confirmed_at`, which fires the migration 0085
+  // trigger to advance the client from 'pending_verification' → 'preview'.
   const created = await svc.auth.admin.createUser({
     email: businessEmail,
-    email_confirm: true,
+    email_confirm: false,
     user_metadata: {
       role: 'client',
       client_id: clientId,
@@ -157,11 +174,6 @@ export async function provisionSignupWorkspace(
     },
   });
   if (created.error || !created.data.user) {
-    // If the auth-user create failed, we have an orphan clients row +
-    // template seed. A cleanup migration could prune; for V1 the operator
-    // resolves manually. Propagate the error so Stripe retries — a second
-    // delivery hits the idempotency guard at the webhook layer and we
-    // skip this whole branch.
     throw new Error(
       `signup-workspace: auth.admin.createUser failed: ${
         created.error?.message ?? 'no user returned'
@@ -169,32 +181,11 @@ export async function provisionSignupWorkspace(
     );
   }
 
-  // -- 3. client_stripe_customers (the idempotency anchor) ---------------
+  // -- 3. magic link --------------------------------------------------------
   //
-  // The webhook handler will then call applySubscriptionEvent which UPDATEs
-  // this row with subscription-id / period-end / status. We seed it
-  // 'incomplete' here so a moment later the SAME webhook delivery flips it
-  // active when applySubscriptionEvent applies the inbound `subscription`.
-  const { error: stripeRowError } = await svc.from('client_stripe_customers').insert({
-    client_id: clientId,
-    stripe_customer_id: input.stripeCustomerId,
-    status: 'incomplete',
-  } as never);
-  if (stripeRowError) {
-    // A duplicate here means another webhook delivery raced ahead — degrade
-    // to OK; the apply-subscription step will mutate the existing row.
-    if (stripeRowError.code !== '23505') {
-      throw new Error(
-        `signup-workspace: client_stripe_customers insert failed: ${stripeRowError.message}`,
-      );
-    }
-  }
-
-  // -- 4. magic link + welcome email -------------------------------------
-  //
-  // The link redirects through Supabase's verify-and-set-session flow,
-  // landing on /dashboard where the IntegrationOnboarding screen takes
-  // over (lifecycle_status defaults to 'onboarding' on the clients row).
+  // The link lands the user on /dashboard. By that moment the migration
+  // 0085 trigger has already advanced the client to 'preview', so the
+  // dashboard renders the IntegrationOnboarding wizard (not the hub).
   const appBase = getAppBaseUrl();
   const linkOptions = appBase ? { redirectTo: `${appBase}/dashboard` } : undefined;
   const linkResult = await svc.auth.admin.generateLink({
@@ -202,47 +193,162 @@ export async function provisionSignupWorkspace(
     email: businessEmail,
     options: linkOptions,
   } as never);
-
   if (linkResult.error || !linkResult.data) {
-    // We can ship the workspace without the link — the operator can resend
-    // manually via Supabase admin OR the user can run /forgot-password
-    // (when that lands). Log loudly + return; do not fail the webhook.
-    console.warn(
-      `[signup-workspace] generateLink failed for ${businessEmail}: ${
-        linkResult.error?.message ?? 'no link returned'
-      }`,
+    throw new Error(
+      `signup-workspace: generateLink failed: ${linkResult.error?.message ?? 'no link returned'}`,
     );
-    return { clientId, clientSlug, emailOutcome: 'skipped' };
   }
-
-  // generateLink returns the URL under data.properties.action_link.
-  const actionLink = (
-    linkResult.data as unknown as { properties?: { action_link?: string }; action_link?: string }
-  );
-  const magicLink =
-    actionLink.properties?.action_link ??
-    actionLink.action_link ??
-    null;
+  const linkData = linkResult.data as unknown as {
+    properties?: { action_link?: string };
+    action_link?: string;
+  };
+  const magicLink = linkData.properties?.action_link ?? linkData.action_link ?? null;
   if (!magicLink) {
-    console.warn(
-      `[signup-workspace] generateLink returned no action_link for ${businessEmail}`,
-    );
-    return { clientId, clientSlug, emailOutcome: 'skipped' };
+    throw new Error('signup-workspace: generateLink returned no action_link');
   }
 
-  const emailOutcome = await sendWelcomeEmail({
-    recipientEmail: businessEmail,
-    businessName,
-    magicLink,
-  });
+  return { clientId, clientSlug, magicLink };
+}
 
-  return { clientId, clientSlug, emailOutcome };
+// --- 2. markClientActiveOnPublish (called from Stripe webhook) ------------
+
+export type PublishActivationResult = {
+  clientId: string;
+  emailOutcome: WelcomeEmailOutcome;
+};
+
+/** Look up a client by Stripe Customer id. Returned shape carries the
+ *  fields the publish-activation flow needs. Null when no mapping row. */
+async function findClientByStripeCustomer(
+  stripeCustomerId: string,
+): Promise<{
+  clientId: string;
+  clientName: string;
+  clientSlug: string;
+  primaryEmail: string | null;
+  lifecycle: string;
+} | null> {
+  const svc = getServiceClient();
+  const { data: mapping } = await svc
+    .from('client_stripe_customers')
+    .select('client_id')
+    .eq('stripe_customer_id', stripeCustomerId)
+    .maybeSingle();
+  if (!mapping) return null;
+  const clientId = (mapping as { client_id: string }).client_id;
+
+  const { data: client } = await svc
+    .from('clients')
+    .select('id, name, slug, primary_contact_email, lifecycle_status')
+    .eq('id', clientId)
+    .maybeSingle();
+  if (!client) return null;
+  const row = client as unknown as {
+    id: string;
+    name: string;
+    slug: string;
+    primary_contact_email: string | null;
+    lifecycle_status: string;
+  };
+  return {
+    clientId: row.id,
+    clientName: row.name,
+    clientSlug: row.slug,
+    primaryEmail: row.primary_contact_email,
+    lifecycle: row.lifecycle_status,
+  };
+}
+
+/** Resolve a billing recipient email — the client's primary_contact_email
+ *  if set, else their first client-role user's email. */
+async function resolvePublishRecipient(
+  clientId: string,
+  primaryEmail: string | null,
+): Promise<string | null> {
+  if (primaryEmail) return primaryEmail;
+  const svc = getServiceClient();
+  const { data } = await svc
+    .from('users')
+    .select('email')
+    .eq('client_id', clientId)
+    .eq('role', 'client')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  return (data as { email?: string } | null)?.email ?? null;
 }
 
 /**
- * Check whether a workspace has already been provisioned for the given Stripe
- * Customer id — the webhook handler's idempotency guard.
+ * Stripe webhook publish-pay handler. The customer clicked "Publish to go
+ * live" on the dashboard, completed Checkout, and Stripe fired
+ * `customer.subscription.created`. This:
+ *   1. Looks up the client by stripe_customer_id (the mapping row was
+ *      created by /api/integrations/stripe/checkout before redirect).
+ *   2. Transitions lifecycle_status from 'preview' → 'active'. The UPDATE
+ *      is guarded by a WHERE on lifecycle_status='preview' so a duplicate
+ *      webhook delivery is a no-op (idempotent).
+ *   3. Fires the post-publish welcome email.
+ *
+ * Returns null when no matching client_stripe_customers row exists — the
+ * subscription is a Pattern A leftover (Session 1 in-flight signup), and
+ * the caller falls through to the existing Pattern A path.
  */
+export async function markClientActiveOnPublish(
+  stripeCustomerId: string,
+): Promise<PublishActivationResult | null> {
+  const client = await findClientByStripeCustomer(stripeCustomerId);
+  if (!client) return null;
+
+  // Idempotent — only flip 'preview' → 'active'. Repeated webhook deliveries
+  // see lifecycle_status already 'active' and the UPDATE no-ops (no row
+  // changed). Other states (already-active, paused, banned) are LEFT ALONE.
+  const svc = getServiceClient();
+  // Cast through `as never` for the new 'active' / 'preview' enum values
+  // (migration 0084 added them; the generated Database type does not yet
+  // know about them — same pattern as the rest of the codebase, e.g.
+  // `client_stripe_customers` writes in this file).
+  const { error } = await svc
+    .from('clients')
+    .update({ lifecycle_status: 'active' as never })
+    .eq('id', client.clientId)
+    .eq('lifecycle_status', 'preview' as never);
+  if (error) {
+    throw new Error(`markClientActiveOnPublish: clients update failed: ${error.message}`);
+  }
+
+  // If lifecycle was NOT 'preview' (already active / paused / etc.), the
+  // welcome email already fired in a prior delivery. Skip the resend.
+  if (client.lifecycle !== 'preview') {
+    return { clientId: client.clientId, emailOutcome: 'skipped' };
+  }
+
+  const recipient = await resolvePublishRecipient(client.clientId, client.primaryEmail);
+  if (!recipient) {
+    console.warn(
+      `[publish-activate] client ${client.clientId} has no contact email; activated without welcome email`,
+    );
+    return { clientId: client.clientId, emailOutcome: 'skipped' };
+  }
+
+  const appBase = getAppBaseUrl();
+  const dashboardUrl = appBase ? `${appBase}/dashboard` : 'https://app.webnua.com/dashboard';
+  const liveSiteUrl = `https://${client.clientSlug}.${publicSiteDomain()}`;
+
+  const emailOutcome = await sendWelcomeEmail({
+    recipientEmail: recipient,
+    businessName: client.clientName,
+    liveSiteUrl,
+    dashboardUrl,
+  });
+
+  return { clientId: client.clientId, emailOutcome };
+}
+
+// --- helpers shared with /api/sign-up + webhook ----------------------------
+
+/** True if `client_stripe_customers` already has a row for the given Stripe
+ *  Customer. Pattern B's publish path uses this to detect "this Customer is
+ *  one of ours" before activating. */
 export async function hasProvisionedWorkspace(stripeCustomerId: string): Promise<boolean> {
   const svc = getServiceClient();
   const { data } = await svc
@@ -255,29 +361,20 @@ export async function hasProvisionedWorkspace(stripeCustomerId: string): Promise
 
 /**
  * Check whether a Supabase auth user already exists for the given email — the
- * /api/sign-up pre-check, so we refuse the Checkout session rather than fail
- * later inside the webhook.
- *
- * Uses the Supabase admin paginated listUsers API. We pull a page and look
- * for a case-insensitive match — Supabase Auth stores emails lower-cased,
- * but a defensive compare costs nothing.
+ * /api/sign-up pre-check. Pages through the admin listUsers API (Supabase
+ * stores emails lower-cased; we compare insensitively for safety).
  */
 export async function emailAlreadyRegistered(email: string): Promise<boolean> {
   const svc = getServiceClient();
   const normalized = email.trim().toLowerCase();
 
-  // listUsers is paginated; an email match is rare in the first page (the
-  // page is unordered) so we scan up to a few pages. A platform with > 50k
-  // users would need a different lookup — out of scope for the V1 audit
-  // gate the route uses this for, which only needs to catch "this email
-  // signed up an hour ago".
   const PAGE_SIZE = 200;
   const MAX_PAGES = 25;
   for (let page = 1; page <= MAX_PAGES; page += 1) {
     const { data, error } = await svc.auth.admin.listUsers({ page, perPage: PAGE_SIZE });
     if (error) {
       console.warn(`[signup-workspace] listUsers failed at page ${page}: ${error.message}`);
-      return false; // fail-open — the webhook re-checks anyway
+      return false; // fail-open — the route's auth-user create would error if a dup exists
     }
     const users = data?.users ?? [];
     for (const u of users) {

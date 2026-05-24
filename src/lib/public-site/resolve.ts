@@ -22,6 +22,10 @@
 
 import { cache } from 'react';
 
+import {
+  publicSiteIsPreview,
+  publicSiteIsServable,
+} from '@/lib/auth/lifecycle';
 import type { FunnelStep, FunnelVersionSnapshot } from '@/lib/funnel/types';
 import { getServiceClient } from '@/lib/supabase/server';
 import type {
@@ -60,6 +64,12 @@ export type ResolvedTarget =
       pages: Page[];
       page: Page;
       tracking: TrackingConfig;
+      /** Pattern B preview gating — true when the client is in 'preview'
+       *  lifecycle state. The renderer injects a watermark banner +
+       *  `noindex,nofollow` + disables form submission so the site is
+       *  visible but cannot capture real leads. The data is the same
+       *  published snapshot; this flag is the visual + behavioural diff. */
+      isPreview: boolean;
     }
   | {
       status: 'funnel';
@@ -72,6 +82,8 @@ export type ResolvedTarget =
        *  on the last step. */
       nextStepHref: string | null;
       tracking: TrackingConfig;
+      /** Same semantics as the website case above. */
+      isPreview: boolean;
     }
   | { status: 'unpublished'; name: string }
   | { status: 'not_found' };
@@ -93,6 +105,9 @@ type WebsiteRow = {
   name: string;
   client_id: string;
   published_version_id: string | null;
+  /** Pattern B preview rendering reads the draft snapshot when no published
+   *  one exists — the wizard's output BEFORE the user clicks Publish. */
+  draft_version_id: string | null;
   tracking_key: string;
 };
 
@@ -102,6 +117,7 @@ type FunnelRow = {
   client_id: string;
   slug: string;
   published_version_id: string | null;
+  draft_version_id: string | null;
   tracking_key: string;
 };
 
@@ -241,6 +257,18 @@ async function clientIdBySlug(slug: string): Promise<string | null> {
   return data ? (data as unknown as { id: string }).id : null;
 }
 
+/** Read the client's lifecycle_status — drives Pattern B preview gating.
+ *  Returns null when the client row is missing. */
+async function clientLifecycle(clientId: string): Promise<string | null> {
+  const svc = getServiceClient();
+  const { data } = await svc
+    .from('clients')
+    .select('lifecycle_status')
+    .eq('id', clientId)
+    .maybeSingle();
+  return data ? (data as unknown as { lifecycle_status: string }).lifecycle_status : null;
+}
+
 /** The client's visitor-tracking consent posture. Defaults to `banner`. */
 async function consentModeForClient(
   clientId: string,
@@ -337,15 +365,39 @@ export const resolveSite = cache(
       }
     }
     if (!clientId) return { status: 'not_found' };
+
+    // ---- Pattern B lifecycle gating ----
+    //
+    // Read the client's lifecycle_status to decide whether to serve at all,
+    // and (if serving) whether to flag the render as preview. The gates:
+    //   • pending_verification / banned / churned → 404 (no public surface)
+    //   • preview / onboarding → serve with isPreview=true (watermark + noindex
+    //     + disabled forms)
+    //   • active / live / paused → serve normally (isPreview=false)
+    // Returns 'not_found' rather than 'unpublished' for the not-servable
+    // states because there is no useful "your site is at … but not live yet"
+    // message we can render — those states predate site generation.
+    const lifecycle = await clientLifecycle(clientId);
+    if (!lifecycle || !publicSiteIsServable(lifecycle)) {
+      return { status: 'not_found' };
+    }
+    const isPreview = publicSiteIsPreview(lifecycle);
+
     if (!website) website = await findWebsiteByClient(clientId);
 
-    // ---- Load the website's published snapshot (if any). ----
+    // ---- Load the website snapshot ----
+    //
+    // Active/paused: published_version_id (only). Preview: published if
+    // published, else draft. The draft fallback is what makes the preview
+    // surface USEFUL — a customer mid-wizard has generated a site (a draft
+    // version exists) but has not clicked Publish (no published version
+    // yet). Without the fallback, preview would show "not found".
     let websiteSnapshot: VersionSnapshot | null = null;
-    if (website?.published_version_id) {
-      const snap = await snapshotById(
-        'website_versions',
-        website.published_version_id,
-      );
+    const websiteVersionId =
+      website?.published_version_id ??
+      (isPreview ? website?.draft_version_id ?? null : null);
+    if (websiteVersionId) {
+      const snap = await snapshotById('website_versions', websiteVersionId);
       if (snap) websiteSnapshot = snap as VersionSnapshot;
     }
 
@@ -373,6 +425,7 @@ export const resolveSite = cache(
             pageRef: page.slug,
             consentMode,
           },
+          isPreview,
         };
       }
     }
@@ -381,13 +434,13 @@ export const resolveSite = cache(
     if (first) {
       const funnel = await findFunnelBySlug(clientId, first);
       if (funnel) {
-        if (!funnel.published_version_id) {
+        // Preview falls back to draft, same shape as website above.
+        const funnelVersionId =
+          funnel.published_version_id ?? (isPreview ? funnel.draft_version_id : null);
+        if (!funnelVersionId) {
           return { status: 'unpublished', name: funnel.name };
         }
-        const snap = await snapshotById(
-          'funnel_versions',
-          funnel.published_version_id,
-        );
+        const snap = await snapshotById('funnel_versions', funnelVersionId);
         if (!snap) return { status: 'unpublished', name: funnel.name };
         const funnelSnapshot = snap as FunnelVersionSnapshot;
         const step = pickStep(funnelSnapshot, segments.slice(1));
@@ -420,12 +473,13 @@ export const resolveSite = cache(
             pageRef: step.slug,
             consentMode,
           },
+          isPreview,
         };
       }
     }
 
     // ---- Nothing matched. ----
-    if (website && !website.published_version_id && !first) {
+    if (website && !website.published_version_id && !website.draft_version_id && !first) {
       return { status: 'unpublished', name: website.name };
     }
     return { status: 'not_found' };

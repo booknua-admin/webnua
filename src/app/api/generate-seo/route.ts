@@ -16,6 +16,14 @@ import { NextResponse } from 'next/server';
 
 import Anthropic from '@anthropic-ai/sdk';
 
+import { checkAndRecord } from '@/lib/rate-limit';
+
+function callerIp(request: Request): string {
+  const fwd = request.headers.get('x-forwarded-for');
+  if (fwd) return fwd.split(',')[0].trim();
+  return request.headers.get('x-real-ip') ?? 'unknown';
+}
+
 export const maxDuration = 120;
 
 const MODEL = 'claude-opus-4-7';
@@ -41,6 +49,20 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json(
       { error: 'generation-not-configured' },
       { status: 503 },
+    );
+  }
+
+  // Pattern B section-regen rate limit — 10/IP/hour. The route doesn't
+  // carry a clientId today, so we key on caller IP. A real per-workspace
+  // limit lands in a follow-up that threads clientId through the browser
+  // caller; the IP variant still closes the abuse vector (a single user
+  // can't burn 100 regens in a minute by Cmd-R holding).
+  const ip = callerIp(request);
+  const decision = await checkAndRecord('ai_section_regen', { key: `seo:${ip}`, ip });
+  if (!decision.allowed) {
+    return NextResponse.json(
+      { error: 'rate-limited', detail: decision.message, retryAfterSeconds: decision.retryAfterSeconds },
+      { status: 429 },
     );
   }
 

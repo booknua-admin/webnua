@@ -61,4 +61,9 @@ import '@/lib/automations/job-handlers';
 // client_custom_domains rows against Vercel.
 import '@/lib/domains/job-handlers';
 
+// Pattern B onboarding — Registers send_re_engagement_email, fired by the
+// daily webnua_re_engagement_scan cron (migration 0086) for clients sitting
+// in 'preview' state 7+ days without publishing.
+import '@/lib/auth/re-engagement-handler';
+
 export {};

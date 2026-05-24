@@ -26,10 +26,7 @@
 
 import { NextResponse } from 'next/server';
 
-import {
-  hasProvisionedWorkspace,
-  provisionSignupWorkspace,
-} from '@/lib/auth/signup-workspace';
+import { markClientActiveOnPublish } from '@/lib/auth/signup-workspace';
 import { env } from '@/lib/env';
 import { getIntegrationDb } from '@/lib/integrations/_shared/db-types';
 import { firePaymentFailed } from '@/lib/automations/triggers';
@@ -78,22 +75,19 @@ function logInbound(
   })();
 }
 
-/** A subscription created by the /api/sign-up flow carries our `kind=signup`
- *  metadata + the captured business details. The handler reads from the
- *  subscription's own metadata (set via `subscription_data.metadata` at
- *  Checkout-session creation) so the data flows through `subscription.created`
- *  directly without a second round-trip to fetch the session. */
-type SignupMetadata = {
+/** A subscription metadata block we care about. Pattern A's signup-via-
+ *  Checkout flow stamped `kind=signup` on the subscription metadata; that
+ *  flow is gone in Pattern B and any in-flight Pattern A subscription is
+ *  surfaced for manual operator follow-up rather than auto-provisioned.
+ *  Pattern B's publish-pay flow stamps `metadata.client_id` (from
+ *  `createCheckoutSession` in lib/integrations/stripe/client.ts). */
+type SubscriptionMetadata = {
   kind?: string;
-  signup_business_name?: string;
-  signup_business_email?: string;
-  signup_business_category?: string;
+  client_id?: string;
 };
 
-function readSignupMetadata(sub: StripeSubscription): SignupMetadata | null {
-  const meta = (sub as unknown as { metadata?: SignupMetadata }).metadata;
-  if (!meta || meta.kind !== 'signup') return null;
-  return meta;
+function readSubscriptionMetadata(sub: StripeSubscription): SubscriptionMetadata {
+  return (sub as unknown as { metadata?: SubscriptionMetadata }).metadata ?? {};
 }
 
 /** Apply one verified event. Returns the resolved tenant (for the call-log
@@ -104,38 +98,53 @@ async function handleEvent(event: StripeEvent): Promise<{ clientId: string | nul
     case 'customer.subscription.created':
     case 'customer.subscription.updated': {
       const sub = object as unknown as StripeSubscription;
+      const metadata = readSubscriptionMetadata(sub);
 
-      // SIGNUP PROVISIONING. A subscription stamped with our `kind=signup`
-      // metadata is the trigger to create a brand-new workspace. We guard
-      // on `hasProvisionedWorkspace(sub.customer)` so a webhook retry (or a
-      // late `.updated` event for an already-signed-up customer) does not
-      // create a second workspace. The check is the unique-row anchor on
-      // `client_stripe_customers.stripe_customer_id`.
-      const signup = event.type === 'customer.subscription.created' ? readSignupMetadata(sub) : null;
-      if (signup) {
-        const already = await hasProvisionedWorkspace(sub.customer);
-        if (!already) {
-          try {
-            await provisionSignupWorkspace({
-              businessName: signup.signup_business_name ?? '',
-              businessEmail: signup.signup_business_email ?? '',
-              businessCategory: signup.signup_business_category ?? '',
-              stripeCustomerId: sub.customer,
-            });
-          } catch (error) {
-            // Provisioning failed AFTER the customer paid. Log loudly and
-            // continue to apply the subscription event — the operator can
-            // resolve manually from Stripe + our logs. Returning 500 to
-            // Stripe would trigger retries that hit the same error.
-            const message = error instanceof Error ? error.message : String(error);
-            console.error('[stripe/webhook] signup workspace provisioning failed', message);
-          }
-        }
-        // FALL THROUGH to applySubscriptionEvent below — the row we just
-        // (or someone before us) inserted is 'incomplete'; this same event
-        // body flips it to 'active'.
+      // ---- Pattern A (deprecated): signup-via-Checkout left-over ----
+      //
+      // Session 1's signup flow created subscriptions stamped `kind=signup`
+      // and provisioned the workspace from THIS handler. Pattern B replaces
+      // that — the workspace is provisioned at /api/sign-up time (no
+      // payment), the subscription event below is the PUBLISH payment. We
+      // keep a defensive branch for any in-flight Pattern A subscription
+      // that lands after deploy: log loudly + ack, but do NOT auto-create
+      // a workspace (the path is gone). The operator picks it up from
+      // integration_call_log and creates manually.
+      if (
+        event.type === 'customer.subscription.created' &&
+        metadata.kind === 'signup'
+      ) {
+        console.warn(
+          `[stripe/webhook] Pattern A signup subscription received for customer ${sub.customer}; ` +
+            `Pattern A is deprecated, no workspace will be auto-created. Manual operator action needed.`,
+        );
       }
 
+      // ---- Pattern B: publish-pay → activate the workspace ----
+      //
+      // Subscription created from the dashboard's "Publish to go live" CTA.
+      // The /api/integrations/stripe/checkout route inserted the
+      // client_stripe_customers mapping row BEFORE redirecting to Stripe
+      // Checkout, so `markClientActiveOnPublish` finds the matching client
+      // and flips it from 'preview' to 'active'. The UPDATE is guarded on
+      // lifecycle_status='preview' so a webhook retry is an idempotent
+      // no-op. Returns null if no mapping exists (Pattern A leftover above).
+      if (event.type === 'customer.subscription.created') {
+        try {
+          await markClientActiveOnPublish(sub.customer);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.error('[stripe/webhook] markClientActiveOnPublish failed', message);
+          // Throw to trigger a Stripe retry — a transient DB fault on the
+          // activation flip is recoverable on the next delivery.
+          throw error;
+        }
+      }
+
+      // ---- Standard: mirror the subscription state onto client_stripe_customers ----
+      //
+      // Idempotent UPDATE. For Pattern B publish: the row exists (checkout
+      // route inserted it), this flips status / period_end / price.
       const result = await applySubscriptionEvent(sub, { deleted: false });
       return { clientId: result.clientId };
     }
