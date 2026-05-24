@@ -126,28 +126,29 @@ function FunnelListRow({ funnel }: { funnel: Funnel }) {
   return (
     <Link
       href={`/funnels/${funnel.id}`}
-      className="group flex items-center gap-6 rounded-[14px] border border-rule bg-card px-6 py-5 transition-colors hover:border-rust"
+      className="group flex flex-col gap-4 rounded-[14px] border border-rule bg-card px-4 py-4 transition-colors hover:border-rust md:flex-row md:items-center md:gap-6 md:px-6 md:py-5"
     >
-      <div className="flex items-center gap-1.5">
-        <FunnelStepThumbnail variant="landing" className="w-28" />
+      {/* Thumbnails — wrap on small viewports; horizontal on md+ */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <FunnelStepThumbnail variant="landing" className="w-24 md:w-28" />
         <span className="font-mono text-[12px] text-ink-quiet">→</span>
-        <FunnelStepThumbnail variant="schedule" className="w-28" />
+        <FunnelStepThumbnail variant="schedule" className="w-24 md:w-28" />
         <span className="font-mono text-[12px] text-ink-quiet">→</span>
-        <FunnelStepThumbnail variant="thanks" className="w-28" />
+        <FunnelStepThumbnail variant="thanks" className="w-24 md:w-28" />
       </div>
 
       <div className="min-w-0 flex-1">
-        <div className="mb-1.5 flex items-center gap-2">
+        <div className="mb-1.5 flex flex-wrap items-center gap-2">
           <Eyebrow tone="rust">{'// Webnua-managed'}</Eyebrow>
           <Badge variant="muted" className="gap-1.5">
             <StatusDot tone={funnel.publishedVersionId ? 'good' : 'warn'} />
             {funnel.publishedVersionId ? 'Live' : 'Draft only'}
           </Badge>
         </div>
-        <div className="text-[20px] font-extrabold tracking-[-0.02em] text-ink [&_em]:not-italic [&_em]:text-rust">
+        <div className="text-[18px] font-extrabold tracking-[-0.02em] text-ink md:text-[20px] [&_em]:not-italic [&_em]:text-rust">
           {funnel.name}
         </div>
-        <div className="mt-1 font-mono text-[11px] tracking-[0.04em] text-ink-quiet">
+        <div className="mt-1 truncate font-mono text-[11px] tracking-[0.04em] text-ink-quiet">
           {funnel.domain.primary}
         </div>
       </div>
@@ -256,20 +257,20 @@ function AdminAgencyRoster() {
                       }
                       window.location.href = '/funnels';
                     }}
-                    className="group grid grid-cols-[48px_1fr_120px_120px_70px] items-center gap-5 rounded-[14px] border border-rule bg-card px-6 py-4 transition-colors hover:border-rust"
+                    className="group flex items-center gap-4 rounded-[14px] border border-rule bg-card px-4 py-4 transition-colors hover:border-rust md:grid md:grid-cols-[48px_1fr_120px_120px_70px] md:gap-5 md:px-6"
                   >
-                    <div className="flex size-12 items-center justify-center rounded-md bg-ink font-extrabold text-rust-light">
+                    <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-ink text-[14px] font-extrabold text-rust-light md:size-12 md:text-base">
                       {client.name.charAt(0)}
                     </div>
-                    <div className="min-w-0">
-                      <div className="text-[16px] font-extrabold tracking-[-0.02em] text-ink">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[15px] font-extrabold tracking-[-0.02em] text-ink md:text-[16px]">
                         {client.name}
                       </div>
-                      <div className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
+                      <div className="mt-0.5 truncate font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
                         {client.id}
                       </div>
                     </div>
-                    <div className="text-right">
+                    <div className="hidden text-right md:block">
                       <div className="text-[20px] font-extrabold leading-none tracking-[-0.02em] text-ink">
                         {clientFunnels.length}
                       </div>
@@ -277,7 +278,7 @@ function AdminAgencyRoster() {
                         Total
                       </div>
                     </div>
-                    <div className="text-right">
+                    <div className="hidden text-right md:block">
                       <div className="text-[20px] font-extrabold leading-none tracking-[-0.02em] text-good">
                         {live}
                       </div>
@@ -285,9 +286,15 @@ function AdminAgencyRoster() {
                         Live
                       </div>
                     </div>
-                    <span className="text-right font-mono text-[12px] font-bold tracking-[0.04em] text-rust transition-transform group-hover:translate-x-0.5">
-                      {clientFunnels.length > 0 ? 'Drill in →' : 'Open →'}
-                    </span>
+                    <div className="flex shrink-0 items-center gap-3">
+                      <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-ink-quiet md:hidden">
+                        <span className="text-ink">{clientFunnels.length}</span> total ·{' '}
+                        <span className="text-good">{live}</span> live
+                      </span>
+                      <span className="font-mono text-[12px] font-bold tracking-[0.04em] text-rust transition-transform group-hover:translate-x-0.5">
+                        {clientFunnels.length > 0 ? 'Drill in →' : 'Open →'}
+                      </span>
+                    </div>
                   </Link>
                 );
               })}

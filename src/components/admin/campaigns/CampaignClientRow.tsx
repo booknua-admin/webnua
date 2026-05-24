@@ -20,35 +20,67 @@ function CampaignClientRow({ row, className }: CampaignClientRowProps) {
     <div
       data-slot="campaign-client-row"
       className={cn(
-        'grid grid-cols-[36px_1.4fr_110px_100px_110px_100px_100px] items-center gap-4.5 rounded-[10px] border border-rule bg-card px-5.5 py-4',
+        'rounded-[10px] border border-rule bg-card',
         row.dimmed && 'opacity-50',
         className,
       )}
     >
-      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-ink text-[14px] font-extrabold text-rust-light">
-        {row.logoInitial}
-      </div>
-      <div className="min-w-0">
-        <div className="mb-0.5 text-[15px] font-bold text-ink">{row.name}</div>
-        <div className="text-[12px] leading-[1.3] text-ink-quiet [&_strong]:text-ink-soft">
-          {row.meta}
+      {/* Mobile — stacked card */}
+      <div className="flex flex-col gap-3 p-4 md:hidden">
+        <div className="flex items-center gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-ink text-[14px] font-extrabold text-rust-light">
+            {row.logoInitial}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[15px] font-bold text-ink">{row.name}</div>
+            <div className="line-clamp-2 text-[12px] leading-[1.3] text-ink-quiet [&_strong]:text-ink-soft">
+              {row.meta}
+            </div>
+          </div>
+          <CampaignStatusPill status={row.status} label={row.statusLabel} />
         </div>
-      </div>
-      <div>
-        <CampaignStatusPill status={row.status} label={row.statusLabel} />
-      </div>
-      {row.cells.map((cell, i) => (
-        <div
-          key={i}
-          className="text-[15px] font-extrabold tracking-[-0.02em] text-ink"
-        >
-          {cell.value}
-          <span className="mt-0.5 block font-mono text-[9px] font-semibold uppercase tracking-[0.08em] text-ink-quiet">
-            {cell.sub}
-          </span>
+        <div className="grid grid-cols-3 gap-3 border-t border-rule pt-3">
+          {row.cells.map((cell, i) => (
+            <div
+              key={i}
+              className="text-[14px] font-extrabold tracking-[-0.02em] text-ink"
+            >
+              {cell.value}
+              <span className="mt-0.5 block font-mono text-[9px] font-semibold uppercase tracking-[0.08em] text-ink-quiet">
+                {cell.sub}
+              </span>
+            </div>
+          ))}
         </div>
-      ))}
-      <CampaignSparkline points={row.sparkPoints} />
+        <CampaignSparkline points={row.sparkPoints} />
+      </div>
+      {/* Desktop — original 7-col grid */}
+      <div className="hidden items-center gap-4.5 px-5.5 py-4 md:grid md:grid-cols-[36px_1.4fr_110px_100px_110px_100px_100px]">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-ink text-[14px] font-extrabold text-rust-light">
+          {row.logoInitial}
+        </div>
+        <div className="min-w-0">
+          <div className="mb-0.5 text-[15px] font-bold text-ink">{row.name}</div>
+          <div className="text-[12px] leading-[1.3] text-ink-quiet [&_strong]:text-ink-soft">
+            {row.meta}
+          </div>
+        </div>
+        <div>
+          <CampaignStatusPill status={row.status} label={row.statusLabel} />
+        </div>
+        {row.cells.map((cell, i) => (
+          <div
+            key={i}
+            className="text-[15px] font-extrabold tracking-[-0.02em] text-ink"
+          >
+            {cell.value}
+            <span className="mt-0.5 block font-mono text-[9px] font-semibold uppercase tracking-[0.08em] text-ink-quiet">
+              {cell.sub}
+            </span>
+          </div>
+        ))}
+        <CampaignSparkline points={row.sparkPoints} />
+      </div>
     </div>
   );
 }

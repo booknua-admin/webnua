@@ -105,33 +105,35 @@ export function FunnelApprovalRow({ submission }: FunnelApprovalRowProps) {
       data-slot="funnel-approval-row"
       className="border-b border-paper-2 px-[18px] py-4 last:border-b-0"
     >
-      <div className="grid grid-cols-[36px_1fr_90px_auto] items-center gap-4">
-        <div className="flex size-9 items-center justify-center rounded-full bg-rust/15 font-mono text-[13px] font-bold text-rust">
-          {clientInitial}
+      <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[36px_1fr_90px_auto] lg:items-center lg:gap-4">
+        <div className="flex items-start gap-3 lg:contents">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-rust/15 font-mono text-[13px] font-bold text-rust">
+            {clientInitial}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[14px] font-bold text-ink">
+              {clientName}{' '}
+              <span className="font-normal text-ink-quiet">·</span>{' '}
+              <span className="font-normal text-ink-soft">
+                {summariseDiff(submission.diff)}
+              </span>
+              <span className="ml-2 rounded-pill bg-rust/10 px-1.5 py-0.5 align-middle font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-rust">
+                Funnel
+              </span>
+            </p>
+            <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
+              From <strong className="text-ink">{submission.submitterName}</strong>{' '}
+              · Submitted {formatTime(submission.submittedAt)}
+            </p>
+            <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-rust">
+              Funnel: <span className="text-ink">{funnelName}</span> · {stepsLabel}
+            </p>
+          </div>
+          <p className="shrink-0 font-mono text-[12px] text-ink-quiet lg:text-right">
+            {relativeAge(submission.submittedAt)}
+          </p>
         </div>
-        <div className="min-w-0">
-          <p className="text-[14px] font-bold text-ink">
-            {clientName}{' '}
-            <span className="font-normal text-ink-quiet">·</span>{' '}
-            <span className="font-normal text-ink-soft">
-              {summariseDiff(submission.diff)}
-            </span>
-            <span className="ml-2 rounded-pill bg-rust/10 px-1.5 py-0.5 align-middle font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-rust">
-              Funnel
-            </span>
-          </p>
-          <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
-            From <strong className="text-ink">{submission.submitterName}</strong>{' '}
-            · Submitted {formatTime(submission.submittedAt)}
-          </p>
-          <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-rust">
-            Funnel: <span className="text-ink">{funnelName}</span> · {stepsLabel}
-          </p>
-        </div>
-        <p className="text-right font-mono text-[12px] text-ink-quiet">
-          {relativeAge(submission.submittedAt)}
-        </p>
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5 lg:justify-end">
           {rejecting ? null : (
             <>
               <Button size="sm" onClick={handleApprove}>

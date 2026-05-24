@@ -79,34 +79,75 @@ function TicketRow(props: TicketRowProps) {
         data-variant="client"
         data-attention={hasAttention || undefined}
         className={cn(
-          'group grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-[18px] border-b border-ink/6 px-[22px] py-[18px] transition-colors last:border-b-0',
+          'group block border-b border-ink/6 transition-colors last:border-b-0',
           hasAttention
-            ? 'border-l-[3px] border-l-rust bg-rust/[0.04] pl-[19px] hover:bg-rust/[0.07]'
+            ? 'border-l-[3px] border-l-rust bg-rust/[0.04] hover:bg-rust/[0.07]'
             : 'hover:bg-paper-2',
         )}
       >
-        <CategoryTile category={props.category} />
-        <div className="min-w-0">
-          <div className="mb-1 flex items-center gap-2">
-            <div className="truncate text-[14px] font-semibold text-ink">
-              {props.title}
+        {/* Mobile — stacked card */}
+        <div
+          className={cn(
+            'flex gap-3 px-4 py-3.5 md:hidden',
+            hasAttention && 'pl-[13px]',
+          )}
+        >
+          <CategoryTile category={props.category} />
+          <div className="min-w-0 flex-1">
+            <div className="mb-1 flex flex-wrap items-center gap-2">
+              <div className="min-w-0 flex-1 truncate text-[14px] font-semibold text-ink">
+                {props.title}
+              </div>
+              <div className="shrink-0 font-mono text-[11px] uppercase tracking-[0.06em] text-ink/45">
+                {props.age}
+              </div>
             </div>
-            {attention ? <AttentionPill label={attention} /> : null}
-          </div>
-          <div className="truncate text-[13px] text-ink-quiet [&_strong]:font-semibold [&_strong]:text-ink/85">
-            {props.preview}
+            <div className="mb-2 line-clamp-2 text-[13px] text-ink-quiet [&_strong]:font-semibold [&_strong]:text-ink/85">
+              {props.preview}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <StatusPill
+                status={props.status}
+                awaiting={props.awaiting}
+                reviewAware
+              />
+              <span className="font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-ink-quiet">
+                {CATEGORY_LABEL[props.category]}
+              </span>
+              {attention ? <AttentionPill label={attention} /> : null}
+            </div>
           </div>
         </div>
-        <div className="font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-ink-quiet">
-          {CATEGORY_LABEL[props.category]}
-        </div>
-        <StatusPill
-          status={props.status}
-          awaiting={props.awaiting}
-          reviewAware
-        />
-        <div className="font-mono text-[11px] uppercase tracking-[0.06em] text-ink/45">
-          {props.age}
+        {/* Desktop — original 5-col grid */}
+        <div
+          className={cn(
+            'hidden items-center gap-[18px] px-[22px] py-[18px] md:grid md:grid-cols-[auto_1fr_auto_auto_auto]',
+            hasAttention && 'md:pl-[19px]',
+          )}
+        >
+          <CategoryTile category={props.category} />
+          <div className="min-w-0">
+            <div className="mb-1 flex items-center gap-2">
+              <div className="truncate text-[14px] font-semibold text-ink">
+                {props.title}
+              </div>
+              {attention ? <AttentionPill label={attention} /> : null}
+            </div>
+            <div className="truncate text-[13px] text-ink-quiet [&_strong]:font-semibold [&_strong]:text-ink/85">
+              {props.preview}
+            </div>
+          </div>
+          <div className="font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-ink-quiet">
+            {CATEGORY_LABEL[props.category]}
+          </div>
+          <StatusPill
+            status={props.status}
+            awaiting={props.awaiting}
+            reviewAware
+          />
+          <div className="font-mono text-[11px] uppercase tracking-[0.06em] text-ink/45">
+            {props.age}
+          </div>
         </div>
       </Link>
     );
@@ -122,47 +163,97 @@ function TicketRow(props: TicketRowProps) {
       data-variant="admin"
       data-attention={hasAttention || undefined}
       className={cn(
-        'group grid grid-cols-[20px_180px_1fr_110px_120px_110px_80px] items-center gap-3 border-b border-ink/6 px-[18px] py-4 transition-colors last:border-b-0',
+        'group block border-b border-ink/6 transition-colors last:border-b-0',
         hasAttention
-          ? 'border-l-[3px] border-l-rust bg-rust/[0.04] pl-[15px] hover:bg-rust/[0.07]'
+          ? 'border-l-[3px] border-l-rust bg-rust/[0.04] hover:bg-rust/[0.07]'
           : 'hover:bg-paper-2',
       )}
     >
+      {/* Mobile — stacked card */}
       <div
-        aria-hidden
-        className="size-3.5 rounded-[3px] border border-ink/20 group-hover:border-ink/40"
-      />
-      <div className="flex min-w-0 items-center gap-2.5">
-        <div
-          className={cn(
-            'flex size-8 shrink-0 items-center justify-center rounded-[8px] font-sans text-sm font-extrabold text-paper',
-            toneBg,
-          )}
-        >
-          {props.client.initial}
+        className={cn(
+          'flex flex-col gap-2.5 px-4 py-3.5 md:hidden',
+          hasAttention && 'pl-[13px]',
+        )}
+      >
+        <div className="flex items-center gap-3">
+          <div
+            className={cn(
+              'flex size-9 shrink-0 items-center justify-center rounded-[8px] font-sans text-sm font-extrabold text-paper',
+              toneBg,
+            )}
+          >
+            {props.client.initial}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[13px] font-semibold text-ink">
+              {props.client.name}
+            </div>
+            <div className="truncate font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-ink-quiet">
+              {props.client.meta}
+            </div>
+          </div>
+          <div className="shrink-0 font-mono text-[11px] uppercase tracking-[0.06em] text-ink/45">
+            {props.age}
+          </div>
         </div>
         <div className="min-w-0">
-          <div className="truncate text-[13px] font-semibold text-ink">
-            {props.client.name}
+          <div className="mb-0.5 truncate text-[14px] font-semibold text-ink">
+            {props.title}
           </div>
-          <div className="truncate font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-ink-quiet">
-            {props.client.meta}
-          </div>
+          <p className="line-clamp-2 text-[12px] text-ink-quiet">
+            {props.preview}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <CategoryPill category={props.category} />
+          <StatusPill status={props.status} />
+          <UrgencyPill urgency={props.urgency} />
         </div>
       </div>
-      <div className="min-w-0">
-        <div className="mb-0.5 truncate text-[14px] font-semibold text-ink">
-          {props.title}
+      {/* Desktop — original 7-col grid */}
+      <div
+        className={cn(
+          'hidden items-center gap-3 px-[18px] py-4 md:grid md:grid-cols-[20px_180px_1fr_110px_120px_110px_80px]',
+          hasAttention && 'md:pl-[15px]',
+        )}
+      >
+        <div
+          aria-hidden
+          className="size-3.5 rounded-[3px] border border-ink/20 group-hover:border-ink/40"
+        />
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div
+            className={cn(
+              'flex size-8 shrink-0 items-center justify-center rounded-[8px] font-sans text-sm font-extrabold text-paper',
+              toneBg,
+            )}
+          >
+            {props.client.initial}
+          </div>
+          <div className="min-w-0">
+            <div className="truncate text-[13px] font-semibold text-ink">
+              {props.client.name}
+            </div>
+            <div className="truncate font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-ink-quiet">
+              {props.client.meta}
+            </div>
+          </div>
         </div>
-        <div className="truncate text-[12px] text-ink-quiet">
-          {props.preview}
+        <div className="min-w-0">
+          <div className="mb-0.5 truncate text-[14px] font-semibold text-ink">
+            {props.title}
+          </div>
+          <div className="truncate text-[12px] text-ink-quiet">
+            {props.preview}
+          </div>
         </div>
-      </div>
-      <CategoryPill category={props.category} />
-      <StatusPill status={props.status} />
-      <UrgencyPill urgency={props.urgency} />
-      <div className="text-right font-mono text-[11px] uppercase tracking-[0.06em] text-ink/45">
-        {props.age}
+        <CategoryPill category={props.category} />
+        <StatusPill status={props.status} />
+        <UrgencyPill urgency={props.urgency} />
+        <div className="text-right font-mono text-[11px] uppercase tracking-[0.06em] text-ink/45">
+          {props.age}
+        </div>
       </div>
     </Link>
   );

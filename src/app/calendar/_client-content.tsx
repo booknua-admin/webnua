@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { AddBookingButton } from '@/components/shared/bookings/AddBookingButton';
 import { CalendarGrid } from '@/components/shared/calendar/CalendarGrid';
@@ -14,12 +14,23 @@ import { shiftAnchor, todayIso } from '@/lib/calendar/anchor';
 import { voltlineCalendar } from '@/lib/calendar/client-calendar';
 import type { CalendarView } from '@/lib/calendar/types';
 import { normalizeError } from '@/lib/errors';
+import { useIsMobile } from '@/lib/use-is-mobile';
 
 function ClientCalendarContent() {
   const { hero } = voltlineCalendar;
+  const isMobile = useIsMobile();
   const [view, setView] = useState<CalendarView>('week');
   const [anchorIso, setAnchorIso] = useState(todayIso);
   const { data, error } = useClientCalendar(view, anchorIso);
+
+  // Mobile auto-defaults to day-view — see `_admin-content.tsx` for rationale.
+  const [autoSwitchedToDay, setAutoSwitchedToDay] = useState(false);
+  useEffect(() => {
+    if (isMobile && !autoSwitchedToDay && view === 'week') {
+      setView('day');
+      setAutoSwitchedToDay(true);
+    }
+  }, [isMobile, autoSwitchedToDay, view]);
 
   return (
     <>

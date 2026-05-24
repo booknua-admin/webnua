@@ -96,12 +96,10 @@ function AdminLeadsContent() {
         <LeadTabsBar tabs={tabs} value={activeTab} onChange={setActiveTab} />
 
         <div className="overflow-hidden rounded-2xl border border-ink/8 bg-card">
-          <div className="overflow-x-auto">
-          <div className="min-w-[620px]">
           {showingColdTab ? (
             <ColdHeaderRow />
           ) : (
-            <div className="grid grid-cols-[36px_180px_1fr_110px_80px_80px_100px] items-center gap-3 border-b border-ink/8 bg-paper-2/40 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
+            <div className="hidden items-center gap-3 border-b border-ink/8 bg-paper-2/40 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet md:grid md:grid-cols-[36px_180px_1fr_110px_80px_80px_100px]">
               <div />
               <div>{'// Lead'}</div>
               <div>{'// Preview'}</div>
@@ -147,8 +145,6 @@ function AdminLeadsContent() {
               />
             ))
           )}
-          </div>
-          </div>
         </div>
       </div>
     </>
@@ -168,7 +164,7 @@ function InboxNotice({ children }: { children: React.ReactNode }) {
  *  the dominant signal is "needs nudging now". */
 function ColdHeaderRow() {
   return (
-    <div className="grid grid-cols-[4px_36px_1fr_140px_120px_auto] items-center gap-3 border-b border-ink/8 bg-warn-soft/30 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
+    <div className="hidden items-center gap-3 border-b border-ink/8 bg-warn-soft/30 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet md:grid md:grid-cols-[4px_36px_1fr_140px_120px_auto]">
       <div />
       <div />
       <div>{'// Lead'}</div>

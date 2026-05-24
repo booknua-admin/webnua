@@ -321,7 +321,7 @@ function Step1({
         heading="What role?"
         sub="You can change this later from Settings · Team."
       >
-        <div className="grid grid-cols-3 gap-2.5">
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
           {TEAM_ROLES.map((role) => (
             <RoleSelectCard
               key={role.id}

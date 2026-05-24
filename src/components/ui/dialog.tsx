@@ -49,7 +49,12 @@ function DialogOverlay({
 }
 
 const dialogContentVariants = cva(
-  'fixed top-[50%] left-[50%] z-50 grid w-full translate-x-[-50%] translate-y-[-50%] gap-4 rounded-2xl border border-border bg-card p-10 shadow-card duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
+  // Padding scales with viewport: tight on mobile (p-5) so a 375px screen is
+  // not eaten by 40px insets, full p-10 at md+. Modals that already manage
+  // their own padding (custom `p-0` className) keep doing so — the cva
+  // `p-5 md:p-10` is overridden by any explicit `p-N` in the className prop
+  // (NewBookingModal / RescheduleModal / SeoPanel / CreateClientModal etc.).
+  'fixed top-[50%] left-[50%] z-50 grid w-full translate-x-[-50%] translate-y-[-50%] gap-4 rounded-2xl border border-border bg-card p-5 shadow-card duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 md:p-10',
   {
     variants: {
       size: {

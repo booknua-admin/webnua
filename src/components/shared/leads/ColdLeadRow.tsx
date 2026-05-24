@@ -72,8 +72,7 @@ function ColdLeadRow({ variant, row }: ColdLeadRowProps) {
     <div
       data-slot="cold-lead-row"
       className={cn(
-        'relative grid items-center gap-3 border-b border-ink/8 px-[18px] py-3.5 transition-colors last:border-b-0',
-        'grid-cols-[4px_36px_1fr_140px_120px_auto] hover:bg-warn-soft/10',
+        'relative border-b border-ink/8 transition-colors last:border-b-0 hover:bg-warn-soft/10',
       )}
     >
       <Link
@@ -81,45 +80,94 @@ function ColdLeadRow({ variant, row }: ColdLeadRowProps) {
         className="absolute inset-0"
         aria-label={`Open conversation with ${row.name}`}
       />
+      {/* Mobile — stacked card */}
+      <div className="flex flex-col gap-2 border-l-[3px] border-warn px-4 py-3 md:hidden">
+        <div className="flex items-start gap-3">
+          <div className="relative flex size-9 shrink-0 items-center justify-center rounded-full bg-warn-soft text-[11px] font-bold text-warn">
+            {row.initial}
+          </div>
+          <div className="relative min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2 font-sans text-[14px] font-bold text-ink">
+              <span className="truncate">{row.name}</span>
+              {adminClientPill ? (
+                <LeadClientPill
+                  name={adminClientPill}
+                  tone={(row as AdminLeadRow).clientTone}
+                />
+              ) : null}
+            </div>
+            <div className="mt-0.5 line-clamp-2 font-sans text-[12px] text-ink-quiet">
+              {row.preview}
+            </div>
+          </div>
+        </div>
+        <div className="relative flex items-center justify-between gap-2">
+          <div className="flex flex-col gap-0.5">
+            <span className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-warn">
+              Nudge #{row.nudgeCount} · cold
+            </span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-quiet">
+              {ageLabel}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleDismiss}
+            disabled={dismissing}
+            className={cn(
+              'relative inline-flex h-9 shrink-0 items-center rounded-md border border-rule bg-card px-3 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-ink-quiet transition-colors',
+              'hover:border-ink hover:text-ink',
+              dismissing && 'opacity-55',
+            )}
+          >
+            {dismissing ? 'Dismissing…' : 'Dismiss ✓'}
+          </button>
+        </div>
+      </div>
+      {/* Desktop — original 6-col grid */}
       <div
-        aria-hidden
-        className="h-[28px] rounded-r-sm bg-warn"
-      />
-      <div className="relative flex size-9 items-center justify-center rounded-full bg-warn-soft text-[11px] font-bold text-warn">
-        {row.initial}
-      </div>
-      <div className="relative min-w-0">
-        <div className="flex items-center gap-2 truncate font-sans text-[14px] font-bold text-ink">
-          {row.name}
-          {adminClientPill ? (
-            <LeadClientPill
-              name={adminClientPill}
-              tone={(row as AdminLeadRow).clientTone}
-            />
-          ) : null}
-        </div>
-        <div className="mt-0.5 truncate font-sans text-[12px] text-ink-quiet">
-          {row.preview}
-        </div>
-      </div>
-      <div className="relative font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-warn">
-        Nudge #{row.nudgeCount} · cold
-      </div>
-      <div className="relative font-mono text-[10px] uppercase tracking-[0.08em] text-ink-quiet">
-        {ageLabel}
-      </div>
-      <button
-        type="button"
-        onClick={handleDismiss}
-        disabled={dismissing}
         className={cn(
-          'relative inline-flex h-7 items-center rounded-md border border-rule bg-card px-2.5 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-ink-quiet transition-colors',
-          'hover:border-ink hover:text-ink',
-          dismissing && 'opacity-55',
+          'hidden items-center gap-3 px-[18px] py-3.5',
+          'md:grid md:grid-cols-[4px_36px_1fr_140px_120px_auto]',
         )}
       >
-        {dismissing ? 'Dismissing…' : 'Dismiss ✓'}
-      </button>
+        <div aria-hidden className="h-[28px] rounded-r-sm bg-warn" />
+        <div className="relative flex size-9 items-center justify-center rounded-full bg-warn-soft text-[11px] font-bold text-warn">
+          {row.initial}
+        </div>
+        <div className="relative min-w-0">
+          <div className="flex items-center gap-2 truncate font-sans text-[14px] font-bold text-ink">
+            {row.name}
+            {adminClientPill ? (
+              <LeadClientPill
+                name={adminClientPill}
+                tone={(row as AdminLeadRow).clientTone}
+              />
+            ) : null}
+          </div>
+          <div className="mt-0.5 truncate font-sans text-[12px] text-ink-quiet">
+            {row.preview}
+          </div>
+        </div>
+        <div className="relative font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-warn">
+          Nudge #{row.nudgeCount} · cold
+        </div>
+        <div className="relative font-mono text-[10px] uppercase tracking-[0.08em] text-ink-quiet">
+          {ageLabel}
+        </div>
+        <button
+          type="button"
+          onClick={handleDismiss}
+          disabled={dismissing}
+          className={cn(
+            'relative inline-flex h-7 items-center rounded-md border border-rule bg-card px-2.5 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-ink-quiet transition-colors',
+            'hover:border-ink hover:text-ink',
+            dismissing && 'opacity-55',
+          )}
+        >
+          {dismissing ? 'Dismissing…' : 'Dismiss ✓'}
+        </button>
+      </div>
     </div>
   );
 }

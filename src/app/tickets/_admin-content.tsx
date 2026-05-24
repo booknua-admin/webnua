@@ -183,9 +183,7 @@ function RegularTicketsList({
 }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-ink/8 bg-card">
-      <div className="overflow-x-auto">
-      <div className="min-w-[720px]">
-      <div className="grid grid-cols-[20px_180px_1fr_110px_120px_110px_80px] items-center gap-3 border-b border-ink/8 bg-paper-2/40 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
+      <div className="hidden items-center gap-3 border-b border-ink/8 bg-paper-2/40 px-[18px] py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet md:grid md:grid-cols-[20px_180px_1fr_110px_120px_110px_80px]">
         <div />
         <div>{'// Client'}</div>
         <div>{'// Subject'}</div>
@@ -217,8 +215,6 @@ function RegularTicketsList({
           />
         ))
       )}
-      </div>
-      </div>
     </div>
   );
 }

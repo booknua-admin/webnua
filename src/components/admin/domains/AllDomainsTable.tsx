@@ -137,7 +137,7 @@ export function AllDomainsTable() {
 
       {/* Rows */}
       <div className="overflow-hidden rounded-xl border border-rule bg-card shadow-card">
-        <div className="grid grid-cols-[1.4fr_1fr_140px_140px_120px_100px] gap-3 border-b border-rule bg-paper-2 px-5 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+        <div className="hidden gap-3 border-b border-rule bg-paper-2 px-5 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet md:grid md:grid-cols-[1.4fr_1fr_140px_140px_120px_100px]">
           <span>Domain</span>
           <span>Client</span>
           <span>Status</span>
@@ -164,41 +164,84 @@ export function AllDomainsTable() {
             return (
               <div
                 key={row.id}
-                className="grid grid-cols-[1.4fr_1fr_140px_140px_120px_100px] items-center gap-3 border-b border-rule px-5 py-3 last:border-b-0 hover:bg-paper-2/50"
+                className="border-b border-rule last:border-b-0 hover:bg-paper-2/50"
               >
-                <div className="flex items-center gap-2 truncate">
-                  <span className={`h-2 w-2 rounded-full ${STATUS_DOT_CLASS[row.status]}`} />
-                  <span className="truncate font-mono text-[13px] text-ink" title={row.domain}>
-                    {row.domain}
-                  </span>
-                  {row.is_primary ? (
-                    <span className="rounded-full bg-rust/12 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-rust">
-                      Primary
-                    </span>
-                  ) : null}
-                  {stuck ? (
+                {/* Mobile — stacked card */}
+                <div className="flex flex-col gap-2 px-4 py-3 md:hidden">
+                  <div className="flex items-start gap-2">
                     <span
-                      className="rounded-full bg-warn/12 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-warn"
-                      title="In-flight for more than 24 hours — likely needs operator attention"
-                    >
-                      Stuck
+                      className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${STATUS_DOT_CLASS[row.status]}`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="break-all font-mono text-[13px] text-ink">
+                        {row.domain}
+                      </div>
+                      <div className="mt-0.5 text-[12px] text-ink-quiet">
+                        {client?.name ?? row.client_id.slice(0, 8)}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      {row.is_primary ? (
+                        <span className="rounded-full bg-rust/12 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-rust">
+                          Primary
+                        </span>
+                      ) : null}
+                      {stuck ? (
+                        <span className="rounded-full bg-warn/12 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-warn">
+                          Stuck
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-rule pt-2 font-mono text-[10px] uppercase tracking-[0.1em] text-ink-quiet">
+                    <span className="text-ink-soft">{STATUS_LABEL[row.status]}</span>
+                    <span>Added {formatAge(row.added_at)}</span>
+                    <span>
+                      Checked {row.last_checked_at ? formatAge(row.last_checked_at) : '—'}
                     </span>
-                  ) : null}
+                  </div>
+                  <div className="flex justify-end">
+                    <Button type="button" size="sm" variant="secondary" onClick={() => drillIn(row)}>
+                      Open →
+                    </Button>
+                  </div>
                 </div>
-                <span className="truncate text-[13px] text-ink">
-                  {client?.name ?? row.client_id.slice(0, 8)}
-                </span>
-                <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-soft">
-                  {STATUS_LABEL[row.status]}
-                </span>
-                <span className="font-mono text-[11px] text-ink-quiet">{formatAge(row.added_at)}</span>
-                <span className="font-mono text-[11px] text-ink-quiet">
-                  {row.last_checked_at ? formatAge(row.last_checked_at) : '—'}
-                </span>
-                <div className="flex justify-end">
-                  <Button type="button" size="sm" variant="secondary" onClick={() => drillIn(row)}>
-                    Open →
-                  </Button>
+                {/* Desktop — original 6-col grid */}
+                <div className="hidden items-center gap-3 px-5 py-3 md:grid md:grid-cols-[1.4fr_1fr_140px_140px_120px_100px]">
+                  <div className="flex items-center gap-2 truncate">
+                    <span className={`h-2 w-2 rounded-full ${STATUS_DOT_CLASS[row.status]}`} />
+                    <span className="truncate font-mono text-[13px] text-ink" title={row.domain}>
+                      {row.domain}
+                    </span>
+                    {row.is_primary ? (
+                      <span className="rounded-full bg-rust/12 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-rust">
+                        Primary
+                      </span>
+                    ) : null}
+                    {stuck ? (
+                      <span
+                        className="rounded-full bg-warn/12 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-warn"
+                        title="In-flight for more than 24 hours — likely needs operator attention"
+                      >
+                        Stuck
+                      </span>
+                    ) : null}
+                  </div>
+                  <span className="truncate text-[13px] text-ink">
+                    {client?.name ?? row.client_id.slice(0, 8)}
+                  </span>
+                  <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-soft">
+                    {STATUS_LABEL[row.status]}
+                  </span>
+                  <span className="font-mono text-[11px] text-ink-quiet">{formatAge(row.added_at)}</span>
+                  <span className="font-mono text-[11px] text-ink-quiet">
+                    {row.last_checked_at ? formatAge(row.last_checked_at) : '—'}
+                  </span>
+                  <div className="flex justify-end">
+                    <Button type="button" size="sm" variant="secondary" onClick={() => drillIn(row)}>
+                      Open →
+                    </Button>
+                  </div>
                 </div>
               </div>
             );

@@ -43,7 +43,8 @@ export function DnsRecordsTable({ records }: { records: DnsRecordRequirement[] }
   }
   return (
     <div className="overflow-hidden rounded-md border border-rule bg-paper">
-      <div className="grid grid-cols-[80px_1fr_2fr_60px_60px] gap-2 border-b border-rule bg-paper-2 px-4 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+      {/* Desktop header — same 5-col grid as desktop rows */}
+      <div className="hidden gap-2 border-b border-rule bg-paper-2 px-4 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet md:grid md:grid-cols-[80px_1fr_2fr_60px_60px]">
         <span>Type</span>
         <span>Name</span>
         <span>Value</span>
@@ -53,21 +54,51 @@ export function DnsRecordsTable({ records }: { records: DnsRecordRequirement[] }
       {records.map((record, index) => (
         <div
           key={`${record.type}-${record.name}-${index}`}
-          className="grid grid-cols-[80px_1fr_2fr_60px_60px] items-center gap-2 border-b border-rule px-4 py-3 text-[13px] last:border-b-0"
+          className="border-b border-rule text-[13px] last:border-b-0"
         >
-          <span className="font-mono font-bold uppercase tracking-tight text-ink">
-            {record.type}
-          </span>
-          <span className="truncate font-mono text-ink">{record.name}</span>
-          <span className="truncate font-mono text-ink" title={record.value}>
-            {record.value}
-          </span>
-          <span className="font-mono text-ink-quiet">{record.ttl ?? 3600}</span>
-          <div className="flex justify-end">
-            <CopyButton
-              value={record.value}
-              label={`${record.type} record for ${record.name}`}
-            />
+          {/* Mobile — stacked field/value pairs */}
+          <div className="flex flex-col gap-1.5 px-4 py-3 md:hidden">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-mono text-[11px] font-bold uppercase tracking-tight text-ink">
+                {record.type}
+              </span>
+              <CopyButton
+                value={record.value}
+                label={`${record.type} record for ${record.name}`}
+              />
+            </div>
+            <div className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-ink-quiet">
+              Name
+            </div>
+            <div className="break-all font-mono text-[12px] text-ink">
+              {record.name}
+            </div>
+            <div className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-ink-quiet">
+              Value
+            </div>
+            <div className="break-all font-mono text-[12px] text-ink">
+              {record.value}
+            </div>
+            <div className="font-mono text-[11px] text-ink-quiet">
+              TTL {record.ttl ?? 3600}
+            </div>
+          </div>
+          {/* Desktop — original grid */}
+          <div className="hidden items-center gap-2 px-4 py-3 md:grid md:grid-cols-[80px_1fr_2fr_60px_60px]">
+            <span className="font-mono font-bold uppercase tracking-tight text-ink">
+              {record.type}
+            </span>
+            <span className="truncate font-mono text-ink">{record.name}</span>
+            <span className="truncate font-mono text-ink" title={record.value}>
+              {record.value}
+            </span>
+            <span className="font-mono text-ink-quiet">{record.ttl ?? 3600}</span>
+            <div className="flex justify-end">
+              <CopyButton
+                value={record.value}
+                label={`${record.type} record for ${record.name}`}
+              />
+            </div>
           </div>
         </div>
       ))}

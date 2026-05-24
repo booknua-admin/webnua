@@ -255,7 +255,7 @@ export function CreateClientModal({
         </DialogDescription>
 
         {/* header */}
-        <div className="border-b border-paper-2 px-8 pb-5 pt-5">
+        <div className="border-b border-paper-2 px-4 pb-5 pt-5 md:px-8">
           <div className="flex items-center justify-between">
             <p className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-rust">
               {'// NEW CLIENT'}
@@ -293,7 +293,7 @@ export function CreateClientModal({
         </div>
 
         {/* body */}
-        <div className="max-h-[58vh] overflow-y-auto px-8 py-6">
+        <div className="max-h-[58vh] overflow-y-auto px-4 py-5 md:px-8 md:py-6">
         {/* key={phase} remounts the inner block on each step so the
             tailwindcss-animate fade-in plays. Calm 180ms duration — no
             distance/slide, just opacity. */}
@@ -318,7 +318,7 @@ export function CreateClientModal({
                   aria-invalid={!industry.trim()}
                 />
               </Field>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field label="Owner name">
                   <Input value={ownerName} onChange={(e) => setOwnerName(e.target.value)} placeholder="Jane Smith" />
                 </Field>
@@ -326,7 +326,7 @@ export function CreateClientModal({
                   <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="0400 000 000" />
                 </Field>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field label="Email">
                   <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="hello@acme.com" />
                 </Field>
@@ -662,7 +662,7 @@ export function CreateClientModal({
                   </p>
                 </div>
               </Field>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field label="Heading font">
                   <FontSelect value={headingFont} onChange={setHeadingFont} />
                 </Field>
@@ -843,7 +843,7 @@ export function CreateClientModal({
 
         {/* footer */}
         {phase !== 'generating' ? (
-          <div className="flex items-center justify-between border-t border-paper-2 bg-paper px-8 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-paper-2 bg-paper px-4 py-4 md:px-8">
             <Button variant="ghost" onClick={() => goBack(phase, setPhase, () => close(false))}>
               {phase === 'business' ? 'Cancel' : '← Back'}
             </Button>
