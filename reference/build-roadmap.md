@@ -5,6 +5,81 @@ This doc is the source of truth for what's planned and in what order.
 When a phase completes, update its entry with a ✅ + summary line and
 the merge commit. Parked items move to CLAUDE.md per discipline.
 
+## Standing constraint — mobile-first UI
+
+Any new UI built must work on mobile (320–768px viewport) as well as
+desktop. Audit existing mobile patterns in the codebase before building
+new UI. Applies to operator surfaces, client surfaces, and
+customer-facing site templates. No new desktop-only surfaces ship.
+
+## Critical path to launch (paying customers)
+
+The ordered list of work that must complete before the first paid
+customer. Each item is a discrete session (or session set). Update with
+✅ + merge commit as each lands.
+
+1. ✅ **Custom domains** — shipped + verified. `client_custom_domains`
+   table, 5-min polling job, client + operator UI on `/settings/domains`,
+   host-aware middleware with 301 to primary domain. End-to-end verified
+   against the live Vercel API.
+2. **A3 funnel publish + approval lane** — wire the funnel-side publish
+   lane in parity with the website lane. (Note: A3 was marked done under
+   Phase 4 — re-verify here, then strike or scope follow-ups.)
+3. **Sign-up + onboarding flow audit** — read the current state across
+   `app/(auth)/`, the create-client modal, the first-load experience.
+   Output: a punch list of gaps before building.
+4. **Sign-up + onboarding flow build** — close the gaps from #3. New
+   customer can self-serve from signup → first funnel published.
+5. **Stripe billing tier-gating** — enforce plan-tier access restrictions
+   at the resolver / capability layer. Today the plan layer resolves
+   correctly but nothing gates on the resolved bundle.
+6. **Cancel / delete account flow** — operator + client paths. Subscription
+   cancellation already handled by Stripe Portal; account / data deletion
+   (RLS, Storage cleanup, audit log retention policy) is the new work.
+7. **Mobile optimization** — audit pass then fix sessions. Applies to
+   every existing surface; the standing constraint above kicks in for
+   anything new.
+8. **Stub data sweep + test account cleanup** — remove demo / seed
+   content from production tables; remove dev test users; verify a fresh
+   sign-up sees an empty workspace, not seeded fixtures.
+9. **Custom domains RLS test follow-up** — add `tests/rls/` coverage
+   for `client_custom_domains` per the RLS-coverage standing rule.
+10. **Manual UI polish pass** — includes building `LeadAutomationPanel`
+    (the Phase 8 Session 3 carve-out — see CLAUDE.md), fixing React
+    compiler warnings in `cta.tsx` / `reviews.tsx` / `services.tsx` /
+    `offer.tsx`, and any cosmetic gaps surfaced by the mobile pass.
+11. **Final launch validation** — end-to-end smoke across sign-up →
+    onboarding → publish → custom domain → payment → first lead →
+    automation fire → review request. Real Stripe live mode, real
+    Resend / Twilio sends, real GBP location.
+
+### V1.0.1 — right after launch
+
+- Analytics verification — confirm the rollup + read paths under real
+  visitor traffic.
+- Meta Pixel auto-install on Meta ad account connect — the install step
+  is operator-manual today; auto-inject when a client connects Meta.
+- One builder upgrade — highest-impact section TBD from customer
+  feedback in the first week.
+
+### V1.1 — after first 10–20 customers
+
+- Messaging events table — closes the campaign + automation
+  performance-metrics gap (CLAUDE.md "Automation overlap / anti-spam
+  suppression rules" parked decision).
+- More builder upgrades — driven by customer feedback patterns.
+- `LeadAutomationPanel` per-lead historical runs UI — the deferred
+  Phase 8 Session 3 carve-out, surfaced on the lead detail page.
+
+### Admin work in parallel (operator, not engineering)
+
+- Terms of Service drafted.
+- Meta App Review submission with demo videos — the sensitive scopes
+  (`ads_management`, `business_management`, `pages_manage_ads`,
+  `leads_retrieval`) need verified-app review.
+- Google Business API verification status — the `business.manage`
+  scope is sensitive/restricted; track verification through approval.
+
 ## Phase 3b — Finish surface wiring (this branch + one more session)
 
 Booking-write flows. No migration needed — `recurring_booking_schedules` exists.
