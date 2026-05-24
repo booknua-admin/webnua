@@ -26,6 +26,10 @@
 
 import { NextResponse } from 'next/server';
 
+import {
+  hasProvisionedWorkspace,
+  provisionSignupWorkspace,
+} from '@/lib/auth/signup-workspace';
 import { env } from '@/lib/env';
 import { getIntegrationDb } from '@/lib/integrations/_shared/db-types';
 import { firePaymentFailed } from '@/lib/automations/triggers';
@@ -74,6 +78,24 @@ function logInbound(
   })();
 }
 
+/** A subscription created by the /api/sign-up flow carries our `kind=signup`
+ *  metadata + the captured business details. The handler reads from the
+ *  subscription's own metadata (set via `subscription_data.metadata` at
+ *  Checkout-session creation) so the data flows through `subscription.created`
+ *  directly without a second round-trip to fetch the session. */
+type SignupMetadata = {
+  kind?: string;
+  signup_business_name?: string;
+  signup_business_email?: string;
+  signup_business_category?: string;
+};
+
+function readSignupMetadata(sub: StripeSubscription): SignupMetadata | null {
+  const meta = (sub as unknown as { metadata?: SignupMetadata }).metadata;
+  if (!meta || meta.kind !== 'signup') return null;
+  return meta;
+}
+
 /** Apply one verified event. Returns the resolved tenant (for the call-log
  *  row) or null when the event refers to a customer we do not track. */
 async function handleEvent(event: StripeEvent): Promise<{ clientId: string | null }> {
@@ -81,9 +103,40 @@ async function handleEvent(event: StripeEvent): Promise<{ clientId: string | nul
   switch (event.type) {
     case 'customer.subscription.created':
     case 'customer.subscription.updated': {
-      const result = await applySubscriptionEvent(object as unknown as StripeSubscription, {
-        deleted: false,
-      });
+      const sub = object as unknown as StripeSubscription;
+
+      // SIGNUP PROVISIONING. A subscription stamped with our `kind=signup`
+      // metadata is the trigger to create a brand-new workspace. We guard
+      // on `hasProvisionedWorkspace(sub.customer)` so a webhook retry (or a
+      // late `.updated` event for an already-signed-up customer) does not
+      // create a second workspace. The check is the unique-row anchor on
+      // `client_stripe_customers.stripe_customer_id`.
+      const signup = event.type === 'customer.subscription.created' ? readSignupMetadata(sub) : null;
+      if (signup) {
+        const already = await hasProvisionedWorkspace(sub.customer);
+        if (!already) {
+          try {
+            await provisionSignupWorkspace({
+              businessName: signup.signup_business_name ?? '',
+              businessEmail: signup.signup_business_email ?? '',
+              businessCategory: signup.signup_business_category ?? '',
+              stripeCustomerId: sub.customer,
+            });
+          } catch (error) {
+            // Provisioning failed AFTER the customer paid. Log loudly and
+            // continue to apply the subscription event — the operator can
+            // resolve manually from Stripe + our logs. Returning 500 to
+            // Stripe would trigger retries that hit the same error.
+            const message = error instanceof Error ? error.message : String(error);
+            console.error('[stripe/webhook] signup workspace provisioning failed', message);
+          }
+        }
+        // FALL THROUGH to applySubscriptionEvent below — the row we just
+        // (or someone before us) inserted is 'incomplete'; this same event
+        // body flips it to 'active'.
+      }
+
+      const result = await applySubscriptionEvent(sub, { deleted: false });
       return { clientId: result.clientId };
     }
     case 'customer.subscription.deleted': {

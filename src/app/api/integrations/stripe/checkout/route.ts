@@ -1,25 +1,28 @@
 // =============================================================================
 // POST /api/integrations/stripe/checkout — start billing for a client.
 //
-// Phase 7 Stripe billing session. Operator-only. The operator (in a client's
-// sub-account billing settings) starts the €299/month subscription:
+// Phase 7 Stripe billing session. Auth: client-or-operator. The customer may
+// start their own subscription from /settings/billing OR an operator may
+// start it on their behalf from the sub-account billing view (concierge).
+// Both paths run the same flow:
 //   1. resolve or create the client's Stripe Customer + the
 //      client_stripe_customers mapping row;
 //   2. create a hosted Checkout Session for the standard subscription Price;
-//   3. return the Checkout URL — the operator's browser navigates to it.
+//   3. return the Checkout URL — the caller's browser navigates to it.
 //
-// Reached by fetch() with the operator's Supabase access token on the
+// Reached by fetch() with the caller's Supabase access token on the
 // Authorization header (same auth transport as the OAuth integration routes).
-// The body carries the client UUID.
+// The body carries the client UUID; `requireClientAccess` accepts EITHER an
+// operator on that client OR a client-role user whose own client_id matches.
 //
-// When the client completes (or abandons) Checkout, Stripe redirects back to
+// When Checkout completes (or is abandoned), Stripe redirects back to
 // /settings/billing and fires webhooks that update client_stripe_customers.
 // =============================================================================
 
 import { NextResponse } from 'next/server';
 
 import { getIntegrationDb } from '@/lib/integrations/_shared/db-types';
-import { requireOperatorForClient } from '@/lib/integrations/_shared/operator-auth';
+import { requireClientAccess } from '@/lib/integrations/_shared/operator-auth';
 import {
   createCheckoutSession,
   createCustomer,
@@ -62,7 +65,9 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: 'missing-clientId' }, { status: 400 });
   }
 
-  const auth = await requireOperatorForClient(request, clientId);
+  // Client-or-operator: a client subscribes themselves OR an operator does it
+  // on their behalf. The same `clients` RLS path scopes the access check.
+  const auth = await requireClientAccess(request, clientId);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

@@ -5,6 +5,7 @@
 // resolves the session and we route to the role landing.
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 import { BrandMark } from '@/components/ui/BrandMark';
@@ -124,6 +125,13 @@ export default function LoginPage() {
           </form>
         </CardContent>
       </Card>
+
+      <p className="text-center text-[13px] text-ink-quiet">
+        New to Webnua?{' '}
+        <Link href="/sign-up" className="font-semibold text-rust hover:text-rust-deep">
+          Start a subscription →
+        </Link>
+      </p>
 
       <p className="text-center font-mono text-[10px] font-bold tracking-[0.14em] uppercase text-ink-quiet/70">
         &copy; Webnua &middot; Perth

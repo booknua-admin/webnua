@@ -38,13 +38,28 @@ export async function POST(
   const provider = rawProvider;
 
   let clientId: unknown;
+  let returnTo: unknown;
   try {
-    ({ clientId } = (await request.json()) as { clientId?: unknown });
+    ({ clientId, returnTo } = (await request.json()) as {
+      clientId?: unknown;
+      returnTo?: unknown;
+    });
   } catch {
     return NextResponse.json({ error: 'invalid-body' }, { status: 400 });
   }
   if (typeof clientId !== 'string' || clientId.length === 0) {
     return NextResponse.json({ error: 'missing-clientId' }, { status: 400 });
+  }
+  // Validate returnTo as an internal path. Defence in depth — the callback
+  // re-validates the path it pulls out of the (signed) state. A signed state
+  // means the value cannot be forged BUT could be replayed by the caller; we
+  // refuse external hosts and protocol-relative URLs at both ends.
+  let returnToPath: string | undefined;
+  if (returnTo !== undefined) {
+    if (typeof returnTo !== 'string' || !returnTo.startsWith('/') || returnTo.startsWith('//')) {
+      return NextResponse.json({ error: 'invalid-returnTo' }, { status: 400 });
+    }
+    returnToPath = returnTo;
   }
 
   // Every per-tenant OAuth provider is the customer's own third-party
@@ -63,7 +78,12 @@ export async function POST(
 
   try {
     const redirectUri = buildRedirectUri(provider);
-    const state = signOAuthState({ provider, clientId, operatorId: auth.userId });
+    const state = signOAuthState({
+      provider,
+      clientId,
+      operatorId: auth.userId,
+      returnTo: returnToPath,
+    });
     const authorizationUrl = generateAuthorizationUrl(provider, { redirectUri, state });
     return NextResponse.json({ authorizationUrl });
   } catch (error) {

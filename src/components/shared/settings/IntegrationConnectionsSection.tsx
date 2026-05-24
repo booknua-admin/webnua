@@ -21,12 +21,12 @@
 // on the same surface as the connection state — no dedicated GBP tab.
 // =============================================================================
 
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { GbpLocationPickerModal } from '@/components/shared/settings/GbpLocationPickerModal';
+import { IntegrationCallbackPickers } from '@/components/shared/settings/IntegrationCallbackPickers';
 import { MetaAdAccountFooter } from '@/components/shared/settings/MetaAdAccountFooter';
-import { MetaAdAccountPickerModal } from '@/components/shared/settings/MetaAdAccountPickerModal';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { Button } from '@/components/ui/button';
@@ -69,9 +69,14 @@ function daysUntil(iso: string | null): number | null {
 export function IntegrationConnectionsSection({
   clientSlug,
   clientName,
+  returnTo,
 }: {
   clientSlug: string;
   clientName: string;
+  /** Internal path the OAuth callback redirects to after success (e.g.
+   *  '/dashboard' when mounted on the onboarding screen). Defaults to the
+   *  callback's own default — '/settings/integrations'. */
+  returnTo?: string;
 }) {
   const { data: clientId } = useClientId(clientSlug);
   const connections = useClientConnections(clientId ?? null);
@@ -80,38 +85,6 @@ export function IntegrationConnectionsSection({
   for (const connection of connections.data ?? []) {
     byProvider.set(connection.provider, connection);
   }
-
-  // Post-OAuth picker — when the callback redirect lands the operator
-  // back here with a successful connect, auto-mount the operational layer
-  // (which GBP location / which Meta ad account) one step from the
-  // connection itself.
-  const search = useLocationSearch();
-  const [gbpPickerOpen, setGbpPickerOpen] = useState(false);
-  const [metaPickerOpen, setMetaPickerOpen] = useState(false);
-  useEffect(() => {
-    const params = new URLSearchParams(search);
-    if (
-      params.get('integration') === 'google_business_profile' &&
-      params.get('integration_status') === 'connected' &&
-      clientId
-    ) {
-      setGbpPickerOpen(true);
-    }
-  }, [search, clientId]);
-  // Meta picker auto-open — sibling to the GBP one above (same lint-flagged
-  // setState-in-effect pattern; consistent with the GBP block already
-  // here). The two blocks live separately so each provider's behaviour is
-  // easy to find when revisiting.
-  useEffect(() => {
-    const params = new URLSearchParams(search);
-    if (
-      params.get('integration') === 'meta_ads' &&
-      params.get('integration_status') === 'connected' &&
-      clientId
-    ) {
-      setMetaPickerOpen(true);
-    }
-  }, [search, clientId]);
 
   return (
     <SettingsPanel>
@@ -138,20 +111,12 @@ export function IntegrationConnectionsSection({
               connection={byProvider.get(provider.id)}
               clientId={clientId ?? null}
               loading={connections.isLoading}
+              returnTo={returnTo}
             />
           ))}
         </div>
       </SettingsSection>
-      <GbpLocationPickerModal
-        open={gbpPickerOpen}
-        onOpenChange={setGbpPickerOpen}
-        clientId={clientId ?? null}
-      />
-      <MetaAdAccountPickerModal
-        open={metaPickerOpen}
-        onOpenChange={setMetaPickerOpen}
-        clientId={clientId ?? null}
-      />
+      <IntegrationCallbackPickers clientId={clientId ?? null} />
     </SettingsPanel>
   );
 }
@@ -163,11 +128,13 @@ function ConnectionRow({
   connection,
   clientId,
   loading,
+  returnTo,
 }: {
   provider: OAuthProviderDisplay;
   connection: ConnectionView | undefined;
   clientId: string | null;
   loading: boolean;
+  returnTo?: string;
 }) {
   const state = connectionState(connection);
   const disconnect = useDisconnectIntegration(clientId ?? '');
@@ -181,7 +148,7 @@ function ConnectionRow({
     setError(null);
     try {
       // Resolves only on failure — on success the browser navigates away.
-      await connectIntegration(provider.id, clientId);
+      await connectIntegration(provider.id, clientId, returnTo ? { returnTo } : undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start the connection.');
       setBusy(false);

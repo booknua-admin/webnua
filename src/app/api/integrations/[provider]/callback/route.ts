@@ -27,16 +27,33 @@ export const maxDuration = 60;
 
 type CallbackStatus = 'connected' | 'denied' | 'error';
 
-/** Redirect the operator back to Settings → Integrations with an outcome. The
- *  operator's workspace context (active sub-account) is browser-local, so it
- *  is still set on return — no need to thread the client id through. */
-function redirectToSettings(
+/** Reject external-host / protocol-relative redirects — only `/internal-paths`
+ *  are accepted. (Same rule the connect route applies; this is defence in
+ *  depth: the state token IS signed, but we still refuse anything that does
+ *  not look like a same-origin path on read.) */
+function isSafeInternalPath(value: string | undefined): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.startsWith('/') &&
+    !value.startsWith('//')
+  );
+}
+
+/** Redirect the caller back to the post-OAuth landing surface with an
+ *  outcome. Defaults to `/settings/integrations`; an onboarding-initiated
+ *  connect supplies `/dashboard` via the state token's `returnTo` field.
+ *  The caller's workspace context (active sub-account) is browser-local, so
+ *  it is still set on return — no need to thread the client id through. */
+function redirectToLanding(
   request: Request,
   provider: string,
   status: CallbackStatus,
   reason?: string,
+  returnTo?: string,
 ): Response {
-  const url = new URL('/settings/integrations', new URL(request.url).origin);
+  const path = isSafeInternalPath(returnTo) ? returnTo : '/settings/integrations';
+  const url = new URL(path, new URL(request.url).origin);
   url.searchParams.set('integration', provider);
   url.searchParams.set('integration_status', status);
   if (reason) url.searchParams.set('reason', reason);
@@ -79,7 +96,7 @@ export async function GET(
   const { provider: rawProvider } = await params;
   if (!isOAuthProviderId(rawProvider)) {
     await logCallbackFailure(rawProvider, null, 'unknown provider in callback URL');
-    return redirectToSettings(request, rawProvider, 'error', 'unknown-provider');
+    return redirectToLanding(request, rawProvider, 'error', 'unknown-provider');
   }
   const provider: OAuthProviderId = rawProvider;
 
@@ -89,28 +106,30 @@ export async function GET(
   // (Google: access_denied). Not a failure — the operator chose not to grant.
   const providerError = query.get('error');
   if (providerError) {
-    return redirectToSettings(request, provider, 'denied', providerError);
+    return redirectToLanding(request, provider, 'denied', providerError);
   }
 
   const code = query.get('code');
   const state = query.get('state');
   if (!code || !state) {
     await logCallbackFailure(provider, null, 'callback missing code or state');
-    return redirectToSettings(request, provider, 'error', 'missing-params');
+    return redirectToLanding(request, provider, 'error', 'missing-params');
   }
 
   // Verify the signed state — this is the route's only authentication.
   let clientId: string;
+  let returnTo: string | undefined;
   try {
     const payload = verifyOAuthState(state);
     if (payload.provider !== provider) {
       throw new Error('state provider does not match the callback provider');
     }
     clientId = payload.clientId;
+    returnTo = payload.returnTo;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await logCallbackFailure(provider, null, `state verification failed: ${message}`);
-    return redirectToSettings(request, provider, 'error', 'bad-state');
+    return redirectToLanding(request, provider, 'error', 'bad-state');
   }
 
   try {
@@ -158,11 +177,11 @@ export async function GET(
       });
     }
 
-    return redirectToSettings(request, provider, 'connected');
+    return redirectToLanding(request, provider, 'connected', undefined, returnTo);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error('[oauth/callback] connection failed', error);
     await logCallbackFailure(provider, clientId, message);
-    return redirectToSettings(request, provider, 'error', 'exchange-failed');
+    return redirectToLanding(request, provider, 'error', 'exchange-failed', returnTo);
   }
 }

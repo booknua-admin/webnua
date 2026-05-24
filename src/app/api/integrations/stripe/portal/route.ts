@@ -1,12 +1,12 @@
 // =============================================================================
 // POST /api/integrations/stripe/portal — open the Stripe Customer Portal.
 //
-// Phase 7 Stripe billing session. Operator-only. For a client that already
-// has a Stripe Customer, this mints a Billing Portal session — the hosted
-// Stripe page where the customer updates their payment method, views invoices,
-// or cancels the subscription.
+// Phase 7 Stripe billing session. Auth: client-or-operator. The customer may
+// manage their own billing (update card, view invoices, cancel) OR an
+// operator may open the portal on their behalf. Both paths mint a Billing
+// Portal session for the client's existing Stripe Customer.
 //
-// Reached by fetch() with the operator's Supabase access token; the body
+// Reached by fetch() with the caller's Supabase access token; the body
 // carries the client UUID. Returns the portal URL for the browser to navigate
 // to. The Customer Portal must be activated once in the Stripe dashboard
 // (Settings → Billing → Customer portal) — see CLAUDE.md.
@@ -14,7 +14,7 @@
 
 import { NextResponse } from 'next/server';
 
-import { requireOperatorForClient } from '@/lib/integrations/_shared/operator-auth';
+import { requireClientAccess } from '@/lib/integrations/_shared/operator-auth';
 import { createPortalSession, isStripeConfigured } from '@/lib/integrations/stripe/client';
 import { getStripeCustomerByClientId } from '@/lib/integrations/stripe/customers';
 
@@ -29,7 +29,7 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: 'missing-clientId' }, { status: 400 });
   }
 
-  const auth = await requireOperatorForClient(request, clientId);
+  const auth = await requireClientAccess(request, clientId);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

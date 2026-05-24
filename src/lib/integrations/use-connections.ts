@@ -106,16 +106,25 @@ async function accessToken(): Promise<string> {
  * Start an OAuth connect flow. POSTs the connect route for an authorization
  * URL, then navigates the browser to the provider's consent page. Resolves
  * only on a failure (on success the page has already navigated away).
+ *
+ * `options.returnTo` lets the caller redirect to a specific internal path
+ * after the OAuth round-trip (default: '/settings/integrations'). Used by
+ * the onboarding screen to land the user back on '/dashboard' after a
+ * successful connect, where the picker auto-open hook is also mounted.
  */
 export async function connectIntegration(
   provider: OAuthProviderId,
   clientId: string,
+  options?: { returnTo?: string },
 ): Promise<void> {
   const token = await accessToken();
   const response = await fetch(`/api/integrations/${provider}/connect`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ clientId }),
+    body: JSON.stringify({
+      clientId,
+      ...(options?.returnTo ? { returnTo: options.returnTo } : {}),
+    }),
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: string };
