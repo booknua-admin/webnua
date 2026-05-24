@@ -51,10 +51,11 @@ create index meta_ads_insights_campaign_date_idx
 -- --- RLS ---------------------------------------------------------------------
 
 alter table public.meta_ads_insights enable row level security;
+revoke insert, update, delete on public.meta_ads_insights from authenticated;
 
 create policy meta_ads_insights_select on public.meta_ads_insights
   for select to authenticated
-  using (client_id = any (private.accessible_client_ids()));
+  using (client_id in (select private.accessible_client_ids()));
 
 -- Writes are service-role only — every insert/upsert goes through the
 -- meta_sync_insights job handler.

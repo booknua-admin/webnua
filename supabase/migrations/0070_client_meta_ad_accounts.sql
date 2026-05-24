@@ -53,20 +53,33 @@ create table public.client_meta_ad_accounts (
 create index client_meta_ad_accounts_meta_ad_account_id_idx
   on public.client_meta_ad_accounts (meta_ad_account_id);
 
+create function private.client_meta_ad_accounts_touch_updated_at()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
 create trigger client_meta_ad_accounts_set_updated_at
   before update on public.client_meta_ad_accounts
-  for each row execute function private.set_updated_at();
+  for each row execute function private.client_meta_ad_accounts_touch_updated_at();
 
 -- --- RLS ---------------------------------------------------------------------
 
 alter table public.client_meta_ad_accounts enable row level security;
+revoke insert, update, delete on public.client_meta_ad_accounts from authenticated;
 
 -- Operators see ad accounts for their accessible clients; clients see their
 -- own ad-account assignment (the "Meta is connected" dashboard widget reads
 -- this — the customer should know which account is being managed).
 create policy client_meta_ad_accounts_select on public.client_meta_ad_accounts
   for select to authenticated
-  using (client_id = any (private.accessible_client_ids()));
+  using (client_id in (select private.accessible_client_ids()));
 
 -- Writes are service-role only — every insert/update goes through the
 -- post-OAuth ad-account picker route, never a direct user write.

@@ -39,17 +39,30 @@ create table public.meta_lead_forms (
 create index meta_lead_forms_client_id_idx
   on public.meta_lead_forms (client_id);
 
+create function private.meta_lead_forms_touch_updated_at()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
 create trigger meta_lead_forms_set_updated_at
   before update on public.meta_lead_forms
-  for each row execute function private.set_updated_at();
+  for each row execute function private.meta_lead_forms_touch_updated_at();
 
 -- --- RLS ---------------------------------------------------------------------
 
 alter table public.meta_lead_forms enable row level security;
+revoke insert, update, delete on public.meta_lead_forms from authenticated;
 
 create policy meta_lead_forms_select on public.meta_lead_forms
   for select to authenticated
-  using (client_id = any (private.accessible_client_ids()));
+  using (client_id in (select private.accessible_client_ids()));
 
 -- Writes are service-role only — every insert/update goes through the
 -- campaign-launch route or the lead-form sync job.

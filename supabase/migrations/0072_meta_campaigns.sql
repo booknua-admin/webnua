@@ -81,17 +81,30 @@ create index meta_campaigns_status_idx
   on public.meta_campaigns (status)
   where status in ('active', 'in_review');
 
+create function private.meta_campaigns_touch_updated_at()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
 create trigger meta_campaigns_set_updated_at
   before update on public.meta_campaigns
-  for each row execute function private.set_updated_at();
+  for each row execute function private.meta_campaigns_touch_updated_at();
 
 -- --- RLS ---------------------------------------------------------------------
 
 alter table public.meta_campaigns enable row level security;
+revoke insert, update, delete on public.meta_campaigns from authenticated;
 
 create policy meta_campaigns_select on public.meta_campaigns
   for select to authenticated
-  using (client_id = any (private.accessible_client_ids()));
+  using (client_id in (select private.accessible_client_ids()));
 
 -- Writes are service-role only — launch + status + sync all go through the
 -- API routes or the sync jobs.
