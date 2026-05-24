@@ -62,6 +62,34 @@ function errorMessage(code: string | undefined, status: number): string {
   }
 }
 
+/** Error thrown by `postJson` when the route returns a structured failure
+ *  body. Carries `error` (the code string) + the route's optional `step` /
+ *  `detail` / `partial` fields so callers (e.g. the launch modal) can
+ *  surface which Meta step failed instead of a one-line `Error.message`. */
+export class MetaRouteError extends Error {
+  readonly code: string | undefined;
+  readonly status: number;
+  readonly step: string | undefined;
+  readonly detail: string | undefined;
+  readonly partial: Record<string, unknown> | undefined;
+  constructor(input: {
+    code: string | undefined;
+    status: number;
+    step?: string;
+    detail?: string;
+    partial?: Record<string, unknown>;
+    message: string;
+  }) {
+    super(input.message);
+    this.name = 'MetaRouteError';
+    this.code = input.code;
+    this.status = input.status;
+    this.step = input.step;
+    this.detail = input.detail;
+    this.partial = input.partial;
+  }
+}
+
 async function postJson(path: string, body: unknown): Promise<Record<string, unknown>> {
   const token = await accessToken();
   const response = await fetch(path, {
@@ -71,7 +99,18 @@ async function postJson(path: string, body: unknown): Promise<Record<string, unk
   });
   const json = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   if (!response.ok) {
-    throw new Error(errorMessage(json.error as string | undefined, response.status));
+    const code = json.error as string | undefined;
+    throw new MetaRouteError({
+      code,
+      status: response.status,
+      step: typeof json.step === 'string' ? json.step : undefined,
+      detail: typeof json.detail === 'string' ? json.detail : undefined,
+      partial:
+        json.partial && typeof json.partial === 'object'
+          ? (json.partial as Record<string, unknown>)
+          : undefined,
+      message: errorMessage(code, response.status),
+    });
   }
   return json;
 }
@@ -255,35 +294,6 @@ export function useSelectMetaAdAccount() {
   });
 }
 
-/** Launch a campaign from a template. */
-export function useLaunchMetaCampaign() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: {
-      clientId: string;
-      templateSlug: string;
-      dailyBudgetMajor: number;
-      pageId: string;
-      pageAccessToken: string;
-      privacyPolicyUrl: string;
-      linkUrl: string;
-      contextOverrides?: Record<string, string>;
-      initialStatus?: 'ACTIVE' | 'PAUSED';
-      startDate?: string;
-      endDate?: string;
-    }) => {
-      return await postJson('/api/integrations/meta_ads/campaigns', {
-        action: 'launch',
-        ...input,
-      });
-    },
-    onSuccess: (_d, vars) => {
-      qc.invalidateQueries({ queryKey: campaignsKey(vars.clientId) });
-      qc.invalidateQueries({ queryKey: insightsKey(vars.clientId, 30) });
-    },
-  });
-}
-
 /** Pause / resume a Meta campaign. */
 export function useSetMetaCampaignStatus() {
   const qc = useQueryClient();
@@ -301,6 +311,8 @@ export function useSetMetaCampaignStatus() {
     },
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: campaignsKey(vars.clientId) });
+      qc.invalidateQueries({ queryKey: ['campaigns', 'admin'] });
+      qc.invalidateQueries({ queryKey: ['campaigns', 'client'] });
     },
   });
 }
@@ -318,6 +330,8 @@ export function useSyncMetaCampaign() {
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: campaignsKey(vars.clientId) });
       qc.invalidateQueries({ queryKey: insightsKey(vars.clientId, 30) });
+      qc.invalidateQueries({ queryKey: ['campaigns', 'admin'] });
+      qc.invalidateQueries({ queryKey: ['campaigns', 'client'] });
     },
   });
 }
