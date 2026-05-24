@@ -28,11 +28,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { AppError, normalizeError } from '@/lib/errors';
 import { supabase } from '@/lib/supabase/client';
+import type { Json } from '@/lib/types/database';
 
 import type {
   AdminAutomations,
   AutomationClientTone,
   AutomationEditor,
+  AutomationEditorAction,
+  AutomationEditorActionType,
   AutomationEditorChannel,
   AutomationEditorStep,
   AutomationFlowMini,
@@ -40,6 +43,8 @@ import type {
   AutomationStatsCard,
   ClientAutomations,
 } from './types';
+
+import { ACTION_PAUSES_ON_HUMAN_ACTIVITY } from './engine-types';
 
 // ---- Row shapes (new schema) -----------------------------------------------
 
@@ -419,24 +424,109 @@ const VARIABLE_CATALOG = [
 /** Convert a comm action to the editor's step shape. Body text resolves to
  *  the referenced template_key — Session 2 fetches the template body inline;
  *  for now we display a placeholder pointing at the template. */
-function toEditorStep(action: ActionRow): AutomationEditorStep {
+function toEditorStep(
+  action: ActionRow,
+  templates: Map<string, { subject: string | null; body: string }>,
+): AutomationEditorStep {
   const channel = actionToChannel(action.action_type) ?? 'sms';
   const cfg = (action.action_config ?? {}) as { template_key?: string };
-  const templateKey = cfg.template_key ?? '(no template)';
-  const placeholder = `Template "${templateKey}" — edit on the templates surface (Session 2).`;
+  const templateKey = cfg.template_key ?? '';
+  const resolved = templateKey
+    ? templates.get(`${channel}:${templateKey}`)
+    : null;
+  const bodyText = resolved?.body ?? '';
   const step: AutomationEditorStep = {
     id: action.id,
     number: action.position,
     channel,
     delay: 'Sends from the trigger',
     name: channel === 'sms' ? 'SMS' : 'Email',
-    body: placeholder,
-    bodyText: placeholder,
+    body: bodyText,
+    bodyText,
     footerMeta: '// Awaiting send data',
     variables: [],
   };
-  if (channel === 'email') step.subject = '';
+  if (channel === 'email') step.subject = resolved?.subject ?? '';
   return step;
+}
+
+async function fetchTemplateBodies(
+  clientId: string,
+  actions: ActionRow[],
+): Promise<Map<string, { subject: string | null; body: string }>> {
+  // Resolve template_key for every comm action, then look up the
+  // per-client template body in a single round-trip per channel.
+  const smsKeys = new Set<string>();
+  const emailKeys = new Set<string>();
+  for (const a of actions) {
+    const k = ((a.action_config ?? {}) as { template_key?: string }).template_key;
+    if (!k) continue;
+    if (a.action_type === 'send_sms_to_lead') smsKeys.add(k);
+    else if (a.action_type === 'send_email_to_lead') emailKeys.add(k);
+  }
+  const map = new Map<string, { subject: string | null; body: string }>();
+  if (smsKeys.size > 0) {
+    const { data: smsRows } = await supabase
+      .from('sms_templates')
+      .select('template_key, body')
+      .eq('client_id', clientId)
+      .in('template_key', [...smsKeys]);
+    for (const r of (smsRows ?? []) as Array<{ template_key: string; body: string }>) {
+      map.set(`sms:${r.template_key}`, { subject: null, body: r.body });
+    }
+  }
+  if (emailKeys.size > 0) {
+    const { data: emailRows } = await supabase
+      .from('email_templates')
+      .select('template_key, subject, body_text, body_html')
+      .eq('client_id', clientId)
+      .in('template_key', [...emailKeys]);
+    for (const r of (emailRows ?? []) as Array<{
+      template_key: string;
+      subject: string;
+      body_text: string;
+      body_html: string;
+    }>) {
+      // Editor edits plain text — the send path renders both, with the
+      // HTML reflowed from the text on save.
+      map.set(`email:${r.template_key}`, {
+        subject: r.subject,
+        body: r.body_text || r.body_html,
+      });
+    }
+  }
+  return map;
+}
+
+function actionToEditorAction(
+  a: ActionRow,
+  templates: Map<string, { subject: string | null; body: string }>,
+): AutomationEditorAction {
+  const cfg = (a.action_config ?? {}) as Record<string, unknown>;
+  const templateKey = typeof cfg.template_key === 'string' ? cfg.template_key : null;
+  let body: string | null = null;
+  let subject: string | null = null;
+  if (templateKey) {
+    if (a.action_type === 'send_sms_to_lead') {
+      const t = templates.get(`sms:${templateKey}`);
+      body = t?.body ?? '';
+    } else if (a.action_type === 'send_email_to_lead') {
+      const t = templates.get(`email:${templateKey}`);
+      body = t?.body ?? '';
+      subject = t?.subject ?? '';
+    }
+  }
+  const actionType = a.action_type as AutomationEditorActionType;
+  return {
+    id: a.id,
+    position: a.position,
+    actionType,
+    config: cfg,
+    body,
+    subject,
+    pausesOnHumanActivity:
+      ACTION_PAUSES_ON_HUMAN_ACTIVITY[actionType] ?? false,
+  };
 }
 
 async function fetchAutomationEditor(id: string): Promise<AutomationEditor> {
@@ -454,12 +544,14 @@ async function fetchAutomationEditor(id: string): Promise<AutomationEditor> {
 
   const row = data as unknown as AutomationJoinRow;
   const clientName = row.client?.name ?? 'Client';
-  const commActions = sortedActions(row.automation_actions).filter((a) =>
-    isCommAction(a.action_type),
-  );
+  const allActions = sortedActions(row.automation_actions);
+  const commActions = allActions.filter((a) => isCommAction(a.action_type));
+  const templates = await fetchTemplateBodies(row.client_id, allActions);
+  const editorActions = allActions.map((a) => actionToEditorAction(a, templates));
 
   return {
     id: row.id,
+    clientId: row.client_id,
     enabled: row.is_enabled,
     eyebrow: `// ${clientName} · ${row.name}`,
     title: (
@@ -479,8 +571,9 @@ async function fetchAutomationEditor(id: string): Promise<AutomationEditor> {
       name: TRIGGER_NAME[row.trigger_type] ?? row.trigger_type,
       changeLabel: 'Change trigger →',
     },
-    steps: commActions.map(toEditorStep),
-    addStepLabel: '+ Add another step (Session 2)',
+    steps: commActions.map((a) => toEditorStep(a, templates)),
+    actions: editorActions,
+    addStepLabel: '+ Add another step',
     rail: {
       variables: { heading: '// AVAILABLE VARIABLES', items: VARIABLE_CATALOG },
       testSend: {
@@ -531,7 +624,7 @@ async function fetchAutomationEditor(id: string): Promise<AutomationEditor> {
       sendToHint: 'Add another test recipient in Settings.',
       phoneBar: 'Test send · from your business number',
       smsPreview: commActions[0]
-        ? (toEditorStep(commActions[0]).body as ReactNode)
+        ? (toEditorStep(commActions[0], templates).body as ReactNode)
         : 'This automation has no comm actions.',
       smsVariablesLine: <>Variables are filled with sample values for the test.</>,
       options: {
@@ -584,15 +677,296 @@ export function useToggleAutomation() {
 }
 
 // =============================================================================
-// Step save — Session 2.
+// Action mutations — Phase 8 · Session 3.
 //
-// The Phase 5 editor wrote step copy back to automation_steps.body. In the
-// new engine the body lives on the referenced sms_templates / email_templates
-// row, and editing a template is a Session 2 surface (the template is shared
-// across automations of the same key, so the editor can't just write through
-// without affecting siblings). For Session 1 this mutation throws a clear
-// AppError; the editor's existing error pane surfaces it.
+// The editor's action list is now fully editable: add, reorder, remove,
+// update config, and (for comm actions) edit the referenced template body.
+// Body edits write through to sms_templates / email_templates per the
+// resolved (clientId, template_key); the change is per-client, so it
+// doesn't affect siblings on other clients.
 // =============================================================================
+
+/** Update the body (+ subject for email) of a comm action's referenced
+ *  per-client template row. Resolves template_key from action_config. */
+async function updateActionBody(input: {
+  actionId: string;
+  body: string;
+  subject?: string | null;
+}): Promise<void> {
+  const { data: action, error: aErr } = await supabase
+    .from('automation_actions')
+    .select('action_type, action_config, automation_id')
+    .eq('id', input.actionId)
+    .single();
+  if (aErr) throw normalizeError(aErr);
+  const a = action as {
+    action_type: string;
+    action_config: Record<string, unknown> | null;
+    automation_id: string;
+  };
+  const templateKey = ((a.action_config ?? {}) as { template_key?: string })
+    .template_key;
+  if (!templateKey) {
+    throw AppError.validation(
+      { body: 'Action has no template_key configured.' },
+      'Cannot edit body — no template reference.',
+    );
+  }
+  const { data: automation, error: amErr } = await supabase
+    .from('automations')
+    .select('client_id')
+    .eq('id', a.automation_id)
+    .single();
+  if (amErr) throw normalizeError(amErr);
+  const clientId = (automation as { client_id: string }).client_id;
+
+  if (a.action_type === 'send_sms_to_lead') {
+    const { error } = await supabase
+      .from('sms_templates')
+      .update({ body: input.body, last_edited_at: new Date().toISOString() })
+      .eq('client_id', clientId)
+      .eq('template_key', templateKey);
+    if (error) throw normalizeError(error);
+  } else if (a.action_type === 'send_email_to_lead') {
+    const update: {
+      body_text: string;
+      body_html: string;
+      last_edited_at: string;
+      subject?: string;
+    } = {
+      body_text: input.body,
+      body_html: textToHtml(input.body),
+      last_edited_at: new Date().toISOString(),
+    };
+    if (typeof input.subject === 'string') update.subject = input.subject;
+    const { error } = await supabase
+      .from('email_templates')
+      .update(update)
+      .eq('client_id', clientId)
+      .eq('template_key', templateKey);
+    if (error) throw normalizeError(error);
+  } else {
+    throw AppError.validation(
+      { body: `${a.action_type} is not a comm action.` },
+      'This action has no body to edit.',
+    );
+  }
+}
+
+function textToHtml(text: string): string {
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  return escaped
+    .split(/\n{2,}/)
+    .map((para) => `<p>${para.replace(/\n/g, '<br/>')}</p>`)
+    .join('');
+}
+
+/** Hook — update the body (+ subject for email) of one action's template. */
+export function useUpdateActionBody() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateActionBody,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['automations'] });
+    },
+  });
+}
+
+/** Update the action_config jsonb on a non-body action (wait minutes,
+ *  update_lead_field field/value, create_followup_task hint, etc.). */
+async function updateActionConfig(input: {
+  actionId: string;
+  config: Record<string, unknown>;
+}): Promise<void> {
+  const { error } = await supabase
+    .from('automation_actions')
+    .update({ action_config: input.config as Json })
+    .eq('id', input.actionId);
+  if (error) throw normalizeError(error);
+}
+
+export function useUpdateActionConfig() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateActionConfig,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['automations'] });
+    },
+  });
+}
+
+/** Remove one action and shift the higher positions down. Atomic enough:
+ *  the unique (automation_id, position) constraint is deferred at insert,
+ *  but our DELETE → renumber happens in two steps with no overlap. */
+async function removeAction(input: { actionId: string }): Promise<void> {
+  const { data: action, error: aErr } = await supabase
+    .from('automation_actions')
+    .select('automation_id, position')
+    .eq('id', input.actionId)
+    .single();
+  if (aErr) throw normalizeError(aErr);
+  const a = action as { automation_id: string; position: number };
+
+  const { error: dErr } = await supabase
+    .from('automation_actions')
+    .delete()
+    .eq('id', input.actionId);
+  if (dErr) throw normalizeError(dErr);
+
+  const { data: higher, error: hErr } = await supabase
+    .from('automation_actions')
+    .select('id, position')
+    .eq('automation_id', a.automation_id)
+    .gt('position', a.position)
+    .order('position', { ascending: true });
+  if (hErr) throw normalizeError(hErr);
+
+  for (const r of (higher ?? []) as Array<{ id: string; position: number }>) {
+    const { error } = await supabase
+      .from('automation_actions')
+      .update({ position: r.position - 1 })
+      .eq('id', r.id);
+    if (error) throw normalizeError(error);
+  }
+}
+
+export function useRemoveAction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: removeAction,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['automations'] });
+    },
+  });
+}
+
+/** Move an action one slot up or down. Swaps positions with the neighbour.
+ *  Two-step swap with an intermediate temp slot to dodge the unique
+ *  constraint (position INT, unique on (automation_id, position)). */
+async function moveAction(input: {
+  actionId: string;
+  direction: 'up' | 'down';
+}): Promise<void> {
+  const { data: action, error: aErr } = await supabase
+    .from('automation_actions')
+    .select('automation_id, position')
+    .eq('id', input.actionId)
+    .single();
+  if (aErr) throw normalizeError(aErr);
+  const a = action as { automation_id: string; position: number };
+
+  const neighbourPosition = input.direction === 'up' ? a.position - 1 : a.position + 1;
+  if (neighbourPosition < 1) return;
+
+  const { data: neighbour } = await supabase
+    .from('automation_actions')
+    .select('id, position')
+    .eq('automation_id', a.automation_id)
+    .eq('position', neighbourPosition)
+    .maybeSingle();
+  if (!neighbour) return;
+  const n = neighbour as { id: string; position: number };
+
+  // Three-step swap via a parking position to avoid the unique-constraint
+  // collision (positions can't both temporarily equal each other).
+  const PARK = -1;
+  const m1 = await supabase
+    .from('automation_actions')
+    .update({ position: PARK })
+    .eq('id', input.actionId);
+  if (m1.error) throw normalizeError(m1.error);
+  const m2 = await supabase
+    .from('automation_actions')
+    .update({ position: a.position })
+    .eq('id', n.id);
+  if (m2.error) throw normalizeError(m2.error);
+  const m3 = await supabase
+    .from('automation_actions')
+    .update({ position: n.position })
+    .eq('id', input.actionId);
+  if (m3.error) throw normalizeError(m3.error);
+}
+
+export function useMoveAction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: moveAction,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['automations'] });
+    },
+  });
+}
+
+/** Append a new action at the end of the automation's action list. Action
+ *  config is initialised from the per-type default; the operator edits
+ *  inline after the row appears. */
+async function addAction(input: {
+  automationId: string;
+  actionType: AutomationEditorActionType;
+}): Promise<{ id: string }> {
+  const { data: existing, error: eErr } = await supabase
+    .from('automation_actions')
+    .select('position')
+    .eq('automation_id', input.automationId)
+    .order('position', { ascending: false })
+    .limit(1);
+  if (eErr) throw normalizeError(eErr);
+  const nextPosition =
+    ((existing as Array<{ position: number }> | null)?.[0]?.position ?? 0) + 1;
+
+  const defaultConfig = defaultActionConfig(input.actionType);
+  const { data, error } = await supabase
+    .from('automation_actions')
+    .insert({
+      automation_id: input.automationId,
+      position: nextPosition,
+      action_type: input.actionType,
+      action_config: defaultConfig as Json,
+      pauses_on_human_activity:
+        ACTION_PAUSES_ON_HUMAN_ACTIVITY[input.actionType] ?? false,
+    })
+    .select('id')
+    .single();
+  if (error) throw normalizeError(error);
+  return { id: (data as { id: string }).id };
+}
+
+function defaultActionConfig(
+  actionType: AutomationEditorActionType,
+): Record<string, unknown> {
+  switch (actionType) {
+    case 'send_sms_to_lead':
+      return { template_key: 'lead_acknowledgment' };
+    case 'send_email_to_lead':
+      return { template_key: 'lead_followup' };
+    case 'send_operator_notification':
+      return { variant: 'new_lead' };
+    case 'wait_for_duration':
+      return { minutes: 60 };
+    case 'update_lead_field':
+      return { field: 'status', value: 'contacted' };
+    case 'create_followup_task':
+      return { hint: '' };
+  }
+}
+
+export function useAddAction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: addAction,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['automations'] });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Legacy step-save bridge — kept callable for the existing editor page until
+// it migrates onto the new action editor. Bodies still write through.
+// ---------------------------------------------------------------------------
 
 export type AutomationStepEdit = {
   id: string;
@@ -601,18 +975,19 @@ export type AutomationStepEdit = {
   body: string;
 };
 
-async function updateAutomationSteps(_input: {
+async function updateAutomationSteps(input: {
   steps: AutomationStepEdit[];
 }): Promise<void> {
-  void _input;
-  throw AppError.validation(
-    { body: 'Step copy editing moves to a dedicated templates surface in Session 2.' },
-    'Step copy editing is unavailable in this build.',
-  );
+  for (const step of input.steps) {
+    await updateActionBody({
+      actionId: step.id,
+      body: step.body,
+      subject: step.subject,
+    });
+  }
 }
 
-/** Editor Save — throws AppError until Session 2 lands the templates editor.
- *  Existing call sites see the error in their normalized error pane. */
+/** Bulk step-save — now wired through `updateActionBody`. */
 export function useUpdateAutomationSteps() {
   const queryClient = useQueryClient();
   return useMutation({

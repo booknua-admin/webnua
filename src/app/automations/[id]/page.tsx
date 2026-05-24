@@ -4,27 +4,33 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 
-import { AutomationAddStep } from '@/components/admin/automations/AutomationAddStep';
+import { AutomationActionCard } from '@/components/admin/automations/AutomationActionCard';
+import { AutomationAddActionMenu } from '@/components/admin/automations/AutomationAddActionMenu';
 import { AutomationEditorLayout } from '@/components/admin/automations/AutomationEditorLayout';
-import {
-  AutomationEditorStep,
-  type AutomationStepPatch,
-} from '@/components/admin/automations/AutomationEditorStep';
 import { AutomationPerformanceCard } from '@/components/admin/automations/AutomationPerformanceCard';
 import { AutomationStepConnector } from '@/components/admin/automations/AutomationStepConnector';
 import { AutomationTestSendCard } from '@/components/admin/automations/AutomationTestSendCard';
 import { AutomationTriggerBox } from '@/components/admin/automations/AutomationTriggerBox';
 import { AutomationVariableList } from '@/components/admin/automations/AutomationVariableList';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { EditorFooterActions } from '@/components/shared/EditorFooterActions';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
 import {
+  useAddAction,
   useAutomationEditor,
+  useMoveAction,
+  useRemoveAction,
   useToggleAutomation,
-  useUpdateAutomationSteps,
+  useUpdateActionBody,
+  useUpdateActionConfig,
 } from '@/lib/automations/queries';
-import type { AutomationEditor } from '@/lib/automations/types';
+import type {
+  AutomationEditor,
+  AutomationEditorAction,
+  AutomationEditorActionType,
+} from '@/lib/automations/types';
 import { useRole } from '@/lib/auth/user-stub';
 import { normalizeError } from '@/lib/errors';
 
@@ -75,29 +81,78 @@ export default function AutomationEditorPage() {
   );
 }
 
-/** The editor body owns the editable step state (keyed by automation id, so
- *  switching automations remounts it with fresh state). */
 function EditorBody({ editor }: { editor: AutomationEditor }) {
-  const [steps, setSteps] = useState(editor.steps);
-  const update = useUpdateAutomationSteps();
+  const addAction = useAddAction();
+  const moveAction = useMoveAction();
+  const removeAction = useRemoveAction();
+  const updateBody = useUpdateActionBody();
+  const updateConfig = useUpdateActionConfig();
   const toggle = useToggleAutomation();
 
-  const patchStep = (stepId: string, patch: AutomationStepPatch) => {
-    setSteps((current) =>
-      current.map((s) => (s.id === stepId ? { ...s, ...patch } : s)),
+  const [pendingRemoval, setPendingRemoval] =
+    useState<AutomationEditorAction | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  const handleBodyChange = (
+    actionId: string,
+    body: string,
+    subject: string | null,
+  ) => {
+    setStatusMessage(null);
+    updateBody.mutate(
+      { actionId, body, subject },
+      {
+        onError: (err) => setStatusMessage(`Save failed — ${normalizeError(err).message}`),
+        onSuccess: () => setStatusMessage('Saved'),
+      },
     );
   };
 
-  const handleSave = () => {
-    update.mutate({
-      steps: steps.map((s) => ({
-        id: s.id,
-        name: s.name,
-        subject: s.subject ?? null,
-        body: s.bodyText ?? '',
-      })),
-    });
+  const handleConfigChange = (
+    actionId: string,
+    config: Record<string, unknown>,
+  ) => {
+    setStatusMessage(null);
+    updateConfig.mutate(
+      { actionId, config },
+      {
+        onError: (err) => setStatusMessage(`Save failed — ${normalizeError(err).message}`),
+        onSuccess: () => setStatusMessage('Saved'),
+      },
+    );
   };
+
+  const handleMove = (actionId: string, direction: 'up' | 'down') => {
+    moveAction.mutate(
+      { actionId, direction },
+      {
+        onError: (err) => setStatusMessage(`Move failed — ${normalizeError(err).message}`),
+      },
+    );
+  };
+
+  const handleAdd = (actionType: AutomationEditorActionType) => {
+    addAction.mutate(
+      { automationId: editor.id, actionType },
+      {
+        onError: (err) => setStatusMessage(`Add failed — ${normalizeError(err).message}`),
+      },
+    );
+  };
+
+  const handleRemoveConfirmed = (action: AutomationEditorAction) => {
+    removeAction.mutate(
+      { actionId: action.id },
+      {
+        onError: (err) => setStatusMessage(`Delete failed — ${normalizeError(err).message}`),
+        onSuccess: () => setStatusMessage('Action removed'),
+      },
+    );
+    setPendingRemoval(null);
+  };
+
+  const actions = editor.actions ?? [];
+  const variableItems = editor.rail.variables.items;
 
   return (
     <>
@@ -110,17 +165,46 @@ function EditorBody({ editor }: { editor: AutomationEditor }) {
         canvas={
           <>
             <AutomationTriggerBox trigger={editor.trigger} />
-            {steps.map((step) => (
-              <div key={step.id}>
+            {actions.map((action, index) => (
+              <div key={action.id}>
                 <AutomationStepConnector />
-                <AutomationEditorStep
-                  step={step}
-                  onChange={(patch) => patchStep(step.id, patch)}
+                <AutomationActionCard
+                  action={action}
+                  isFirst={index === 0}
+                  isLast={index === actions.length - 1}
+                  variables={variableItems}
+                  onMove={(direction) => handleMove(action.id, direction)}
+                  onRemove={() => setPendingRemoval(action)}
+                  onChange={(change) => {
+                    if (change.kind === 'body') {
+                      handleBodyChange(action.id, change.body, change.subject ?? null);
+                    } else {
+                      handleConfigChange(action.id, change.config);
+                    }
+                  }}
+                  saving={
+                    (updateBody.isPending &&
+                      updateBody.variables?.actionId === action.id) ||
+                    (updateConfig.isPending &&
+                      updateConfig.variables?.actionId === action.id) ||
+                    (moveAction.isPending &&
+                      moveAction.variables?.actionId === action.id) ||
+                    (removeAction.isPending &&
+                      removeAction.variables?.actionId === action.id)
+                  }
                 />
               </div>
             ))}
+            {actions.length === 0 ? (
+              <p className="mt-4 rounded-md border border-dashed border-rule bg-paper px-5 py-6 text-center font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-ink-quiet">
+                {'// This automation has no actions yet — add one below'}
+              </p>
+            ) : null}
             <div className="mt-5">
-              <AutomationAddStep label={editor.addStepLabel} />
+              <AutomationAddActionMenu
+                onPick={handleAdd}
+                disabled={addAction.isPending}
+              />
             </div>
           </>
         }
@@ -128,7 +212,7 @@ function EditorBody({ editor }: { editor: AutomationEditor }) {
           <>
             <AutomationVariableList
               heading={editor.rail.variables.heading}
-              items={editor.rail.variables.items}
+              items={variableItems}
             />
             <AutomationTestSendCard
               heading={editor.rail.testSend.heading}
@@ -145,12 +229,10 @@ function EditorBody({ editor }: { editor: AutomationEditor }) {
       />
       <EditorFooterActions
         progress={
-          update.isSuccess ? (
+          statusMessage ? (
             <>
-              {editor.footer.progress} · <strong>saved</strong>
+              {editor.footer.progress} · <strong>{statusMessage}</strong>
             </>
-          ) : update.error ? (
-            <>{`Save failed — ${normalizeError(update.error).message}`}</>
           ) : (
             editor.footer.progress
           )
@@ -171,11 +253,23 @@ function EditorBody({ editor }: { editor: AutomationEditor }) {
             >
               {editor.footer.disableLabel}
             </Button>
-            <Button onClick={handleSave} disabled={update.isPending}>
-              {update.isPending ? 'Saving…' : editor.footer.saveLabel}
-            </Button>
           </>
         }
+      />
+
+      <ConfirmDialog
+        open={pendingRemoval !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingRemoval(null);
+        }}
+        title={`Remove action ${pendingRemoval?.position ?? ''}?`}
+        description="The remaining actions will renumber. In-flight runs of this automation will continue executing the OLD sequence until they finish."
+        confirmLabel="Remove action"
+        cancelLabel="Keep it"
+        tone="destructive"
+        onConfirm={() => {
+          if (pendingRemoval) handleRemoveConfirmed(pendingRemoval);
+        }}
       />
     </>
   );

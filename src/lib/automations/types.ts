@@ -158,6 +158,37 @@ export type AutomationVariable = {
   description: string;
 };
 
+/**
+ * Phase 8 · Session 3 — the rich per-action shape the new editor body
+ * consumes. One row per `automation_actions` row, position-ordered, every
+ * action type represented (comm + non-comm). Comm actions carry the resolved
+ * template `body` (and `subject` for email) the operator edits inline.
+ */
+export type AutomationEditorActionType =
+  | 'send_sms_to_lead'
+  | 'send_email_to_lead'
+  | 'send_operator_notification'
+  | 'wait_for_duration'
+  | 'update_lead_field'
+  | 'create_followup_task';
+
+export type AutomationEditorAction = {
+  id: string;
+  position: number;
+  actionType: AutomationEditorActionType;
+  /** The action_config jsonb verbatim — the editor body reads the shape it
+   *  needs per type (template_key, minutes, field/value, etc.). */
+  config: Record<string, unknown>;
+  /** Resolved template body for comm actions; null for non-comm. The editor's
+   *  inline textarea reads + writes this directly. */
+  body: string | null;
+  /** Resolved template subject for `send_email_to_lead`; null otherwise. */
+  subject: string | null;
+  /** True for comm actions — surfaces in the editor as a pause-on-handoff
+   *  hint badge. */
+  pausesOnHumanActivity: boolean;
+};
+
 export type AutomationPerformanceMetric = {
   label: string;
   value: ReactNode;
@@ -213,6 +244,14 @@ export type AutomationEditor = {
   subtitle: ReactNode;
   trigger: AutomationEditorTrigger;
   steps: AutomationEditorStep[];
+  /** Phase 8 · Session 3 — full ordered action list. Replaces `steps` (which
+   *  was comm-only) for the new editor body. Existing `steps` is preserved
+   *  for legacy callers (currently nobody — the old body unmounted in this
+   *  session). */
+  actions: AutomationEditorAction[];
+  /** Client id the automation belongs to — needed by mutation hooks to
+   *  resolve the right per-client template row on body save. */
+  clientId: string;
   /** "+ Add another step (SMS / Email / Wait)" affordance label. */
   addStepLabel: string;
   rail: {
