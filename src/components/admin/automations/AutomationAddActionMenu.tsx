@@ -65,31 +65,48 @@ const TYPE_OPTIONS: ReadonlyArray<{
   },
 ];
 
+/** Hard cap on actions per automation. Mirrored server-side in `useAddAction`
+ *  so a direct API caller can't bypass the UI; the limit applies to operators
+ *  too as an abuse guard. Bumped via a future plan-tier upcharge — see the
+ *  parked decision in CLAUDE.md. */
+const MAX_ACTIONS_PER_AUTOMATION = 5;
+
 type AutomationAddActionMenuProps = {
   onPick: (type: AutomationEditorActionType) => void;
   disabled?: boolean;
   label?: string;
+  /** Current action count — drives the "Maximum 5 actions" disabled state. */
+  currentCount?: number;
 };
 
 function AutomationAddActionMenu({
   onPick,
   disabled,
   label = '+ Add another action',
+  currentCount,
 }: AutomationAddActionMenuProps) {
   const [open, setOpen] = useState(false);
+  const atCap =
+    typeof currentCount === 'number' && currentCount >= MAX_ACTIONS_PER_AUTOMATION;
+  const effectiveDisabled = disabled || atCap;
   return (
     <>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        disabled={disabled}
+        disabled={effectiveDisabled}
         className={cn(
           'block w-full rounded-md border-2 border-dashed border-rule bg-paper/50 px-5 py-4 font-mono text-[12px] font-bold uppercase tracking-[0.1em] text-ink-quiet transition-colors hover:border-rust hover:text-rust',
-          disabled && 'opacity-50 cursor-not-allowed',
+          effectiveDisabled && 'opacity-50 cursor-not-allowed',
         )}
       >
         {label}
       </button>
+      {atCap ? (
+        <p className="mt-2 text-center font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-ink-quiet">
+          {`// Maximum ${MAX_ACTIONS_PER_AUTOMATION} actions per automation`}
+        </p>
+      ) : null}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent size="default">
           <DialogHeader>
@@ -130,4 +147,4 @@ function AutomationAddActionMenu({
   );
 }
 
-export { AutomationAddActionMenu };
+export { AutomationAddActionMenu, MAX_ACTIONS_PER_AUTOMATION };
