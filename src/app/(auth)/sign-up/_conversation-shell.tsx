@@ -1666,36 +1666,47 @@ export function ConversationShell() {
     void runGeneration();
   }, [runGeneration]);
 
-  const handleGenerationContinue = useCallback(async () => {
-    // Defence in depth: even though runGeneration kicked off the
-    // wizard-state complete stamp, ensure it's landed (or at least
-    // attempted) before we route. The dashboard's wizard-completion gate
-    // is the difference between "land on the welcome surface" and
-    // "bounce to /onboarding (legacy wizard)". Best-effort blocking
-    // wait: if the stamp succeeded inside runGeneration we 200 in a
-    // few ms; if it failed we do not block the customer from reaching
-    // the dashboard (they'll see the legacy redirect once, which is
-    // still better than holding them on this screen forever).
-    if (clientId) {
-      try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData.session?.access_token;
-        if (token) {
-          await fetch(`/api/clients/${clientId}/wizard-state`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ complete: true }),
-          });
-        }
-      } catch {
-        // Soldier on — see note above.
-      }
+  // Stamp the wizard as complete on the server so the dashboard's gate
+  // doesn't bounce the customer back to onboarding on a future visit.
+  // Best-effort — a stamp failure does NOT block routing (the dashboard
+  // would briefly show its legacy-wizard redirect, which is recoverable).
+  // Shared by both post-generation CTAs (View in editor + Go to dashboard).
+  const stampWizardComplete = useCallback(async () => {
+    if (!clientId) return;
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) return;
+      await fetch(`/api/clients/${clientId}/wizard-state`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ complete: true }),
+      });
+    } catch {
+      // Soldier on — the dashboard's redirect-gate is recoverable.
     }
+  }, [clientId]);
+
+  // Primary post-generation CTA — land the customer in the website editor
+  // where they can see what was built. The dashboard's billing CTA is
+  // intentionally NOT the first thing they see after build; the editor
+  // surfaces the actual work product first.
+  const handleViewInEditor = useCallback(async () => {
+    await stampWizardComplete();
+    router.push('/website');
+  }, [router, stampWizardComplete]);
+
+  const handleGenerationContinue = useCallback(async () => {
+    // Secondary post-generation CTA — text-only "Go to dashboard" link
+    // on the ready overlay. Routes the customer straight to /dashboard
+    // where the billing CTA lives. Stamps wizard complete first so the
+    // dashboard's gate doesn't bounce back to /onboarding.
+    await stampWizardComplete();
     router.push('/dashboard');
-  }, [clientId, router]);
+  }, [router, stampWizardComplete]);
 
   // ---- render slots ------------------------------------------------------
   const resendSecondsLeft = Math.max(0, Math.ceil((resendReadyAt - nowMs) / 1000));
@@ -2035,6 +2046,7 @@ export function ConversationShell() {
           softError={genSoftError ?? undefined}
           onRetry={handleGenerationRetry}
           onContinue={handleGenerationContinue}
+          onViewEditor={handleViewInEditor}
           attemptId={genAttemptId}
         />
       ) : null}
