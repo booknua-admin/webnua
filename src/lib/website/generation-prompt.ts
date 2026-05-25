@@ -199,6 +199,12 @@ function buildRegistryBlock(ctx: GenerationContext): string {
 }
 
 function isEligible(def: SectionMeta, ctx: GenerationContext): boolean {
+  // Deprecated section types stay in the registry so existing seed data still
+  // renders, but the generator must NOT see them as a placement target — the
+  // prompt's catalog is the model's pick-from list. (Bundle C2b-3: `services`
+  // is deprecated in favour of `features`; if the model emits one anyway the
+  // pipeline coerces it via `coerceDeprecatedSection`.)
+  if (!def.implemented) return false;
   if (!def.allowedContainers.includes('page')) return false;
   if (def.allowedPageTypes && def.allowedPageTypes.length > 0) {
     return def.allowedPageTypes.includes(ctx.pageType);

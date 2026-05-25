@@ -172,6 +172,169 @@ export function assignBundleVariants(
 }
 
 // =============================================================================
+// Pass 1.5 — deprecated section coercion (Bundle C2b-3)
+// =============================================================================
+
+/** Section types that have been deprecated in favour of another type. The
+ *  prompt-builder's `isEligible` filter drops these from the catalog the
+ *  model sees, but a model that has seen the old vocabulary in training
+ *  occasionally still emits one. This map declares how to coerce a deprecated
+ *  section into its replacement before the rest of the pipeline runs — so
+ *  the model's intent (a list-of-services section) lands in the right
+ *  registered type (the features grid).
+ *
+ *  Adding a new deprecation: add a row here AND mark `implemented: false` on
+ *  the deprecated section's SectionMeta. The coercion is the runtime closer
+ *  of the loop opened by `isEligible`.
+ *
+ *  Pattern: each rule lists the source `from` type, the target `to` type,
+ *  and a pure `map` that produces the target's data shape from the source's.
+ *  The map fans the source's fields into the target's vocabulary — for
+ *  `services → features` that means lifting `services[]` rows into `items[]`
+ *  rows with the small field-name rename. */
+type DeprecationRule = {
+  from: SectionType;
+  to: SectionType;
+  map: (data: Record<string, unknown>) => Record<string, unknown>;
+};
+
+const DEPRECATION_RULES: readonly DeprecationRule[] = [
+  {
+    from: 'services',
+    to: 'features',
+    map: (data) => {
+      const title = typeof data.title === 'string' ? data.title : '';
+      const intro = typeof data.intro === 'string' ? data.intro : '';
+      const sourceItems = Array.isArray(data.services) ? data.services : [];
+      const items = sourceItems.map((raw, i) => {
+        const item =
+          typeof raw === 'object' && raw !== null
+            ? (raw as Record<string, unknown>)
+            : {};
+        const name = typeof item.name === 'string' ? item.name : `Service ${i + 1}`;
+        const description =
+          typeof item.description === 'string' ? item.description : '';
+        const priceFrom =
+          typeof item.priceFrom === 'string' ? item.priceFrom : '';
+        const durationLabel =
+          typeof item.durationLabel === 'string' ? item.durationLabel : '';
+        // Fold the price + duration onto the description so the operator
+        // doesn't lose them. The features grid has no priced-item slot —
+        // that's the whole reason services was deprecated.
+        const tail = [priceFrom, durationLabel].filter(Boolean).join(' · ');
+        const composedDescription = tail
+          ? `${description}${description ? '\n\n' : ''}${tail}`
+          : description;
+        return {
+          id: typeof item.id === 'string' ? item.id : `feat-${i + 1}`,
+          icon: 'check',
+          imageUrl: '',
+          title: name,
+          description: composedDescription,
+          linkLabel: '',
+          linkHref: '',
+        };
+      });
+      return {
+        headline: title || 'Our services',
+        sub: intro,
+        items,
+        // Hide the per-item "Learn more" link by default — the source data
+        // had no link concept. Other defaults fall through `withDefaults`.
+        showItemLinks: false,
+      };
+    },
+  },
+];
+
+/** Coerce a deprecated section type into its replacement, or return the
+ *  section unchanged when no rule applies. Emits an `invalid` fallback so
+ *  `generation_log` carries the signal — telemetry on how often the model
+ *  still reaches for deprecated vocabulary. */
+export function coerceDeprecatedSection(
+  type: SectionType,
+  data: Record<string, unknown>,
+): { type: SectionType; data: Record<string, unknown>; fallbacks: PipelineFallback[] } {
+  const rule = DEPRECATION_RULES.find((r) => r.from === type);
+  if (!rule) return { type, data, fallbacks: [] };
+  return {
+    type: rule.to,
+    data: rule.map(data),
+    fallbacks: [
+      {
+        sectionType: rule.from,
+        fieldName: '__sectionType',
+        reason: 'invalid',
+        modelValue: rule.from,
+      },
+    ],
+  };
+}
+
+// =============================================================================
+// Pass 1.6 — trust V3 single-word label enforcement (Bundle C2b-3)
+// =============================================================================
+
+/** The `compact-icons` trust display is a thin horizontal band where each
+ *  item renders as `icon + single-word label` (e.g. `Insured · Vetted ·
+ *  Local · Certified`). Multi-word labels break the rhythm — they wrap, or
+ *  push siblings onto a new line on mobile. The model doesn't always know
+ *  the constraint, so the pipeline abbreviates: when V3 is active, take the
+ *  first word of each label only.
+ *
+ *  Conservative: when the abbreviation would leave an empty string (a label
+ *  that starts with punctuation or whitespace) we leave the original alone
+ *  and log so the operator can see it. Item arrays the model didn't emit
+ *  are untouched (this is repair, not fabrication). */
+export function enforceTrustCompactSingleWord(
+  type: SectionType,
+  data: Record<string, unknown>,
+): RepairResult {
+  if (type !== 'trust') return { data, fallbacks: [] };
+  if (data.display !== 'compact-icons') return { data, fallbacks: [] };
+  const items = data.items;
+  if (!Array.isArray(items)) return { data, fallbacks: [] };
+
+  const fallbacks: PipelineFallback[] = [];
+  let touched = false;
+  const nextItems = items.map((raw, index) => {
+    if (typeof raw !== 'object' || raw === null) return raw;
+    const item = raw as Record<string, unknown>;
+    const label = item.label;
+    if (typeof label !== 'string') return item;
+    const trimmed = label.trim();
+    if (trimmed === '') return item;
+    // Already single-word: leave it alone (no fallback logged either).
+    const firstSpace = trimmed.search(/\s/);
+    if (firstSpace === -1) return item;
+    // Take the first whitespace-delimited token; strip a trailing comma /
+    // period left over from the original phrase ("Insured & bonded" →
+    // "Insured" — not "Insured&" or "Insured.").
+    const first = trimmed.slice(0, firstSpace).replace(/[.,;:!?]+$/, '');
+    if (!first) {
+      // First "word" was punctuation only — leave it, log so we see it.
+      fallbacks.push({
+        sectionType: 'trust',
+        fieldName: `items[${index}].label`,
+        reason: 'invalid',
+        modelValue: label,
+      });
+      return item;
+    }
+    touched = true;
+    fallbacks.push({
+      sectionType: 'trust',
+      fieldName: `items[${index}].label`,
+      reason: 'invalid',
+      modelValue: label,
+    });
+    return { ...item, label: first };
+  });
+  if (!touched) return { data, fallbacks };
+  return { data: { ...data, items: nextItems }, fallbacks };
+}
+
+// =============================================================================
 // Pass 2 — hallucinated image-path stripping
 // =============================================================================
 
