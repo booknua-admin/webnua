@@ -40,6 +40,13 @@ import { uploadSectionImage } from '@/lib/website/upload-image';
 
 const HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
+type BrandOfferRow = {
+  headline: string;
+  promise: string;
+  risk_reversal: string;
+  cta_text: string;
+};
+
 type BrandRow = {
   client_id: string;
   accent_color: string;
@@ -58,6 +65,7 @@ type BrandRow = {
   body_color: string | null;
   background_color: string | null;
   tagline: string | null;
+  offer: BrandOfferRow | null;
 };
 
 type Props = {
@@ -181,6 +189,15 @@ function BrandForm({
   const [formality, setFormality] = useState(brand.voice_formality);
   const [urgency, setUrgency] = useState(brand.voice_urgency);
   const [technicality, setTechnicality] = useState(brand.voice_technicality);
+  // Session C.5 — brand-level offer (single source of truth for hero CTA,
+  // dedicated offer section, and funnel hero fallback). Stored snake_case
+  // on `brands.offer`; surfaced camelCase in the form state.
+  const [offerHeadline, setOfferHeadline] = useState(brand.offer?.headline ?? '');
+  const [offerPromise, setOfferPromise] = useState(brand.offer?.promise ?? '');
+  const [offerRiskReversal, setOfferRiskReversal] = useState(
+    brand.offer?.risk_reversal ?? '',
+  );
+  const [offerCtaText, setOfferCtaText] = useState(brand.offer?.cta_text ?? '');
 
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -205,6 +222,10 @@ function BrandForm({
     setFormality(brand.voice_formality);
     setUrgency(brand.voice_urgency);
     setTechnicality(brand.voice_technicality);
+    setOfferHeadline(brand.offer?.headline ?? '');
+    setOfferPromise(brand.offer?.promise ?? '');
+    setOfferRiskReversal(brand.offer?.risk_reversal ?? '');
+    setOfferCtaText(brand.offer?.cta_text ?? '');
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [brand]);
 
@@ -253,6 +274,31 @@ function BrandForm({
         industry: industryCategory.trim(),
       });
 
+      // Session C.5 — assemble the offer jsonb. The offer is treated as
+      // a single unit: write all four fields when the headline is set,
+      // null the whole thing when the headline is empty (so a partial
+      // offer never lands in the column — the fallback chain in section
+      // rendering treats "any field empty" as "no offer").
+      const headlineT = offerHeadline.trim();
+      const promiseT = offerPromise.trim();
+      const riskT = offerRiskReversal.trim();
+      const ctaT = offerCtaText.trim();
+      const hasAnyOfferField = !!(headlineT || promiseT || riskT || ctaT);
+      const hasAllOfferFields = !!(headlineT && promiseT && riskT && ctaT);
+      if (hasAnyOfferField && !hasAllOfferFields) {
+        throw new Error(
+          'Offer fields must all be filled in, or all left blank. Empty an offer to clear it.',
+        );
+      }
+      const offerPayload: BrandOfferRow | null = hasAllOfferFields
+        ? {
+            headline: headlineT,
+            promise: promiseT,
+            risk_reversal: riskT,
+            cta_text: ctaT,
+          }
+        : null;
+
       const { error } = await supabase
         .from('brands')
         .update({
@@ -271,6 +317,7 @@ function BrandForm({
           voice_urgency: urgency,
           voice_technicality: technicality,
           derived_palette: derivedPalette as never,
+          offer: offerPayload as never,
         })
         .eq('client_id', clientId);
       if (error) throw normalizeError(error);
@@ -323,6 +370,72 @@ function BrandForm({
               className="h-9"
             />
           </Field>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        heading={
+          <>
+            The <em>offer</em>
+          </>
+        }
+        description="The four-field offer the funnel sells. The website's hero CTA + dedicated offer section + funnel hero all fall back to these values when their own copy is empty. Edit here and changes show on your site immediately — no re-generation needed. Leave every field blank to clear the offer."
+      >
+        <div className="flex flex-col gap-4">
+          <Field
+            label="Headline"
+            sub="Short, specific — what you want to be known for"
+          >
+            <Input
+              value={offerHeadline}
+              onChange={(e) => setOfferHeadline(e.target.value)}
+              placeholder="Power out at midnight? On site within 2 hours."
+              className="h-9"
+              maxLength={140}
+            />
+          </Field>
+          <Field
+            label="Promise"
+            sub="What's included or what they'll get"
+          >
+            <Textarea
+              value={offerPromise}
+              onChange={(e) => setOfferPromise(e.target.value)}
+              placeholder="Diagnose, repair, and certify within 24 hours — no callout fee until you're sorted."
+              rows={2}
+              maxLength={240}
+            />
+          </Field>
+          <Field
+            label="Risk reversal"
+            sub="The guarantee — removes the customer's hesitation"
+          >
+            <Input
+              value={offerRiskReversal}
+              onChange={(e) => setOfferRiskReversal(e.target.value)}
+              placeholder="Or your callout fee is on us."
+              className="h-9"
+              maxLength={160}
+            />
+          </Field>
+          <Field
+            label="CTA text"
+            sub="The button label — short and active"
+          >
+            <Input
+              value={offerCtaText}
+              onChange={(e) => setOfferCtaText(e.target.value)}
+              placeholder="Get my switchboard sorted →"
+              className="h-9"
+              maxLength={48}
+            />
+          </Field>
+          <p className="text-[12px] leading-[1.45] text-ink-quiet">
+            <strong>Per-funnel overrides:</strong> if you run multiple
+            funnels and want a different offer on one of them, you can
+            override these on the funnel itself. Leave blank here to use
+            the funnel-level value only.
+          </p>
         </div>
       </SettingsSection>
 

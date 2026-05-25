@@ -568,6 +568,7 @@ export type Database = {
           heading_font: string | null
           industry_category: string
           logo_url: string | null
+          offer: Json | null
           tagline: string | null
           top_jobs_to_be_booked: string[]
           updated_at: string
@@ -590,6 +591,7 @@ export type Database = {
           heading_font?: string | null
           industry_category: string
           logo_url?: string | null
+          offer?: Json | null
           tagline?: string | null
           top_jobs_to_be_booked?: string[]
           updated_at?: string
@@ -612,6 +614,7 @@ export type Database = {
           heading_font?: string | null
           industry_category?: string
           logo_url?: string | null
+          offer?: Json | null
           tagline?: string | null
           top_jobs_to_be_booked?: string[]
           updated_at?: string

@@ -191,3 +191,21 @@ export function offerToRow(offer: FunnelOffer): FunnelOfferRow {
     cta_text: offer.ctaText,
   };
 }
+
+/** Coerce a jsonb row read (typically from brands.offer or
+ *  funnels.funnel_offer) into the camelCase `FunnelOffer` shape callers
+ *  consume. Returns null when the input is missing, malformed, or has
+ *  any of the four fields empty/non-string — readers should treat that
+ *  as "no offer present" and fall back through the resolution chain. */
+export function rowToOffer(value: unknown): FunnelOffer | null {
+  if (!value || typeof value !== 'object') return null;
+  const v = value as Record<string, unknown>;
+  // Accept both snake_case (DB row) and camelCase (defensive — the same
+  // jsonb might be written from either side in transition).
+  const headline = pickString(v, 'headline');
+  const promise = pickString(v, 'promise');
+  const riskReversal = pickString(v, 'riskReversal', 'risk_reversal');
+  const ctaText = pickString(v, 'ctaText', 'cta_text');
+  if (!headline || !promise || !riskReversal || !ctaText) return null;
+  return { headline, promise, riskReversal, ctaText };
+}

@@ -34,6 +34,7 @@ import type { ForcePublishEntry } from '@/lib/auth/audit-stub';
 import { subscribeBuilder } from './builder-events';
 import { loadDraftsForWebsite } from './content-drafts';
 import { mergeGeneratedPages } from './generated-pages-stub';
+import { rowToOffer } from './offer-generate';
 import { mergeDraftsIntoSnapshot, normalizeSnapshotPageIds } from './snapshot';
 import type {
   BrandObject,
@@ -324,8 +325,9 @@ async function fetchBrandForClient(slug: string): Promise<BrandObject | null> {
   if (!data) return null;
   // brand_colors / heading_font / body_font / heading_color / body_color /
   // background_color landed as optional columns in migration 0088 (brand
-  // editor). They surface on BrandObject as optional fields; NULL on the
-  // row resolves to `undefined` so existing readers fall back cleanly.
+  // editor). `offer` jsonb landed in migration 0096 (Session C.5). They
+  // surface on BrandObject as optional fields; NULL on the row resolves
+  // to `undefined` so existing readers fall back cleanly.
   const row = data as typeof data & {
     brand_colors: string[] | null;
     heading_font: string | null;
@@ -335,6 +337,7 @@ async function fetchBrandForClient(slug: string): Promise<BrandObject | null> {
     background_color: string | null;
     design_bundle_id: string | null;
     derived_palette: unknown;
+    offer: unknown;
   };
   return {
     accentColor: row.accent_color,
@@ -357,6 +360,10 @@ async function fetchBrandForClient(slug: string): Promise<BrandObject | null> {
     backgroundColor: row.background_color ?? undefined,
     designBundleId: row.design_bundle_id ?? undefined,
     derivedPalette: row.derived_palette ?? undefined,
+    // rowToOffer returns null when any field is missing/empty — a partial
+    // offer is treated as no offer, so the fallback chain (section copy ??
+    // brand.offer ?? null) doesn't surface half a sentence.
+    offer: rowToOffer(row.offer),
   };
 }
 

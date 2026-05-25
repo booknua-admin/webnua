@@ -276,6 +276,13 @@ async function persistWebsite(args: {
       derived_palette: seedPalette as never,
       heading_font: 'inter-tight',
       body_font: 'inter-tight',
+      // Session C.5 — seed brand.offer from the brief when the wizard's
+      // defensive seed path fires for the first time. The primary Pattern
+      // B path for writing offer to brand lands in Session C; this is the
+      // backstop that keeps the defensive seed in lockstep with the
+      // concierge insert (parity rule, claudemd "Pattern B critical-fixes
+      // brand-seed parity" precedent).
+      offer: brief.funnel.offer ? offerToRow(brief.funnel.offer) : null,
     });
     if (brandErr) {
       // Non-fatal — log but continue to the website insert.
