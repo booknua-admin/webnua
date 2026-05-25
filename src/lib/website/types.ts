@@ -182,6 +182,26 @@ export type BrandObject = {
    *  consumer; readers narrow via `isDerivedPalette`. Absent → readers
    *  re-derive from accentColor at render time. */
   derivedPalette?: unknown;
+  /** Brand-level offer (Session C.5). The four-field offer is the single
+   *  source of truth that propagates to website hero CTA, the dedicated
+   *  offer section, and the funnel hero (as a fallback when no per-funnel
+   *  override is set). Stored on `brands.offer` jsonb in snake_case;
+   *  surfaced here in camelCase. Absent / null → no brand-level offer; the
+   *  funnel falls back to its own `funnel_offer` (if any), the website
+   *  sections render their own static copy. */
+  offer?: BrandOffer | null;
+};
+
+/** The brand-level offer. Same four fields as `FunnelOffer` from
+ *  lib/website/offer-generate.ts (which is the browser-side caller
+ *  type — kept separate so types.ts has no dependency on the offer
+ *  generator's module). Equivalent shape; both are camelCase at the
+ *  TS boundary, snake_case at the DB boundary. */
+export type BrandOffer = {
+  headline: string;
+  promise: string;
+  riskReversal: string;
+  ctaText: string;
 };
 
 // ---- Versions -------------------------------------------------------------

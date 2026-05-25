@@ -140,6 +140,12 @@ export async function createClientWithGeneration(
     top_jobs_to_be_booked: brief.brand.topJobsToBeBooked,
     design_bundle_id: designBundleId,
     derived_palette: derivedPalette as never,
+    // Session C.5 — write the offer to BOTH brand.offer (the new SoT) and
+    // funnels.funnel_offer below (preserved for V1.1 per-funnel override).
+    // brief.funnel.offer is null when the wizard skipped offer generation
+    // or the call failed — leave the brand offer NULL in that case so
+    // downstream consumers fall through their resolution chains.
+    offer: brief.funnel.offer ? offerToRow(brief.funnel.offer) : null,
   });
   if (brandErr) throw normalizeError(brandErr);
 

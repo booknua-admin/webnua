@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 
 import { setBrandStyleValue } from '../brand-style';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
+import type { BrandOffer } from '../types';
 import { offerMeta } from './registry-meta';
 import { getSectionIcon } from '../section-icons';
 import {
@@ -185,6 +186,33 @@ function withDefaults(data: OfferData): OfferData {
     inclusions: data.inclusions ?? [],
     items: data.items ?? [],
     signals: data.signals ?? [],
+  };
+}
+
+/** Session C.5 — overlay brand.offer onto the four offer copy fields whose
+ *  section-level value is empty/whitespace. Pure: brand offer is only the
+ *  fallback, never overrides a populated section field. When `brandOffer`
+ *  is null, returns `data` unchanged. Field mapping:
+ *
+ *    section.title       ← brand.offer.headline
+ *    section.sub         ← brand.offer.promise
+ *    section.scarcityCopy ← brand.offer.riskReversal
+ *    section.ctaLabel    ← brand.offer.ctaText
+ */
+function applyBrandOfferFallback(
+  data: OfferData,
+  brandOffer: BrandOffer | null,
+): OfferData {
+  if (!brandOffer) return data;
+  const empty = (v: string) => !v || !v.trim();
+  return {
+    ...data,
+    title: empty(data.title) ? brandOffer.headline : data.title,
+    sub: empty(data.sub) ? brandOffer.promise : data.sub,
+    scarcityCopy: empty(data.scarcityCopy)
+      ? brandOffer.riskReversal
+      : data.scarcityCopy,
+    ctaLabel: empty(data.ctaLabel) ? brandOffer.ctaText : data.ctaLabel,
   };
 }
 
@@ -689,7 +717,11 @@ function OfferPreview({
   selectedElement,
   onSelectElement,
 }: SectionPreviewProps<OfferData>) {
-  const d = withDefaults(data);
+  // Session C.5 — apply brand.offer fallback to the four offer copy fields
+  // when the section's own value is empty/whitespace. Section value wins
+  // when present (operator override); empty falls through to brand.offer
+  // (the single source of truth) per design doc.
+  const d = applyBrandOfferFallback(withDefaults(data), brand.offer ?? null);
   const resolved = resolveTheme(d.theme, brandThemeDefaults(brand), OFFER_HARDCODED_THEME);
 
   return (
