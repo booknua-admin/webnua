@@ -97,44 +97,47 @@ function makeId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-const SEED_ITEMS: Omit<TrustItem, 'id'>[] = [
-  { icon: 'users', value: '500+', label: 'Happy customers', rating: 0, imageUrl: '' },
-  { icon: 'star', value: '4.9/5', label: 'From 200+ reviews', rating: 5, imageUrl: '' },
-  { icon: 'shield-check', value: '', label: 'Licensed & insured', rating: 0, imageUrl: '' },
-  { icon: 'award', value: '10+', label: 'Years in business', rating: 0, imageUrl: '' },
-  { icon: 'map-pin', value: 'Local', label: 'Proudly serving our community', rating: 0, imageUrl: '' },
+// Editor placeholder seed — populated only by `defaultData()`. Generic
+// placeholder rows so the operator sees the section's shape; the
+// generation pipeline supplies real trust signals from the industry
+// template. Previously the seed values ("500+ happy customers", "4.9/5
+// from 200+ reviews", "10+ years in business") would leak as fabricated
+// claims for any brand-new business if the AI omitted the items array.
+const EDITOR_SEED_ITEMS: Omit<TrustItem, 'id'>[] = [
+  { icon: 'shield-check', value: '', label: 'Trust signal 1', rating: 0, imageUrl: '' },
+  { icon: 'check', value: '', label: 'Trust signal 2', rating: 0, imageUrl: '' },
+  { icon: 'award', value: '', label: 'Trust signal 3', rating: 0, imageUrl: '' },
 ];
 
-const SEED_BADGES: Omit<TrustBadge, 'id'>[] = [
-  { icon: 'shield-check', label: 'Fully licensed' },
-  { icon: 'check', label: 'Insured' },
-  { icon: 'check', label: 'Background checked' },
-  { icon: 'check', label: 'Satisfaction guaranteed' },
+const EDITOR_SEED_BADGES: Omit<TrustBadge, 'id'>[] = [
+  { icon: 'shield-check', label: 'Badge 1' },
+  { icon: 'check', label: 'Badge 2' },
+  { icon: 'check', label: 'Badge 3' },
 ];
 
 const DEFAULTS: TrustData = {
   theme: {},
   display: 'stats',
-  columns: 5,
+  columns: 4,
   headerAlign: 'center',
   showDividers: true,
   showHeadlineRule: true,
   headlineSize: 'l',
-  eyebrow: 'TRUSTED BY OUR COMMUNITY',
-  headline: 'Local service. Proven results.',
+  eyebrow: 'WHY US',
+  headline: 'Trust signals headline.',
   headlineAccent: '',
-  sub: "We're proud to be the go-to choice for homeowners and businesses across the area.",
-  items: SEED_ITEMS.map((it) => ({ ...it, id: makeId('trust') })),
+  sub: 'A short sentence framing the proof points below.',
+  items: [],
   showBadges: false,
-  badges: SEED_BADGES.map((b) => ({ ...b, id: makeId('badge') })),
+  badges: [],
 };
 
 function defaultData(): TrustData {
   return {
     ...DEFAULTS,
     theme: {},
-    items: SEED_ITEMS.map((it) => ({ ...it, id: makeId('trust') })),
-    badges: SEED_BADGES.map((b) => ({ ...b, id: makeId('badge') })),
+    items: EDITOR_SEED_ITEMS.map((it) => ({ ...it, id: makeId('trust') })),
+    badges: EDITOR_SEED_BADGES.map((b) => ({ ...b, id: makeId('badge') })),
   };
 }
 
@@ -142,8 +145,11 @@ function withDefaults(data: TrustData): TrustData {
   return {
     ...DEFAULTS,
     ...data,
-    items: data.items ?? DEFAULTS.items,
-    badges: data.badges ?? DEFAULTS.badges,
+    // Empty-array fallback (NOT editor seed) so an AI omission doesn't
+    // leak fabricated "500+ happy customers" / "10+ years in business"
+    // claims for a brand-new business.
+    items: data.items ?? [],
+    badges: data.badges ?? [],
   };
 }
 

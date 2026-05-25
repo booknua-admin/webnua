@@ -116,33 +116,21 @@ function makeId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-const SEED_FEATURES: Omit<AboutFeature, 'id'>[] = [
-  {
-    icon: 'users',
-    title: 'Locally owned & operated',
-    description: 'We know the area, and we care about our community.',
-  },
-  {
-    icon: 'shield-check',
-    title: 'Licensed & insured',
-    description: 'Your home or business is in safe, professional hands.',
-  },
-  {
-    icon: 'star',
-    title: 'Quality you can trust',
-    description: 'We use the best materials and stand behind our work.',
-  },
-  {
-    icon: 'message',
-    title: 'Friendly, reliable service',
-    description: 'We show up on time and treat you with respect.',
-  },
+// Editor placeholder seed - populated only by `defaultData()`. Generic
+// placeholder rows. Previously the seed values ("Licensed & insured",
+// "10+ years in business", "500+ happy clients") would leak as
+// fabricated claims for a brand-new or unlicensed business if the AI
+// omitted these arrays.
+const EDITOR_SEED_FEATURES: Omit<AboutFeature, 'id'>[] = [
+  { icon: 'check', title: 'Feature 1', description: 'A short description.' },
+  { icon: 'check', title: 'Feature 2', description: 'A short description.' },
+  { icon: 'check', title: 'Feature 3', description: 'A short description.' },
 ];
 
-const SEED_STATS: Omit<AboutStat, 'id'>[] = [
-  { icon: 'clock', value: '10+', label: 'Years in business' },
-  { icon: 'users', value: '500+', label: 'Happy clients' },
-  { icon: 'map-pin', value: 'Local', label: 'Proudly local' },
+const EDITOR_SEED_STATS: Omit<AboutStat, 'id'>[] = [
+  { icon: 'check', value: '', label: 'Stat label 1' },
+  { icon: 'check', value: '', label: 'Stat label 2' },
+  { icon: 'check', value: '', label: 'Stat label 3' },
 ];
 
 const DEFAULTS: AboutData = {
@@ -155,9 +143,9 @@ const DEFAULTS: AboutData = {
   headlineAccent: 'Trusted results.',
   sub: "We're committed to providing top-quality service with honest pricing and a focus on customer satisfaction.",
   extra: 'features',
-  features: SEED_FEATURES.map((f) => ({ ...f, id: makeId('feat') })),
-  stats: SEED_STATS.map((s) => ({ ...s, id: makeId('stat') })),
-  noteText: 'Thank you for supporting local.',
+  features: [],
+  stats: [],
+  noteText: '',
   buttonLabel: 'Learn more about us',
   buttonHref: '#',
   mediaMode: 'single',
@@ -170,17 +158,17 @@ const DEFAULTS: AboutData = {
   imageDisplay3: defaultImageDisplay(),
   overlay: 'stat',
   badgeIcon: 'check',
-  badgeValue: '100%',
-  badgeLabel: 'Satisfaction guaranteed',
-  badgeQuote: 'Our promise is simple: quality work, honest service, every time.',
+  badgeValue: '',
+  badgeLabel: '',
+  badgeQuote: '',
 };
 
 function defaultData(): AboutData {
   return {
     ...DEFAULTS,
     theme: {},
-    features: SEED_FEATURES.map((f) => ({ ...f, id: makeId('feat') })),
-    stats: SEED_STATS.map((s) => ({ ...s, id: makeId('stat') })),
+    features: EDITOR_SEED_FEATURES.map((f) => ({ ...f, id: makeId('feat') })),
+    stats: EDITOR_SEED_STATS.map((s) => ({ ...s, id: makeId('stat') })),
   };
 }
 
@@ -188,8 +176,12 @@ function withDefaults(data: AboutData): AboutData {
   return {
     ...DEFAULTS,
     ...data,
-    features: data.features ?? DEFAULTS.features,
-    stats: data.stats ?? DEFAULTS.stats,
+    // Empty-array fallbacks (NOT editor seeds) so an AI omission doesn't
+    // leak fabricated claims (the previous "10+ years in business" /
+    // "500+ happy clients" / "Licensed & insured") for a brand-new or
+    // unlicensed business.
+    features: data.features ?? [],
+    stats: data.stats ?? [],
   };
 }
 

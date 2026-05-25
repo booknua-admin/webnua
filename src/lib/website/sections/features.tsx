@@ -101,36 +101,35 @@ function makeId(): string {
   return `feat-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-const SEED_ITEMS: Omit<FeatureItem, 'id'>[] = [
+// Editor placeholder seed — populated only by `defaultData()`. Generic
+// neutral placeholders so an operator adding a fresh Features section
+// sees representative rows. Crucially these do NOT lock the section to
+// any specific trade (the previous hardcoded Plumbing/HVAC/Electrical/
+// Cleaning items leaked category-wrong copy to any non-matching trade
+// whenever the AI omitted the items array). The generation pipeline
+// goes through `withDefaults` with an empty fallback.
+const EDITOR_SEED_ITEMS: Omit<FeatureItem, 'id'>[] = [
   {
-    icon: 'droplet',
+    icon: 'check',
     imageUrl: '',
-    title: 'Plumbing',
-    description: 'From repairs to installations, we handle all your plumbing needs with care.',
+    title: 'Feature 1',
+    description: 'A short description of this feature.',
     linkLabel: 'Learn more',
     linkHref: '#',
   },
   {
-    icon: 'snowflake',
+    icon: 'check',
     imageUrl: '',
-    title: 'HVAC services',
-    description: 'Keep your home comfortable year-round with our heating and cooling solutions.',
+    title: 'Feature 2',
+    description: 'A short description of this feature.',
     linkLabel: 'Learn more',
     linkHref: '#',
   },
   {
-    icon: 'zap',
+    icon: 'check',
     imageUrl: '',
-    title: 'Electrical',
-    description: 'Safe, reliable electrical services for your home or business.',
-    linkLabel: 'Learn more',
-    linkHref: '#',
-  },
-  {
-    icon: 'spray-can',
-    imageUrl: '',
-    title: 'Cleaning',
-    description: 'Professional cleaning for homes and businesses. Spotless results, every time.',
+    title: 'Feature 3',
+    description: 'A short description of this feature.',
     linkLabel: 'Learn more',
     linkHref: '#',
   },
@@ -141,28 +140,28 @@ const DEFAULTS: FeaturesData = {
   layout: 'cards',
   mediaStyle: 'icon',
   iconStyle: 'soft',
-  columns: 4,
+  columns: 3,
   headerAlign: 'center',
   showDividers: false,
   showItemLinks: true,
   showHeadlineRule: true,
   headlineSize: 'l',
   eyebrow: 'OUR SERVICES',
-  headline: 'Quality services, every time',
+  headline: 'Your services headline.',
   headlineAccent: '',
-  sub: 'We offer a wide range of services to meet your needs — reliable, professional, and always done right.',
+  sub: 'A short sentence describing what you do.',
   ctaVisible: true,
   ctaStyle: 'solid',
   ctaLabel: 'View all services',
   ctaHref: '#',
-  items: SEED_ITEMS.map((it) => ({ ...it, id: makeId() })),
+  items: [],
 };
 
 function defaultData(): FeaturesData {
   return {
     ...DEFAULTS,
     theme: {},
-    items: SEED_ITEMS.map((it) => ({ ...it, id: makeId() })),
+    items: EDITOR_SEED_ITEMS.map((it) => ({ ...it, id: makeId() })),
   };
 }
 
@@ -170,7 +169,9 @@ function withDefaults(data: FeaturesData): FeaturesData {
   return {
     ...DEFAULTS,
     ...data,
-    items: data.items ?? DEFAULTS.items,
+    // Empty-array fallback (NOT the editor seed) so an AI omission
+    // shows an empty grid, not category-wrong trade copy.
+    items: data.items ?? [],
   };
 }
 

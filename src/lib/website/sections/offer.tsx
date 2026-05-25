@@ -111,49 +111,25 @@ function makeId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-const SEED_INCLUSIONS: string[] = [
-  'No call-out surcharges, ever',
-  'Same-day repair quote, written',
-  'All work covered by our 12-month workmanship guarantee',
+// Editor placeholder seed — populated only by `defaultData()` so the operator
+// adding a fresh Offer section in the editor sees representative placeholder
+// rows. The generation pipeline NEVER overlays these onto a customer's
+// snapshot. See `withDefaults` below + `reference/bundle-a-b-audit.md`.
+const EDITOR_SEED_INCLUSIONS: string[] = [
+  'Inclusion 1',
+  'Inclusion 2',
+  'Inclusion 3',
 ];
 
-const SEED_ITEMS: Omit<OfferValueItem, 'id'>[] = [
-  {
-    icon: 'monitor',
-    title: 'A conversion-focused website',
-    description: 'Built to turn visitors into booked jobs. Live in 14 days.',
-  },
-  {
-    icon: 'target',
-    title: 'Local ad targeting',
-    description: 'Ads targeting high-intent local searches, managed daily.',
-  },
-  {
-    icon: 'users',
-    title: 'Retargeting that works',
-    description: 'Lookalike audiences bring ready-to-buy locals back.',
-  },
-  {
-    icon: 'message',
-    title: 'Fast lead follow-up',
-    description: 'Every lead contacted within 5 minutes via SMS + email.',
-  },
-  {
-    icon: 'star',
-    title: 'Automated reviews',
-    description: 'Review requests fire after every completed job.',
-  },
-  {
-    icon: 'gauge',
-    title: 'A weekly scoreboard',
-    description: 'One simple update every Monday — what is working.',
-  },
+const EDITOR_SEED_ITEMS: Omit<OfferValueItem, 'id'>[] = [
+  { icon: 'check', title: 'Value item 1', description: 'What you get.' },
+  { icon: 'check', title: 'Value item 2', description: 'What you get.' },
+  { icon: 'check', title: 'Value item 3', description: 'What you get.' },
 ];
 
-const SEED_SIGNALS: Omit<OfferSignal, 'id'>[] = [
-  { icon: 'check', label: 'No lock-in contracts' },
-  { icon: 'check', label: 'Transparent reporting' },
-  { icon: 'check', label: 'Built for trades' },
+const EDITOR_SEED_SIGNALS: Omit<OfferSignal, 'id'>[] = [
+  { icon: 'check', label: 'Trust signal 1' },
+  { icon: 'check', label: 'Trust signal 2' },
 ];
 
 const DEFAULTS: OfferData = {
@@ -163,33 +139,38 @@ const DEFAULTS: OfferData = {
   headlineSize: 'l',
   showHeadlineRule: false,
   tag: 'THE OFFER',
-  title: 'Local sparkie, $99 callout, on-site in under 60 minutes.',
+  title: 'Your offer headline.',
   titleAccent: '',
-  sub: 'Everything you need to win more jobs — done for you.',
-  priceLabel: '$99',
-  priceCaption: 'Fixed call-out fee',
-  inclusions: SEED_INCLUSIONS.map((text) => ({ id: makeId('inc'), text })),
-  scarcityCopy: 'Limited to 5 emergency slots per day.',
+  sub: 'A short sentence that frames the value.',
+  priceLabel: '',
+  priceCaption: '',
+  inclusions: [],
+  scarcityCopy: '',
   imageUrl: '',
   imageDisplay: defaultImageDisplay(),
-  items: SEED_ITEMS.map((it) => ({ ...it, id: makeId('val') })),
+  items: [],
   stackStyle: 'grid',
   columns: 2,
   showNumbers: false,
   showSignals: true,
-  signals: SEED_SIGNALS.map((s) => ({ ...s, id: makeId('sig') })),
+  signals: [],
   ctaVisible: true,
-  ctaLabel: 'Book my callout',
-  ctaHref: '/schedule',
+  ctaLabel: 'Get in touch',
+  ctaHref: '/contact',
 };
 
+// `defaultData()` runs in the editor's "add new section" path — fills the
+// arrays with representative placeholder rows the operator can edit. The
+// generation pipeline goes through `withDefaults` instead (with the array
+// fallbacks left empty) so AI omissions don't leak placeholder content
+// into customer-facing snapshots.
 function defaultData(): OfferData {
   return {
     ...DEFAULTS,
     theme: {},
-    inclusions: SEED_INCLUSIONS.map((text) => ({ id: makeId('inc'), text })),
-    items: SEED_ITEMS.map((it) => ({ ...it, id: makeId('val') })),
-    signals: SEED_SIGNALS.map((s) => ({ ...s, id: makeId('sig') })),
+    inclusions: EDITOR_SEED_INCLUSIONS.map((text) => ({ id: makeId('inc'), text })),
+    items: EDITOR_SEED_ITEMS.map((it) => ({ ...it, id: makeId('val') })),
+    signals: EDITOR_SEED_SIGNALS.map((s) => ({ ...s, id: makeId('sig') })),
   };
 }
 
@@ -197,9 +178,13 @@ function withDefaults(data: OfferData): OfferData {
   return {
     ...DEFAULTS,
     ...data,
-    inclusions: data.inclusions ?? DEFAULTS.inclusions,
-    items: data.items ?? DEFAULTS.items,
-    signals: data.signals ?? DEFAULTS.signals,
+    // Empty-array fallbacks (not editor seeds) — the renderer handles
+    // empty arrays gracefully (`items.length > 0` / `items.map(…)` over
+    // []), so an AI omission shows an empty section, not Webnua's
+    // agency pitch.
+    inclusions: data.inclusions ?? [],
+    items: data.items ?? [],
+    signals: data.signals ?? [],
   };
 }
 

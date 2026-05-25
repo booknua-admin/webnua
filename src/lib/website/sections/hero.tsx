@@ -70,23 +70,30 @@ const HERO_HARDCODED_THEME: SectionTheme = {
   body: '#c4cdda',
 };
 
+// Neutral defaults — the AI populates these in production, so the
+// fallback strings only render when an operator adds an empty Hero
+// section in the editor (and even then they're clearly placeholder
+// copy the operator will replace). The previous defaults were
+// Voltline-specific ("Power back on, guaranteed within the hour. /
+// Licensed sparkies covering Perth metro…") — wrong for any
+// non-electrician trade if the AI ever omitted the headline.
 const DEFAULTS: HeroData = {
   layout: 'split',
   theme: {}, // overrides nothing — inherits brand defaults / the hardcoded look
   imageSide: 'right',
   overlayOpacity: 88,
   contentAlign: 'left',
-  eyebrow: 'LOCAL · TRUSTED',
-  headline: 'Power back on,',
-  headlineAccent: 'guaranteed within the hour.',
+  eyebrow: 'EYEBROW',
+  headline: 'Your headline goes here.',
+  headlineAccent: '',
   headlineSize: 'l',
-  sub: 'Licensed sparkies covering Perth metro. Fixed callout, transparent quote — no surprises, ever.',
+  sub: 'A short sentence introducing what you do and who you serve.',
   subSize: 'm',
-  ctaPrimaryLabel: 'Book a callout',
-  ctaPrimaryHref: '/schedule',
+  ctaPrimaryLabel: 'Get in touch',
+  ctaPrimaryHref: '/contact',
   ctaPrimaryVisible: true,
-  ctaSecondaryLabel: 'Call now',
-  ctaSecondaryHref: 'tel:0400000000',
+  ctaSecondaryLabel: 'Learn more',
+  ctaSecondaryHref: '#',
   ctaSecondaryVisible: true,
   heroImageUrl: '',
   heroImageDisplay: defaultImageDisplay(),

@@ -101,13 +101,15 @@ function makeId(): string {
   return `gal-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-const SEED_ITEMS: Omit<GalleryItem, 'id'>[] = [
-  { imageUrl: '', caption: 'Recent project', category: 'Interior' },
-  { imageUrl: '', caption: 'Recent project', category: 'Renovation' },
-  { imageUrl: '', caption: 'Recent project', category: 'Exterior' },
-  { imageUrl: '', caption: 'Recent project', category: 'Interior' },
-  { imageUrl: '', caption: 'Recent project', category: 'Renovation' },
-  { imageUrl: '', caption: 'Recent project', category: 'Exterior' },
+// Editor placeholder seed - populated only by `defaultData()`. The
+// generation pipeline goes through `withDefaults` with an empty
+// fallback; the deterministic path fills image URLs from the industry
+// stockImages kit. Bundle B's `injectStockImages` does the same for
+// items the AI emitted with empty URLs.
+const EDITOR_SEED_ITEMS: Omit<GalleryItem, 'id'>[] = [
+  { imageUrl: '', caption: '', category: '' },
+  { imageUrl: '', caption: '', category: '' },
+  { imageUrl: '', caption: '', category: '' },
 ];
 
 const DEFAULTS: GalleryData = {
@@ -119,12 +121,12 @@ const DEFAULTS: GalleryData = {
   headlineSize: 'l',
   showHeadlineRule: true,
   eyebrow: 'OUR WORK',
-  headline: 'Quality work. Real results.',
+  headline: 'Recent work.',
   headlineAccent: '',
-  sub: "Take a look at some of the projects we've completed for our clients.",
+  sub: 'A short caption introducing the gallery.',
   showFilters: true,
-  categories: ['Interior', 'Renovation', 'Exterior'],
-  items: SEED_ITEMS.map((it) => ({ ...it, id: makeId() })),
+  categories: [],
+  items: [],
   showCaptions: false,
   ctaVisible: true,
   ctaStyle: 'outline',
@@ -136,8 +138,8 @@ function defaultData(): GalleryData {
   return {
     ...DEFAULTS,
     theme: {},
-    categories: [...DEFAULTS.categories],
-    items: SEED_ITEMS.map((it) => ({ ...it, id: makeId() })),
+    categories: [],
+    items: EDITOR_SEED_ITEMS.map((it) => ({ ...it, id: makeId() })),
   };
 }
 
@@ -145,8 +147,10 @@ function withDefaults(data: GalleryData): GalleryData {
   return {
     ...DEFAULTS,
     ...data,
-    categories: data.categories ?? DEFAULTS.categories,
-    items: data.items ?? DEFAULTS.items,
+    // Empty-array fallbacks (NOT editor seeds) so an AI omission shows
+    // no phantom "Recent project" cards.
+    categories: data.categories ?? [],
+    items: data.items ?? [],
   };
 }
 
