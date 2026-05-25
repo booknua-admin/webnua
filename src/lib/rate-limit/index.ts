@@ -36,7 +36,9 @@ export type RateLimitAction =
   | 'signup_success'
   | 'ai_site_gen'
   | 'ai_funnel_gen'
-  | 'ai_section_regen';
+  | 'ai_section_regen'
+  | 'verification_code_request'
+  | 'verification_code_attempt';
 
 /** A rate-limit configuration: count this many of this action's key per
  *  windowSeconds. The same `action` always uses the same window in the
@@ -85,6 +87,21 @@ export const RATE_LIMITS: Record<RateLimitAction, RateLimitConfig> = {
     windowSeconds: 60 * 60,
     limit: 10,
     windowLabel: 'hour',
+  },
+  // Conversational onboarding — code verification (Session B).
+  // Per-EMAIL keys (not per-IP). The existing signup_attempt per-IP limit
+  // still applies on the /api/sign-up/request-code route as the outer guard.
+  verification_code_request: {
+    action: 'verification_code_request',
+    windowSeconds: 60 * 60,
+    limit: 3,
+    windowLabel: 'hour',
+  },
+  verification_code_attempt: {
+    action: 'verification_code_attempt',
+    windowSeconds: 15 * 60,
+    limit: 5,
+    windowLabel: '15 minutes',
   },
 };
 
@@ -216,6 +233,8 @@ function humanise(action: RateLimitAction): string {
     case 'ai_site_gen': return 'site-generation';
     case 'ai_funnel_gen': return 'funnel-generation';
     case 'ai_section_regen': return 'section-regeneration';
+    case 'verification_code_request': return 'verification-code';
+    case 'verification_code_attempt': return 'verification-code';
   }
 }
 
