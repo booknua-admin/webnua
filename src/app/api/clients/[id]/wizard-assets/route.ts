@@ -41,6 +41,8 @@ import { NextResponse } from 'next/server';
 import { requireClientAccess } from '@/lib/integrations/_shared/operator-auth';
 import { getServiceClient } from '@/lib/supabase/server';
 import type { FunnelGenerationResult } from '@/lib/funnel/generation-stub';
+import { derivePalette } from '@/lib/website/color-derivation';
+import { getBundleForIndustry } from '@/lib/website/industry-bundle-defaults';
 import { offerToRow } from '@/lib/website/offer-generate';
 import type { ClientBrief, SiteGenerationResult } from '@/lib/website/site-generation-stub';
 import { MAX_NAV_LINKS } from '@/lib/website/types';
@@ -235,15 +237,33 @@ async function persistWebsite(args: {
   // Brand-seed guard — same shape as `createWebsiteForClient`. The wizard
   // path's brand-step writes are independent; this is the defensive backfill
   // for a client whose brand row was never seeded.
+  //
+  // Phase 2 parity fix — bring this insert into lockstep with the operator
+  // concierge path (`createClientWithGeneration` / `createWebsiteForClient`)
+  // and the signup placeholder (`provisionPendingSignup`). All three paths
+  // must seed: design_bundle_id (Bundle C2b-1 — picked from the industry),
+  // derived_palette (pre-derived from primary + optional secondary), the
+  // brand colour array, an optional tagline, and the default fonts. Without
+  // these the wizard-assets fallback path produced visibly different brand
+  // rows from the concierge path — same customer, same industry, different
+  // design tokens at render time.
   const { data: existingBrand } = await svc
     .from('brands')
     .select('client_id')
     .eq('client_id', clientId)
     .maybeSingle();
   if (!existingBrand) {
+    const seedPrimary = brief.brand.accentColor || '#d24317';
+    const seedBundle = getBundleForIndustry(brief.brand.industryCategory);
+    const seedPalette = derivePalette({
+      primary: seedPrimary,
+      secondary: brief.brand.brandColors?.[1],
+      industry: brief.brand.industryCategory,
+    });
     const { error: brandErr } = await svc.from('brands').insert({
       client_id: clientId,
-      accent_color: brief.brand.accentColor || '#d24317',
+      accent_color: seedPrimary,
+      brand_colors: brief.brand.brandColors ?? [],
       logo_url: brief.brand.logoUrl,
       favicon_url: brief.brand.faviconUrl,
       voice_formality: brief.brand.voice.formality,
@@ -252,6 +272,10 @@ async function persistWebsite(args: {
       audience_line: brief.brand.audienceLine,
       industry_category: brief.brand.industryCategory,
       top_jobs_to_be_booked: brief.brand.topJobsToBeBooked,
+      design_bundle_id: seedBundle,
+      derived_palette: seedPalette as never,
+      heading_font: 'inter-tight',
+      body_font: 'inter-tight',
     });
     if (brandErr) {
       // Non-fatal — log but continue to the website insert.
