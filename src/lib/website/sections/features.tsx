@@ -21,6 +21,7 @@ import {
   type SectionTheme,
 } from '../section-theme';
 import { DEFAULT_SECTION_ICON, getSectionIcon } from '../section-icons';
+import { BundleButton } from './_shared/BundleButton';
 import { ColumnsField } from './_shared/ColumnsField';
 import { CopyField } from './_shared/CopyField';
 import { SurfaceLink } from './_shared/live-surface';
@@ -45,7 +46,14 @@ import { VariantField, type VariantOption } from './_shared/VariantField';
 // the form most service websites lead with.
 // =============================================================================
 
-export type FeaturesLayout = 'cards' | 'plain';
+// C2b-3: `numbered` + `dark-band` joined `cards` + `plain`.
+// - cards    = V2 icon grid (the existing default)
+// - plain    = legacy plain-text variant (kept for back-compat)
+// - numbered = V1 vertical stack with big bold numbers — no icons, the
+//              numbers are the visual element
+// - dark-band = V3 full-bleed dark section that breaks the page rhythm —
+//              horizontal row of N items, high-contrast typography
+export type FeaturesLayout = 'cards' | 'plain' | 'numbered' | 'dark-band';
 export type FeaturesMediaStyle = 'icon' | 'image' | 'image-icon';
 export type FeaturesIconStyle = 'soft' | 'solid' | 'bare';
 export type FeaturesAlign = 'left' | 'center' | 'right';
@@ -88,6 +96,29 @@ export type FeaturesData = {
   ctaLabel: string;
   ctaHref: string;
   items: FeatureItem[];
+  // -- Item-array asymmetry primitive (C2b-3) ----------------------------
+  //
+  // `featuredIndex` flags ONE item to render larger / differently inside an
+  // otherwise uniform grid. `null` = uniform treatment (the pre-C2b-3
+  // behaviour); `0..items.length-1` = the index of the featured item.
+  //
+  // V1 wires this on the `cards` layout only (one bigger card occupies a
+  // wider slot, the rest sit in the remaining grid cells). The pattern is
+  // documented here for future reuse — services / reviews / trust / faq /
+  // gallery / offer all carry similar item arrays and would benefit from the
+  // same asymmetry switch in V1.1. Reuse policy when extending:
+  //   1. Add `featuredIndex: number | null` to the section's data shape AND
+  //      its defaultDataKeys in registry-meta.ts.
+  //   2. Add the field to capabilityHints.copyFields (it's an editorial
+  //      choice, not a layout knob — the editor surfaces it on the items
+  //      element, not on section-level settings).
+  //   3. In the section's Preview, clamp the value to the valid range and
+  //      branch the grid render so the featured slot gets the larger
+  //      treatment (typically column-span 2 + bigger typography).
+  //   4. Optionally extend SECTION_SHAPE_CATALOG with the same field so the
+  //      AI knows it can suggest one (omit guidance to leave the choice to
+  //      the brief — over-specifying causes the model to always set it).
+  featuredIndex: number | null;
 };
 
 /** The features grid's own colours — last link in the resolve chain. */
@@ -155,6 +186,7 @@ const DEFAULTS: FeaturesData = {
   ctaLabel: 'View all services',
   ctaHref: '#',
   items: [],
+  featuredIndex: null,
 };
 
 function defaultData(): FeaturesData {
@@ -209,6 +241,8 @@ const SUB_ALTS = [
 const LAYOUT_OPTIONS: readonly VariantOption<FeaturesLayout>[] = [
   { id: 'cards', label: 'Cards' },
   { id: 'plain', label: 'Plain' },
+  { id: 'numbered', label: 'Numbered list' },
+  { id: 'dark-band', label: 'Dark band' },
 ];
 
 const MEDIA_OPTIONS: readonly VariantOption<FeaturesMediaStyle>[] = [
@@ -426,14 +460,54 @@ function FeaturesFields({
   if (selectedElement === 'items') {
     const showImage = d.mediaStyle === 'image' || d.mediaStyle === 'image-icon';
     const showIcon = d.mediaStyle === 'icon' || d.mediaStyle === 'image-icon';
+    // V1 numbered + V3 dark-band lay out vertically / horizontally — the
+    // columns picker is only meaningful for cards + plain.
+    const showColumns = d.layout === 'cards' || d.layout === 'plain';
+    // Item-array asymmetry is wired on the cards layout only in V1 (see the
+    // FeaturesData doc comment); the picker is hidden elsewhere. `null`
+    // sentinel for uniform; otherwise the index of the featured row.
+    const showFeatured = d.layout === 'cards' && d.items.length >= 2;
+    // VariantField only takes string ids — encode the integer index as
+    // `'idx-N'` and the no-selection sentinel as `'none'`.
+    const featuredOptions: readonly VariantOption<string>[] = [
+      { id: 'none', label: 'None' },
+      ...d.items.map((_, i) => ({ id: `idx-${i}`, label: `Item ${i + 1}` })),
+    ];
+    const featuredValue =
+      d.featuredIndex === null || d.featuredIndex === undefined
+        ? 'none'
+        : `idx-${d.featuredIndex}`;
     return (
       <>
         <BuilderFormSection>
-          <ColumnsField
-            value={d.columns}
-            onChange={(v) => set('columns', v)}
-            helper={<>How many items sit side by side.</>}
-          />
+          {showColumns ? (
+            <ColumnsField
+              value={d.columns}
+              onChange={(v) => set('columns', v)}
+              helper={<>How many items sit side by side.</>}
+            />
+          ) : null}
+          {showFeatured ? (
+            <VariantField
+              label="Featured item"
+              value={featuredValue}
+              options={featuredOptions}
+              onChange={(v) => {
+                if (v === 'none') {
+                  set('featuredIndex', null);
+                  return;
+                }
+                const n = Number(v.slice(4));
+                set('featuredIndex', Number.isFinite(n) ? n : null);
+              }}
+              helper={
+                <>
+                  One item rendered larger than the rest — uniform grid when
+                  set to None.
+                </>
+              }
+            />
+          ) : null}
           <ToggleField
             label="Item links"
             value={d.showItemLinks}
@@ -595,6 +669,13 @@ function FeaturesPreview({
     FEATURES_HARDCODED_THEME,
   );
 
+  // V3 dark-band — full-bleed dark surface; SectionShell renders the
+  // section's resolved background but we override to the brand-tinted dark
+  // surface variable so the section breaks the page rhythm visually. The
+  // brand palette's `surface-3` is the contrast-aware dark tone derived in
+  // color-derivation.ts; we read it via the CSS var SectionShell sets.
+  const isDarkBand = d.layout === 'dark-band';
+
   return (
     <SectionShell theme={resolved} brand={brand} pad="roomy">
       {({ theme, headingFont, accent }) => {
@@ -608,8 +689,42 @@ function FeaturesPreview({
         const ctaShown = d.ctaVisible && !!d.ctaLabel;
         const renderCta = ctaShown || (editing && !!d.ctaLabel);
 
+        // Theme tokens are computed per-variant: dark-band swaps to
+        // contrast-flipped colours (paper on a dark tinted surface).
+        // Other variants use the normal section theme. We bake this here
+        // (not in SectionShell) so the variant remains a section concern.
+        const variantTheme: ResolvedTheme = isDarkBand
+          ? {
+              ...theme,
+              background: 'var(--palette-surface-3, #1a1b1f)',
+              heading: 'var(--palette-text-on-surface-3, #ffffff)',
+              body: 'var(--palette-text-on-surface-3, #ffffff)',
+              muted: 'rgba(255, 255, 255, 0.6)',
+              border: 'rgba(255, 255, 255, 0.15)',
+              card: 'rgba(255, 255, 255, 0.05)',
+              cardBorder: 'rgba(255, 255, 255, 0.12)',
+              isDark: true,
+            }
+          : theme;
+
         return (
-          <div className="flex flex-col">
+          <div
+            className="flex flex-col"
+            style={
+              isDarkBand
+                ? {
+                    backgroundColor: variantTheme.background,
+                    color: variantTheme.body,
+                    paddingTop: '64px',
+                    paddingBottom: '64px',
+                    marginTop: '-48px',
+                    marginBottom: '-48px',
+                    paddingLeft: '24px',
+                    paddingRight: '24px',
+                  }
+                : undefined
+            }
+          >
             {/* -- header band -- */}
             <div
               className={`flex flex-col ${ALIGN_CLASS[d.headerAlign]} mb-12`}
@@ -627,7 +742,7 @@ function FeaturesPreview({
               <SelectableElement {...sel('headline')} className="mt-3">
                 <h2
                   className={`${HEADLINE_SIZE_CLASS[d.headlineSize]} font-bold leading-[1.12] tracking-[-0.02em]`}
-                  style={{ fontFamily: headingFont, color: theme.heading }}
+                  style={{ fontFamily: headingFont, color: variantTheme.heading }}
                 >
                   <span className="block">{d.headline}</span>
                   {d.headlineAccent ? (
@@ -648,7 +763,7 @@ function FeaturesPreview({
                 <SelectableElement {...sel('subheadline')} className="mt-5">
                   <p
                     className="max-w-[560px] whitespace-pre-line text-[15px] leading-[1.6]"
-                    style={{ color: theme.body }}
+                    style={{ color: variantTheme.body }}
                   >
                     {d.sub}
                   </p>
@@ -656,30 +771,14 @@ function FeaturesPreview({
               ) : null}
             </div>
 
-            {/* -- items grid -- */}
-            {d.items.length === 0 ? (
-              <p
-                className="rounded-lg border border-dashed px-4 py-8 text-center text-[13px]"
-                style={{ borderColor: theme.border, color: theme.muted }}
-              >
-                No items yet. Add one in the editor.
-              </p>
-            ) : (
-              <div className={`grid gap-6 ${gridColumnsClass(d.columns)}`}>
-                {d.items.map((item, i) => (
-                  <SelectableElement key={item.id} {...sel('items')}>
-                    <FeatureCard
-                      item={item}
-                      data={d}
-                      theme={theme}
-                      accent={accent}
-                      headingFont={headingFont}
-                      indexInRow={i % d.columns}
-                    />
-                  </SelectableElement>
-                ))}
-              </div>
-            )}
+            {/* -- items section — branches per layout variant -- */}
+            <FeaturesItems
+              data={d}
+              theme={variantTheme}
+              accent={accent}
+              headingFont={headingFont}
+              sel={sel}
+            />
 
             {/* -- bottom CTA -- */}
             {renderCta ? (
@@ -689,12 +788,13 @@ function FeaturesPreview({
                   display="inline-block"
                   className={ctaShown ? undefined : 'opacity-40'}
                 >
-                  <CtaButton
-                    label={d.ctaLabel}
+                  <BundleButton
                     href={d.ctaHref}
-                    style={d.ctaStyle}
+                    variant={d.ctaStyle === 'outline' ? 'secondary' : 'primary'}
                     accent={accent}
-                  />
+                  >
+                    {d.ctaLabel}
+                  </BundleButton>
                 </SelectableElement>
               </div>
             ) : null}
@@ -705,44 +805,182 @@ function FeaturesPreview({
   );
 }
 
+// -- Items dispatcher — branches per layout variant -------------------------
+//
+// Kept as a sub-component so the Preview body stays readable and so each
+// variant's surface is straightforward to extend on its own.
+
+function FeaturesItems({
+  data,
+  theme,
+  accent,
+  headingFont,
+  sel,
+}: {
+  data: FeaturesData;
+  theme: ResolvedTheme;
+  accent: string;
+  headingFont: string;
+  sel: (id: FeaturesElement) => {
+    id: FeaturesElement;
+    selected: boolean;
+    onSelect?: (id: string) => void;
+  };
+}) {
+  if (data.items.length === 0) {
+    return (
+      <p
+        className="rounded-lg border border-dashed px-4 py-8 text-center text-[13px]"
+        style={{ borderColor: theme.border, color: theme.muted }}
+      >
+        No items yet. Add one in the editor.
+      </p>
+    );
+  }
+
+  // V1 — numbered list (vertical stack, big bold numbers, no icons/images).
+  if (data.layout === 'numbered') {
+    return (
+      <div className="flex flex-col gap-9 @2xl:gap-12">
+        {data.items.map((item, i) => (
+          <SelectableElement key={item.id} {...sel('items')}>
+            <div className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 @sm:gap-x-7">
+              <span
+                aria-hidden
+                className="text-[44px] font-bold leading-none tracking-[-0.04em] @2xl:text-[64px]"
+                style={{ color: accent, fontFamily: headingFont }}
+              >
+                {String(i + 1).padStart(2, '0')}
+              </span>
+              <div className="flex min-w-0 flex-col">
+                <h3
+                  className="text-[18px] font-bold leading-[1.2] tracking-[-0.01em] @2xl:text-[22px]"
+                  style={{ fontFamily: headingFont, color: theme.heading }}
+                >
+                  {item.title || 'Untitled'}
+                </h3>
+                {item.description ? (
+                  <p
+                    className="mt-2 whitespace-pre-line text-[14px] leading-[1.55] @2xl:text-[15px]"
+                    style={{ color: theme.body }}
+                  >
+                    {item.description}
+                  </p>
+                ) : null}
+                {data.showItemLinks && item.linkLabel ? (
+                  <SurfaceLink
+                    href={item.linkHref}
+                    className="mt-3 inline-flex w-fit items-center gap-1.5 text-[13px] font-semibold"
+                    style={{ color: accent }}
+                  >
+                    {item.linkLabel}
+                    <span aria-hidden>→</span>
+                  </SurfaceLink>
+                ) : null}
+              </div>
+            </div>
+          </SelectableElement>
+        ))}
+      </div>
+    );
+  }
+
+  // V3 — dark-band horizontal row. Stacks vertically below the @2xl
+  // breakpoint so mobile readers get one item per line.
+  if (data.layout === 'dark-band') {
+    return (
+      <div className="grid grid-cols-1 gap-7 @2xl:auto-cols-fr @2xl:grid-flow-col @2xl:gap-10">
+        {data.items.map((item) => {
+          const def = getSectionIcon(item.icon);
+          const Icon = def?.Icon;
+          return (
+            <SelectableElement key={item.id} {...sel('items')}>
+              <div className="flex flex-col gap-3">
+                {Icon ? (
+                  <Icon
+                    size={28}
+                    strokeWidth={1.8}
+                    color={accent}
+                    aria-hidden
+                  />
+                ) : null}
+                <h3
+                  className="text-[18px] font-bold leading-[1.2] tracking-[-0.01em] @2xl:text-[20px]"
+                  style={{ fontFamily: headingFont, color: theme.heading }}
+                >
+                  {item.title || 'Untitled'}
+                </h3>
+                {item.description ? (
+                  <p
+                    className="text-[14px] leading-[1.55]"
+                    style={{ color: theme.body }}
+                  >
+                    {item.description}
+                  </p>
+                ) : null}
+              </div>
+            </SelectableElement>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // V2 — cards / plain (the existing rendering). When `featuredIndex` is set
+  // AND we're in the `cards` layout, the featured slot spans 2 grid columns
+  // — the item-array asymmetry primitive (C2b-3). Other layouts ignore it.
+  const featured = resolveFeaturedIndex(data);
+  const usingFeatured = featured !== null && data.layout === 'cards';
+
+  return (
+    <div className={`grid gap-6 ${gridColumnsClass(data.columns)}`}>
+      {data.items.map((item, i) => {
+        const isFeatured = usingFeatured && i === featured;
+        return (
+          <SelectableElement
+            key={item.id}
+            {...sel('items')}
+            className={isFeatured ? 'col-span-1 @2xl:col-span-2 @2xl:row-span-1' : undefined}
+          >
+            <FeatureCard
+              item={item}
+              data={data}
+              theme={theme}
+              accent={accent}
+              headingFont={headingFont}
+              indexInRow={i % data.columns}
+              featured={isFeatured}
+            />
+          </SelectableElement>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Clamp the stored `featuredIndex` to a valid range. Returns null when the
+ *  field is unset, out of range, or the items array is too short to feature
+ *  meaningfully (≥2 items required so there's something to NOT feature). */
+function resolveFeaturedIndex(data: FeaturesData): number | null {
+  if (data.featuredIndex === null || data.featuredIndex === undefined) return null;
+  if (!Number.isInteger(data.featuredIndex)) return null;
+  if (data.items.length < 2) return null;
+  if (data.featuredIndex < 0 || data.featuredIndex >= data.items.length) return null;
+  return data.featuredIndex;
+}
+
 const ROW_JUSTIFY: Record<FeaturesAlign, string> = {
   left: 'justify-start',
   center: 'justify-center',
   right: 'justify-end',
 };
 
-function CtaButton({
-  label,
-  href,
-  style,
-  accent,
-}: {
-  label: string;
-  href?: string;
-  style: CtaStyle;
-  accent: string;
-}) {
-  if (style === 'outline') {
-    return (
-      <SurfaceLink
-        href={href}
-        className="inline-flex items-center rounded-lg border-2 px-6 py-3 text-[14px] font-semibold"
-        style={{ borderColor: accent, color: accent }}
-      >
-        {label}
-      </SurfaceLink>
-    );
-  }
-  return (
-    <SurfaceLink
-      href={href}
-      className="inline-flex items-center rounded-lg px-6 py-3 text-[14px] font-semibold"
-      style={{ backgroundColor: accent, color: '#ffffff' }}
-    >
-      {label}
-    </SurfaceLink>
-  );
-}
+// CtaButton was inlined here pre-C2b-3 — replaced by BundleButton, which
+// reads the bundle's --bundle-button-style / --bundle-radius-button CSS vars
+// so the CTA's appearance reflects the active design bundle. The Preview
+// now mounts `<BundleButton variant={ctaStyle === 'outline' ? 'secondary' : 'primary'} accent={accent}>`
+// directly inside the SelectableElement. Reference implementation for the
+// other 7 customer-facing CTA sections to follow.
 
 function FeatureIcon({
   iconId,
@@ -823,6 +1061,7 @@ function FeatureCard({
   accent,
   headingFont,
   indexInRow,
+  featured,
 }: {
   item: FeatureItem;
   data: FeaturesData;
@@ -830,16 +1069,25 @@ function FeatureCard({
   accent: string;
   headingFont: string;
   indexInRow: number;
+  /** C2b-3 — item-array asymmetry primitive. When true, render the card
+   *  with the bigger typography variant so the wider grid slot doesn't look
+   *  visually empty. Only set by the cards layout when featuredIndex hits. */
+  featured?: boolean;
 }) {
   const isCard = data.layout === 'cards';
   const showImage = data.mediaStyle === 'image' || data.mediaStyle === 'image-icon';
   const showIcon = data.mediaStyle === 'icon' || data.mediaStyle === 'image-icon';
   const overlapIcon = data.mediaStyle === 'image-icon';
+  // Featured cards (cards layout + featuredIndex hit) get a larger title +
+  // a touch more padding so they read as the focal slot. Other cards keep
+  // their existing dimensions — the asymmetry comes from the grid span.
+  const titleSize = featured ? 'text-[22px] @2xl:text-[26px]' : 'text-[18px]';
+  const padding = featured ? 'px-6 py-8' : 'px-5 py-7';
 
   const text = (
     <div className="flex flex-col items-center px-2 text-center">
       <h3
-        className="text-[18px] font-bold leading-[1.2] tracking-[-0.01em]"
+        className={`${titleSize} font-bold leading-[1.2] tracking-[-0.01em]`}
         style={{ fontFamily: headingFont, color: theme.heading }}
       >
         {item.title || 'Untitled'}
@@ -905,7 +1153,7 @@ function FeatureCard({
     }
     return (
       <div
-        className="flex h-full flex-col items-center px-5 py-7 rounded-xl"
+        className={`flex h-full flex-col items-center ${padding} rounded-xl`}
         style={{
           backgroundColor: theme.card,
           border: `1px solid ${theme.cardBorder}`,
