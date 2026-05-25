@@ -46,6 +46,7 @@ import { ChatComposer } from '@/components/shared/conversation/ChatComposer';
 import { ChatOfferCard } from '@/components/shared/conversation/ChatOfferCard';
 import { ChatRefuseScreen } from '@/components/shared/conversation/ChatRefuseScreen';
 import { ChatServicePicker } from '@/components/shared/conversation/ChatServicePicker';
+import { ChatThinkingPhases } from '@/components/shared/conversation/ChatThinkingPhases';
 import { SpecSheet } from '@/components/shared/conversation/SpecSheet';
 import { TypingIndicator } from '@/components/shared/conversation/TypingIndicator';
 import {
@@ -105,6 +106,7 @@ type Phase =
   | 'extracting'
   | 'clarifying'
   | 'awaiting-business-name'
+  | 'awaiting-knowledge'
   | 'turn-2-services'
   | 'turn-3-brand'
   | 'turn-4-offer'
@@ -182,14 +184,27 @@ const BOT_EXTRACTION_DONE = (e: ConversationExtraction) => {
  *  / 'no' falls back to the derived name. */
 const BOT_ASK_BUSINESS_NAME = (suggested: string): string => {
   const hint = suggested
-    ? `Just keep it simple — even "${suggested}" works if you trade under that.`
-    : "Just keep it simple — even your own name works if you trade under that.";
+    ? `Just keep it simple — even "${suggested}" works if that's how you trade.`
+    : "Just keep it simple — even your own name works if that's how you trade.";
   return `What's your business called? ${hint}`;
 };
+/** First bubble after business-name submit — the customer sees this RIGHT
+ *  before the ChatThinkingPhases card mounts. Honest about the wait
+ *  ("one moment") without padding the bubble with stale specifics — the
+ *  thinking card carries the per-business detail. */
 const BOT_NAME_SAVED = (name: string) =>
-  `Saved as "${name}". One moment — pulling together what your trade typically offers…`;
-const BOT_TURN2_PROMPT =
-  "Tick the services you offer. We'll build your site around these.";
+  `Saved as "${name}". One moment — looking up how businesses like yours typically present online…`;
+/** Second bubble — appears when the AI knowledge call resolves (or when
+ *  the max-wait timer fires), right before the services picker mounts.
+ *  Interpolates the business descriptor so it reads as bespoke; falls
+ *  back to "businesses like yours" when descriptor is empty. */
+const BOT_HERE_ARE_SERVICES = (businessLabel: string): string => {
+  const trimmed = businessLabel.trim();
+  if (trimmed) {
+    return `Here's what we found for ${trimmed.toLowerCase()} businesses. Tick what you offer — we'll build around these.`;
+  }
+  return "Here's what businesses like yours typically offer. Tick what you offer — we'll build around these.";
+};
 const BOT_SERVICES_DONE = "Saved. Now your brand colors.";
 const BOT_TURN3_PROMPT = "Brand colors and logo next. Both optional.";
 const BOT_BRAND_DONE = "Locked in. Generating your offer next.";
@@ -228,6 +243,8 @@ function phaseToStepLabel(phase: Phase): string {
       return '// step 2 of 5 · verify email';
     case 'awaiting-business-name':
       return '// step 3 of 5 · your business';
+    case 'awaiting-knowledge':
+      return '// step 3 of 5 · researching your business';
     case 'turn-2-services':
       return '// step 3 of 5 · services';
     case 'turn-3-brand':
@@ -470,11 +487,19 @@ export function ConversationShell() {
             //   - neither → state is partial, restart conservatively.
             if (state.capturedFacts.extraction) {
               if (state.capturedFacts.businessNameConfirmedAt) {
-                // Cached industryKnowledge (if present) reads off
-                // capturedFacts directly; the kick callback is only
-                // invoked from handleBusinessNameSubmit, which won't
-                // fire on resume since we land past it.
-                setPhase('turn-2-services');
+                // Business name confirmed. Two sub-states:
+                //   - industryKnowledge cached → land directly on the
+                //     services picker (turn-2-services).
+                //   - industryKnowledge missing → re-enter the
+                //     awaiting-knowledge gate. The kick effect below
+                //     fires when phase becomes awaiting-knowledge AND
+                //     industryKnowledge is missing, so the AI call
+                //     re-runs on resume.
+                if (state.capturedFacts.industryKnowledge) {
+                  setPhase('turn-2-services');
+                } else {
+                  setPhase('awaiting-knowledge');
+                }
               } else {
                 setPhase('awaiting-business-name');
               }
@@ -924,15 +949,23 @@ export function ConversationShell() {
         businessName: resolvedName,
         businessNameConfirmedAt: confirmedAt,
       };
+      // Just the user echo + the BOT_NAME_SAVED bubble — the services
+      // picker prompt is appended LATER, when the awaiting-knowledge
+      // phase advances to turn-2-services. This keeps the chat in
+      // lockstep with the visual UI: bubbles about services only land
+      // when services are actually about to mount.
       const nextMessages: LocalChatMessage[] = [
         ...messages,
         { id: newId('user'), author: 'user', text: userBubbleText },
         { id: newId('bot'), author: 'bot', text: BOT_NAME_SAVED(resolvedName) },
-        { id: newId('bot'), author: 'bot', text: BOT_TURN2_PROMPT },
       ];
       setCapturedFacts(nextFacts);
       setMessages(nextMessages);
-      setPhase('turn-2-services');
+      // Enter the gated thinking phase — ChatThinkingPhases mounts
+      // immediately. A pair of effects below decides when to advance to
+      // turn-2-services (minimum show duration + maximum hard timeout
+      // + industryKnowledge resolution).
+      setPhase('awaiting-knowledge');
 
       // If the customer's confirmed name differs from the email-derived
       // placeholder OR the AI's earlier derivation, push it to clients.name
@@ -942,11 +975,13 @@ export function ConversationShell() {
         void persistBusinessIdentity(resolvedName);
       }
 
-      // Kick the industry-knowledge AI call. Background — the services
-      // picker mounts immediately with template defaults; if the call
-      // returns by the time the customer hits Continue, downstream
-      // generation gets the AI knowledge. If not, the funnel/site
-      // prompts skip the supplemental block and fall back to the template.
+      // Kick the industry-knowledge AI call. Background — when it
+      // resolves it lands on capturedFacts.industryKnowledge and the
+      // gate effect picks it up and advances. If it stalls past the
+      // max timeout (route hard-failed somehow), the gate advances
+      // anyway and the picker uses whatever the route returned (it
+      // always returns a 200, even on internal failure, with a
+      // template-derived or generic fallback).
       kickIndustryKnowledgeCall(nextFacts);
 
       void persistState({
@@ -964,6 +999,110 @@ export function ConversationShell() {
       phase,
     ],
   );
+
+  // ---- awaiting-knowledge gate ------------------------------------------
+  // Two-state flag pair drives the advance from awaiting-knowledge to
+  // turn-2-services. `minElapsed` is a fixed "show the thinking surface
+  // for at least N ms so it doesn't flash" timer; `maxElapsed` is the
+  // hard ceiling that advances regardless of resolution. Advance fires
+  // when:
+  //   - mapped industry + min elapsed → advance immediately (template
+  //     suffices for the picker; the AI call may still be in flight,
+  //     but downstream generation reads industryKnowledge when it
+  //     eventually lands).
+  //   - unmapped industry + min elapsed + industryKnowledge resolved →
+  //     advance with the AI services list.
+  //   - max elapsed → advance regardless. Picker falls back to whatever
+  //     servicesCatalogue resolves to. The route never 5xx's (returns
+  //     200 with template/generic fallback on every error path), so by
+  //     the time we hit max, capturedFacts.industryKnowledge is usually
+  //     present anyway.
+  const [knowledgeMinElapsed, setKnowledgeMinElapsed] = useState(false);
+  const [knowledgeMaxElapsed, setKnowledgeMaxElapsed] = useState(false);
+
+  // Resume safety: if we land in awaiting-knowledge after a refresh
+  // (hydration branch) AND no industryKnowledge is cached AND the call
+  // hasn't been kicked yet, fire it now. Without this the gate would
+  // sit until the maximum-wait timer fired (12s for unmapped) and then
+  // fall through with no AI knowledge.
+  useEffect(() => {
+    if (phase !== 'awaiting-knowledge') return;
+    if (capturedFacts.industryKnowledge) return;
+    kickIndustryKnowledgeCall(capturedFacts);
+  }, [phase, capturedFacts, kickIndustryKnowledgeCall]);
+
+  // Timer setup — runs once per phase entry. Mapped industries get a
+  // short floor (the picker is instant-ready, the thinking surface is
+  // brief courtesy framing); unmapped get a longer floor so the AI call
+  // has time to land + the customer sees the phases tick through.
+  useEffect(() => {
+    if (phase !== 'awaiting-knowledge') {
+      // Reset the two flags when leaving the phase so the next entry
+      // starts fresh. Synchronous reset is the cleanest shape here —
+      // the alternative (per-flag tracking + lazy resets) reads worse.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setKnowledgeMinElapsed(false);
+      setKnowledgeMaxElapsed(false);
+      return;
+    }
+    const isMapped = extraction?.industry !== 'generic';
+    const minimumMs = isMapped ? 1800 : 4000;
+    const maximumMs = isMapped ? 6000 : 12000;
+    const minTimer = window.setTimeout(() => setKnowledgeMinElapsed(true), minimumMs);
+    const maxTimer = window.setTimeout(() => setKnowledgeMaxElapsed(true), maximumMs);
+    return () => {
+      clearTimeout(minTimer);
+      clearTimeout(maxTimer);
+    };
+  }, [phase, extraction?.industry]);
+
+  // Advance decision — fires when the timers tick or when knowledge
+  // lands. Appends the BOT_HERE_ARE_SERVICES bubble + persists the
+  // current_turn=2 stamp (no-op if already 2 from
+  // handleBusinessNameSubmit, but keeps the messages list in sync).
+  useEffect(() => {
+    if (phase !== 'awaiting-knowledge') return;
+    const isMapped = extraction?.industry !== 'generic';
+    const hasKnowledge = !!capturedFacts.industryKnowledge;
+    const canAdvance =
+      knowledgeMaxElapsed ||
+      (knowledgeMinElapsed && (isMapped || hasKnowledge));
+    if (!canAdvance) return;
+
+    // Resolve the descriptor for the bubble — mapped industries read
+    // the template's displayName; unmapped read industryFreeText
+    // (preserved verbatim from the customer's phrasing).
+    const isUnmapped = extraction?.industry === 'generic';
+    const descriptor = isUnmapped
+      ? (
+          extraction?.industryFreeText?.trim() ||
+          extraction?.industryDescription?.trim() ||
+          ''
+        )
+      : extraction
+        ? prettyIndustry(extraction.industry).toLowerCase()
+        : '';
+    const nextMessages: LocalChatMessage[] = [
+      ...messages,
+      { id: newId('bot'), author: 'bot', text: BOT_HERE_ARE_SERVICES(descriptor) },
+    ];
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMessages(nextMessages);
+    setPhase('turn-2-services');
+    void persistState({
+      capturedFacts,
+      current_turn: 2,
+      messages: nextMessages,
+    });
+  }, [
+    phase,
+    knowledgeMinElapsed,
+    knowledgeMaxElapsed,
+    capturedFacts,
+    extraction,
+    messages,
+    persistState,
+  ]);
 
   // Refusal handler — fires when the extract step classified the business
   // as restaurant or ecom. Flips the workspace to lifecycle_status='banned'
@@ -1598,12 +1737,28 @@ export function ConversationShell() {
     : 'Your business';
 
   // Blueprint copy interpolations — used by GenerationBlueprint's per-stage
-  // messages. industryDisplay reads as plural-trade-name ("painters",
-  // "electricians") for "for {industryDisplay}" — falls back to "tradies"
-  // when extraction is missing.
+  // messages. industryDisplay reads as plural-business-name ("painters",
+  // "electricians") for "for {industryDisplay}" — falls back to
+  // "service businesses" when extraction is missing.
   const blueprintIndustryDisplay = extraction
     ? prettyIndustry(extraction.industry).toLowerCase()
-    : 'tradies';
+    : 'service businesses';
+  // The ChatThinkingPhases card needs a SHORTER label — the AI-resolved
+  // industryFreeText for unmapped ("wedding photographer"), or the
+  // mapped template's singular displayName for the 10 named trades.
+  // Used only by the phases card, kept distinct from blueprintIndustryDisplay
+  // (which is plural for the build-side stage strings).
+  const thinkingPhaseLabel = (() => {
+    if (!extraction) return 'service';
+    if (extraction.industry === 'generic') {
+      return (
+        extraction.industryFreeText?.trim() ||
+        extraction.industryDescription?.trim() ||
+        'service'
+      );
+    }
+    return prettyIndustry(extraction.industry);
+  })();
   const blueprintBusinessName =
     capturedFacts.businessName?.trim() ||
     capturedFacts.extraction?.businessName?.trim() ||
@@ -1761,6 +1916,10 @@ export function ConversationShell() {
                 </div>
               </div>
             </SpecSheet>
+          ) : null}
+
+          {phase === 'awaiting-knowledge' ? (
+            <ChatThinkingPhases businessLabel={thinkingPhaseLabel} />
           ) : null}
 
           {phase === 'turn-2-services' ? (
