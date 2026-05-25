@@ -46,13 +46,13 @@ import { ChatComposer } from '@/components/shared/conversation/ChatComposer';
 import { ChatOfferCard } from '@/components/shared/conversation/ChatOfferCard';
 import { ChatRefuseScreen } from '@/components/shared/conversation/ChatRefuseScreen';
 import { ChatServicePicker } from '@/components/shared/conversation/ChatServicePicker';
+import { SpecSheet } from '@/components/shared/conversation/SpecSheet';
 import { TypingIndicator } from '@/components/shared/conversation/TypingIndicator';
 import {
   GenerationBlueprint,
   type BlueprintPhase,
 } from '@/components/shared/onboarding/GenerationBlueprint';
 import { BrandMark } from '@/components/ui/BrandMark';
-import { Eyebrow } from '@/components/ui/eyebrow';
 import { Input } from '@/components/ui/input';
 import {
   EXTRACTION_CONFIDENCE_THRESHOLD,
@@ -195,6 +195,37 @@ function newId(prefix: string): string {
 function prettyIndustry(key: IndustryKey): string {
   const template = INDUSTRY_TEMPLATES[key];
   return template?.displayName ?? key;
+}
+
+// Phase → "// 0X — STEP LABEL" mapping for the shell header. The chat
+// reads as an architect's intake; numbering every step makes the moves
+// explicit. Numbers match the GenerationBlueprint header rhythm
+// ("// step 5 of 5 · building").
+function phaseToStepLabel(phase: Phase): string {
+  switch (phase) {
+    case 'turn-1-input':
+    case 'extracting':
+    case 'clarifying':
+      return '// step 1 of 5 · what you do';
+    case 'awaiting-email':
+    case 'requesting-code':
+    case 'awaiting-code':
+    case 'verifying':
+      return '// step 2 of 5 · verify email';
+    case 'turn-2-services':
+      return '// step 3 of 5 · services';
+    case 'turn-3-brand':
+      return '// step 4 of 5 · brand';
+    case 'turn-4-offer':
+      return '// step 4 of 5 · offer';
+    case 'turn-5-generation':
+      return '// step 5 of 5 · building';
+    case 'refused':
+    case 'done':
+      return '// Webnua platform';
+    default:
+      return '// Webnua platform';
+  }
 }
 
 // =============================================================================
@@ -1369,14 +1400,49 @@ export function ConversationShell() {
   }
 
   return (
-    <div className="fixed inset-0 flex w-full flex-col bg-paper">
-      <div className="flex items-center justify-center gap-3 border-b border-rule bg-paper px-4 py-3">
-        <BrandMark size="default" />
-        <Eyebrow tone="quiet">{'// Webnua platform'}</Eyebrow>
-      </div>
+    <div className="fixed inset-0 flex w-full flex-col overflow-hidden bg-paper">
+      {/* Blueprint grid backdrop — same 2-layer ink grid GenerationBlueprint
+          uses. Sits behind the whole chat so the message stream reads as
+          spec lines drawn onto a working sheet, not floating bubbles on
+          a flat background. Pointer-events: none so it never intercepts
+          clicks. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-[0.10]"
+        style={{
+          backgroundImage: `
+            linear-gradient(to right, rgb(10 10 10 / 1) 1px, transparent 1px),
+            linear-gradient(to bottom, rgb(10 10 10 / 1) 1px, transparent 1px),
+            linear-gradient(to right, rgb(10 10 10 / 1) 1px, transparent 1px),
+            linear-gradient(to bottom, rgb(10 10 10 / 1) 1px, transparent 1px)
+          `,
+          backgroundSize: '40px 40px, 40px 40px, 10px 10px, 10px 10px',
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-[0.04]"
+        style={{
+          backgroundImage: `
+            linear-gradient(to right, rgb(10 10 10 / 1) 1px, transparent 1px),
+            linear-gradient(to bottom, rgb(10 10 10 / 1) 1px, transparent 1px)
+          `,
+          backgroundSize: '10px 10px, 10px 10px',
+        }}
+      />
 
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-3 px-4 py-6">
+      {/* Header — slim brand bar with phase-aware step label. Same chrome
+          as GenerationBlueprint's header so the chat → build transition
+          reads as continuous. */}
+      <header className="relative z-10 flex items-center justify-center gap-3 border-b-2 border-ink/15 bg-paper/80 px-4 py-3 backdrop-blur-sm">
+        <BrandMark size="default" className="text-ink" />
+        <span className="font-mono text-[10px] uppercase tracking-[0.14em] font-bold text-ink-quiet">
+          {phaseToStepLabel(phase)}
+        </span>
+      </header>
+
+      <div ref={scrollContainerRef} className="relative z-10 flex-1 overflow-y-auto">
+        <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-8 sm:gap-7 sm:py-10">
           {messages.map((m) => (
             <ChatBubble key={m.id} author={m.author}>
               {m.text}
@@ -1384,145 +1450,121 @@ export function ConversationShell() {
           ))}
 
           {phase === 'awaiting-email' ? (
-            <ChatBubble
-              author="bot"
-              rich={
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void handleEmailSubmit();
-                  }}
-                  className="flex flex-col gap-2"
+            <SpecSheet label="// VERIFY YOUR EMAIL" hint="email-capture.svg">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void handleEmailSubmit();
+                }}
+                className="flex flex-col gap-3"
+              >
+                <p className="text-[12px] leading-[1.4] text-ink-mid">
+                  We&apos;ll send a 6-digit code to confirm it&apos;s really you.
+                </p>
+                <Input
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  placeholder="you@yourbusiness.com"
+                  value={emailDraft}
+                  onChange={(e) => setEmailDraft(e.target.value)}
+                  autoFocus
+                  className="min-h-[44px] text-base sm:text-[14px]"
+                />
+                <button
+                  type="submit"
+                  disabled={botThinking}
+                  className="inline-flex h-11 min-h-[44px] items-center justify-center rounded-md bg-rust px-4 font-mono text-[12px] font-bold uppercase tracking-[0.08em] text-paper hover:bg-rust-deep disabled:opacity-50"
                 >
-                  <Input
-                    type="email"
-                    inputMode="email"
-                    autoComplete="email"
-                    placeholder="you@yourbusiness.com"
-                    value={emailDraft}
-                    onChange={(e) => setEmailDraft(e.target.value)}
-                    autoFocus
-                    className="min-h-[44px] text-base sm:text-[14px]"
-                  />
-                  <button
-                    type="submit"
-                    disabled={botThinking}
-                    className="inline-flex h-11 min-h-[44px] items-center justify-center rounded-md bg-rust px-4 text-[13px] font-bold text-paper hover:bg-rust-deep disabled:opacity-50"
-                  >
-                    {botThinking ? 'Sending…' : 'Send me a code →'}
-                  </button>
-                </form>
-              }
-            >
-              {null}
-            </ChatBubble>
+                  {botThinking ? 'Sending…' : 'Send me a code →'}
+                </button>
+              </form>
+            </SpecSheet>
           ) : null}
 
           {phase === 'awaiting-code' || phase === 'verifying' || phase === 'requesting-code' ? (
-            <ChatBubble
-              author="bot"
-              rich={
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center justify-between gap-2">
-                    {[0, 1, 2, 3, 4, 5].map((i) => (
-                      <input
-                        key={i}
-                        id={`code-${i}`}
-                        inputMode="numeric"
-                        autoComplete="one-time-code"
-                        maxLength={6}
-                        value={code[i]}
-                        onChange={(e) => setDigit(i, e.target.value)}
-                        onKeyDown={(e) => handleCodeKeyDown(e, i)}
-                        disabled={phase === 'verifying' || phase === 'requesting-code'}
-                        autoFocus={i === 0}
-                        className={cn(
-                          'h-12 w-10 rounded-md border border-rule bg-card text-center',
-                          'font-mono text-[18px] font-bold text-ink',
-                          'focus:border-rust focus:outline-none focus:ring-1 focus:ring-rust',
-                          'disabled:bg-paper-2 disabled:opacity-60',
-                        )}
-                      />
-                    ))}
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <button
-                      type="button"
-                      onClick={handleResend}
-                      disabled={!canResend || botThinking}
+            <SpecSheet label="// 6-DIGIT CODE" hint="verify.json">
+              <div className="flex flex-col gap-3">
+                <p className="text-[12px] leading-[1.4] text-ink-mid">
+                  Check your inbox. Type the code we just emailed you.
+                </p>
+                <div className="flex items-center justify-between gap-2">
+                  {[0, 1, 2, 3, 4, 5].map((i) => (
+                    <input
+                      key={i}
+                      id={`code-${i}`}
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      value={code[i]}
+                      onChange={(e) => setDigit(i, e.target.value)}
+                      onKeyDown={(e) => handleCodeKeyDown(e, i)}
+                      disabled={phase === 'verifying' || phase === 'requesting-code'}
+                      autoFocus={i === 0}
                       className={cn(
-                        'font-mono text-[11px] uppercase tracking-[0.12em] font-bold',
-                        canResend ? 'text-rust hover:text-rust-deep' : 'text-ink-quiet',
-                        'disabled:cursor-not-allowed',
+                        'h-12 w-10 rounded-md border-2 border-ink/20 bg-paper/40 text-center',
+                        'font-mono text-[18px] font-bold text-ink',
+                        'focus:border-rust focus:outline-none focus:ring-1 focus:ring-rust',
+                        'disabled:bg-paper-2 disabled:opacity-60',
                       )}
-                    >
-                      {canResend ? 'Resend code' : `Resend in ${resendSecondsLeft}s`}
-                    </button>
-                    {phase === 'verifying' ? (
-                      <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink-quiet">
-                        Verifying…
-                      </span>
-                    ) : null}
-                  </div>
+                    />
+                  ))}
                 </div>
-              }
-            >
-              {null}
-            </ChatBubble>
+                <div className="flex items-center justify-between gap-3 border-t border-ink/10 pt-3">
+                  <button
+                    type="button"
+                    onClick={handleResend}
+                    disabled={!canResend || botThinking}
+                    className={cn(
+                      'font-mono text-[11px] uppercase tracking-[0.12em] font-bold',
+                      canResend ? 'text-rust hover:text-rust-deep' : 'text-ink-quiet',
+                      'disabled:cursor-not-allowed',
+                    )}
+                  >
+                    {canResend ? 'Resend code' : `Resend in ${resendSecondsLeft}s`}
+                  </button>
+                  {phase === 'verifying' ? (
+                    <span className="inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-ink-quiet">
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-rust" />
+                      Verifying…
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            </SpecSheet>
           ) : null}
 
           {phase === 'turn-2-services' ? (
-            <ChatBubble
-              author="bot"
-              rich={
-                <ChatServicePicker
-                  industryName={industryDisplay}
-                  options={servicesCatalogue}
-                  preTicked={extraction?.mentionedServices ?? []}
-                  initial={capturedFacts.services}
-                  onSubmit={(services) => advanceToTurn3(services)}
-                  onSkip={() => advanceToTurn3([])}
-                />
-              }
-            >
-              {null}
-            </ChatBubble>
+            <ChatServicePicker
+              industryName={industryDisplay}
+              options={servicesCatalogue}
+              preTicked={extraction?.mentionedServices ?? []}
+              initial={capturedFacts.services}
+              onSubmit={(services) => advanceToTurn3(services)}
+              onSkip={() => advanceToTurn3([])}
+            />
           ) : null}
 
           {phase === 'turn-3-brand' ? (
-            <ChatBubble
-              author="bot"
-              rich={
-                <ChatBrandPicker
-                  industryKey={industryForBrandStep}
-                  initial={capturedFacts.brand ?? null}
-                  onSubmit={(brand) => void advanceToTurn4(brand)}
-                  onSkip={() => void advanceToTurn4(null)}
-                />
-              }
-            >
-              {null}
-            </ChatBubble>
+            <ChatBrandPicker
+              industryKey={industryForBrandStep}
+              initial={capturedFacts.brand ?? null}
+              onSubmit={(brand) => void advanceToTurn4(brand)}
+              onSkip={() => void advanceToTurn4(null)}
+            />
           ) : null}
 
           {phase === 'turn-4-offer' ? (
-            <ChatBubble
-              author="bot"
-              rich={
-                <ChatOfferCard
-                  offer={displayedOffer}
-                  refinementsUsed={capturedFacts.offerRefinementsUsed ?? 0}
-                  loading={offerLoading}
-                  error={offerError}
-                  onAccept={(o) => advanceToTurn5(o)}
-                  onRefine={() => void handleOfferRefine()}
-                  onUseMyOwn={(o) => advanceToTurn5(o)}
-                  onSkip={() => advanceToTurn5(null)}
-                />
-              }
-            >
-              {null}
-            </ChatBubble>
+            <ChatOfferCard
+              offer={displayedOffer}
+              refinementsUsed={capturedFacts.offerRefinementsUsed ?? 0}
+              loading={offerLoading}
+              error={offerError}
+              onAccept={(o) => advanceToTurn5(o)}
+              onRefine={() => void handleOfferRefine()}
+              onUseMyOwn={(o) => advanceToTurn5(o)}
+              onSkip={() => advanceToTurn5(null)}
+            />
           ) : null}
 
           {/* turn-5 renders the fullscreen GenerationBlueprint OUTSIDE
@@ -1540,15 +1582,21 @@ export function ConversationShell() {
           {error ? (
             <div
               role="alert"
-              className="rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-[13px] text-warn"
+              className="rounded-md border-2 border-warn/40 bg-warn/[0.08] px-3 py-2.5 font-mono text-[12px] text-warn animate-in fade-in duration-300"
             >
-              {error}
+              <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em]">
+                {'// ERROR'}
+              </div>
+              <div className="font-sans text-[13px] leading-[1.5]">{error}</div>
             </div>
           ) : null}
 
           {info ? (
-            <div className="rounded-md border border-rule bg-paper-2 px-3 py-2 text-[12px] text-ink-quiet">
-              {info}
+            <div className="rounded-md border-2 border-ink/15 bg-paper/40 px-3 py-2.5 animate-in fade-in duration-300">
+              <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+                {'// NOTE'}
+              </div>
+              <div className="text-[13px] leading-[1.5] text-ink-mid">{info}</div>
             </div>
           ) : null}
 
