@@ -352,7 +352,12 @@ const ICON_ID_NOTE = "an icon id from the curated set (see 'Icon library' above)
 export const SECTION_SHAPE_CATALOG: Partial<Record<SectionType, SectionShape>> = {
   hero: {
     variants: [
-      { key: 'layout', values: ['split', 'overlay'] },
+      {
+        key: 'layout',
+        values: ['split', 'overlay', 'minimal'],
+        guidance:
+          "'split' = image + text columns; 'overlay' = full-bleed image with scrim; 'minimal' = typography only, no image (pair with bundles that prefer editorial restraint or punchy sub-pages).",
+      },
       { key: 'imageSide', values: ['left', 'right'] },
       {
         key: 'contentAlign',
@@ -475,7 +480,12 @@ export const SECTION_SHAPE_CATALOG: Partial<Record<SectionType, SectionShape>> =
       },
       { key: 'headerAlign', values: ['left', 'center', 'right'] },
       { key: 'headlineSize', values: ['m', 'l', 'xl'] },
-      { key: 'nav', values: ['none', 'dots', 'arrows'] },
+      {
+        key: 'nav',
+        values: ['none', 'dots', 'arrows'],
+        guidance:
+          "Carousel nav. 'none' = static grid; 'dots' = dot indicators + native swipe carousel; 'arrows' = prev/next buttons + dots + native swipe carousel. The carousel is fully interactive — keyboard, swipe, screen-reader announcements — when nav is dots/arrows.",
+      },
       { key: 'ctaStyle', values: ['link', 'solid', 'outline'] },
       { key: 'columns', values: [2, 3] },
     ],
@@ -529,8 +539,9 @@ export const SECTION_SHAPE_CATALOG: Partial<Record<SectionType, SectionShape>> =
     variants: [
       {
         key: 'layout',
-        values: ['details', 'cards', 'map', 'stacked'],
-        guidance: "'details' is the default; 'map' if a map image is supplied.",
+        values: ['details', 'cards', 'map', 'stacked', 'minimal-cta'],
+        guidance:
+          "'details' is the default (details list + inline form); 'map' if a map image is supplied; 'minimal-cta' = single column, one big CTA, no details grid (use when the bundle prefers restraint, or for sub-pages where the section is one of several CTAs).",
       },
       { key: 'headerAlign', values: ['left', 'center', 'right'] },
       { key: 'headlineSize', values: ['m', 'l', 'xl'] },
@@ -544,7 +555,12 @@ export const SECTION_SHAPE_CATALOG: Partial<Record<SectionType, SectionShape>> =
   },
   trust: {
     variants: [
-      { key: 'display', values: ['stats', 'logos'] },
+      {
+        key: 'display',
+        values: ['stats', 'logos', 'compact-icons'],
+        guidance:
+          "'stats' = a row of N icon+number+label tiles ('500+ jobs', '4.9/5 rating'); 'logos' = client / partner logos; 'compact-icons' = thin horizontal band of small icon + single-word labels ('Insured · Vetted · Local · Certified'), no decoration — pick this when the bundle prefers restraint or for a low-friction sub-page social-proof band.",
+      },
       { key: 'headerAlign', values: ['left', 'center', 'right'] },
       { key: 'headlineSize', values: ['m', 'l', 'xl'] },
       { key: 'columns', values: [3, 4, 5] },

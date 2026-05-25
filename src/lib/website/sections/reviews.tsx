@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import {
   BuilderField,
@@ -575,7 +575,12 @@ function ReviewsFields({
           value={d.nav}
           options={NAV_OPTIONS}
           onChange={(v) => set('nav', v)}
-          helper={<>Decorative — the live site wires the carousel.</>}
+          helper={
+            <>
+              Dots / arrows turn the review grid into a live carousel —
+              keyboard, swipe, screen-reader announcements.
+            </>
+          }
         />
         <ToggleField
           label="Rating summary"
@@ -757,6 +762,20 @@ function ReviewsPreview({
               >
                 No reviews yet. Add one in the editor.
               </p>
+            ) : d.nav !== 'none' ? (
+              // V1 — real interactive carousel. CSS scroll-snap drives the
+              // motion + native touch swipe; an IntersectionObserver tracks
+              // the active card to drive the dots / aria-live announcer. No
+              // carousel library — self-contained.
+              <ReviewsCarousel
+                items={d.items}
+                nav={d.nav}
+                columns={d.columns}
+                theme={theme}
+                accent={accent}
+                headingFont={headingFont}
+                onSelectItems={onSelectElement ? () => onSelectElement('items') : undefined}
+              />
             ) : (
               <div className={`grid gap-5 ${gridColumnsClass(d.columns)}`}>
                 {d.items.map((item) => (
@@ -771,12 +790,6 @@ function ReviewsPreview({
                 ))}
               </div>
             )}
-
-            {d.nav !== 'none' ? (
-              <div className="mt-9 flex justify-center">
-                <CarouselNav nav={d.nav} count={d.items.length} theme={theme} accent={accent} />
-              </div>
-            ) : null}
 
             {ctaNode ? (
               <div className={`mt-9 flex ${ROW_JUSTIFY[d.headerAlign]}`}>{ctaNode}</div>
@@ -979,6 +992,231 @@ function ReviewsCta({
       {label}
       <span aria-hidden>→</span>
     </SurfaceLink>
+  );
+}
+
+// =============================================================================
+// V1 Reviews carousel — real interactivity (Bundle C2b-2)
+// =============================================================================
+
+/** Self-contained carousel. CSS scroll-snap + a horizontal flex strip handle
+ *  the visual motion + native touch swipe; an IntersectionObserver tracks
+ *  which card is currently in view to drive the active dot + the aria-live
+ *  announcer. No carousel library dependency.
+ *
+ *  Graceful no-JS fallback: the strip itself is a `overflow-x-auto` flex
+ *  row with `scroll-snap`. Without JS the user can scroll/swipe; arrows +
+ *  dots render normally — onClick handlers simply don't fire until React
+ *  hydrates (the strip's native scroll still works either way).
+ *
+ *  Auto-advance is DEFAULT OFF. Bundle C2b-2 brief says "auto-advance
+ *  optional (defaults OFF)" so we never start the timer unless the
+ *  property explicitly opts in. Pause-on-hover and pause-on-focus apply
+ *  when auto-advance is on (future opt-in surface). */
+function ReviewsCarousel({
+  items,
+  nav,
+  columns,
+  theme,
+  accent,
+  headingFont,
+  onSelectItems,
+}: {
+  items: ReviewItem[];
+  nav: ReviewsNav;
+  columns: number;
+  theme: ResolvedTheme;
+  accent: string;
+  headingFont: string;
+  onSelectItems?: () => void;
+}) {
+  const strip = useRef<HTMLDivElement | null>(null);
+  const cardRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const [active, setActive] = useState(0);
+  const liveId = useId();
+  const count = items.length;
+
+  // No-JS fallback path: the strip itself is `overflow-x-auto` with native
+  // scroll-snap + touch swipe; the user can still navigate without JS. The
+  // arrow/dot buttons render visibly and respond to click only once React
+  // hydrates — no separate `controlsReady` flag needed (a `useEffect` ->
+  // `setState` purely to flip a flag triggers the cascading-render lint).
+
+  // Track the most-visible card with an IntersectionObserver. The strip's
+  // own scrollLeft is the alternative signal; the observer scales better
+  // when card widths differ (different content lengths).
+  useEffect(() => {
+    if (!strip.current || count === 0) return;
+    const root = strip.current;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Pick the entry with the highest intersection ratio.
+        let bestIndex = active;
+        let bestRatio = 0;
+        for (const entry of entries) {
+          const indexAttr = entry.target.getAttribute('data-index');
+          if (!indexAttr) continue;
+          const index = Number.parseInt(indexAttr, 10);
+          if (Number.isNaN(index)) continue;
+          if (entry.intersectionRatio > bestRatio) {
+            bestRatio = entry.intersectionRatio;
+            bestIndex = index;
+          }
+        }
+        if (bestRatio > 0 && bestIndex !== active) setActive(bestIndex);
+      },
+      {
+        root,
+        threshold: [0.4, 0.6, 0.8],
+      },
+    );
+    cardRefs.current.forEach((node) => {
+      if (node) observer.observe(node);
+    });
+    return () => observer.disconnect();
+  }, [active, count]);
+
+  const scrollToIndex = useCallback(
+    (i: number) => {
+      const card = cardRefs.current[i];
+      if (!card || !strip.current) return;
+      card.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+    },
+    [],
+  );
+
+  const goPrev = useCallback(() => {
+    const next = active <= 0 ? count - 1 : active - 1;
+    setActive(next);
+    scrollToIndex(next);
+  }, [active, count, scrollToIndex]);
+  const goNext = useCallback(() => {
+    const next = active >= count - 1 ? 0 : active + 1;
+    setActive(next);
+    scrollToIndex(next);
+  }, [active, count, scrollToIndex]);
+
+  // Keyboard support — when the strip has focus, ←/→ navigate.
+  const onKey = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        goNext();
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goPrev();
+      }
+    },
+    [goNext, goPrev],
+  );
+
+  // Per-card width by columns count — matches the non-carousel grid's
+  // visual density. Container queries scale up at @sm.
+  const cardBasis: Record<number, string> = {
+    1: 'basis-full',
+    2: 'basis-[85%] @sm:basis-[55%]',
+    3: 'basis-[85%] @sm:basis-[55%] @2xl:basis-[34%]',
+    4: 'basis-[85%] @sm:basis-[45%] @2xl:basis-[26%]',
+  };
+  const basis = cardBasis[columns] ?? cardBasis[3];
+
+  return (
+    <div className="flex flex-col">
+      <div
+        ref={strip}
+        role="region"
+        aria-roledescription="carousel"
+        aria-label="Customer reviews"
+        tabIndex={0}
+        onKeyDown={onKey}
+        className="-mx-2 flex w-full snap-x snap-mandatory gap-5 overflow-x-auto scroll-smooth px-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+        style={{ scrollPaddingInline: '8px' }}
+      >
+        {items.map((item, i) => (
+          <div
+            key={item.id}
+            data-index={i}
+            ref={(node) => {
+              cardRefs.current[i] = node;
+            }}
+            role="group"
+            aria-roledescription="slide"
+            aria-label={`${i + 1} of ${count}`}
+            className={`shrink-0 ${basis} snap-start`}
+            onClick={onSelectItems}
+          >
+            <ReviewCard
+              item={item}
+              theme={theme}
+              accent={accent}
+              headingFont={headingFont}
+            />
+          </div>
+        ))}
+      </div>
+
+      {/* Live region — screen readers announce the active slide. */}
+      <span id={liveId} aria-live="polite" className="sr-only">
+        {count > 0 ? `Review ${active + 1} of ${count}` : ''}
+      </span>
+
+      {/* Controls — arrows + dots. Arrows are real <button>s with ≥44px
+          tap targets; dots double as both indicator and click target. */}
+      <div className="mt-7 flex items-center justify-center gap-4">
+        {nav === 'arrows' ? (
+          <button
+            type="button"
+            onClick={goPrev}
+            disabled={count <= 1}
+            aria-label="Previous review"
+            aria-controls={liveId}
+            className="flex h-11 w-11 items-center justify-center rounded-full text-[16px] font-bold transition disabled:opacity-40"
+            style={{ border: `1px solid ${theme.border}`, color: theme.heading }}
+          >
+            <span aria-hidden>‹</span>
+          </button>
+        ) : null}
+        <div className="flex items-center gap-2" role="tablist" aria-label="Review slides">
+          {items.map((_, i) => (
+            <button
+              key={i}
+              type="button"
+              role="tab"
+              aria-selected={i === active}
+              aria-label={`Go to review ${i + 1}`}
+              aria-controls={liveId}
+              onClick={() => {
+                setActive(i);
+                scrollToIndex(i);
+              }}
+              className="flex h-11 w-11 items-center justify-center rounded-full"
+            >
+              <span
+                aria-hidden
+                className="block h-2 w-2 rounded-full transition"
+                style={{
+                  backgroundColor: i === active ? accent : theme.border,
+                  transform: i === active ? 'scale(1.25)' : undefined,
+                }}
+              />
+            </button>
+          ))}
+        </div>
+        {nav === 'arrows' ? (
+          <button
+            type="button"
+            onClick={goNext}
+            disabled={count <= 1}
+            aria-label="Next review"
+            aria-controls={liveId}
+            className="flex h-11 w-11 items-center justify-center rounded-full text-[16px] font-bold transition disabled:opacity-40"
+            style={{ border: `1px solid ${theme.border}`, color: theme.heading }}
+          >
+            <span aria-hidden>›</span>
+          </button>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

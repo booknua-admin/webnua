@@ -26,6 +26,7 @@
 // =============================================================================
 
 import type { GoogleFontId } from './google-fonts';
+import type { PageType, SectionType } from './types';
 
 /** The closed set of bundle ids. Application-enforced; no DB CHECK. */
 export type DesignBundleId =
@@ -109,6 +110,49 @@ export type BundleButton =
   | 'outlined-or-text' // outlined or text-only primary (Premium restraint)
   | 'big-bold-arrow'; // big, bold, with arrow / icon
 
+// =============================================================================
+// Variant rules — bundle-aware variant assignment (Bundle C2b-2 · Pass B+).
+//
+// Each bundle can narrow which variants the AI pipeline picks for a given
+// (sectionType, pageType) tuple. Page-type keys are EITHER a literal PageType
+// (`home` / `about` / `services` / `contact` / `generic`), OR a pipe-delimited
+// glob like `'about|services|contact|generic'`, OR the `'*'` wildcard.
+//
+// Resolution is most-specific-wins inside the rules table for a single
+// section type:
+//   1. exact page-type key (`home`)
+//   2. multi-key glob containing the page type (`about|services|generic`)
+//   3. `'*'`
+//
+// `funnelStep` is handled the same — page-type lookups for a funnel step pass
+// `'funnelStep'` as the key.
+//
+// Each variant entry is a closed list of allowable variant ids for a single
+// variant *key* on the section. Today the rules narrow `layout` /
+// `display` / `nav`. Multiple keys per section are supported — extend the
+// nested shape if a bundle ever needs to narrow `columns` and `layout`
+// separately.
+//
+// The pipeline pass `assignBundleVariants` (lib/website/generation-validation)
+// reads these rules, and when a rule exists for a section's current page-type
+// context, re-picks the variant value through the same deterministic hash
+// the existing `Designer.pick()` uses (so identical seeds keep producing
+// identical results, narrowed to the bundle's allowable set). When no rule
+// exists, behaviour is unchanged.
+// =============================================================================
+
+/** A single rule body — a closed set of allowable values per variant key. */
+export type VariantRuleBody = Partial<Record<string, readonly (string | number)[]>>;
+
+/** Page-type-keyed rules. Keys: `'*'`, a single PageType / `'funnelStep'`,
+ *  or a pipe-delimited glob of those (e.g. `'about|services|generic'`). */
+export type VariantRulesByPageType = Record<string, VariantRuleBody>;
+
+/** Per-section-type rules for a bundle. Sections not listed inherit the
+ *  pipeline's default (no narrowing) — the existing `Designer.pick()` runs
+ *  against the full enum from `SECTION_SHAPE_CATALOG`. */
+export type BundleVariantRules = Partial<Record<SectionType, VariantRulesByPageType>>;
+
 /** A complete bundle definition. */
 export type DesignBundle = {
   id: DesignBundleId;
@@ -123,6 +167,12 @@ export type DesignBundle = {
   iconStyle: BundleIconStyle;
   spacing: BundleSpacing;
   button: BundleButton;
+  /** Optional — narrow the AI's variant choices per (section, page type).
+   *  When omitted the AI's variant picks are not bundle-aware (pre-C2b-2
+   *  behaviour). When the rules say a key is `['v1', 'v2']`, the pipeline
+   *  re-picks within that set even if the AI emitted a valid catalog value
+   *  outside it. */
+  variantRules?: BundleVariantRules;
 };
 
 /** The 4 bundles. Source of truth — CSS custom properties are derived from
@@ -143,6 +193,32 @@ export const DESIGN_BUNDLES: Record<DesignBundleId, DesignBundle> = {
     iconStyle: 'outlined-1.5',
     spacing: { base: 24, sectionVertical: '80px', sectionVerticalWide: '100px' },
     button: 'solid-sharp-bold',
+    variantRules: {
+      // Punchy emergency-tradie language — full-bleed heroes on home pages
+      // (image presence reinforces the live-business signal); minimal-typography
+      // heroes on sub-pages (utilitarian page-header role; no decorative image).
+      hero: {
+        home: { layout: ['overlay', 'minimal'] },
+        'about|services|contact|generic': { layout: ['minimal', 'split'] },
+        funnelStep: { layout: ['overlay', 'split'] },
+      },
+      // Compact icon row matches the bundle's outlined-1.5 icons + tight
+      // spacing better than full stat tiles.
+      trust: { '*': { display: ['compact-icons', 'logos'] } },
+      // Reviews grid (3-up) reads as systematic; spotlight reads as soft. Sharp
+      // & Direct prefers grid; if AI picks spotlight, narrow allows it on home
+      // only.
+      reviews: {
+        home: { layout: ['grid', 'spotlight'] },
+        '*': { layout: ['grid'] },
+      },
+      // Contact: minimal-CTA on sub-pages keeps the page lean; map+form on a
+      // dedicated contact page is fine when the AI asks for it.
+      contact: {
+        contact: { layout: ['map', 'details', 'minimal-cta'] },
+        '*': { layout: ['minimal-cta', 'details'] },
+      },
+    },
   },
   warm_established: {
     id: 'warm_established',
@@ -159,6 +235,26 @@ export const DESIGN_BUNDLES: Record<DesignBundleId, DesignBundle> = {
     iconStyle: 'filled-rounded',
     spacing: { base: 32, sectionVertical: '100px', sectionVerticalWide: '120px' },
     button: 'solid-soft-medium',
+    variantRules: {
+      // Soft-cornered split heroes reinforce the warmth. Overlay sometimes,
+      // never minimal — Warm & Established wants imagery.
+      hero: {
+        home: { layout: ['split', 'overlay'] },
+        'about|services|contact|generic': { layout: ['split'] },
+        funnelStep: { layout: ['split', 'overlay'] },
+      },
+      // Stat tiles communicate "we've been at this a while" — the bundle's
+      // story. Logos as fallback when AI didn't choose stats.
+      trust: { '*': { display: ['stats', 'logos'] } },
+      // Spotlight reads as personal — the bundle's emotional register.
+      reviews: { '*': { layout: ['spotlight', 'grid'] } },
+      // Contact pages can carry the inline form (warmer than a CTA card);
+      // sub-pages get the inline form or the cards layout.
+      contact: {
+        contact: { layout: ['details', 'cards'] },
+        '*': { layout: ['details', 'minimal-cta'] },
+      },
+    },
   },
   clean_premium: {
     id: 'clean_premium',
@@ -178,6 +274,24 @@ export const DESIGN_BUNDLES: Record<DesignBundleId, DesignBundle> = {
     iconStyle: 'hairline-1',
     spacing: { base: 40, sectionVertical: '120px', sectionVerticalWide: '160px' },
     button: 'outlined-or-text',
+    variantRules: {
+      // Editorial restraint — minimal heroes everywhere; split as fallback.
+      // No overlay (decorative scrim is the opposite of premium).
+      hero: {
+        '*': { layout: ['minimal', 'split'] },
+        funnelStep: { layout: ['minimal', 'split'] },
+      },
+      // Hairline icons + a single compact row beats decorative stat tiles
+      // for the editorial register.
+      trust: { '*': { display: ['compact-icons', 'logos'] } },
+      // Spotlight — one large quote, breathing room, no carousel ornament.
+      reviews: { '*': { layout: ['spotlight', 'grid'] } },
+      // Minimal CTA dominates — premium pages don't push.
+      contact: {
+        contact: { layout: ['minimal-cta', 'details'] },
+        '*': { layout: ['minimal-cta'] },
+      },
+    },
   },
   bold_direct: {
     id: 'bold_direct',
@@ -196,6 +310,22 @@ export const DESIGN_BUNDLES: Record<DesignBundleId, DesignBundle> = {
     iconStyle: 'stacked-filled',
     spacing: { base: 28, sectionVertical: '90px', sectionVerticalWide: '110px' },
     button: 'big-bold-arrow',
+    variantRules: {
+      // Confident & energetic — overlay heroes on home (image-led), minimal
+      // on sub-pages so the punchy typography carries them.
+      hero: {
+        home: { layout: ['overlay', 'split'] },
+        'about|services|contact|generic': { layout: ['minimal', 'split'] },
+        funnelStep: { layout: ['overlay', 'minimal'] },
+      },
+      // Big stat tiles match the bold rhythm; compact-icons as fallback.
+      trust: { '*': { display: ['stats', 'compact-icons'] } },
+      // Grid with real carousel — the bold bundle gets the most active
+      // testimonial display.
+      reviews: { '*': { layout: ['grid', 'spotlight'] } },
+      // Single big CTA — Bold & Direct's defining behaviour.
+      contact: { '*': { layout: ['minimal-cta', 'details'] } },
+    },
   },
 };
 
@@ -230,4 +360,44 @@ export function bundleCssVars(bundle: DesignBundle): Record<string, string> {
     '--bundle-section-vertical-wide': bundle.spacing.sectionVerticalWide,
     '--bundle-button-style': bundle.button,
   };
+}
+
+// =============================================================================
+// Variant-rules resolution (Bundle C2b-2)
+// =============================================================================
+
+/** A page-type-shaped lookup key — a real `PageType`, `'funnelStep'`, or `'*'`. */
+export type VariantPageContext = PageType | 'funnelStep';
+
+/** Resolve the variant rule body for a (bundle, section, page-type) tuple.
+ *  Returns `undefined` when no rule applies (the pipeline then leaves the
+ *  variant pick to the existing `Designer.pick()`).
+ *
+ *  Most-specific-wins:
+ *    1. exact match (`home`)
+ *    2. multi-key glob containing the page type (`about|services|generic`)
+ *    3. `'*'` wildcard
+ *
+ *  Glob keys are pipe-delimited. The lookup is case-sensitive on both
+ *  sides — every PageType and the `funnelStep` sentinel ship lowercase. */
+export function resolveVariantRule(
+  bundle: DesignBundle,
+  sectionType: SectionType,
+  pageType: VariantPageContext,
+): VariantRuleBody | undefined {
+  const rules = bundle.variantRules?.[sectionType];
+  if (!rules) return undefined;
+  // Pass 1: exact match.
+  if (rules[pageType]) return rules[pageType];
+  // Pass 2: glob match — any key containing a pipe with the page type in it.
+  for (const key of Object.keys(rules)) {
+    if (key === '*' || key === pageType) continue;
+    if (key.includes('|')) {
+      const parts = key.split('|').map((p) => p.trim());
+      if (parts.includes(pageType)) return rules[key];
+    }
+  }
+  // Pass 3: wildcard.
+  if (rules['*']) return rules['*'];
+  return undefined;
 }

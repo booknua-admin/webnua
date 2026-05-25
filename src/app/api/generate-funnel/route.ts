@@ -136,7 +136,10 @@ async function writeGenerationLog(
       reason: f.reason,
       model_value: f.modelValue !== undefined ? String(f.modelValue).slice(0, 2000) : null,
     }));
-    const { error } = await supabase.from('generation_log').insert(rows);
+    // Cast — `reason` widened in migration 0093 to include
+    // `'variant-reassigned'` (Bundle C2b-2); regenerate `Database` types
+    // after the migration applies to drop this cast.
+    const { error } = await supabase.from('generation_log').insert(rows as never);
     if (error) {
       console.error('[generate-funnel] generation_log insert failed', error);
     }

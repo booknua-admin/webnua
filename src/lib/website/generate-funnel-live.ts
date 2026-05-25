@@ -50,10 +50,15 @@ import {
   renderIndustryPromptBlock,
   resolveIndustryTemplate,
 } from './industry-templates';
+import { getBundle } from './design-bundles';
 import { getSectionMeta } from './sections/registry-meta';
 import type { BrandObject, Section, SectionType } from './types';
-import type { FallbackLogEntry } from './generation-stub';
 import {
+  type FallbackLogEntry,
+  shouldSkipStockImageInjection,
+} from './generation-stub';
+import {
+  assignBundleVariants,
   injectStockImages,
   reconcileColumns,
   resolveIndustryString,
@@ -768,6 +773,23 @@ function validateAndAssemble(
       fallbackLog.push({ generationId, ...fb });
     }
 
+    // Pass B+ — bundle-aware variant assignment (Bundle C2b-2). The brand's
+    // design bundle may carry `variantRules` that narrow the allowable set
+    // of variant values per (section, page-type) tuple. Funnel steps run as
+    // the `funnelStep` page-type context.
+    const bundle = getBundle(brief.brand.designBundleId);
+    const variantPass = assignBundleVariants(
+      type,
+      data,
+      bundle,
+      'funnelStep',
+      generationId,
+    );
+    data = variantPass.data;
+    for (const fb of variantPass.fallbacks) {
+      fallbackLog.push({ generationId, ...fb });
+    }
+
     // Pass C — hallucinated image-path strip.
     const stripPass = stripHallucinatedImages(type, data);
     data = stripPass.data;
@@ -781,13 +803,17 @@ function validateAndAssemble(
     // hero never lands on the same photo as the site hero of the same
     // customer (the helper excludes the template's headline `hero` URL
     // from the funnel hero pool, picking from gallery only).
-    const injectPass = injectStockImages(type, data, industry, {
-      slug: brief.businessName?.trim() || undefined,
-      surface: 'funnel',
-    });
-    data = injectPass.data;
-    for (const fb of injectPass.fallbacks) {
-      fallbackLog.push({ generationId, ...fb });
+    // Bundle C2b-2 skip-list: image-free variants (hero `layout: 'minimal'`,
+    // contact `layout: 'minimal-cta'`) bypass injection entirely.
+    if (!shouldSkipStockImageInjection(type, data)) {
+      const injectPass = injectStockImages(type, data, industry, {
+        slug: brief.businessName?.trim() || undefined,
+        surface: 'funnel',
+      });
+      data = injectPass.data;
+      for (const fb of injectPass.fallbacks) {
+        fallbackLog.push({ generationId, ...fb });
+      }
     }
 
     // Pass E — items/columns reconciliation.
