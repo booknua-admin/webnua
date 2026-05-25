@@ -8,6 +8,12 @@
 //
 // Output: one line per URL with status, plus a summary tally per industry.
 // Any 4xx/5xx URLs are candidates for a follow-up refresh session.
+//
+// NOTE: Unsplash's CDN gates HEAD requests by host. A 403 `host_not_allowed`
+// usually means "your IP isn't an allowed referrer" rather than "this image
+// is dead" — re-run from a deployed environment (Vercel preview, production)
+// to get an authoritative signal. The script returns exit 1 if anything
+// other than 200/304 surfaces so CI / cron can act on it where appropriate.
 // =============================================================================
 
 import { INDUSTRY_TEMPLATES } from '../src/lib/website/industry-templates';
