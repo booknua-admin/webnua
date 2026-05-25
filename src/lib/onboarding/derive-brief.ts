@@ -210,8 +210,18 @@ export function deriveBriefFromConversation(
   // generation still runs (the template carries safe defaults).
   const industry: IndustryKey = facts.extraction?.industry ?? 'generic';
   const template = resolveIndustryTemplate(industry);
+  // Industry display resolution for the brief + brand row + prompt block.
+  // For `generic` (any service business outside the 10 curated trades),
+  // prefer `industryDescription` ("Mobile car valeting") over the raw
+  // free-text ("car valet") so downstream copy says "Mobile car valeting"
+  // not "car valet". For the 10 named trades the template.displayName
+  // wins — those have curated wording the model trusts.
   const industryDisplay =
-    facts.extraction?.industryFreeText?.trim() || template.displayName;
+    industry === 'generic'
+      ? facts.extraction?.industryDescription?.trim() ||
+        facts.extraction?.industryFreeText?.trim() ||
+        template.displayName
+      : facts.extraction?.industryFreeText?.trim() || template.displayName;
 
   // Services — turn 2's customer-edited list, falling back to the
   // template's defaults when turn 2 was skipped.
