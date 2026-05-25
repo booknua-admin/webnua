@@ -26,7 +26,6 @@ import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
 import type { WizardState } from '@/lib/onboarding/types';
-import { env } from '@/lib/env';
 
 import { StepFrame } from './_step-frame';
 
@@ -47,7 +46,13 @@ export function Step7Done({
   onComplete,
   onBack,
 }: Step7Props) {
-  const previewHost = (env.PUBLIC_SITE_DOMAIN ?? 'webnua.dev').toLowerCase();
+  // NOTE: this is a 'use client' file — must read NEXT_PUBLIC_* directly via
+  // literal property access so Next inlines it at build time. The server-only
+  // `lib/env` module would parse the full schema and throw on the missing
+  // server-only keys (which are undefined in the browser bundle).
+  const previewHost = (
+    process.env.NEXT_PUBLIC_PUBLIC_SITE_DOMAIN ?? 'webnua.dev'
+  ).toLowerCase();
   const previewUrl = `https://${clientSlug}.${previewHost}`;
 
   const integrationsConnected = countConnected(state);
