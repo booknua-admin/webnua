@@ -143,3 +143,20 @@ body {
   background: var(--color-rust);
   color: var(--color-paper);
 }
+
+/* ============================================================
+   Blueprint generation overlay — SVG stroke "draw in" animation.
+   Used by components/shared/onboarding/GenerationBlueprint.tsx
+   on the wireframe section glyphs. Animates stroke-dashoffset
+   from 300 (fully hidden) to 0 (fully drawn). Kept outside
+   @theme so the inline `animate-[draw_5s_ease-out_forwards]`
+   Tailwind utility resolves at the call site.
+   ============================================================ */
+@keyframes draw {
+  from {
+    stroke-dashoffset: 300;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}

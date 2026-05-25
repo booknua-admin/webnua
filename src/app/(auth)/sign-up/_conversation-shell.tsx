@@ -43,13 +43,13 @@ import { useRouter } from 'next/navigation';
 import { ChatBubble } from '@/components/shared/conversation/ChatBubble';
 import { ChatBrandPicker } from '@/components/shared/conversation/ChatBrandPicker';
 import { ChatComposer } from '@/components/shared/conversation/ChatComposer';
-import {
-  ChatGenerationBubble,
-  type GenerationStatus,
-} from '@/components/shared/conversation/ChatGenerationBubble';
 import { ChatOfferCard } from '@/components/shared/conversation/ChatOfferCard';
 import { ChatServicePicker } from '@/components/shared/conversation/ChatServicePicker';
 import { TypingIndicator } from '@/components/shared/conversation/TypingIndicator';
+import {
+  GenerationBlueprint,
+  type BlueprintPhase,
+} from '@/components/shared/onboarding/GenerationBlueprint';
 import { BrandMark } from '@/components/ui/BrandMark';
 import { Eyebrow } from '@/components/ui/eyebrow';
 import { Input } from '@/components/ui/input';
@@ -64,7 +64,10 @@ import {
   type ConversationState,
 } from '@/lib/onboarding/conversation-types';
 import { deriveBriefFromConversation } from '@/lib/onboarding/derive-brief';
-import { runConversationGeneration } from '@/lib/onboarding/trigger-generation';
+import {
+  runConversationGeneration,
+  type GenerationProgressEvent,
+} from '@/lib/onboarding/trigger-generation';
 import { supabase } from '@/lib/supabase/client';
 import {
   INDUSTRY_TEMPLATES,
@@ -135,27 +138,39 @@ type ExtractResponse = {
 
 // ---------------------------------------------------------------------------
 // bot copy
+//
+// Voice: direct, brief, honest. The previous strings were performative
+// ("Great." "We're building…"); these tell the customer what's happening
+// and what's next. Three principles:
+//   1. Direct, not performative — no enthusiasm-acting.
+//   2. Brief — short acknowledgments, no filler.
+//   3. Clear about what's coming next.
+// Also fixed: hardcoded HTML entities (`&apos;`) render literally inside
+// chat bubbles since the strings are read as plain text.
 
 const BOT_TURN1 =
-  "Hey — I'm here to get your business live on Webnua. To start, tell me what you do and where (one sentence is fine).";
-const BOT_ASK_EMAIL =
-  "Great. What's the best email to reach you on? I'll send a 6-digit code to verify it.";
+  "Hey — I'm here to get your site set up. I'll ask a few quick questions about your business so we can build it right first time. You can edit anything later. To start, what do you do and where?";
+const BOT_ASK_EMAIL = "What's your email? I'll send a 6-digit code to verify.";
 const BOT_CODE_SENT = (email: string) =>
   `Code sent to ${email}. Type the 6 digits below — it expires in 10 minutes.`;
-const BOT_POST_VERIFY = "You're in. Reading what you told me now…";
+const BOT_POST_VERIFY = "Verified. Reading what you told me…";
 const BOT_EXTRACTION_DONE = (e: ConversationExtraction) => {
-  const industryLine = e.industryFreeText ?? prettyIndustry(e.industry);
+  // "Got it — painter in Cork. Now your services." Brief and direct.
+  const industryLine = e.industryFreeText ?? prettyIndustry(e.industry).toLowerCase();
   const tail = e.location ? ` in ${e.location}` : '';
-  return `Got it — ${industryLine}${tail}. Quick pass on what you offer next.`;
+  return `Got it — ${industryLine}${tail}. Now your services.`;
 };
 const BOT_TURN2_PROMPT =
-  "Tick the services you offer. We&apos;ll write your site around these.";
-const BOT_TURN3_PROMPT =
-  "Now your brand. Pick a colour and drop a logo if you have one — both optional.";
+  "Tick the services you offer. We'll build your site around these.";
+const BOT_SERVICES_DONE = "Saved. Now your brand colors.";
+const BOT_TURN3_PROMPT = "Brand colors and logo next. Both optional.";
+const BOT_BRAND_DONE = "Locked in. Generating your offer next.";
 const BOT_TURN4_PROMPT =
-  "Here&apos;s a draft offer for your funnel. Keep it, refine it, or write your own.";
-const BOT_TURN5_PROMPT =
-  "We&apos;re building your site + funnel now. This takes about a minute.";
+  "Here's a draft marketing offer for your landing page. Use it, refine it, or write your own.";
+// BOT_OFFER_DONE doubles as the turn-5 framing — the GenerationBlueprint
+// renders its own fullscreen status, so we don't need a separate "building
+// now" bubble (the blueprint takes over the entire viewport).
+const BOT_OFFER_DONE = "Offer locked. Building your site now — takes about a minute.";
 
 const RESEND_AVAILABLE_AFTER_MS = 10_000;
 
@@ -199,10 +214,17 @@ export function ConversationShell() {
   const [offerInFlight, setOfferInFlight] = useState<FunnelOffer | null>(null);
   const [offerLoading, setOfferLoading] = useState(false);
   const [offerError, setOfferError] = useState<string | null>(null);
-  // Generation status (turn 5).
-  const [genStatus, setGenStatus] = useState<GenerationStatus>('idle');
+  // Generation phase (turn 5) — drives the GenerationBlueprint fullscreen
+  // overlay. `phase` tracks the real progress event from
+  // runConversationGeneration's onProgress callback, not the visual cursor;
+  // the blueprint clamps text-stage rendering to whichever is more
+  // conservative (visual cursor vs the highest unlocked-at index per phase).
+  const [genPhase, setGenPhase] = useState<BlueprintPhase>('idle');
   const [genError, setGenError] = useState<string | null>(null);
   const [genSoftError, setGenSoftError] = useState<string | null>(null);
+  // attemptId — bumped on every Retry so the blueprint's internal cursor
+  // resets without forcing a wholesale remount of the component tree.
+  const [genAttemptId, setGenAttemptId] = useState(0);
 
   // Ref guards — once-only effects.
   const hydratedRef = useRef(false);
@@ -587,6 +609,43 @@ export function ConversationShell() {
   // over it cleanly. Each appends two-or-three new bot messages, updates
   // capturedFacts, persists, and advances the phase.
 
+  // Write the AI-extracted business name to clients.name + re-slugify the
+  // workspace URL. Fire-and-forget — failures surface in console but don't
+  // block forward progress (the email-derived placeholder still works as a
+  // fallback name + slug). Updates clientSlug local state on success so the
+  // generation handoff uses the new slug.
+  const persistBusinessIdentity = useCallback(
+    async (businessName: string) => {
+      if (!clientId || !businessName.trim()) return;
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) return;
+        const res = await fetch(`/api/clients/${clientId}/business-identity`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ businessName: businessName.trim() }),
+        });
+        if (!res.ok) {
+          console.warn(
+            `[sign-up] business-identity update failed (${res.status})`,
+          );
+          return;
+        }
+        const body = (await res.json()) as { slug?: string; name?: string };
+        if (typeof body.slug === 'string' && body.slug.length > 0) {
+          setClientSlug(body.slug);
+        }
+      } catch (e) {
+        console.warn('[sign-up] business-identity network error', e);
+      }
+    },
+    [clientId],
+  );
+
   const handleExtractionDone = useCallback(
     async (e: ConversationExtraction) => {
       setExtraction(e);
@@ -615,11 +674,26 @@ export function ConversationShell() {
         return;
       }
 
+      // Fire business-identity update with the extracted name AS SOON AS
+      // extraction lands at high-confidence. This rewrites clients.name +
+      // the workspace slug from the email-derived placeholder ("Gmail")
+      // to the customer's actual business name ("Cork Painters"). The
+      // call updates local clientSlug state on success so turn-5
+      // generation lands on the right subdomain.
+      const extractedName = e.businessName.trim();
+      if (extractedName) {
+        void persistBusinessIdentity(extractedName);
+      }
+
       const confirmation = BOT_EXTRACTION_DONE(e);
       const nextFacts: ConversationCapturedFacts = {
         ...capturedFacts,
         firstMessage,
         email,
+        // Capture the business name on capturedFacts so
+        // deriveBriefFromConversation can read it without unpacking
+        // extraction, AND so resume hydrates it cleanly.
+        businessName: extractedName || capturedFacts.businessName,
         clientSlug: clientSlug ?? capturedFacts.clientSlug,
         extraction: e,
         clarifyingQuestion: undefined,
@@ -638,7 +712,7 @@ export function ConversationShell() {
         messages: nextMessages,
       });
     },
-    [capturedFacts, clientSlug, email, firstMessage, messages, persistState],
+    [capturedFacts, clientSlug, email, firstMessage, messages, persistState, persistBusinessIdentity],
   );
 
   const runExtraction = useCallback(
@@ -648,6 +722,7 @@ export function ConversationShell() {
       extractionStartedRef.current = true;
       setBotThinking(true);
       const fallback: ConversationExtraction = {
+        businessName: '',
         industry: 'generic',
         industryFreeText: null,
         location: '',
@@ -732,6 +807,8 @@ export function ConversationShell() {
                 : `${services.length} services picked`
               : '(no services picked)',
         },
+        // Brief acknowledgment + transition to next step.
+        { id: newId('bot'), author: 'bot', text: BOT_SERVICES_DONE },
         { id: newId('bot'), author: 'bot', text: BOT_TURN3_PROMPT },
       ];
       setCapturedFacts(nextFacts);
@@ -762,6 +839,8 @@ export function ConversationShell() {
             ? `Brand colour ${brand.primaryColor}${brand.logoUrl ? ' + logo uploaded' : ''}`
             : '(brand skipped — use the industry default)',
         },
+        // Brief acknowledgment + transition.
+        { id: newId('bot'), author: 'bot', text: BOT_BRAND_DONE },
         { id: newId('bot'), author: 'bot', text: BOT_TURN4_PROMPT },
       ];
       setCapturedFacts(nextFacts);
@@ -899,7 +978,10 @@ export function ConversationShell() {
             ? `Offer locked: "${offer.headline}"`
             : '(offer skipped — placeholder copy will sit here)',
         },
-        { id: newId('bot'), author: 'bot', text: BOT_TURN5_PROMPT },
+        // Brief acknowledgment. The fullscreen GenerationBlueprint mounts
+        // on top of the chat once we enter turn-5, so we don't need a
+        // separate "building now" bubble.
+        { id: newId('bot'), author: 'bot', text: BOT_OFFER_DONE },
       ];
       setCapturedFacts(nextFacts);
       setMessages(nextMessages);
@@ -932,62 +1014,164 @@ export function ConversationShell() {
   }, [capturedFacts, callOfferGenerator, messages, persistState]);
 
   // ---- turn 5: generation ----------------------------------------------
+  // Build-gating contract (Issue 2):
+  //   - Routing to /dashboard happens ONLY when both generators succeed
+  //     AND the customer clicks Continue on the ReadyOverlay.
+  //   - The dashboard's wizard-completion gate is stamped via
+  //     /api/clients/[id]/wizard-state POST { complete: true } only after
+  //     a successful generation — so a customer who lands on /dashboard
+  //     does NOT get bounced to /onboarding (the 7-step legacy wizard).
+  //   - Idempotency: capturedFacts.buildingStartedAt is stamped the
+  //     moment we enter turn-5 generation. A refresh that finds
+  //     current_turn=5 + buildingStartedAt set re-enters the blueprint
+  //     screen and re-fires the generator; wizard-assets' probe ensures
+  //     no duplicate inserts happen at the DB layer.
   const runGeneration = useCallback(async () => {
     if (generationStartedRef.current) return;
     generationStartedRef.current = true;
     if (!clientId || !clientSlug) {
-      setGenStatus('failed');
+      setGenPhase('failed');
       setGenError('Missing client context — please refresh and try again.');
       generationStartedRef.current = false;
       return;
     }
-    setGenStatus('running');
+    setGenPhase('probing');
     setGenError(null);
     setGenSoftError(null);
 
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData.session?.access_token;
     if (!token) {
-      setGenStatus('failed');
+      setGenPhase('failed');
       setGenError('Not signed in — please refresh and verify again.');
+      generationStartedRef.current = false;
       return;
     }
 
+    // Stamp the buildingStartedAt flag on capturedFacts so a refresh-then-
+    // resume can detect that we're already in the build phase and just
+    // re-mount the blueprint (rather than retrigger from scratch). The
+    // generation routes are idempotent via wizard-assets' probe, so even
+    // if the timing is unlucky and the generator fires twice, the second
+    // call is a no-op at the DB layer.
+    const facts: ConversationCapturedFacts = {
+      ...capturedFacts,
+      buildingStartedAt:
+        capturedFacts.buildingStartedAt ?? new Date().toISOString(),
+    };
+    if (facts.buildingStartedAt !== capturedFacts.buildingStartedAt) {
+      setCapturedFacts(facts);
+      void persistState({
+        capturedFacts: facts,
+        current_turn: 5,
+        messages,
+      });
+    }
+
     const brief = deriveBriefFromConversation({
-      capturedFacts,
+      capturedFacts: facts,
       email,
       fallbackBusinessName:
+        facts.businessName?.trim() ||
+        extraction?.businessName?.trim() ||
         extraction?.industryFreeText?.trim() ||
         (extraction ? prettyIndustry(extraction.industry) : 'My business'),
     });
 
-    // No onProgress sink — stage progression inside ChatGenerationBubble
-    // is timer-driven, not event-driven. Real event-streaming is a
-    // separate session (per the GenerationSplash comment); the
-    // GenerationProgressEvent type is exported but not consumed here.
+    // Wire onProgress into the blueprint's BlueprintPhase. The blueprint
+    // clamps its visual stage to the most conservative of (visual cursor,
+    // highest unlocked-at index for this phase) — so the text stage
+    // NEVER claims a step before the real backend reaches it.
+    const handleProgress = (event: GenerationProgressEvent) => {
+      switch (event.kind) {
+        case 'probe':
+          setGenPhase('probing');
+          return;
+        case 'generating-site':
+          setGenPhase('generating-site');
+          return;
+        case 'generating-funnel':
+          setGenPhase('generating-funnel');
+          return;
+        case 'persisting':
+          setGenPhase('persisting');
+          return;
+        case 'attempt-failed':
+          // Mid-attempt failures don't flip to 'failed' yet — the runner
+          // will retry. We just stay on whatever phase we were on; the
+          // final failure (after all retries) lands as ok:false below.
+          console.warn(
+            `[sign-up] generation attempt ${event.attempt} failed: ${event.error}`,
+          );
+          return;
+        case 'soft-error':
+          // A soft error rendered while still in flight — store but don't
+          // flip phase; the runner can still resolve as ok:true.
+          setGenSoftError(event.message);
+          return;
+      }
+    };
+
     const result = await runConversationGeneration({
       clientId,
       clientSlug,
       token,
       brief,
+      onProgress: handleProgress,
     });
 
     if (!result.ok) {
-      setGenStatus('failed');
+      setGenPhase('failed');
       setGenError(result.error);
       // Allow retry — clear the once-only guard.
       generationStartedRef.current = false;
       return;
     }
-    setGenStatus('ready');
+    setGenPhase('ready');
     if (result.softError) setGenSoftError(result.softError);
-    // Mark conversation_state as "post-generation" (current_turn = 6) so a
-    // subsequent visit redirects straight to the dashboard.
+
+    // Persist conversation_state as turn 6 (post-generation) so a resume
+    // visit detects we're done + redirects straight to /dashboard.
     void persistState({
-      capturedFacts,
+      capturedFacts: facts,
       current_turn: 6,
       messages,
     });
+
+    // Mark the wizard complete so the dashboard's gate doesn't bounce
+    // this customer to /onboarding (the 7-step legacy wizard). The
+    // conversational flow IS the onboarding wizard —
+    // wizard_completed_at is the canonical "onboarding done" flag the
+    // dashboard reads.
+    //
+    // Critical for build-gating (Issue 2): this stamp MUST land before
+    // the customer reaches /dashboard. We don't await it inside this
+    // callback because /dashboard's redirect-gate is async + fires
+    // again on every navigation, so the worst case is a half-second
+    // race where /dashboard renders the legacy-wizard redirect briefly
+    // then resolves. To avoid that flash, the handleGenerationContinue
+    // callback also awaits this before routing.
+    void (async () => {
+      try {
+        const res = await fetch(`/api/clients/${clientId}/wizard-state`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          // No `state` field — we don't want to clobber wizard_state
+          // with our null. Just stamp wizard_completed_at.
+          body: JSON.stringify({ complete: true }),
+        });
+        if (!res.ok) {
+          console.warn(
+            `[sign-up] wizard-state complete stamp failed (${res.status})`,
+          );
+        }
+      } catch (e) {
+        console.warn('[sign-up] wizard-state complete network error', e);
+      }
+    })();
   }, [capturedFacts, clientId, clientSlug, email, extraction, messages, persistState]);
 
   // Trigger generation when we enter turn 5. Once-only guard inside
@@ -1000,14 +1184,50 @@ export function ConversationShell() {
 
   const handleGenerationRetry = useCallback(() => {
     // Reset the guard so runGeneration's internal check lets a fresh
-    // attempt through.
+    // attempt through. Bump attemptId so the blueprint resets its
+    // visual cursor without remounting (key change would do it too;
+    // attemptId is the more explicit signal).
     generationStartedRef.current = false;
+    setGenAttemptId((id) => id + 1);
+    setGenPhase('idle');
+    setGenError(null);
+    setGenSoftError(null);
+    // The phase-change effect below kicks runGeneration when we transition
+    // back to 'turn-5-generation'. We're already in that phase, so just
+    // call runGeneration directly.
     void runGeneration();
   }, [runGeneration]);
 
-  const handleGenerationContinue = useCallback(() => {
+  const handleGenerationContinue = useCallback(async () => {
+    // Defence in depth: even though runGeneration kicked off the
+    // wizard-state complete stamp, ensure it's landed (or at least
+    // attempted) before we route. The dashboard's wizard-completion gate
+    // is the difference between "land on the welcome surface" and
+    // "bounce to /onboarding (legacy wizard)". Best-effort blocking
+    // wait: if the stamp succeeded inside runGeneration we 200 in a
+    // few ms; if it failed we do not block the customer from reaching
+    // the dashboard (they'll see the legacy redirect once, which is
+    // still better than holding them on this screen forever).
+    if (clientId) {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (token) {
+          await fetch(`/api/clients/${clientId}/wizard-state`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ complete: true }),
+          });
+        }
+      } catch {
+        // Soldier on — see note above.
+      }
+    }
     router.push('/dashboard');
-  }, [router]);
+  }, [clientId, router]);
 
   // ---- render slots ------------------------------------------------------
   const resendSecondsLeft = Math.max(0, Math.ceil((resendReadyAt - nowMs) / 1000));
@@ -1023,6 +1243,18 @@ export function ConversationShell() {
   const industryDisplay = extraction
     ? prettyIndustry(extraction.industry)
     : 'Your business';
+
+  // Blueprint copy interpolations — used by GenerationBlueprint's per-stage
+  // messages. industryDisplay reads as plural-trade-name ("painters",
+  // "electricians") for "for {industryDisplay}" — falls back to "tradies"
+  // when extraction is missing.
+  const blueprintIndustryDisplay = extraction
+    ? prettyIndustry(extraction.industry).toLowerCase()
+    : 'tradies';
+  const blueprintBusinessName =
+    capturedFacts.businessName?.trim() ||
+    capturedFacts.extraction?.businessName?.trim() ||
+    undefined;
 
   return (
     <div className="fixed inset-0 flex w-full flex-col bg-paper">
@@ -1181,22 +1413,11 @@ export function ConversationShell() {
             </ChatBubble>
           ) : null}
 
-          {phase === 'turn-5-generation' ? (
-            <ChatBubble
-              author="bot"
-              rich={
-                <ChatGenerationBubble
-                  status={genStatus}
-                  errorMessage={genError ?? undefined}
-                  softError={genSoftError ?? undefined}
-                  onRetry={handleGenerationRetry}
-                  onContinue={handleGenerationContinue}
-                />
-              }
-            >
-              {null}
-            </ChatBubble>
-          ) : null}
+          {/* turn-5 renders the fullscreen GenerationBlueprint OUTSIDE
+              the chat container — see the mount near the end of the
+              component. We leave the chat thread untouched so a refresh
+              that lands mid-build still has the prior message history
+              underneath the blueprint overlay. */}
 
           {botThinking ? (
             <ChatBubble author="bot">
@@ -1237,6 +1458,24 @@ export function ConversationShell() {
           disabled={botThinking}
           sendLabel="Send"
           onSend={handleClarifyingReply}
+        />
+      ) : null}
+
+      {/* Fullscreen build-gating overlay (Issue 2 + 3). Mounts on top of
+          the chat the moment we enter turn-5; unmounts when the customer
+          clicks Continue from the ready overlay (which awaits the
+          wizard-state stamp first, see handleGenerationContinue). */}
+      {phase === 'turn-5-generation' ? (
+        <GenerationBlueprint
+          phase={genPhase}
+          industryDisplay={blueprintIndustryDisplay}
+          serviceCount={(capturedFacts.services ?? []).length}
+          businessName={blueprintBusinessName}
+          errorMessage={genError ?? undefined}
+          softError={genSoftError ?? undefined}
+          onRetry={handleGenerationRetry}
+          onContinue={handleGenerationContinue}
+          attemptId={genAttemptId}
         />
       ) : null}
     </div>

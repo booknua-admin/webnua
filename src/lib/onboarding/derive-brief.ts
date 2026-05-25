@@ -194,6 +194,16 @@ export function deriveBriefFromConversation(
 ): ClientBrief {
   const { capturedFacts: facts, email, fallbackBusinessName } = input;
 
+  // Business name resolution order (most specific → least): the AI-extracted
+  // name kept on capturedFacts.businessName → the extraction's own field →
+  // the signup-time placeholder fallback. The conversation shell writes
+  // `businessName` onto capturedFacts as soon as the extraction lands with
+  // sufficient confidence, so by turn-5 generation the right name is there.
+  const businessName =
+    facts.businessName?.trim() ||
+    facts.extraction?.businessName?.trim() ||
+    fallbackBusinessName;
+
   // The extraction is the conversation's anchor — turn 1 + clarifying-
   // question loop produced it. A missing extraction means a customer
   // somehow reached turn 5 without one; fall back to generic so
@@ -257,7 +267,7 @@ export function deriveBriefFromConversation(
 
   return {
     business: {
-      name: fallbackBusinessName,
+      name: businessName,
       ownerName: '',
       phone: '',
       email,
