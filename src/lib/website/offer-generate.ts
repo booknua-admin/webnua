@@ -33,6 +33,20 @@ export type OfferGenerationInput = {
   funnelService: string;
   funnelCustomerPain: string;
   funnelGuarantee: string;
+  /** Optional — conversational onboarding fires the industry-knowledge AI
+   *  call between the business-name turn and the services picker, caches
+   *  the result on `capturedFacts.industryKnowledge`, and threads it
+   *  through to the offer generator so Sonnet can ground the headline +
+   *  promise in real per-trade pain + outcomes. Absent on the operator
+   *  concierge path (where the operator knows the trade); the route
+   *  tolerates absence and the offer still generates cleanly. */
+  industryKnowledge?: {
+    customerPainPoints: string[];
+    desiredOutcomes: string[];
+    trustSignals: string[];
+    voiceRecommendation: string;
+    source: 'ai' | 'template' | 'fallback';
+  };
 };
 
 type GenerationErrorBody = {

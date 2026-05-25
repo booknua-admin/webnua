@@ -529,6 +529,19 @@ type LiveBrief = {
   serviceArea: string;
   industry: string;
   businessName: string;
+  /** Optional — when conversational onboarding resolved AI knowledge for
+   *  this signup, the funnel user message gets an extra subblock with the
+   *  customer-pain + desired-outcome + voice signals. Absent on the
+   *  operator concierge path; the prompt's existing industry-template
+   *  block still carries enough context for credible copy. */
+  industryKnowledge?: {
+    services: string[];
+    trustSignals: string[];
+    customerPainPoints: string[];
+    desiredOutcomes: string[];
+    voiceRecommendation: string;
+    source: 'ai' | 'template' | 'fallback';
+  };
 };
 
 /** Step 1 — generate the 7-section lead-capture landing. */
@@ -666,6 +679,7 @@ function composeUserMessage(brief: LiveBrief, cfg: RunConfig): string {
       resolveIndustryTemplate(brief.industry || brief.brand.industryCategory),
     ),
     '',
+    ...(brief.industryKnowledge ? buildIndustryKnowledgeSubblock(brief.industryKnowledge) : []),
     `## Funnel brief`,
     '',
     `Service this funnel sells: ${brief.funnel.service || '(not specified)'}`,
@@ -684,6 +698,54 @@ function composeUserMessage(brief: LiveBrief, cfg: RunConfig): string {
   ]
     .filter((s) => s !== '')
     .join('\n');
+}
+
+/** Compose the optional "AI-resolved industry knowledge" subblock that
+ *  rides into the funnel user message when the conversational onboarding
+ *  fetched it. Returns an array of lines so the caller can spread it into
+ *  the larger composition; returns empty when absent so the spread is a
+ *  no-op. Same shape the website prompt uses (generation-prompt.ts) — the
+ *  two paths emit parallel knowledge blocks so Sonnet/Opus see consistent
+ *  context across page + funnel generation for the same business. */
+function buildIndustryKnowledgeSubblock(
+  k: NonNullable<LiveBrief['industryKnowledge']>,
+): string[] {
+  const painList =
+    k.customerPainPoints.length > 0
+      ? k.customerPainPoints.map((p) => `  - ${p}`).join('\n')
+      : '  (none captured)';
+  const outcomeList =
+    k.desiredOutcomes.length > 0
+      ? k.desiredOutcomes.map((o) => `  - ${o}`).join('\n')
+      : '  (none captured)';
+  const trustList =
+    k.trustSignals.length > 0
+      ? k.trustSignals.slice(0, 8).join(', ')
+      : '(none captured)';
+  const sourceNote =
+    k.source === 'ai'
+      ? 'Resolved by an AI knowledge call for this specific industry — treat as authoritative.'
+      : k.source === 'template'
+        ? 'Derived from the curated industry template — reliable but generic.'
+        : 'Safe defaults — generic service-business shape.';
+  return [
+    `## Industry knowledge (resolved live for this business)`,
+    '',
+    `Source: ${sourceNote}`,
+    '',
+    'Customer pain points (what brings them to this trade):',
+    painList,
+    '',
+    'Desired outcomes (what success looks like to them):',
+    outcomeList,
+    '',
+    `Trust signals customers look for: ${trustList}`,
+    '',
+    `Voice recommendation for this trade: ${k.voiceRecommendation || '(none captured)'}`,
+    '',
+    'Weave these pain points + outcomes into headlines, subheadings, and CTAs naturally — never repeat verbatim.',
+    '',
+  ];
 }
 
 function buildFieldKeysBlock(types: readonly SectionType[]): string {

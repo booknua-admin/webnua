@@ -20,14 +20,20 @@
 // surface that has the wizard state + the signup-time brand row.
 // =============================================================================
 
-import type { ClientBrief } from '@/lib/website/site-generation-stub';
+import type {
+  ClientBrief,
+  IndustryKnowledge as BriefIndustryKnowledge,
+} from '@/lib/website/site-generation-stub';
 import {
   resolveIndustryTemplate,
   type IndustryKey,
 } from '@/lib/website/industry-templates';
 import type { BrandObject } from '@/lib/website/types';
 
-import type { ConversationCapturedFacts } from './conversation-types';
+import type {
+  ConversationCapturedFacts,
+  IndustryKnowledge as ConversationIndustryKnowledge,
+} from './conversation-types';
 import { INDUSTRY_PRIMARY_COLORS, deriveSecondaryColor } from './industry-colors';
 import type { WizardState } from './types';
 import { NEUTRAL_VOICE, toneToVoice } from './voice-presets';
@@ -223,12 +229,21 @@ export function deriveBriefFromConversation(
         template.displayName
       : facts.extraction?.industryFreeText?.trim() || template.displayName;
 
-  // Services — turn 2's customer-edited list, falling back to the
-  // template's defaults when turn 2 was skipped.
+  // Services — resolution order:
+  //   1. Turn 2's customer-edited list (always wins when populated).
+  //   2. For UNMAPPED industries (template.key === 'generic'): the
+  //      industry-knowledge services list — these are AI-resolved per
+  //      trade and far more useful than the generic template's stub.
+  //   3. The template's defaultServices (mapped industries' curated list,
+  //      or the generic stub for unmapped without industry knowledge).
   const services =
     facts.services && facts.services.length > 0
       ? facts.services
-      : [...template.defaultServices];
+      : industry === 'generic' &&
+          facts.industryKnowledge &&
+          facts.industryKnowledge.services.length > 0
+        ? facts.industryKnowledge.services
+        : [...template.defaultServices];
 
   // Brand — turn 3's customer-picked colour + logo, falling back to the
   // industry default + a derived secondary. Voice axes stay at neutral —
@@ -275,6 +290,17 @@ export function deriveBriefFromConversation(
       }
     : null;
 
+  // Industry knowledge — captured by the industry-knowledge route between
+  // the business-name turn and the services picker. The conversation type
+  // and the brief type share field names, so a typed copy is trivial.
+  // Absent when the call hard-failed in a way the helper couldn't recover
+  // from (offline, route 500 propagated through); the brief field is
+  // optional so the prompts just skip the supplementary block.
+  const industryKnowledge: BriefIndustryKnowledge | undefined =
+    facts.industryKnowledge
+      ? toBriefIndustryKnowledge(facts.industryKnowledge)
+      : undefined;
+
   return {
     business: {
       name: businessName,
@@ -296,6 +322,23 @@ export function deriveBriefFromConversation(
       testimonials: [],
       offer,
     },
+    industryKnowledge,
+  };
+}
+
+/** Type-only copy from the conversational shape (jsonb-storage flavoured)
+ *  into the brief shape (prompt-input flavoured). Field names are
+ *  identical — the two types are siblings that stay aligned by hand. */
+function toBriefIndustryKnowledge(
+  source: ConversationIndustryKnowledge,
+): BriefIndustryKnowledge {
+  return {
+    services: source.services,
+    trustSignals: source.trustSignals,
+    customerPainPoints: source.customerPainPoints,
+    desiredOutcomes: source.desiredOutcomes,
+    voiceRecommendation: source.voiceRecommendation,
+    source: source.source,
   };
 }
 

@@ -53,6 +53,21 @@ export type BusinessDetails = {
   services: string[];
 };
 
+/** AI-generated per-industry knowledge — present when the conversational
+ *  onboarding fetched it. The prompt-construction layer reads it to add a
+ *  customer-pain + desired-outcome + voice subblock to the per-page user
+ *  message. Kept structurally aligned with `site-generation-stub.ts`'s
+ *  `IndustryKnowledge` shape — type-only here so this module stays free
+ *  of cross-imports from the generation pipeline. */
+export type ContextIndustryKnowledge = {
+  services: string[];
+  trustSignals: string[];
+  customerPainPoints: string[];
+  desiredOutcomes: string[];
+  voiceRecommendation: string;
+  source: 'ai' | 'template' | 'fallback';
+};
+
 export type GenerationContext = {
   flavour: 'new-page' | 'first-page';
   pageType: PageType;
@@ -64,6 +79,10 @@ export type GenerationContext = {
   existingPages: ExistingPageSnapshot[];
   /** Present when generation was driven by the create-client flow. */
   business?: BusinessDetails;
+  /** Present when conversational onboarding fetched per-industry knowledge.
+   *  Optional — the deterministic stub and the operator concierge path
+   *  both leave it absent. */
+  industryKnowledge?: ContextIndustryKnowledge;
 };
 
 // -- Labels for the chip rows / review surface ------------------------------

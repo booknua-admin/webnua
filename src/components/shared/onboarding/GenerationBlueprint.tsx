@@ -83,7 +83,14 @@ export type GenerationBlueprintProps = {
   softError?: string;
   /** Retry callback fired from the 'failed' state. */
   onRetry?: () => void;
-  /** Continue callback fired from the 'ready' state. */
+  /** Primary "view your site" callback fired from the 'ready' state.
+   *  Lands the customer in the website editor (where they can see what
+   *  was built); the dashboard is the secondary path. */
+  onViewEditor?: () => void;
+  /** Secondary "go to dashboard" callback fired from the 'ready' state.
+   *  Rendered as a small text link so the editor is the primary destination
+   *  (the dashboard's billing CTA is intentionally NOT the first thing
+   *  the customer sees post-generation). */
   onContinue?: () => void;
   /** Tag the run with a build attempt id so internal `key=` resets the
    *  visual sequence on retry without remounting the whole component. */
@@ -227,11 +234,12 @@ export function GenerationBlueprint(props: GenerationBlueprintProps) {
 
 function BlueprintRunningBody({
   phase,
-  industryDisplay = 'tradies',
+  industryDisplay = 'service businesses',
   serviceCount = 0,
   businessName,
   softError,
   onContinue,
+  onViewEditor,
 }: GenerationBlueprintProps) {
   // The visual cursor — which block has drawn in. Independent of `phase`;
   // the text-stage rendering CLAMPS to whichever is more conservative
@@ -344,6 +352,7 @@ function BlueprintRunningBody({
             businessName={businessName}
             softError={softError}
             onContinue={onContinue}
+            onViewEditor={onViewEditor}
           />
         ) : null}
       </div>
@@ -844,10 +853,12 @@ function ReadyOverlay({
   businessName,
   softError,
   onContinue,
+  onViewEditor,
 }: {
   businessName?: string;
   softError?: string;
   onContinue?: () => void;
+  onViewEditor?: () => void;
 }) {
   return (
     <div
@@ -884,8 +895,8 @@ function ReadyOverlay({
           )}
         </h2>
         <p className="mt-3 max-w-md text-[14px] leading-[1.55] text-ink-mid">
-          Preview, edit, and publish from your dashboard. Every change you make
-          lands in your preview immediately.
+          Open the editor to see what we built — every page, your funnel, the
+          colours and copy. You can preview and tweak anything before going live.
         </p>
 
         {softError ? (
@@ -896,10 +907,17 @@ function ReadyOverlay({
 
         <button
           type="button"
-          onClick={onContinue}
+          onClick={onViewEditor}
           className="mt-7 inline-flex h-12 min-h-[44px] items-center justify-center rounded-md bg-rust px-7 text-[14px] font-bold text-paper hover:bg-rust-deep"
         >
-          Open my dashboard →
+          View in editor →
+        </button>
+        <button
+          type="button"
+          onClick={onContinue}
+          className="mt-3 inline-flex min-h-[28px] items-center justify-center px-2 text-[12px] text-ink-quiet underline-offset-2 hover:text-ink hover:underline"
+        >
+          Go to dashboard
         </button>
       </div>
     </div>

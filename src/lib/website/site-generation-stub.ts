@@ -34,6 +34,24 @@ import {
 } from './generation-stub';
 import type { BrandObject, Page, PageType, Section } from './types';
 
+/** AI-generated per-industry knowledge — flows from the conversational
+ *  onboarding's industry-knowledge route into every downstream prompt
+ *  (offer / site / funnel). Optional on the brief — the operator
+ *  concierge path doesn't fetch it; the wizard skipped it; both still
+ *  generate cleanly. Shape kept in lockstep with the conversation-types
+ *  `IndustryKnowledge` (Pattern B — sibling shapes per CLAUDE.md "siblings
+ *  beat conditional optional fields"; the conversation type carries the
+ *  jsonb-storage shape, this one carries the prompt-input shape; the
+ *  field names are identical so a typed copy is trivial). */
+export type IndustryKnowledge = {
+  services: string[];
+  trustSignals: string[];
+  customerPainPoints: string[];
+  desiredOutcomes: string[];
+  voiceRecommendation: string;
+  source: 'ai' | 'template' | 'fallback';
+};
+
 /** One testimonial captured by the wizard for the AI funnel offer.
  *  Empty list → the funnel renders placeholder social proof, never an
  *  AI-invented quote (see CLAUDE.md "Open decisions / parked"). */
@@ -69,6 +87,11 @@ export type ClientBrief = {
   primaryIntent: PrimaryIntent;
   audience: Audience;
   funnel: FunnelBrief;
+  /** Optional — present when conversational onboarding fetched it.
+   *  Absent on the operator concierge path (brief is built directly).
+   *  When present, the prompts thread customer-pain + desired-outcome +
+   *  voice into the per-message industry context block. */
+  industryKnowledge?: IndustryKnowledge;
 };
 
 export type SiteGenerationResult = {
@@ -92,6 +115,7 @@ export function briefToGenerationContext(brief: ClientBrief, pageType: PageType)
     brand: brief.brand,
     existingPages: [],
     business: brief.business,
+    industryKnowledge: brief.industryKnowledge,
   };
 }
 

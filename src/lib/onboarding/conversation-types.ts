@@ -112,6 +112,36 @@ export type ConversationExtraction = {
   ambiguities: string[];
 };
 
+/** AI-generated industry knowledge cached for a single signup. Drives:
+ *    - the services picker's list (for unmapped industries — mapped ones
+ *      still use the curated template; we just log mismatches),
+ *    - the funnel offer generator's user message,
+ *    - the site + funnel generation user messages.
+ *
+ *  Cached on capturedFacts so the AI call fires exactly once per signup;
+ *  every downstream consumer reads from here, not the route. `source`
+ *  records how the knowledge was resolved so resume hydration can decide
+ *  whether to re-fire (currently it never re-fires — the cached result
+ *  is the SoT regardless of source).
+ *
+ *  Trigger to refresh: a customer-facing "regenerate my industry context"
+ *  affordance does not exist V1; if it ever lands, clear this field and
+ *  re-fire the route. */
+export type IndustryKnowledge = {
+  /** 8–15 common offerings for this industry. */
+  services: string[];
+  /** 4–8 trust signals customers look for (licenced / vetted / years / etc.). */
+  trustSignals: string[];
+  /** 3–5 short customer-pain phrases. */
+  customerPainPoints: string[];
+  /** 3–5 desired-outcome phrases. */
+  desiredOutcomes: string[];
+  /** One-line voice recommendation for site copy. */
+  voiceRecommendation: string;
+  /** Provenance of this entry. */
+  source: 'ai' | 'template' | 'fallback';
+};
+
 /** Strongly-typed view of clients.conversation_state.capturedFacts.
  *  Every field is optional — captured progressively across turns. The
  *  /api/clients/[id]/conversation-state route accepts any object on jsonb
@@ -128,6 +158,14 @@ export type ConversationCapturedFacts = {
    *  writes this onto `clients.name` AND re-slugifies the workspace URL
    *  when the extraction surfaces a name with sufficient confidence. */
   businessName?: string;
+  /** ISO timestamp set the moment the customer confirms the business name
+   *  via the explicit awaiting-business-name turn. Distinct from
+   *  `businessName` itself — that's set during AI extraction (the
+   *  derived name); this flag marks the customer's own confirmation /
+   *  override. Hydration uses it to decide whether to re-mount the
+   *  business-name turn after a refresh (extraction present + confirm
+   *  flag absent → re-mount; confirm flag present → skip to services). */
+  businessNameConfirmedAt?: string;
   /** ISO timestamp set the moment turn-5 generation FIRST kicks off. Used
    *  by the resume logic: a refresh that finds current_turn=5 + this set +
    *  no live website+funnel re-enters the blueprint screen (the generation
@@ -145,6 +183,14 @@ export type ConversationCapturedFacts = {
   /** AI extraction result, or null when low-confidence path is still
    *  resolving (set after the clarifying question completes). */
   extraction?: ConversationExtraction;
+  /** AI-generated industry knowledge — fetched once after the business
+   *  name turn, before the services picker mounts. Drives the unmapped-
+   *  industry services list AND the per-message industry-knowledge
+   *  block that rides into offer + site + funnel prompts. NEVER absent
+   *  by the time turn 5 fires unless the route hard-failed AND the
+   *  fallback also returned no shape (defensive — we always synthesise
+   *  fallback knowledge from the template OR generic defaults). */
+  industryKnowledge?: IndustryKnowledge;
   /** Services the customer kept in turn 2 (intersection of the
    *  industry's defaultServices + any custom typed-in additions; AI
    *  pre-tick + customer edit). Empty when turn 2 was skipped. */
@@ -177,6 +223,10 @@ export type ConversationState = {
   capturedFacts: ConversationCapturedFacts;
   /** Turn ids match the shell's phase ordering:
    *    1 — turn-1-input + verification (verify-code seeds 2 when done)
+   *    1.5 — businessName capture + industry-knowledge AI call (transient;
+   *          persists as `current_turn: 1` with capturedFacts holding
+   *          the in-flight values so a refresh re-runs the same turn —
+   *          single integer column, no half-turns)
    *    2 — services picker
    *    3 — brand picker
    *    4 — offer iteration
