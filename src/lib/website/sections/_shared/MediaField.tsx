@@ -107,7 +107,9 @@ export function MediaField({
                 <button
                   type="button"
                   onClick={() => onChange('')}
-                  className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet transition-colors hover:text-warn"
+                  // Status-colour refit (Bundle C2b-1). See footer.tsx
+                  // for the same arbitrary-property hover pattern.
+                  className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet transition-colors hover:[color:var(--status-warn,var(--color-warn))]"
                 >
                   Remove
                 </button>
@@ -151,7 +153,14 @@ export function MediaField({
           </button>
         )}
         {error ? (
-          <p className="mt-1.5 text-[12px] text-warn">{error}</p>
+          // Status-colour refit (Bundle C2b-1) — see FormBlock for the
+          // same brand-tinted pattern with global fallback.
+          <p
+            className="mt-1.5 text-[12px]"
+            style={{ color: 'var(--status-warn, var(--color-warn))' }}
+          >
+            {error}
+          </p>
         ) : null}
       </CapabilityGate>
     </BuilderField>

@@ -24,6 +24,16 @@ import type { BrandObject } from '@/lib/website/types';
 
 import { notifyBuilder } from './builder-events';
 
+// Bundle C2b-1 note. The 5 keys this module covers (heading/body/background
+// colour defaults + heading/body font ids) feed `section-theme.ts`'s
+// per-section resolve chain — they do NOT influence the derived palette
+// (which is computed from accent_color + brand_colors[1] only). Palette
+// re-derivation belongs on the writers that change those columns:
+// /settings/brand save (app/settings/brand/_content.tsx) and the
+// onboarding wizard Step 4 (app/onboarding/_steps/Step4Brand.tsx). Both
+// import `derivePalette` directly and update `derived_palette` alongside
+// the colour update. See `lib/website/color-derivation.ts`.
+
 export type BrandStyleKey =
   | 'headingFont'
   | 'bodyFont'

@@ -171,6 +171,17 @@ export type BrandObject = {
   headingColor?: string;
   bodyColor?: string;
   backgroundColor?: string;
+  /** Design bundle id (Bundle C2b-1). One of the closed set in
+   *  lib/website/design-bundles.ts. Absent → resolve via industry default
+   *  (lib/website/industry-bundle-defaults.ts). SectionShell reads this
+   *  and injects bundle CSS custom properties on the section root. */
+  designBundleId?: string;
+  /** Cached derived colour palette (Bundle C2b-1). The shape is
+   *  `DerivedPalette` from lib/website/color-derivation.ts — kept as
+   *  unknown here so types.ts doesn't pull color-derivation into every
+   *  consumer; readers narrow via `isDerivedPalette`. Absent → readers
+   *  re-derive from accentColor at render time. */
+  derivedPalette?: unknown;
 };
 
 // ---- Versions -------------------------------------------------------------

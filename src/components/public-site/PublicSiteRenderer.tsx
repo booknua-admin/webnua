@@ -19,6 +19,7 @@
 import type { ReactNode } from 'react';
 
 import type { FunnelStep } from '@/lib/funnel/types';
+import { PageTypeProvider } from '@/lib/website/page-type-context';
 import { getSectionDefinition } from '@/lib/website/sections';
 import { LiveSurfaceProvider } from '@/lib/website/sections/_shared/live-surface';
 import { SectionFormSlotProvider } from '@/lib/website/sections/_shared/section-form-slot';
@@ -143,20 +144,22 @@ export function PublicSiteRenderer(props: Props) {
             funnelId: props.funnelId,
           }}
         >
-          <main>
-            {props.step.sections.map((section) => (
-              <RenderedSection
-                key={section.id}
-                section={section}
-                brand={props.brand}
-                clientId={props.clientId}
-                surfaceKind="funnel"
-                funnelId={props.funnelId}
-                nextStepHref={props.nextStepHref}
-                isPreview={props.isPreview}
-              />
-            ))}
-          </main>
+          <PageTypeProvider value="funnelStep">
+            <main>
+              {props.step.sections.map((section) => (
+                <RenderedSection
+                  key={section.id}
+                  section={section}
+                  brand={props.brand}
+                  clientId={props.clientId}
+                  surfaceKind="funnel"
+                  funnelId={props.funnelId}
+                  nextStepHref={props.nextStepHref}
+                  isPreview={props.isPreview}
+                />
+              ))}
+            </main>
+          </PageTypeProvider>
           {props.isPreview ? <PreviewBanner dashboardHref={dashboardHref()} /> : null}
         </PopupHost>
       </LiveSurfaceProvider>
@@ -194,18 +197,20 @@ export function PublicSiteRenderer(props: Props) {
     />
   );
   const mainNode = (
-    <main>
-      {page.sections.map((section) => (
-        <RenderedSection
-          key={section.id}
-          section={section}
-          brand={brand}
-          clientId={clientId}
-          surfaceKind="website"
-          isPreview={isPreview}
-        />
-      ))}
-    </main>
+    <PageTypeProvider value={page.type}>
+      <main>
+        {page.sections.map((section) => (
+          <RenderedSection
+            key={section.id}
+            section={section}
+            brand={brand}
+            clientId={clientId}
+            surfaceKind="website"
+            isPreview={isPreview}
+          />
+        ))}
+      </main>
+    </PageTypeProvider>
   );
   const footerNode = (
     <RenderedSection

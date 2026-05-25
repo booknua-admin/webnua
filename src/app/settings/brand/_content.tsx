@@ -34,6 +34,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useUser } from '@/lib/auth/user-stub';
 import { normalizeError } from '@/lib/errors';
 import { supabase } from '@/lib/supabase/client';
+import { derivePalette } from '@/lib/website/color-derivation';
 import { CURATED_FONTS, DEFAULT_FONT_ID, getFont } from '@/lib/website/google-fonts';
 import { uploadSectionImage } from '@/lib/website/upload-image';
 
@@ -242,6 +243,16 @@ function BrandForm({
         (c): c is string => Boolean(c) && HEX_RE.test(c),
       );
 
+      // Bundle C2b-1 — re-derive the brand palette so every section the
+      // customer renders inherits the updated colour story. Pure + cheap
+      // (no I/O); persisted alongside the colour update in the same row
+      // write so a reader can never see stale palette + new colours.
+      const derivedPalette = derivePalette({
+        primary: accentColor,
+        secondary: brandColors[1],
+        industry: industryCategory.trim(),
+      });
+
       const { error } = await supabase
         .from('brands')
         .update({
@@ -259,6 +270,7 @@ function BrandForm({
           voice_formality: formality,
           voice_urgency: urgency,
           voice_technicality: technicality,
+          derived_palette: derivedPalette as never,
         })
         .eq('client_id', clientId);
       if (error) throw normalizeError(error);

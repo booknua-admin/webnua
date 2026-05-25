@@ -4,6 +4,7 @@ import { BuilderFormSection } from '@/components/shared/builder/BuilderField';
 import { FormBlock } from '@/components/shared/website/FormBlock';
 
 import { setBrandStyleValue } from '../brand-style';
+import { useIsHomeContext } from '../page-type-context';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
 import { heroMeta } from './registry-meta';
 import { brandThemeDefaults, resolveTheme, type SectionTheme } from '../section-theme';
@@ -397,6 +398,18 @@ function HeroPreview({
   const d = withDefaults(data);
   const overlay = d.layout === 'overlay';
   const resolved = resolveTheme(d.theme, brandThemeDefaults(brand), HERO_HARDCODED_THEME);
+  // Bundle C2b-1 — read the active page-type context. Home page + funnel
+  // step → page-dominant hero (scales up to ~80vh+); sub-page (about /
+  // services / contact / generic) → page-header role (40-50vh). Sized
+  // via container-query classes so the editor preview's mobile/tablet/
+  // desktop toggle still works.
+  const isHomeHero = useIsHomeContext();
+  const overlayMinH = isHomeHero
+    ? 'min-h-[480px] @2xl:min-h-[640px] @3xl:min-h-[80vh]'
+    : 'min-h-[280px] @2xl:min-h-[40vh] @3xl:min-h-[50vh]';
+  const splitMinH = isHomeHero
+    ? 'min-h-[460px] @2xl:min-h-[600px] @3xl:min-h-[80vh]'
+    : 'min-h-[260px] @2xl:min-h-[40vh] @3xl:min-h-[50vh]';
   // The hero places its attached form in its own column — so it tells
   // SectionShell `formSlot="self"` and renders the form itself.
   const slot = useSectionFormSlot();
@@ -519,7 +532,7 @@ function HeroPreview({
 
         if (overlay) {
           return (
-            <div className="flex min-h-[480px] items-center px-8 py-20 @2xl:px-12">
+            <div className={`flex items-center px-8 py-20 @2xl:px-12 ${overlayMinH}`}>
               {hasForm ? (
                 // Content + form sit in a centred band so the form is a real
                 // column, not a small panel lost in empty space.
@@ -559,7 +572,7 @@ function HeroPreview({
         );
 
         return (
-          <div className="grid min-h-[460px] @2xl:grid-cols-2">
+          <div className={`grid @2xl:grid-cols-2 ${splitMinH}`}>
             {d.imageSide === 'left' ? [sideCell, contentCell] : [contentCell, sideCell]}
           </div>
         );

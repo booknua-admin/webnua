@@ -53,6 +53,8 @@ import { randomUUID } from 'node:crypto';
 
 import { env, getAppBaseUrl } from '@/lib/env';
 import { getServiceClient } from '@/lib/supabase/server';
+import { derivePalette } from '@/lib/website/color-derivation';
+import { getBundleForIndustry } from '@/lib/website/industry-bundle-defaults';
 
 import { CLIENT_OWNER_DEFAULTS } from './capabilities';
 import { sendWelcomeEmail, type WelcomeEmailOutcome } from './welcome-email';
@@ -241,6 +243,13 @@ export async function provisionPendingSignup(
   // an operator can heal it from /settings/access. Throwing here would leave
   // a half-provisioned workspace (auth user + magic link sent) the route
   // handler's catch can't unwind cleanly. Same discipline as 2b.
+  // Bundle C2b-1 — assign design_bundle_id from the captured industry and
+  // pre-derive the placeholder palette so the customer's preview surfaces
+  // render coherent design tokens from the very first page load. The
+  // customer will override both via the onboarding wizard (Step 4 — brand)
+  // and/or /settings/brand later; this is the sensible seed.
+  const signupBundle = getBundleForIndustry(industry);
+  const signupPalette = derivePalette({ primary: '#d24317', industry });
   const { error: brandError } = await svc.from('brands').insert({
     client_id: clientId,
     accent_color: '#d24317',
@@ -250,6 +259,8 @@ export async function provisionPendingSignup(
     audience_line: '',
     industry_category: industry,
     top_jobs_to_be_booked: [],
+    design_bundle_id: signupBundle,
+    derived_palette: signupPalette as never,
   });
   if (brandError) {
     console.error(

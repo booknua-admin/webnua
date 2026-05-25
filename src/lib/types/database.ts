@@ -561,6 +561,8 @@ export type Database = {
           body_font: string | null
           brand_colors: string[]
           client_id: string
+          derived_palette: Json | null
+          design_bundle_id: string | null
           favicon_url: string | null
           heading_color: string | null
           heading_font: string | null
@@ -581,6 +583,8 @@ export type Database = {
           body_font?: string | null
           brand_colors?: string[]
           client_id: string
+          derived_palette?: Json | null
+          design_bundle_id?: string | null
           favicon_url?: string | null
           heading_color?: string | null
           heading_font?: string | null
@@ -601,6 +605,8 @@ export type Database = {
           body_font?: string | null
           brand_colors?: string[]
           client_id?: string
+          derived_palette?: Json | null
+          design_bundle_id?: string | null
           favicon_url?: string | null
           heading_color?: string | null
           heading_font?: string | null
