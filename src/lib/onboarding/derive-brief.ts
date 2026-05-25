@@ -21,9 +21,13 @@
 // =============================================================================
 
 import type { ClientBrief } from '@/lib/website/site-generation-stub';
-import { resolveIndustryTemplate } from '@/lib/website/industry-templates';
+import {
+  resolveIndustryTemplate,
+  type IndustryKey,
+} from '@/lib/website/industry-templates';
 import type { BrandObject } from '@/lib/website/types';
 
+import type { ConversationCapturedFacts } from './conversation-types';
 import { INDUSTRY_PRIMARY_COLORS, deriveSecondaryColor } from './industry-colors';
 import type { WizardState } from './types';
 import { NEUTRAL_VOICE, toneToVoice } from './voice-presets';
@@ -153,6 +157,146 @@ export function deriveBriefFromWizard(input: DeriveBriefInput): ClientBrief {
       offer: offerOverride ?? null,
     },
   };
+}
+
+// =============================================================================
+// Conversational-onboarding sibling
+// =============================================================================
+//
+// Same return shape as deriveBriefFromWizard, different input source: the
+// conversational flow's capturedFacts (turns 1-4) + the AI extraction.
+// Sibling not generalised — the input shapes genuinely differ (wizard has
+// step3 targetCustomer + step4 voice preset; conversation has extraction +
+// no explicit target/voice capture), and forcing a shared deriver would
+// add a translation layer per call site. Two clean siblings per the
+// CLAUDE.md "siblings beat conditional optional fields" pattern.
+
+export type DeriveBriefFromConversationInput = {
+  /** Everything captured across turns 1-4 (extraction, services, brand,
+   *  offer). Each section is optional — a customer who skipped a turn
+   *  falls through to industry-template defaults. */
+  capturedFacts: ConversationCapturedFacts;
+  /** The customer's verified signup email — used as `business.email`.
+   *  The conversation flow does NOT capture a different email (turn 1
+   *  asks for the verification email; that's the only one we have). */
+  email: string;
+  /** Display name from `clients.name` (set at signup from the business
+   *  name the customer typed). Used as `business.name` when the
+   *  extraction did not surface a different one. */
+  fallbackBusinessName: string;
+};
+
+/** Convert conversational capturedFacts into a `ClientBrief` the
+ *  generators consume. Called by the conversation shell's turn-5 handoff
+ *  before invoking `runConversationGeneration`. */
+export function deriveBriefFromConversation(
+  input: DeriveBriefFromConversationInput,
+): ClientBrief {
+  const { capturedFacts: facts, email, fallbackBusinessName } = input;
+
+  // The extraction is the conversation's anchor — turn 1 + clarifying-
+  // question loop produced it. A missing extraction means a customer
+  // somehow reached turn 5 without one; fall back to generic so
+  // generation still runs (the template carries safe defaults).
+  const industry: IndustryKey = facts.extraction?.industry ?? 'generic';
+  const template = resolveIndustryTemplate(industry);
+  const industryDisplay =
+    facts.extraction?.industryFreeText?.trim() || template.displayName;
+
+  // Services — turn 2's customer-edited list, falling back to the
+  // template's defaults when turn 2 was skipped.
+  const services =
+    facts.services && facts.services.length > 0
+      ? facts.services
+      : [...template.defaultServices];
+
+  // Brand — turn 3's customer-picked colour + logo, falling back to the
+  // industry default + a derived secondary. Voice axes stay at neutral —
+  // the conversation flow does NOT capture a tone preset (skipped from
+  // the prompt's locked turn list); the brand row is written separately
+  // in turn 3 with the colours but voice stays at signup's 3/3/3.
+  const primaryColor =
+    facts.brand?.primaryColor?.trim() ||
+    INDUSTRY_PRIMARY_COLORS[template.key] ||
+    INDUSTRY_PRIMARY_COLORS.generic;
+  const secondaryColor =
+    facts.brand?.secondaryColor?.trim() || deriveSecondaryColor(primaryColor);
+  const brand: BrandObject = {
+    accentColor: primaryColor,
+    brandColors: [primaryColor, secondaryColor].filter(Boolean),
+    logoUrl: facts.brand?.logoUrl ?? null,
+    faviconUrl: null,
+    voice: NEUTRAL_VOICE,
+    audienceLine: facts.extraction?.specialty?.trim() || '',
+    industryCategory: industryDisplay,
+    topJobsToBeBooked: services.slice(0, 3),
+  };
+
+  // Funnel brief — derive from extraction + industry template, same shape
+  // as the wizard.
+  const funnelService = services[0] || template.defaultServices[0] || 'Get in touch for a quote';
+  const funnelCustomerPain = composeConversationCustomerPain({
+    specialty: facts.extraction?.specialty ?? '',
+    urgencyMode: template.urgencyMode,
+    industryDisplay: template.displayName,
+  });
+  const funnelGuarantee =
+    template.objectionHandlers[0]?.response ||
+    'Fixed-price quote before any work starts.';
+
+  // Offer — turn 4's accepted offer (snake_case in capturedFacts; the
+  // brief carries camelCase). Null when the customer chose Skip.
+  const offer: FunnelOffer | null = facts.offer
+    ? {
+        headline: facts.offer.headline,
+        promise: facts.offer.promise,
+        riskReversal: facts.offer.risk_reversal,
+        ctaText: facts.offer.cta_text,
+      }
+    : null;
+
+  return {
+    business: {
+      name: fallbackBusinessName,
+      ownerName: '',
+      phone: '',
+      email,
+      serviceArea: facts.extraction?.location?.trim() || '',
+      offer: '',
+      services,
+    },
+    industry: industryDisplay,
+    brand,
+    primaryIntent: derivePrimaryIntent(template.urgencyMode),
+    audience: 'mixed',
+    funnel: {
+      service: funnelService,
+      customerPain: funnelCustomerPain,
+      guarantee: funnelGuarantee,
+      testimonials: [],
+      offer,
+    },
+  };
+}
+
+function composeConversationCustomerPain(input: {
+  specialty: string;
+  urgencyMode: 'emergency-callout' | 'scheduled' | 'project' | 'mixed';
+  industryDisplay: string;
+}): string {
+  const audience = input.specialty.trim()
+    ? `A customer looking for ${input.specialty.trim()}`
+    : 'A customer';
+  switch (input.urgencyMode) {
+    case 'emergency-callout':
+      return `${audience} hits an urgent problem and needs a ${input.industryDisplay.toLowerCase()} on site today.`;
+    case 'scheduled':
+      return `${audience} wants ${input.industryDisplay.toLowerCase()} work done on a reliable schedule.`;
+    case 'project':
+      return `${audience} is planning a ${input.industryDisplay.toLowerCase()} project and needs a quote they can trust.`;
+    case 'mixed':
+      return `${audience} needs ${input.industryDisplay.toLowerCase()} work done — sometimes urgent, sometimes planned.`;
+  }
 }
 
 // --- internals --------------------------------------------------------------

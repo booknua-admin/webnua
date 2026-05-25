@@ -4,39 +4,79 @@
 // ConversationShell — the conversational onboarding chat for /sign-up.
 //
 // Session B owns: turn-1 freeform message → email capture → 6-digit code
-// verification → workspace provisioning → session mint → land at turn-2
-// placeholder.
+// verification → workspace provisioning → session mint → land at turn-2.
 //
-// Session C will fill in: AI extraction from turn-1, clarifying-question
-// loop, service picker (Dialog ≥6 / inline ≤5), brand step, generation
-// status, dashboard handoff.
+// Session C extends: AI extraction from turn 1 (with a clarifying-question
+// loop when confidence is low), services picker (turn 2), brand picker
+// (turn 3), offer iteration (turn 4), generation handoff (turn 5),
+// dashboard redirect on completion.
 //
 // State machine phases:
 //   turn-1-input     — bot asks "Tell me what you do and where", user types.
 //   awaiting-email   — bot asks for email, user types.
-//   awaiting-code    — code requested + sent, user types code in 6-digit grid.
+//   awaiting-code    — code requested + sent, user types 6 digits.
 //   verifying        — verify-code POST in flight.
-//   turn-2           — verified + session minted. Placeholder bubble. Session
-//                      C replaces this with the real next-turn surface.
+//   extracting       — /api/onboarding/extract-business in flight.
+//   clarifying       — bot asked a clarifying question, awaiting user reply.
+//   turn-2-services  — services checkbox UI mounted.
+//   turn-3-brand     — brand picker mounted.
+//   turn-4-offer     — offer-iteration card mounted.
+//   turn-5-generation — generation in flight or settled.
+//   done             — about to redirect to /dashboard.
+//
+// Persistence: every turn transition POSTs the full conversation_state via
+// /api/clients/[id]/conversation-state (per the locked "Save on every turn
+// transition" decision). Reloads call GET on mount + resume from the
+// stored `current_turn`. Failures surface inline; the shell can advance
+// locally even when persistence is down.
 //
 // Mobile UX:
 //   - sticky-bottom composer (ChatComposer)
 //   - auto-scroll to bottom on new message (scroll-into-view ref)
-//   - keyboard-avoidance via visualViewport listener that pads the message
-//     container so the composer stays above the keyboard
+//   - keyboard-avoidance via visualViewport listener
+//   - 44px tap targets on every action
 // =============================================================================
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { ChatBubble } from '@/components/shared/conversation/ChatBubble';
+import { ChatBrandPicker } from '@/components/shared/conversation/ChatBrandPicker';
 import { ChatComposer } from '@/components/shared/conversation/ChatComposer';
-import { ChatGenerationBubble } from '@/components/shared/conversation/ChatGenerationBubble';
+import {
+  ChatGenerationBubble,
+  type GenerationStatus,
+} from '@/components/shared/conversation/ChatGenerationBubble';
+import { ChatOfferCard } from '@/components/shared/conversation/ChatOfferCard';
+import { ChatServicePicker } from '@/components/shared/conversation/ChatServicePicker';
 import { TypingIndicator } from '@/components/shared/conversation/TypingIndicator';
 import { BrandMark } from '@/components/ui/BrandMark';
 import { Eyebrow } from '@/components/ui/eyebrow';
 import { Input } from '@/components/ui/input';
+import {
+  EXTRACTION_CONFIDENCE_THRESHOLD,
+  OFFER_REFINEMENT_LIMIT,
+  type ConversationBrandFacts,
+  type ConversationCapturedFacts,
+  type ConversationExtraction,
+  type ConversationMessage,
+  type ConversationOfferRow,
+  type ConversationState,
+} from '@/lib/onboarding/conversation-types';
+import { deriveBriefFromConversation } from '@/lib/onboarding/derive-brief';
+import { runConversationGeneration } from '@/lib/onboarding/trigger-generation';
 import { supabase } from '@/lib/supabase/client';
+import {
+  INDUSTRY_TEMPLATES,
+  resolveIndustryTemplate,
+  type IndustryKey,
+} from '@/lib/website/industry-templates';
+import {
+  generateFunnelOffer,
+  offerToRow,
+  type FunnelOffer,
+} from '@/lib/website/offer-generate';
+import { derivePalette } from '@/lib/website/color-derivation';
 import { cn } from '@/lib/utils';
 
 // ---------------------------------------------------------------------------
@@ -44,7 +84,7 @@ import { cn } from '@/lib/utils';
 
 type Author = 'bot' | 'user';
 
-type ChatMessage = {
+type LocalChatMessage = {
   id: string;
   author: Author;
   text: string;
@@ -56,7 +96,13 @@ type Phase =
   | 'requesting-code'
   | 'awaiting-code'
   | 'verifying'
-  | 'turn-2';
+  | 'extracting'
+  | 'clarifying'
+  | 'turn-2-services'
+  | 'turn-3-brand'
+  | 'turn-4-offer'
+  | 'turn-5-generation'
+  | 'done';
 
 type RequestCodeResponse = {
   success: boolean;
@@ -81,13 +127,35 @@ type VerifyCodeResponse = {
   attemptsRemaining?: number;
 };
 
-// ---------------------------------------------------------------------------
-// shell
+type ExtractResponse = {
+  extraction?: ConversationExtraction;
+  error?: string;
+  detail?: string;
+};
 
-const BOT_TURN1 = "Hey — I'm here to get your business live on Webnua. To start, tell me what you do and where (one sentence is fine).";
-const BOT_ASK_EMAIL = "Great. What's the best email to reach you on? I'll send a 6-digit code to verify it.";
-const BOT_CODE_SENT = (email: string) => `Code sent to ${email}. Type the 6 digits below — it expires in 10 minutes.`;
-const BOT_TURN2 = "Thanks — you're in. The next steps will land here shortly while we finish building the conversational flow. For now, head to your dashboard.";
+// ---------------------------------------------------------------------------
+// bot copy
+
+const BOT_TURN1 =
+  "Hey — I'm here to get your business live on Webnua. To start, tell me what you do and where (one sentence is fine).";
+const BOT_ASK_EMAIL =
+  "Great. What's the best email to reach you on? I'll send a 6-digit code to verify it.";
+const BOT_CODE_SENT = (email: string) =>
+  `Code sent to ${email}. Type the 6 digits below — it expires in 10 minutes.`;
+const BOT_POST_VERIFY = "You're in. Reading what you told me now…";
+const BOT_EXTRACTION_DONE = (e: ConversationExtraction) => {
+  const industryLine = e.industryFreeText ?? prettyIndustry(e.industry);
+  const tail = e.location ? ` in ${e.location}` : '';
+  return `Got it — ${industryLine}${tail}. Quick pass on what you offer next.`;
+};
+const BOT_TURN2_PROMPT =
+  "Tick the services you offer. We&apos;ll write your site around these.";
+const BOT_TURN3_PROMPT =
+  "Now your brand. Pick a colour and drop a logo if you have one — both optional.";
+const BOT_TURN4_PROMPT =
+  "Here&apos;s a draft offer for your funnel. Keep it, refine it, or write your own.";
+const BOT_TURN5_PROMPT =
+  "We&apos;re building your site + funnel now. This takes about a minute.";
 
 const RESEND_AVAILABLE_AFTER_MS = 10_000;
 
@@ -95,10 +163,19 @@ function newId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
+function prettyIndustry(key: IndustryKey): string {
+  const template = INDUSTRY_TEMPLATES[key];
+  return template?.displayName ?? key;
+}
+
+// =============================================================================
+// shell
+// =============================================================================
+
 export function ConversationShell() {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>('turn-1-input');
-  const [messages, setMessages] = useState<ChatMessage[]>([
+  const [messages, setMessages] = useState<LocalChatMessage[]>([
     { id: newId('bot'), author: 'bot', text: BOT_TURN1 },
   ]);
   const [botThinking, setBotThinking] = useState(false);
@@ -111,6 +188,28 @@ export function ConversationShell() {
   const [resendReadyAt, setResendReadyAt] = useState<number>(0);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
+  // Session C state — populated after verification.
+  const [clientId, setClientId] = useState<string | null>(null);
+  const [clientSlug, setClientSlug] = useState<string | null>(null);
+  const [capturedFacts, setCapturedFacts] = useState<ConversationCapturedFacts>({});
+  const [extraction, setExtraction] = useState<ConversationExtraction | null>(null);
+  // Per-turn local state — these are derived from / write into capturedFacts
+  // but kept separately so the turn UIs stay responsive without each keystroke
+  // costing a round-trip.
+  const [offerInFlight, setOfferInFlight] = useState<FunnelOffer | null>(null);
+  const [offerLoading, setOfferLoading] = useState(false);
+  const [offerError, setOfferError] = useState<string | null>(null);
+  // Generation status (turn 5).
+  const [genStatus, setGenStatus] = useState<GenerationStatus>('idle');
+  const [genError, setGenError] = useState<string | null>(null);
+  const [genSoftError, setGenSoftError] = useState<string | null>(null);
+
+  // Ref guards — once-only effects.
+  const hydratedRef = useRef(false);
+  const extractionStartedRef = useRef(false);
+  const initialOfferStartedRef = useRef(false);
+  const generationStartedRef = useRef(false);
+
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -118,6 +217,50 @@ export function ConversationShell() {
   const appendMessage = useCallback((author: Author, text: string) => {
     setMessages((prev) => [...prev, { id: newId(author), author, text }]);
   }, []);
+
+  // Persist conversation_state to the server. Fire-and-forget at the call
+  // site — the local React state already advanced, so a persistence failure
+  // shows inline but doesn't block forward progress. The route validates +
+  // upserts; the optimistic-concurrency check is opt-in (we don't use it —
+  // the chat surface is single-tab in practice).
+  const persistState = useCallback(
+    async (next: {
+      capturedFacts: ConversationCapturedFacts;
+      current_turn: number;
+      messages: LocalChatMessage[];
+    }) => {
+      if (!clientId) return; // pre-verify; nothing to persist.
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) return;
+        const payload: ConversationState = {
+          messages: next.messages.map(
+            (m): ConversationMessage => ({
+              id: m.id,
+              role: m.author,
+              content: m.text,
+              timestamp: new Date().toISOString(),
+            }),
+          ),
+          capturedFacts: next.capturedFacts,
+          current_turn: next.current_turn,
+          verified: true,
+        };
+        await fetch(`/api/clients/${clientId}/conversation-state`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(payload),
+        });
+      } catch (e) {
+        console.warn('[sign-up] conversation-state persist failed', e);
+      }
+    },
+    [clientId],
+  );
 
   // ---- auto-scroll + keyboard-avoidance ---------------------------------
   useEffect(() => {
@@ -142,15 +285,116 @@ export function ConversationShell() {
     };
   }, []);
 
-  // Re-render every second while in awaiting-code so the resend button can
-  // flip from "Resend in Ns" to "Resend code" without a stale-closure.
-  // We track wall-clock time in state so the resend timer math stays a pure
-  // function of state during render (no Date.now() at render time).
   useEffect(() => {
     if (phase !== 'awaiting-code') return;
     const t = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(t);
   }, [phase]);
+
+  // ---- resume effect ----------------------------------------------------
+  // On mount, if the customer is already authenticated (refresh after
+  // verify, possibly mid-flow), hydrate conversation_state and resume.
+  useEffect(() => {
+    if (hydratedRef.current) return;
+    hydratedRef.current = true;
+    void (async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const session = sessionData.session;
+      if (!session) return;
+      const metadataClientId =
+        typeof session.user.user_metadata?.client_id === 'string'
+          ? (session.user.user_metadata.client_id as string)
+          : null;
+      if (!metadataClientId) return;
+
+      const token = session.access_token;
+      try {
+        const res = await fetch(`/api/clients/${metadataClientId}/conversation-state`, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const body = (await res.json()) as { state?: ConversationState };
+        const state = body.state;
+        if (!state || !state.verified) return;
+
+        // Hydrate local state from the persisted thread.
+        setClientId(metadataClientId);
+        const slug =
+          typeof state.capturedFacts.clientSlug === 'string'
+            ? state.capturedFacts.clientSlug
+            : null;
+        if (slug) setClientSlug(slug);
+        else {
+          // Fallback — query the clients row directly (RLS-scoped to own).
+          const { data: clientRow } = await supabase
+            .from('clients')
+            .select('slug')
+            .eq('id', metadataClientId)
+            .maybeSingle();
+          const fallbackSlug = (clientRow as { slug?: string } | null)?.slug ?? null;
+          if (fallbackSlug) setClientSlug(fallbackSlug);
+        }
+        setCapturedFacts(state.capturedFacts);
+        if (state.capturedFacts.email) setEmail(state.capturedFacts.email);
+        if (state.capturedFacts.extraction) {
+          setExtraction(state.capturedFacts.extraction);
+        }
+        if (state.capturedFacts.firstMessage) {
+          setFirstMessage(state.capturedFacts.firstMessage);
+        }
+        // Hydrate messages — the route stores them as { id, role, content,
+        // timestamp }; map back to the local Author shape.
+        setMessages(
+          state.messages
+            .filter((m): m is ConversationMessage => Boolean(m && m.id && m.content))
+            .map(
+              (m): LocalChatMessage => ({
+                id: m.id,
+                author: m.role === 'user' ? 'user' : 'bot',
+                text: m.content,
+              }),
+            ),
+        );
+
+        // Resume at the persisted current_turn.
+        switch (state.current_turn) {
+          case 2:
+            // Verified but services not yet picked. If extraction is in
+            // capturedFacts, jump to turn-2 services; otherwise run
+            // extraction now.
+            if (state.capturedFacts.extraction) {
+              setPhase('turn-2-services');
+            } else if (state.capturedFacts.firstMessage) {
+              setPhase('extracting');
+              // The post-verify effect will fire the extraction call.
+            } else {
+              // Edge case: state is partial. Restart the flow conservatively.
+              setPhase('turn-1-input');
+            }
+            break;
+          case 3:
+            setPhase('turn-3-brand');
+            break;
+          case 4:
+            setPhase('turn-4-offer');
+            break;
+          case 5:
+            setPhase('turn-5-generation');
+            break;
+          case 6:
+            // Already past generation — route them straight to the dashboard.
+            router.push('/dashboard');
+            return;
+          default:
+            // No usable resume state — start fresh.
+            break;
+        }
+      } catch (e) {
+        console.warn('[sign-up] resume hydration failed', e);
+      }
+    })();
+  }, [router]);
 
   // ---- turn-1: capture the freeform answer ------------------------------
   const handleTurn1Send = useCallback(
@@ -160,8 +404,6 @@ export function ConversationShell() {
       appendMessage('user', text);
       setError(null);
       setBotThinking(true);
-      // Tiny artificial delay so the bot reply doesn't render in the same
-      // paint tick as the user message (no perceived "thinking").
       await new Promise((resolve) => setTimeout(resolve, 600));
       appendMessage('bot', BOT_ASK_EMAIL);
       setBotThinking(false);
@@ -184,9 +426,9 @@ export function ConversationShell() {
         return false;
       }
       if (body.success === false) {
-        // Fallback / retry path — code IS in the DB (or not), email did not
-        // arrive. Surface the message; the resend button takes them again.
-        setInfo(body.message ?? 'We had trouble sending your code — tap Resend below to try again.');
+        setInfo(
+          body.message ?? 'We had trouble sending your code — tap Resend below to try again.',
+        );
         return true;
       }
       setInfo(null);
@@ -233,11 +475,11 @@ export function ConversationShell() {
       setCode(['', '', '', '', '', '']);
       setNowMs(now);
       setResendReadyAt(now + RESEND_AVAILABLE_AFTER_MS);
-      appendMessage('bot', "Fresh code on the way — same 6-digit drill.");
+      appendMessage('bot', 'Fresh code on the way — same 6-digit drill.');
     }
   }, [appendMessage, email, requestCode, resendReadyAt]);
 
-  // ---- code verification -------------------------------------------------
+  // ---- code verification → kick off extraction --------------------------
   const handleVerify = useCallback(
     async (joined: string) => {
       setError(null);
@@ -258,19 +500,23 @@ export function ConversationShell() {
       }
       const body = (await response.json().catch(() => ({}))) as VerifyCodeResponse;
 
-      if (!response.ok || !body.success || !body.email || !body.password) {
+      if (
+        !response.ok ||
+        !body.success ||
+        !body.email ||
+        !body.password ||
+        !body.clientId ||
+        !body.clientSlug
+      ) {
         setError(describeVerifyError(body, response.status));
         setBotThinking(false);
         setPhase('awaiting-code');
-        // On a wrong-code we reset the grid for the next attempt.
         if (body.error === 'wrong-code' || body.error === 'code-expired-or-invalid') {
           setCode(['', '', '', '', '', '']);
         }
         return;
       }
 
-      // Mint the session client-side using the password the route just set.
-      // The UserProvider's auth listener picks it up automatically.
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email: body.email,
         password: body.password,
@@ -282,9 +528,14 @@ export function ConversationShell() {
         return;
       }
 
-      appendMessage('bot', BOT_TURN2);
+      setClientId(body.clientId);
+      setClientSlug(body.clientSlug);
+      appendMessage('bot', BOT_POST_VERIFY);
       setBotThinking(false);
-      setPhase('turn-2');
+      // Transition to 'extracting'. The phase-change effect below picks
+      // this up on the next render (when setClientId has also settled)
+      // and fires runExtraction.
+      setPhase('extracting');
     },
     [appendMessage, email, firstMessage],
   );
@@ -294,13 +545,11 @@ export function ConversationShell() {
     (index: number, raw: string) => {
       const cleaned = raw.replace(/\D/g, '');
       if (cleaned.length > 1) {
-        // paste handling — split across the grid from `index` onwards.
         setCode((prev) => {
           const next = [...prev];
           for (let i = 0; i < 6 - index; i += 1) {
             next[index + i] = cleaned[i] ?? next[index + i];
           }
-          // If the paste filled the grid, kick verification.
           if (next.every((d) => d.length === 1)) {
             void handleVerify(next.join(''));
           }
@@ -312,7 +561,6 @@ export function ConversationShell() {
         const next = [...prev];
         next[index] = cleaned;
         if (cleaned && index < 5) {
-          // auto-advance to the next field
           window.setTimeout(() => {
             const el = document.getElementById(`code-${index + 1}`) as HTMLInputElement | null;
             el?.focus();
@@ -334,30 +582,447 @@ export function ConversationShell() {
     }
   };
 
+  // ---- extraction (post-verify) -----------------------------------------
+  // `handleExtractionDone` is declared FIRST so `runExtraction` can close
+  // over it cleanly. Each appends two-or-three new bot messages, updates
+  // capturedFacts, persists, and advances the phase.
+
+  const handleExtractionDone = useCallback(
+    async (e: ConversationExtraction) => {
+      setExtraction(e);
+      if (e.confidence < EXTRACTION_CONFIDENCE_THRESHOLD && e.ambiguities.length > 0) {
+        const question = composeClarifyingQuestion(e);
+        const nextFacts: ConversationCapturedFacts = {
+          ...capturedFacts,
+          firstMessage,
+          email,
+          clientSlug: clientSlug ?? capturedFacts.clientSlug,
+          extraction: e,
+          clarifyingQuestion: question,
+        };
+        const nextMessages: LocalChatMessage[] = [
+          ...messages,
+          { id: newId('bot'), author: 'bot', text: question },
+        ];
+        setCapturedFacts(nextFacts);
+        setMessages(nextMessages);
+        setPhase('clarifying');
+        void persistState({
+          capturedFacts: nextFacts,
+          current_turn: 1,
+          messages: nextMessages,
+        });
+        return;
+      }
+
+      const confirmation = BOT_EXTRACTION_DONE(e);
+      const nextFacts: ConversationCapturedFacts = {
+        ...capturedFacts,
+        firstMessage,
+        email,
+        clientSlug: clientSlug ?? capturedFacts.clientSlug,
+        extraction: e,
+        clarifyingQuestion: undefined,
+      };
+      const nextMessages: LocalChatMessage[] = [
+        ...messages,
+        { id: newId('bot'), author: 'bot', text: confirmation },
+        { id: newId('bot'), author: 'bot', text: BOT_TURN2_PROMPT },
+      ];
+      setCapturedFacts(nextFacts);
+      setMessages(nextMessages);
+      setPhase('turn-2-services');
+      void persistState({
+        capturedFacts: nextFacts,
+        current_turn: 2,
+        messages: nextMessages,
+      });
+    },
+    [capturedFacts, clientSlug, email, firstMessage, messages, persistState],
+  );
+
+  const runExtraction = useCallback(
+    async (priorMessages?: string[]) => {
+      if (!clientId || !firstMessage) return;
+      if (extractionStartedRef.current && !priorMessages) return;
+      extractionStartedRef.current = true;
+      setBotThinking(true);
+      const fallback: ConversationExtraction = {
+        industry: 'generic',
+        industryFreeText: null,
+        location: '',
+        specialty: '',
+        teamSize: '',
+        yearsInBusiness: '',
+        mentionedServices: [],
+        confidence: 0,
+        ambiguities: [],
+      };
+      try {
+        const res = await fetch('/api/onboarding/extract-business', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            firstMessage,
+            ...(priorMessages ? { priorAttempt: { messages: priorMessages } } : {}),
+          }),
+        });
+        const body = (await res.json().catch(() => ({}))) as ExtractResponse;
+        if (!res.ok || !body.extraction) {
+          console.warn('[sign-up] extraction failed', body);
+          await handleExtractionDone(fallback);
+        } else {
+          await handleExtractionDone(body.extraction);
+        }
+      } catch (e) {
+        console.warn('[sign-up] extraction network error', e);
+        await handleExtractionDone(fallback);
+      } finally {
+        setBotThinking(false);
+      }
+    },
+    [clientId, firstMessage, handleExtractionDone],
+  );
+
+  // Fire the extraction once we land in 'extracting' for the first time.
+  // The once-only guard lives inside runExtraction (set after `setBotThinking`
+  // so a guarded re-entry doesn't toggle the typing indicator). The lint's
+  // "setState in effect via async call" trigger is the legitimate pattern
+  // for kicking off an async API call when an external state value
+  // (`phase`) changes — same shape as the wizard-shell's initial-mount
+  // generation trigger; disabled inline.
+  useEffect(() => {
+    if (phase !== 'extracting') return;
+    if (!clientId || !firstMessage) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void runExtraction();
+  }, [phase, clientId, firstMessage, runExtraction]);
+
+  // ---- clarifying-question reply ----------------------------------------
+  // Re-extract with the clarifying answer concatenated. `runExtraction`
+  // bypasses its once-only guard when `priorMessages` is supplied, so the
+  // ref doesn't need a reset here.
+  const handleClarifyingReply = useCallback(
+    async (text: string) => {
+      if (phase !== 'clarifying') return;
+      appendMessage('user', text);
+      setPhase('extracting');
+      const question = capturedFacts.clarifyingQuestion ?? '';
+      const priorMessages = [firstMessage, question, text].filter(Boolean);
+      // Slight delay so the user message renders before the typing indicator.
+      await new Promise((r) => setTimeout(r, 250));
+      void runExtraction(priorMessages);
+    },
+    [appendMessage, capturedFacts.clarifyingQuestion, firstMessage, phase, runExtraction],
+  );
+
+  // ---- turn 2: services -------------------------------------------------
+  const advanceToTurn3 = useCallback(
+    (services: string[]) => {
+      const nextFacts: ConversationCapturedFacts = { ...capturedFacts, services };
+      const nextMessages: LocalChatMessage[] = [
+        ...messages,
+        {
+          id: newId('user'),
+          author: 'user',
+          text:
+            services.length > 0
+              ? services.length === 1
+                ? `Just one for now: ${services[0]}`
+                : `${services.length} services picked`
+              : '(no services picked)',
+        },
+        { id: newId('bot'), author: 'bot', text: BOT_TURN3_PROMPT },
+      ];
+      setCapturedFacts(nextFacts);
+      setMessages(nextMessages);
+      setPhase('turn-3-brand');
+      void persistState({
+        capturedFacts: nextFacts,
+        current_turn: 3,
+        messages: nextMessages,
+      });
+    },
+    [capturedFacts, messages, persistState],
+  );
+
+  // ---- turn 3: brand ----------------------------------------------------
+  const advanceToTurn4 = useCallback(
+    async (brand: ConversationBrandFacts | null) => {
+      const nextFacts: ConversationCapturedFacts = {
+        ...capturedFacts,
+        brand: brand ?? undefined,
+      };
+      const nextMessages: LocalChatMessage[] = [
+        ...messages,
+        {
+          id: newId('user'),
+          author: 'user',
+          text: brand
+            ? `Brand colour ${brand.primaryColor}${brand.logoUrl ? ' + logo uploaded' : ''}`
+            : '(brand skipped — use the industry default)',
+        },
+        { id: newId('bot'), author: 'bot', text: BOT_TURN4_PROMPT },
+      ];
+      setCapturedFacts(nextFacts);
+      setMessages(nextMessages);
+      setPhase('turn-4-offer');
+
+      // Write through to the brands row so generation picks up the values
+      // when it fires from turn 5. Fire-and-forget — failures are logged
+      // and the offer / generation flow continues with whatever the brand
+      // editor saves later. Mirrors Step4Brand's brand-update shape.
+      if (brand && clientId) {
+        const industryKey: IndustryKey = extraction?.industry ?? 'generic';
+        const palette = derivePalette({
+          primary: brand.primaryColor,
+          secondary: brand.secondaryColor,
+          industry: industryKey,
+        });
+        void supabase
+          .from('brands')
+          .update({
+            accent_color: brand.primaryColor,
+            brand_colors: [brand.primaryColor, brand.secondaryColor ?? '']
+              .filter(Boolean),
+            derived_palette: palette as never,
+            ...(brand.logoUrl ? { logo_url: brand.logoUrl } : {}),
+          } as never)
+          .eq('client_id', clientId)
+          .then(({ error: brandErr }) => {
+            if (brandErr) console.warn('[sign-up] brand write failed', brandErr.message);
+          });
+      }
+
+      void persistState({
+        capturedFacts: nextFacts,
+        current_turn: 4,
+        messages: nextMessages,
+      });
+    },
+    [capturedFacts, clientId, extraction?.industry, messages, persistState],
+  );
+
+  // ---- turn 4: offer ----------------------------------------------------
+  const offerInputs = useMemo(() => {
+    const template = extraction
+      ? resolveIndustryTemplate(extraction.industry)
+      : null;
+    const services = capturedFacts.services ?? template?.defaultServices ?? [];
+    const funnelService = services[0] || template?.defaultServices[0] || 'Get in touch for a quote';
+    const specialty = extraction?.specialty?.trim() || '';
+    const audience = specialty
+      ? `A customer looking for ${specialty}`
+      : 'A customer';
+    const industryDisplay = template?.displayName ?? extraction?.industry ?? 'this business';
+    const customerPain = (() => {
+      switch (template?.urgencyMode) {
+        case 'emergency-callout':
+          return `${audience} hits an urgent problem and needs a ${industryDisplay.toLowerCase()} on site today.`;
+        case 'scheduled':
+          return `${audience} wants ${industryDisplay.toLowerCase()} work done on a reliable schedule.`;
+        case 'project':
+          return `${audience} is planning a ${industryDisplay.toLowerCase()} project and needs a quote they can trust.`;
+        case 'mixed':
+        default:
+          return `${audience} needs ${industryDisplay.toLowerCase()} work done — sometimes urgent, sometimes planned.`;
+      }
+    })();
+    const guarantee =
+      template?.objectionHandlers[0]?.response ||
+      'Fixed-price quote before any work starts.';
+    return {
+      industry: industryDisplay,
+      serviceArea: extraction?.location?.trim() || '',
+      funnelService,
+      funnelCustomerPain: customerPain,
+      funnelGuarantee: guarantee,
+    };
+  }, [capturedFacts.services, extraction]);
+
+  const callOfferGenerator = useCallback(async () => {
+    initialOfferStartedRef.current = true;
+    setOfferLoading(true);
+    setOfferError(null);
+    try {
+      const offer = await generateFunnelOffer(offerInputs);
+      setOfferInFlight(offer);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setOfferError(msg);
+    } finally {
+      setOfferLoading(false);
+    }
+  }, [offerInputs]);
+
+  // Initial offer generation when we enter turn 4 — only fires when the
+  // customer doesn't already have a persisted offer (resume case feeds
+  // the picker via the `displayedOffer` derivation below). The once-only
+  // guard lives inside `callOfferGenerator` (refs are written inside
+  // callbacks, not effects).
+  useEffect(() => {
+    if (phase !== 'turn-4-offer') return;
+    if (initialOfferStartedRef.current) return;
+    if (capturedFacts.offer) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void callOfferGenerator();
+  }, [phase, capturedFacts.offer, callOfferGenerator]);
+
+  // Render-time derivation: prefer the freshly-generated offer (in-flight
+  // local state) over the persisted one. Keeps the offer card in sync
+  // through a resume + a subsequent refine without ever calling setState
+  // from an effect.
+  const displayedOffer: FunnelOffer | null =
+    offerInFlight ??
+    (capturedFacts.offer
+      ? {
+          headline: capturedFacts.offer.headline,
+          promise: capturedFacts.offer.promise,
+          riskReversal: capturedFacts.offer.risk_reversal,
+          ctaText: capturedFacts.offer.cta_text,
+        }
+      : null);
+
+  const advanceToTurn5 = useCallback(
+    (offer: FunnelOffer | null) => {
+      const offerRow: ConversationOfferRow | null = offer ? offerToRow(offer) : null;
+      const nextFacts: ConversationCapturedFacts = {
+        ...capturedFacts,
+        offer: offerRow,
+      };
+      const nextMessages: LocalChatMessage[] = [
+        ...messages,
+        {
+          id: newId('user'),
+          author: 'user',
+          text: offer
+            ? `Offer locked: "${offer.headline}"`
+            : '(offer skipped — placeholder copy will sit here)',
+        },
+        { id: newId('bot'), author: 'bot', text: BOT_TURN5_PROMPT },
+      ];
+      setCapturedFacts(nextFacts);
+      setMessages(nextMessages);
+      setPhase('turn-5-generation');
+      void persistState({
+        capturedFacts: nextFacts,
+        current_turn: 5,
+        messages: nextMessages,
+      });
+    },
+    [capturedFacts, messages, persistState],
+  );
+
+  const handleOfferRefine = useCallback(async () => {
+    const used = capturedFacts.offerRefinementsUsed ?? 0;
+    if (used >= OFFER_REFINEMENT_LIMIT) return;
+    const nextFacts: ConversationCapturedFacts = {
+      ...capturedFacts,
+      offerRefinementsUsed: used + 1,
+    };
+    setCapturedFacts(nextFacts);
+    // Persist the counter immediately so a refresh mid-refine doesn't
+    // "give back" the refinement.
+    void persistState({
+      capturedFacts: nextFacts,
+      current_turn: 4,
+      messages,
+    });
+    await callOfferGenerator();
+  }, [capturedFacts, callOfferGenerator, messages, persistState]);
+
+  // ---- turn 5: generation ----------------------------------------------
+  const runGeneration = useCallback(async () => {
+    if (generationStartedRef.current) return;
+    generationStartedRef.current = true;
+    if (!clientId || !clientSlug) {
+      setGenStatus('failed');
+      setGenError('Missing client context — please refresh and try again.');
+      generationStartedRef.current = false;
+      return;
+    }
+    setGenStatus('running');
+    setGenError(null);
+    setGenSoftError(null);
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) {
+      setGenStatus('failed');
+      setGenError('Not signed in — please refresh and verify again.');
+      return;
+    }
+
+    const brief = deriveBriefFromConversation({
+      capturedFacts,
+      email,
+      fallbackBusinessName:
+        extraction?.industryFreeText?.trim() ||
+        (extraction ? prettyIndustry(extraction.industry) : 'My business'),
+    });
+
+    // No onProgress sink — stage progression inside ChatGenerationBubble
+    // is timer-driven, not event-driven. Real event-streaming is a
+    // separate session (per the GenerationSplash comment); the
+    // GenerationProgressEvent type is exported but not consumed here.
+    const result = await runConversationGeneration({
+      clientId,
+      clientSlug,
+      token,
+      brief,
+    });
+
+    if (!result.ok) {
+      setGenStatus('failed');
+      setGenError(result.error);
+      // Allow retry — clear the once-only guard.
+      generationStartedRef.current = false;
+      return;
+    }
+    setGenStatus('ready');
+    if (result.softError) setGenSoftError(result.softError);
+    // Mark conversation_state as "post-generation" (current_turn = 6) so a
+    // subsequent visit redirects straight to the dashboard.
+    void persistState({
+      capturedFacts,
+      current_turn: 6,
+      messages,
+    });
+  }, [capturedFacts, clientId, clientSlug, email, extraction, messages, persistState]);
+
+  // Trigger generation when we enter turn 5. Once-only guard inside
+  // runGeneration itself; the effect just dispatches.
+  useEffect(() => {
+    if (phase !== 'turn-5-generation') return;
+    if (generationStartedRef.current) return;
+    void runGeneration();
+  }, [phase, runGeneration]);
+
+  const handleGenerationRetry = useCallback(() => {
+    // Reset the guard so runGeneration's internal check lets a fresh
+    // attempt through.
+    generationStartedRef.current = false;
+    void runGeneration();
+  }, [runGeneration]);
+
+  const handleGenerationContinue = useCallback(() => {
+    router.push('/dashboard');
+  }, [router]);
+
   // ---- render slots ------------------------------------------------------
   const resendSecondsLeft = Math.max(0, Math.ceil((resendReadyAt - nowMs) / 1000));
   const canResend = phase === 'awaiting-code' && resendSecondsLeft <= 0;
 
-  const composerProps = (() => {
-    switch (phase) {
-      case 'turn-1-input':
-        return {
-          placeholder: "e.g. I'm a sparkie in Cottesloe doing residential rewires.",
-          disabled: botThinking,
-          sendLabel: 'Send',
-          onSend: handleTurn1Send,
-        };
-      case 'awaiting-email':
-        // Email-capture renders an Input inside a bubble (richer affordance);
-        // composer disabled in this phase.
-        return null;
-      case 'requesting-code':
-      case 'awaiting-code':
-      case 'verifying':
-      case 'turn-2':
-        return null;
-    }
-  })();
+  const showTurn1Composer = phase === 'turn-1-input';
+  const showClarifyingComposer = phase === 'clarifying';
+
+  const industryForBrandStep: IndustryKey = extraction?.industry ?? 'generic';
+  const servicesCatalogue = extraction
+    ? resolveIndustryTemplate(extraction.industry).defaultServices
+    : INDUSTRY_TEMPLATES.generic.defaultServices;
+  const industryDisplay = extraction
+    ? prettyIndustry(extraction.industry)
+    : 'Your business';
 
   return (
     <div className="fixed inset-0 flex w-full flex-col bg-paper">
@@ -366,10 +1031,7 @@ export function ConversationShell() {
         <Eyebrow tone="quiet">{'// Webnua platform'}</Eyebrow>
       </div>
 
-      <div
-        ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto"
-      >
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-3 px-4 py-6">
           {messages.map((m) => (
             <ChatBubble key={m.id} author={m.author}>
@@ -396,12 +1058,12 @@ export function ConversationShell() {
                     value={emailDraft}
                     onChange={(e) => setEmailDraft(e.target.value)}
                     autoFocus
-                    className="min-h-[44px]"
+                    className="min-h-[44px] text-base sm:text-[14px]"
                   />
                   <button
                     type="submit"
                     disabled={botThinking}
-                    className="inline-flex h-11 items-center justify-center rounded-md bg-rust px-4 text-[13px] font-bold text-paper hover:bg-rust-deep disabled:opacity-50"
+                    className="inline-flex h-11 min-h-[44px] items-center justify-center rounded-md bg-rust px-4 text-[13px] font-bold text-paper hover:bg-rust-deep disabled:opacity-50"
                   >
                     {botThinking ? 'Sending…' : 'Send me a code →'}
                   </button>
@@ -450,9 +1112,7 @@ export function ConversationShell() {
                         'disabled:cursor-not-allowed',
                       )}
                     >
-                      {canResend
-                        ? 'Resend code'
-                        : `Resend in ${resendSecondsLeft}s`}
+                      {canResend ? 'Resend code' : `Resend in ${resendSecondsLeft}s`}
                     </button>
                     {phase === 'verifying' ? (
                       <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink-quiet">
@@ -467,20 +1127,71 @@ export function ConversationShell() {
             </ChatBubble>
           ) : null}
 
-          {phase === 'turn-2' ? (
+          {phase === 'turn-2-services' ? (
             <ChatBubble
               author="bot"
               rich={
-                <div className="flex flex-col gap-3">
-                  <ChatGenerationBubble />
-                  <button
-                    type="button"
-                    onClick={() => router.push('/dashboard')}
-                    className="inline-flex h-11 items-center justify-center rounded-md bg-rust px-4 text-[13px] font-bold text-paper hover:bg-rust-deep"
-                  >
-                    Open my dashboard →
-                  </button>
-                </div>
+                <ChatServicePicker
+                  industryName={industryDisplay}
+                  options={servicesCatalogue}
+                  preTicked={extraction?.mentionedServices ?? []}
+                  initial={capturedFacts.services}
+                  onSubmit={(services) => advanceToTurn3(services)}
+                  onSkip={() => advanceToTurn3([])}
+                />
+              }
+            >
+              {null}
+            </ChatBubble>
+          ) : null}
+
+          {phase === 'turn-3-brand' ? (
+            <ChatBubble
+              author="bot"
+              rich={
+                <ChatBrandPicker
+                  industryKey={industryForBrandStep}
+                  initial={capturedFacts.brand ?? null}
+                  onSubmit={(brand) => void advanceToTurn4(brand)}
+                  onSkip={() => void advanceToTurn4(null)}
+                />
+              }
+            >
+              {null}
+            </ChatBubble>
+          ) : null}
+
+          {phase === 'turn-4-offer' ? (
+            <ChatBubble
+              author="bot"
+              rich={
+                <ChatOfferCard
+                  offer={displayedOffer}
+                  refinementsUsed={capturedFacts.offerRefinementsUsed ?? 0}
+                  loading={offerLoading}
+                  error={offerError}
+                  onAccept={(o) => advanceToTurn5(o)}
+                  onRefine={() => void handleOfferRefine()}
+                  onUseMyOwn={(o) => advanceToTurn5(o)}
+                  onSkip={() => advanceToTurn5(null)}
+                />
+              }
+            >
+              {null}
+            </ChatBubble>
+          ) : null}
+
+          {phase === 'turn-5-generation' ? (
+            <ChatBubble
+              author="bot"
+              rich={
+                <ChatGenerationBubble
+                  status={genStatus}
+                  errorMessage={genError ?? undefined}
+                  softError={genSoftError ?? undefined}
+                  onRetry={handleGenerationRetry}
+                  onContinue={handleGenerationContinue}
+                />
               }
             >
               {null}
@@ -512,9 +1223,46 @@ export function ConversationShell() {
         </div>
       </div>
 
-      {composerProps ? <ChatComposer {...composerProps} /> : null}
+      {showTurn1Composer ? (
+        <ChatComposer
+          placeholder="e.g. I'm a sparkie in Cottesloe doing residential rewires."
+          disabled={botThinking}
+          sendLabel="Send"
+          onSend={handleTurn1Send}
+        />
+      ) : null}
+      {showClarifyingComposer ? (
+        <ChatComposer
+          placeholder="Type your answer…"
+          disabled={botThinking}
+          sendLabel="Send"
+          onSend={handleClarifyingReply}
+        />
+      ) : null}
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// helpers
+
+/** Build a clarifying question from the model's ambiguities list. We take
+ *  the first ambiguity (the model lists them in priority order) and frame
+ *  it as a single sentence the bot can ask. Keeps the chat momentum.
+ *
+ *  The model returns ambiguities as either:
+ *    - "industry — \"do houses\" could be cleaning, painting, or builder"
+ *    - "which side of HVAC — heating only, cooling only, or both"
+ *  We strip the leading "key — " framing for a cleaner question. */
+function composeClarifyingQuestion(e: ConversationExtraction): string {
+  const first = e.ambiguities[0]?.trim();
+  if (!first) {
+    return "I want to make sure I got that right — could you tell me a bit more about your trade and where you work?";
+  }
+  // Pull out the explanation half if the model used "key — explanation".
+  const dash = first.indexOf('—');
+  const body = dash > -1 ? first.slice(dash + 1).trim() : first;
+  return `One quick thing — ${body}?`;
 }
 
 // ---------------------------------------------------------------------------
