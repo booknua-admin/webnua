@@ -37,7 +37,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { generateFunnelStub } from '@/lib/funnel/generation-stub';
-import { createWebsiteForClient } from '@/lib/clients/create-client';
+import { generateSiteStub } from '@/lib/website/site-generation-stub';
 import { deriveBriefFromWizard } from '@/lib/onboarding/derive-brief';
 import {
   INITIAL_WIZARD_STATE,
@@ -51,6 +51,7 @@ import {
   type WizardStepId,
 } from '@/lib/onboarding/types';
 import { supabase } from '@/lib/supabase/client';
+import type { WizardAssetsResult } from '@/app/api/clients/[id]/wizard-assets/route';
 
 import { Step1Industry } from './_steps/Step1Industry';
 import { Step2Business } from './_steps/Step2Business';
@@ -89,7 +90,14 @@ export function WizardShell({
   const [state, setState] = useState<WizardState>(initialState ?? INITIAL_WIZARD_STATE);
   const [persistError, setPersistError] = useState<string | null>(null);
   const [genState, setGenState] = useState<'idle' | 'running' | 'ready' | 'failed'>('idle');
+  const [genError, setGenError] = useState<string | null>(null);
   const generationStartedRef = useRef(false);
+  // Stamp `wizard_completed_at` the moment step 7 is reached — NOT just on
+  // the "See my dashboard" CTA. Most customers close the tab on step 7
+  // (the success surface) so the CTA-only stamp never fires. The ref
+  // prevents duplicate writes if step 7 re-renders (state updates / retry
+  // effects fire) before navigation.
+  const completionStampedRef = useRef(false);
 
   const persist = useCallback(
     async (next: WizardState, opts?: { complete?: boolean }) => {
@@ -125,11 +133,28 @@ export function WizardShell({
   // Background site + funnel generation. Fires when step 4 first commits.
   // The brief is derived from whatever the wizard has so far; skipped
   // steps fall back to template + signup defaults.
+  //
+  // Persistence note: BOTH the website and funnel insert paths route through
+  // /api/clients/[id]/wizard-assets (service-client write) rather than the
+  // browser supabase client. This is because:
+  //
+  //   (1) `funnels_insert` RLS requires `private.is_operator()` (migration
+  //       0014) — a customer-role wizard cannot INSERT funnels via the
+  //       browser path. Every Pattern B wizard run prior to this routing
+  //       persisted 0 funnels because of this silent denial.
+  //   (2) The route runs an idempotency probe FIRST: if a website OR funnel
+  //       already exists for the client, the matching arm is skipped. This
+  //       is the fix for `website_count = 2` rows showing up when a customer
+  //       refreshed mid-flow.
+  //   (3) Errors from the route surface here as `setGenError(msg)` rather
+  //       than `console.warn` + silent advance — the customer sees an
+  //       actionable banner on step 7 and can retry.
   const triggerGeneration = useCallback(
     async (latestState: WizardState) => {
       if (generationStartedRef.current) return;
       generationStartedRef.current = true;
       setGenState('running');
+      setGenError(null);
 
       const brief = deriveBriefFromWizard({
         state: latestState,
@@ -138,47 +163,140 @@ export function WizardShell({
         fallbackIndustry,
       });
 
-      // Two retries with exponential-backoff (1s, 3s). After two fails we
-      // park 'failed' — step 7 surfaces the "taking longer than expected"
-      // message; the customer can retry from step 7 if it never lands.
-      // Resolve the auth user id once — `createWebsiteForClient` stamps it
-      // on website_versions.created_by + the funnel insert needs the same.
-      const { data: userData } = await supabase.auth.getUser();
-      const createdByUserId = userData.user?.id;
-      if (!createdByUserId) {
+      // Resolve auth token + idempotency state up front. If either fails
+      // we park 'failed' immediately — no point running the generators.
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) {
+        const msg = 'Not signed in — cannot generate.';
+        console.error('[wizard] generation aborted — no auth token');
+        setGenError(msg);
         setGenState('failed');
+        // Allow a future retry — clear the ref so retryGeneration() can fire
+        // again once the session is back.
+        generationStartedRef.current = false;
         return;
       }
 
+      // Idempotency probe — has generation already produced assets for
+      // this client? Skip the expensive generators if so. This is the
+      // resume-mid-wizard path (close tab on step 5, come back, /onboarding
+      // re-mounts WizardShell and runs the initial-state effect below).
+      let alreadyHasWebsite = false;
+      let alreadyHasFunnel = false;
+      try {
+        const probeRes = await fetch(`/api/clients/${clientId}/wizard-assets`, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (probeRes.ok) {
+          const probe = (await probeRes.json()) as {
+            hasWebsite: boolean;
+            hasFunnel: boolean;
+          };
+          alreadyHasWebsite = probe.hasWebsite;
+          alreadyHasFunnel = probe.hasFunnel;
+        } else {
+          console.error('[wizard] wizard-assets probe failed', probeRes.status);
+          // Continue — probe failure shouldn't block; the route's POST
+          // path will re-probe before each insert anyway.
+        }
+      } catch (e) {
+        console.error('[wizard] wizard-assets probe network error', e);
+      }
+
+      if (alreadyHasWebsite && alreadyHasFunnel) {
+        // Nothing left to do — mark ready immediately.
+        setGenState('ready');
+        return;
+      }
+
+      // Two retries with exponential-backoff (1s, 3s). After two fails we
+      // park 'failed' — step 7 surfaces the "taking longer than expected"
+      // message; the customer can retry from step 7 if it never lands.
       const attempts = [0, 1000, 3000];
+      let lastError: string | null = null;
       for (let i = 0; i < attempts.length; i += 1) {
         if (attempts[i] > 0) {
           await sleep(attempts[i]);
         }
         try {
-          // Website FIRST — the create flow inserts (website, draft version,
-          // brand seed if needed) atomically per call site. The wizard's
-          // own brand-step writes are independent — that's the brand
-          // editor's surface, not the generator's.
-          await createWebsiteForClient({
-            clientId,
-            clientSlug,
-            brief,
-            createdByUserId,
-          });
-          // Funnel — best-effort. A wizard-only customer may never wire
-          // a funnel offer (the four-field generator is operator-concierge);
-          // if generation fails, the website success isn't shadowed.
-          void generateFunnelStub(brief, { clientId }).catch((e) => {
-            console.warn('[wizard] funnel generation failed (best-effort)', e);
-          });
+          // Run the generators in PARALLEL (independent calls; the website
+          // generator is the heavy one, funnel is lighter). Each generator
+          // returns the in-memory section data; persistence happens via
+          // the wizard-assets POST below.
+          const [siteResult, funnelResult] = await Promise.all([
+            alreadyHasWebsite ? Promise.resolve(null) : generateSiteStub(brief, { clientId }),
+            alreadyHasFunnel ? Promise.resolve(null) : generateFunnelStub(brief, { clientId }),
+          ]);
 
-          setGenState('ready');
-          return;
+          // POST to wizard-assets to persist whichever arms produced content.
+          // The route re-probes for idempotency before each insert — a
+          // concurrent run (e.g. step 4 commit + step 7 retry) can't double-
+          // create.
+          const persistRes = await fetch(`/api/clients/${clientId}/wizard-assets`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              brief,
+              clientSlug,
+              site: siteResult,
+              funnel: funnelResult,
+            }),
+          });
+          if (!persistRes.ok) {
+            const errBody = (await persistRes.json().catch(() => ({}))) as { error?: string };
+            throw new Error(
+              `wizard-assets POST ${persistRes.status}: ${errBody.error ?? 'unknown'}`,
+            );
+          }
+          const result = (await persistRes.json()) as WizardAssetsResult;
+
+          // Partial failure — one arm persisted, the other errored. We
+          // surface the error but treat the run as 'ready' if at least one
+          // asset is in place (so step 7 doesn't lock on a recoverable
+          // funnel-only failure). The error string carries the diagnostic.
+          const websiteOk =
+            result.websiteCreated || result.websiteSkipped || alreadyHasWebsite;
+          const funnelOk =
+            result.funnelCreated || result.funnelSkipped || alreadyHasFunnel;
+
+          if (result.errors.website) {
+            console.error('[wizard] website persistence error', result.errors.website);
+          }
+          if (result.errors.funnel) {
+            console.error('[wizard] funnel persistence error', result.errors.funnel);
+          }
+
+          if (websiteOk && funnelOk) {
+            // At least one of each landed (or already existed). 'ready'.
+            // If a soft error came back on either arm we still set 'ready'
+            // because the asset exists somewhere down the chain — but we
+            // surface the message inline so the operator sees it.
+            const softMsg =
+              result.errors.website ?? result.errors.funnel ?? null;
+            if (softMsg) setGenError(softMsg);
+            setGenState('ready');
+            return;
+          }
+
+          // Hard failure on at least one required arm — retry.
+          lastError =
+            result.errors.website ?? result.errors.funnel ?? 'unknown persistence failure';
+          throw new Error(lastError);
         } catch (error) {
-          console.warn(`[wizard] generation attempt ${i + 1} failed`, error);
+          const msg = error instanceof Error ? error.message : String(error);
+          console.error(`[wizard] generation attempt ${i + 1} failed`, error);
+          lastError = msg;
           if (i === attempts.length - 1) {
+            setGenError(msg);
             setGenState('failed');
+            // Allow retry from step 7 — clear the ref so the next call
+            // through retryGeneration restarts the loop.
+            generationStartedRef.current = false;
             return;
           }
         }
@@ -188,9 +306,11 @@ export function WizardShell({
   );
 
   // Re-trigger from step 7 if generation failed. The button on Step7Done
-  // calls this through the shell.
+  // calls this through the shell. Resets both ref + error state so the
+  // retry surface shows clean.
   const retryGeneration = useCallback(async () => {
     generationStartedRef.current = false;
+    setGenError(null);
     await triggerGeneration(state);
   }, [state, triggerGeneration]);
 
@@ -205,6 +325,55 @@ export function WizardShell({
     // through the per-step commit handlers below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Step 7 auto-complete effect: stamp `wizard_completed_at` the moment
+  // the customer reaches step 7. The dashboard's /onboarding redirect
+  // gate reads this column; if it's never stamped, every subsequent visit
+  // re-redirects back here. The "See my dashboard" CTA also stamps it
+  // (belt-and-braces), but most customers close the tab on the success
+  // surface — this effect makes sure the gate releases regardless of
+  // whether they click through. Idempotent via completionStampedRef +
+  // the route's `complete: true` flag (which sets the column to now() —
+  // a second call just updates the timestamp).
+  useEffect(() => {
+    if (state.current_step !== 7) return;
+    if (completionStampedRef.current) return;
+    completionStampedRef.current = true;
+    void (async () => {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) {
+          console.error('[wizard] cannot stamp completion — no auth token');
+          completionStampedRef.current = false;
+          return;
+        }
+        const res = await fetch(`/api/clients/${clientId}/wizard-state`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          // Send the current state too so a step 7 mount also persists any
+          // unsaved step 6 transitions. `complete: true` stamps the column.
+          body: JSON.stringify({ state, complete: true }),
+        });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          console.error(
+            `[wizard] completion stamp failed (${res.status}): ${body.error ?? 'unknown'}`,
+          );
+          completionStampedRef.current = false;
+        }
+      } catch (error) {
+        console.error('[wizard] completion stamp threw', error);
+        completionStampedRef.current = false;
+      }
+    })();
+    // Intentionally only fire on current_step transitions to step 7. State
+    // body and clientId are stable for the lifetime of the wizard mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.current_step]);
 
   // --- per-step commit handlers --------------------------------------------
 
@@ -368,6 +537,7 @@ export function WizardShell({
             state={state}
             clientSlug={clientSlug}
             generationStatus={genState}
+            generationError={genError}
             onRetryGeneration={retryGeneration}
             onComplete={continueFromStep.onStep7Complete}
             onBack={goBack}
