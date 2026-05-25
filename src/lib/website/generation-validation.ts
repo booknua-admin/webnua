@@ -23,6 +23,11 @@
 // Bundle A / Bundle B. See `reference/bundle-a-b-audit.md`.
 // =============================================================================
 
+import {
+  type DesignBundle,
+  resolveVariantRule,
+  type VariantPageContext,
+} from './design-bundles';
 import { SECTION_SHAPE_CATALOG } from './generation-prompt';
 import type { FallbackLogEntry } from './generation-stub';
 import {
@@ -89,6 +94,78 @@ export function validateEnums(
       fieldName: variant.key,
       reason: 'invalid',
       modelValue: value,
+    });
+  }
+  return { data: out, fallbacks };
+}
+
+// =============================================================================
+// Pass B+ — bundle-aware variant assignment (Bundle C2b-2)
+// =============================================================================
+
+/** Result of `assignBundleVariants`. Same `{ data, fallbacks }` contract as
+ *  the other passes — caller appends `fallbacks` onto the parent log. A
+ *  reassignment emits a fallback with `reason='variant-reassigned'` so the
+ *  generation_log telemetry distinguishes bundle steering from AI mistakes
+ *  (`invalid` / `missing`). */
+type VariantReassignFallback = PipelineFallback;
+
+/** Deterministic per-(section, key) re-pick within a narrowed option set.
+ *  The seed is `generationId + sectionType + variantKey` — the same per-run
+ *  identifier the existing fallback log carries, so two runs of the same
+ *  brief reproduce the same narrowed pick. */
+function pickFromSet<T extends string | number>(
+  seed: string,
+  options: readonly T[],
+): T {
+  // FNV-1a 32-bit — same shape as the design-seed hash in generation-stub.
+  let h = 0x811c9dc5;
+  for (let i = 0; i < seed.length; i += 1) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return options[h % options.length] as T;
+}
+
+/** Narrow a section's variant picks against the bundle's `variantRules` for
+ *  the current page-type context. When a rule narrows a key to a set that
+ *  EXCLUDES the AI-emitted (or post-enum-substitution) value, re-pick from
+ *  the narrowed set and log the reassignment. When the AI value is already
+ *  inside the narrowed set, leave it — bundle steering should not churn
+ *  valid in-band picks.
+ *
+ *  When the bundle has no rule for this (section, page-type) tuple, the
+ *  data is returned untouched (pre-C2b-2 behaviour). */
+export function assignBundleVariants(
+  type: SectionType,
+  data: Record<string, unknown>,
+  bundle: DesignBundle | undefined,
+  pageType: VariantPageContext | undefined,
+  generationId: string,
+): { data: Record<string, unknown>; fallbacks: VariantReassignFallback[] } {
+  if (!bundle || !pageType) return { data, fallbacks: [] };
+  const rule = resolveVariantRule(bundle, type, pageType);
+  if (!rule) return { data, fallbacks: [] };
+  const out = shallowClone(data);
+  const fallbacks: VariantReassignFallback[] = [];
+  for (const key of Object.keys(rule)) {
+    const allowed = rule[key];
+    if (!allowed || allowed.length === 0) continue;
+    const current = out[key];
+    if (current === undefined || current === null) {
+      // Don't *introduce* a value the AI left absent — missing-field reporting
+      // covers that case. Bundle narrowing only re-picks existing values.
+      continue;
+    }
+    if (allowed.some((v) => v === current)) continue;
+    const seed = `${generationId}:${type}:${key}`;
+    const replacement = pickFromSet(seed, allowed);
+    out[key] = replacement;
+    fallbacks.push({
+      sectionType: type,
+      fieldName: key,
+      reason: 'variant-reassigned',
+      modelValue: current,
     });
   }
   return { data: out, fallbacks };

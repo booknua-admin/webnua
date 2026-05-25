@@ -3789,7 +3789,7 @@ export type Database = {
       delay_unit: "minutes" | "hours" | "days"
       draft_scope_kind: "page" | "header" | "footer" | "funnel_step"
       funnel_step_type: "landing" | "schedule" | "thanks" | "optin" | "upsell"
-      generation_fallback_reason: "missing" | "invalid"
+      generation_fallback_reason: "missing" | "invalid" | "variant-reassigned"
       invite_status: "pending" | "accepted" | "expired" | "revoked"
       lead_automation_state:
         | "automated"
@@ -4078,7 +4078,7 @@ export const Constants = {
       delay_unit: ["minutes", "hours", "days"],
       draft_scope_kind: ["page", "header", "footer", "funnel_step"],
       funnel_step_type: ["landing", "schedule", "thanks", "optin", "upsell"],
-      generation_fallback_reason: ["missing", "invalid"],
+      generation_fallback_reason: ["missing", "invalid", "variant-reassigned"],
       invite_status: ["pending", "accepted", "expired", "revoked"],
       lead_automation_state: [
         "automated",

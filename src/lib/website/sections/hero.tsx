@@ -32,7 +32,7 @@ import { VariantField, type VariantOption } from './_shared/VariantField';
 // effective colour resolves `override ?? brand default ?? hero hardcoded`.
 // =============================================================================
 
-export type HeroLayout = 'split' | 'overlay';
+export type HeroLayout = 'split' | 'overlay' | 'minimal';
 export type HeadlineSize = 'm' | 'l' | 'xl';
 export type SubSize = 's' | 'm' | 'l';
 export type HeroAlign = 'left' | 'center' | 'right';
@@ -149,6 +149,7 @@ const SUB_ALTS = [
 const LAYOUT_OPTIONS: readonly VariantOption<HeroLayout>[] = [
   { id: 'split', label: 'Split image' },
   { id: 'overlay', label: 'Image overlay' },
+  { id: 'minimal', label: 'Minimal typography' },
 ];
 
 const IMAGE_SIDE_OPTIONS: readonly VariantOption<'left' | 'right'>[] = [
@@ -355,7 +356,7 @@ function HeroFields({
             options={IMAGE_SIDE_OPTIONS}
             onChange={(v) => set('imageSide', v)}
           />
-        ) : (
+        ) : d.layout === 'overlay' ? (
           <RangeField
             label="Overlay strength"
             value={d.overlayOpacity}
@@ -365,6 +366,14 @@ function HeroFields({
             suffix="%"
             helper={<>How strongly the scrim darkens the image.</>}
           />
+        ) : (
+          // Minimal — typography-only. Show a one-line helper so the
+          // operator knows the image isn't lost (just hidden) — switching
+          // back to Split / Overlay restores it.
+          <p className="text-[12px] text-ink-quiet">
+            Minimal hero — no image. Switch to <strong>Split image</strong> or{' '}
+            <strong>Image overlay</strong> to add one.
+          </p>
         )}
         <VariantField
           label="Alignment"
@@ -373,16 +382,18 @@ function HeroFields({
           onChange={(v) => set('contentAlign', v)}
         />
       </BuilderFormSection>
-      <BuilderFormSection>
-        <MediaField
-          label="Hero image"
-          value={d.heroImageUrl}
-          onChange={(v) => set('heroImageUrl', v)}
-          display={coerceImageDisplay(d.heroImageDisplay)}
-          onDisplayChange={(v) => set('heroImageDisplay', v)}
-          displayControls={d.layout === 'overlay' ? ['fit', 'focal'] : ['fit', 'aspect', 'focal']}
-        />
-      </BuilderFormSection>
+      {d.layout !== 'minimal' ? (
+        <BuilderFormSection>
+          <MediaField
+            label="Hero image"
+            value={d.heroImageUrl}
+            onChange={(v) => set('heroImageUrl', v)}
+            display={coerceImageDisplay(d.heroImageDisplay)}
+            onDisplayChange={(v) => set('heroImageDisplay', v)}
+            displayControls={d.layout === 'overlay' ? ['fit', 'focal'] : ['fit', 'aspect', 'focal']}
+          />
+        </BuilderFormSection>
+      ) : null}
     </>
   );
 }
@@ -397,6 +408,7 @@ function HeroPreview({
 }: SectionPreviewProps<HeroData>) {
   const d = withDefaults(data);
   const overlay = d.layout === 'overlay';
+  const minimal = d.layout === 'minimal';
   const resolved = resolveTheme(d.theme, brandThemeDefaults(brand), HERO_HARDCODED_THEME);
   // Bundle C2b-1 — read the active page-type context. Home page + funnel
   // step → page-dominant hero (scales up to ~80vh+); sub-page (about /
@@ -410,6 +422,11 @@ function HeroPreview({
   const splitMinH = isHomeHero
     ? 'min-h-[460px] @2xl:min-h-[600px] @3xl:min-h-[80vh]'
     : 'min-h-[260px] @2xl:min-h-[40vh] @3xl:min-h-[50vh]';
+  // V3 minimal — typography-only, no image. Slightly tighter than split's
+  // because no image column carries vertical weight.
+  const minimalMinH = isHomeHero
+    ? 'min-h-[420px] @2xl:min-h-[520px] @3xl:min-h-[60vh]'
+    : 'min-h-[240px] @2xl:min-h-[34vh] @3xl:min-h-[44vh]';
   // The hero places its attached form in its own column — so it tells
   // SectionShell `formSlot="self"` and renders the form itself.
   const slot = useSectionFormSlot();
@@ -542,6 +559,38 @@ function HeroPreview({
                 </div>
               ) : (
                 <div className={`w-full max-w-[600px] ${ALIGN_SELF[d.contentAlign]}`}>
+                  {content}
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        // V3 — minimal typography. No image, no overlay scrim. The
+        // typography carries the section: roomier vertical padding, an
+        // upsized headline (XL bumps a level), and a centred default
+        // alignment when no alignment was explicitly chosen. The form
+        // still attaches via `formColumn` when set — minimal heroes on
+        // funnel step 1 keep the lead-capture pairing.
+        //
+        // Pass D image-injection is skipped for `layout === 'minimal'`
+        // via the skip-list in `generation-stub.ts`, so a fresh AI-
+        // generated minimal hero never carries a stock URL it wouldn't
+        // render. The `heroImageUrl` field is preserved on the data so
+        // switching back to `split` / `overlay` in the editor restores
+        // any image the operator previously set.
+        if (minimal) {
+          return (
+            <div
+              className={`flex items-center px-8 py-24 @2xl:px-12 @2xl:py-28 ${minimalMinH}`}
+            >
+              {hasForm ? (
+                <div className="mx-auto grid w-full max-w-[1060px] items-center gap-12 @2xl:grid-cols-[1fr_400px]">
+                  <div className="w-full">{content}</div>
+                  {formColumn}
+                </div>
+              ) : (
+                <div className={`w-full max-w-[760px] ${ALIGN_SELF[d.contentAlign]}`}>
                   {content}
                 </div>
               )}

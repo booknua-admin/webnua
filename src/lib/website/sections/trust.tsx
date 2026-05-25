@@ -42,7 +42,7 @@ import { VariantField, type VariantOption } from './_shared/VariantField';
 // hero pattern.
 // =============================================================================
 
-export type TrustDisplay = 'stats' | 'logos';
+export type TrustDisplay = 'stats' | 'logos' | 'compact-icons';
 export type TrustAlign = 'left' | 'center' | 'right';
 export type HeadlineSize = 'm' | 'l' | 'xl';
 
@@ -187,6 +187,7 @@ const SUB_ALTS = [
 const DISPLAY_OPTIONS: readonly VariantOption<TrustDisplay>[] = [
   { id: 'stats', label: 'Stat tiles' },
   { id: 'logos', label: 'Client logos' },
+  { id: 'compact-icons', label: 'Compact icon row' },
 ];
 
 const ALIGN_OPTIONS: readonly VariantOption<TrustAlign>[] = [
@@ -362,16 +363,27 @@ function TrustFields({
 
   if (selectedElement === 'items') {
     const isLogos = d.display === 'logos';
+    const isCompact = d.display === 'compact-icons';
     return (
       <>
-        <BuilderFormSection>
-          <ColumnsField
-            value={d.columns}
-            onChange={(v) => set('columns', v)}
-            min={2}
-            max={6}
-          />
-        </BuilderFormSection>
+        {!isCompact ? (
+          <BuilderFormSection>
+            <ColumnsField
+              value={d.columns}
+              onChange={(v) => set('columns', v)}
+              min={2}
+              max={6}
+            />
+          </BuilderFormSection>
+        ) : (
+          <BuilderFormSection>
+            <p className="text-[12px] text-ink-quiet">
+              Compact icon row — each item is an icon + single-word label
+              (Insured, Vetted, Local, Certified). The row wraps naturally;
+              no column count to set.
+            </p>
+          </BuilderFormSection>
+        )}
         <BuilderFormSection>
           {d.items.map((item, i) => (
             <div
@@ -515,17 +527,21 @@ function TrustFields({
           options={DISPLAY_OPTIONS}
           onChange={(v) => set('display', v)}
         />
-        <ColumnsField value={d.columns} onChange={(v) => set('columns', v)} min={2} max={6} />
+        {d.display !== 'compact-icons' ? (
+          <>
+            <ColumnsField value={d.columns} onChange={(v) => set('columns', v)} min={2} max={6} />
+            <ToggleField
+              label="Column dividers"
+              value={d.showDividers}
+              onChange={(v) => set('showDividers', v)}
+            />
+          </>
+        ) : null}
         <VariantField
           label="Header alignment"
           value={d.headerAlign}
           options={ALIGN_OPTIONS}
           onChange={(v) => set('headerAlign', v)}
-        />
-        <ToggleField
-          label="Column dividers"
-          value={d.showDividers}
-          onChange={(v) => set('showDividers', v)}
         />
         <ToggleField
           label="Badge strip"
@@ -608,7 +624,7 @@ function TrustPreview({
               ) : null}
             </div>
 
-            {/* -- items grid -- */}
+            {/* -- items -- */}
             {d.items.length === 0 ? (
               <p
                 className="rounded-lg border border-dashed px-4 py-8 text-center text-[13px]"
@@ -616,6 +632,37 @@ function TrustPreview({
               >
                 No items yet. Add one in the editor.
               </p>
+            ) : d.display === 'compact-icons' ? (
+              // V3 — thin horizontal band. Each item is icon + single-word
+              // label. On mobile the row wraps to 2-3 per line (no
+              // horizontal scroll); ≥@2xl it lays out in one row.
+              // The whole band reads as a single selectable element so the
+              // editor's element-inspector for `items` opens once, not
+              // per-pill — the operator edits the row as a unit.
+              <SelectableElement {...sel('items')}>
+                <ul
+                  className="flex flex-wrap items-center justify-center gap-x-5 gap-y-3 @sm:gap-x-7 @2xl:gap-x-10"
+                  style={{ color: theme.body }}
+                >
+                  {d.items.map((item, i) => (
+                    <li key={item.id} className="flex items-center gap-2.5">
+                      {i > 0 ? (
+                        <span
+                          aria-hidden
+                          className="hidden h-1 w-1 rounded-full @sm:inline-block"
+                          style={{ backgroundColor: theme.border }}
+                        />
+                      ) : null}
+                      <CompactTrustIcon
+                        item={item}
+                        theme={theme}
+                        accent={accent}
+                        headingFont={headingFont}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </SelectableElement>
             ) : (
               <div className={`grid gap-y-8 ${gridColumnsClass(d.columns)}`}>
                 {d.items.map((item, i) => (
@@ -758,6 +805,54 @@ function TrustLogo({
         </>
       )}
     </div>
+  );
+}
+
+/** V3 compact icon row item — small icon glyph + single-word label, both
+ *  inline. Bundle icon style influences the glyph treatment via the
+ *  `--bundle-icon-style` token (outlined-1.5 / filled-rounded / hairline-1 /
+ *  stacked-filled); the icon SVG itself comes from the curated set, the
+ *  bundle steers the stroke/fill via the `bundleIconStrokeWidth` helper.
+ *  Tap target ≥44px via the `min-h-[44px]` wrapper so the row is reachable
+ *  one-handed on mobile (≥375px wide). */
+function CompactTrustIcon({
+  item,
+  theme,
+  accent,
+  headingFont,
+}: {
+  item: TrustItem;
+  theme: ResolvedTheme;
+  accent: string;
+  headingFont: string;
+}) {
+  const def = getSectionIcon(item.icon);
+  const Icon = def?.Icon;
+  // Single-word labels read best at compact size; if the operator typed a
+  // longer phrase we still render it (no truncation — a 2-word label like
+  // "Fully Insured" is fine), but the row layout pre-budgets the width.
+  // Prefer `value` over `label` because the editor's V3 hint pushes value
+  // for the trust signal ("Insured", "Vetted", etc.); fall back to label
+  // for back-compat with rows authored under the V1/V2 vocabulary.
+  const text = (item.value || item.label || 'Trust').trim();
+  return (
+    <span className="inline-flex min-h-[44px] items-center gap-2">
+      {Icon ? (
+        <Icon
+          size={18}
+          strokeWidth={1.75}
+          color={accent}
+          aria-hidden
+          className="shrink-0"
+        />
+      ) : null}
+      <span
+        className="text-[13px] font-semibold tracking-tight"
+        style={{ fontFamily: headingFont, color: theme.heading }}
+      >
+        {text}
+      </span>
+    </span>
   );
 }
 

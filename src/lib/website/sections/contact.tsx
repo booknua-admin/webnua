@@ -51,7 +51,16 @@ import { VariantField, type VariantOption } from './_shared/VariantField';
 // integration).
 // =============================================================================
 
-export type ContactLayout = 'details' | 'cards' | 'map' | 'stacked';
+export type ContactLayout =
+  | 'details'
+  | 'cards'
+  | 'map'
+  | 'stacked'
+  /** V3 — single column centred, one big headline, one primary CTA opening
+   *  the popup form modal, optional phone number prominently below as a
+   *  `tel:` link. No details grid, no image. Pass D image-injection is
+   *  skipped for this variant (see `shouldSkipStockImageInjection`). */
+  | 'minimal-cta';
 export type ContactAlign = 'left' | 'center' | 'right';
 export type HeadlineSize = 'm' | 'l' | 'xl';
 
@@ -116,6 +125,21 @@ const CONTACT_HARDCODED_THEME: SectionTheme = {
 
 function makeId(): string {
   return `con-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/** Pull the phone value out of a contact items list — used by V3 minimal-CTA
+ *  to render an optional `tel:` fallback link beneath the primary CTA. Looks
+ *  for an item whose icon === 'phone' first, then whose label looks phoney,
+ *  and returns the trimmed `value` (or empty string when no phone item is
+ *  present). The renderer hides the line entirely when this is empty. */
+function pickPhoneFromItems(items: readonly ContactInfoItem[]): string {
+  if (!Array.isArray(items)) return '';
+  const byIcon = items.find((it) => it.icon === 'phone' && it.value?.trim());
+  if (byIcon) return byIcon.value.trim();
+  const byLabel = items.find(
+    (it) => /phone|call|mobile|tel/i.test(it.label) && it.value?.trim(),
+  );
+  return byLabel?.value.trim() ?? '';
 }
 
 // Editor placeholder seed - populated only by `defaultData()`. Generic
@@ -227,6 +251,7 @@ const LAYOUT_OPTIONS: readonly VariantOption<ContactLayout>[] = [
   { id: 'cards', label: 'Info cards + form' },
   { id: 'map', label: 'Map + form' },
   { id: 'stacked', label: 'Cards row + image' },
+  { id: 'minimal-cta', label: 'Minimal CTA' },
 ];
 
 const ALIGN_OPTIONS: readonly VariantOption<ContactAlign>[] = [
@@ -540,23 +565,35 @@ function ContactFields({
         />
       </BuilderFormSection>
       <BuilderFormSection>
-        <ToggleField
-          label="Show inline form (instead of a CTA button)"
-          value={d.showInlineForm}
-          onChange={(v) => set('showInlineForm', v)}
-        />
         <VariantField
           label="Layout"
           value={d.layout}
           options={LAYOUT_OPTIONS}
           onChange={(v) => set('layout', v)}
         />
+        {/* Minimal-CTA is a single-CTA shape — the inline-form toggle is
+            irrelevant there. Other layouts: keep the toggle. */}
+        {d.layout !== 'minimal-cta' ? (
+          <ToggleField
+            label="Show inline form (instead of a CTA button)"
+            value={d.showInlineForm}
+            onChange={(v) => set('showInlineForm', v)}
+          />
+        ) : null}
         <VariantField
           label="Header alignment"
           value={d.headerAlign}
           options={ALIGN_OPTIONS}
           onChange={(v) => set('headerAlign', v)}
         />
+        {d.layout === 'minimal-cta' ? (
+          <p className="text-[12px] text-ink-quiet">
+            Minimal CTA — one big headline + one primary button. The button
+            opens the popup form modal by default; pick a different
+            destination on the CTA element. A phone number in the details
+            list renders inline as a fallback channel.
+          </p>
+        ) : null}
       </BuilderFormSection>
       {d.layout === 'map' || d.layout === 'stacked' ? (
         <BuilderFormSection>
@@ -670,6 +707,54 @@ function ContactPreview({
             <DetailsBlock data={d} theme={theme} accent={accent} headingFont={headingFont} />
           </SelectableElement>
         );
+
+        // V3 — minimal CTA. Single centred column: headline + sub +
+        // primary CTA (rendered through ContactCta so the popup wiring
+        // is unchanged) + optional phone link as a fallback channel.
+        // No details grid, no image. Pass D skips image injection for
+        // this variant (see `shouldSkipStockImageInjection`).
+        //
+        // The CTA card itself is suppressed; we render an inline button
+        // so the section reads as one focused call-to-action, not a card
+        // inside a section. Phone fallback: surface a `tel:` link when the
+        // contact items list carries one (icon === 'phone' OR label ~ 'phone').
+        if (d.layout === 'minimal-cta') {
+          const phone = pickPhoneFromItems(d.items);
+          const ctaLabel = (d.ctaLabel?.trim() || 'Send us a message').trim();
+          const ctaHref = d.ctaHref || POPUP_HREF;
+          return (
+            <div className="flex flex-col items-center text-center">
+              <div className="w-full max-w-[680px]">
+                {header('center')}
+                <SelectableElement {...sel('cta')} className="mt-9" display="inline-block">
+                  <SurfaceLink
+                    href={ctaHref}
+                    className="inline-flex min-h-[52px] items-center justify-center gap-2 rounded-lg px-7 py-3.5 text-[15px] font-semibold @sm:text-[16px]"
+                    style={{ backgroundColor: accent, color: '#ffffff' }}
+                  >
+                    {ctaLabel}
+                    <span aria-hidden>➤</span>
+                  </SurfaceLink>
+                </SelectableElement>
+                {phone ? (
+                  <p
+                    className="mt-5 text-[14px] @sm:text-[15px]"
+                    style={{ color: theme.body }}
+                  >
+                    Or call{' '}
+                    <SurfaceLink
+                      href={`tel:${phone.replace(/[^0-9+]/g, '')}`}
+                      className="font-bold underline-offset-2 hover:underline"
+                      style={{ color: theme.heading }}
+                    >
+                      {phone}
+                    </SurfaceLink>
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          );
+        }
 
         // -- map + form: media beside header+form, details bar below --
         if (d.layout === 'map') {

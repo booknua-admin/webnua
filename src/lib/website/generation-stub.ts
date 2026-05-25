@@ -17,7 +17,9 @@ import type {
   GenerationContext,
   PrimaryIntent,
 } from './generation-context';
+import { getBundle } from './design-bundles';
 import {
+  assignBundleVariants,
   injectStockImages,
   reconcileColumns,
   resolveIndustryString,
@@ -76,7 +78,13 @@ export type FallbackLogEntry = {
   generationId: string;
   sectionType: SectionType;
   fieldName: string;
-  reason: 'missing' | 'invalid';
+  /** `missing` — the AI omitted the field; `invalid` — the AI emitted a value
+   *  outside the catalog; `variant-reassigned` — the AI emitted a catalog-
+   *  valid value, but the active design bundle's `variantRules` narrowed the
+   *  allowable set for this (section, page-type) tuple and the pipeline
+   *  re-picked from the narrowed set (Bundle C2b-2). Persisted via the
+   *  `generation_fallback_reason` enum extended in migration `0093`. */
+  reason: 'missing' | 'invalid' | 'variant-reassigned';
   modelValue?: unknown;
 };
 
@@ -96,6 +104,48 @@ export const GENERATION_PHASES = [
 
 export function randomDelayMs(): number {
   return Math.floor(Math.random() * 4000) + 4000;
+}
+
+// =============================================================================
+// Pass D skip-list — variants that opt out of stock-image injection
+// =============================================================================
+
+/** Section variants that genuinely have no image slot — Pass D's stock-image
+ *  injection is bypassed entirely for them. The pattern is documented here
+ *  so future variants extend the same map rather than carving exceptions
+ *  inside `injectStockImages` itself.
+ *
+ *  Format: `{ [sectionType]: { [variantKey]: readonly variantValues } }`.
+ *  When a section's `data[variantKey]` matches one of the listed values,
+ *  the injection pass is skipped. A section type missing from the map (or
+ *  a variant key not listed) is unaffected (default = inject).
+ *
+ *  Bundle C2b-2:
+ *   - hero · `layout: 'minimal'` — typography-only treatment, no hero image
+ *   - contact · `layout: 'minimal-cta'` — single CTA card, no contact image
+ *
+ *  C2b-3 may add more (e.g. cta `layout: 'minimal'` if one appears). */
+const PASS_D_SKIP_VARIANTS: Partial<
+  Record<SectionType, Partial<Record<string, readonly string[]>>>
+> = {
+  hero: { layout: ['minimal'] },
+  contact: { layout: ['minimal-cta'] },
+};
+
+export function shouldSkipStockImageInjection(
+  type: SectionType,
+  data: Record<string, unknown>,
+): boolean {
+  const variants = PASS_D_SKIP_VARIANTS[type];
+  if (!variants) return false;
+  for (const key of Object.keys(variants)) {
+    const allowed = variants[key];
+    if (!allowed) continue;
+    const value = data[key];
+    if (typeof value !== 'string') continue;
+    if (allowed.includes(value)) return true;
+  }
+  return false;
 }
 
 // =============================================================================
@@ -397,6 +447,25 @@ function runValidationPipeline(
       // The field is now valid (substituted) — keep it in populatedFields.
     }
 
+    // Pass B+ — bundle-aware variant assignment (Bundle C2b-2). The brand's
+    // design bundle may carry `variantRules` that narrow the allowable set
+    // of variant values per (section, page-type) tuple. When the AI's pick
+    // (or Pass B's substitution) is outside the narrowed set, re-pick from
+    // it. When the bundle has no rule for this section, behaviour is
+    // unchanged (variant choice stays with the AI / `Designer.pick()`).
+    const bundle = getBundle(ctx.brand.designBundleId);
+    const variantPass = assignBundleVariants(
+      s.type,
+      data,
+      bundle,
+      ctx.pageType,
+      generationId,
+    );
+    data = variantPass.data;
+    for (const fb of variantPass.fallbacks) {
+      fallbackLog.push({ generationId, ...fb });
+    }
+
     // Pass C — hallucinated image-path stripping. The model occasionally
     // emits `/images/work-extension-1.jpg`-style paths that 404 in prod
     // (audit: 12.5% of heroes, 14.3% of gallery items, 18.3% of about).
@@ -413,17 +482,26 @@ function runValidationPipeline(
     // (AI omitted OR Pass C cleared) from the industry kit. Logged as
     // `missing` with `modelValue=<the injected URL>` so the audit signal
     // distinguishes "we injected" from "we left empty".
-    const injectPass = injectStockImages(s.type, data, industry, {
-      slug: slugSeed,
-      surface: 'site',
-    });
-    data = injectPass.data;
-    for (const fb of injectPass.fallbacks) {
-      fallbackLog.push({ generationId, ...fb });
-      // The field is now populated; mark it on the populated set when the
-      // field name has no array index (scalar slots only).
-      if (!fb.fieldName.includes('[')) {
-        populated.add(fb.fieldName);
+    //
+    // Skip-list (Bundle C2b-2): some variants deliberately have NO image
+    // slot — e.g. Hero `layout: 'minimal'` is a typography-only treatment.
+    // `shouldSkipStockImageInjection` returns true for those (variant, type)
+    // pairs and the injection pass is bypassed entirely. The audit signal
+    // stays useful — a skipped section emits no `missing` rows for its
+    // image keys, distinguishing "no image by design" from "we filled in".
+    if (!shouldSkipStockImageInjection(s.type, data)) {
+      const injectPass = injectStockImages(s.type, data, industry, {
+        slug: slugSeed,
+        surface: 'site',
+      });
+      data = injectPass.data;
+      for (const fb of injectPass.fallbacks) {
+        fallbackLog.push({ generationId, ...fb });
+        // The field is now populated; mark it on the populated set when the
+        // field name has no array index (scalar slots only).
+        if (!fb.fieldName.includes('[')) {
+          populated.add(fb.fieldName);
+        }
       }
     }
 
