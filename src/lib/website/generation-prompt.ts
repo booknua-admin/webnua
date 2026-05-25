@@ -22,6 +22,7 @@ export type PromptBlock = {
     | 'system'
     | 'brand'
     | 'industry'
+    | 'industry-knowledge'
     | 'page-questions'
     | 'existing-pages'
     | 'registry-catalog'
@@ -50,12 +51,25 @@ export function buildPromptBlocks(ctx: GenerationContext): PromptBlock[] {
       heading: 'Industry context',
       body: buildIndustryBlock(ctx.brand),
     },
-    {
-      id: 'page-questions',
-      heading: 'Page questions',
-      body: buildQuestionsBlock(ctx),
-    },
   ];
+  // Conversational-onboarding industry knowledge — appended AFTER the
+  // template-based industry block so the AI-resolved customer pain +
+  // desired outcomes + voice arrive as supplemental, not replacement,
+  // signals. For unmapped industries the template block is the generic
+  // fallback and this block carries the real shape; for mapped trades
+  // both blocks reinforce each other.
+  if (ctx.industryKnowledge) {
+    blocks.push({
+      id: 'industry-knowledge',
+      heading: 'Industry knowledge (resolved live for this business)',
+      body: buildIndustryKnowledgeBlock(ctx.industryKnowledge),
+    });
+  }
+  blocks.push({
+    id: 'page-questions',
+    heading: 'Page questions',
+    body: buildQuestionsBlock(ctx),
+  });
   if (ctx.existingPages.length > 0) {
     blocks.push({
       id: 'existing-pages',
@@ -142,6 +156,48 @@ function buildIndustryBlock(brand: BrandObject): string {
     brand.industryCategory,
   );
   return renderIndustryPromptBlock(template);
+}
+
+/** Industry-knowledge subblock — composed live by the conversational
+ *  onboarding's industry-knowledge route. The model is told these are the
+ *  authoritative customer pains + desired outcomes for THIS business; weave
+ *  them naturally into copy, never repeat verbatim. Source is exposed so
+ *  the model knows whether to lean harder on it (`ai` = bespoke per-trade)
+ *  or treat it as a safe backup (`template` / `fallback`). */
+function buildIndustryKnowledgeBlock(k: NonNullable<GenerationContext['industryKnowledge']>): string {
+  const painList =
+    k.customerPainPoints.length > 0
+      ? k.customerPainPoints.map((p) => `  - ${p}`).join('\n')
+      : '  (none captured)';
+  const outcomeList =
+    k.desiredOutcomes.length > 0
+      ? k.desiredOutcomes.map((o) => `  - ${o}`).join('\n')
+      : '  (none captured)';
+  const trustList =
+    k.trustSignals.length > 0
+      ? k.trustSignals.slice(0, 8).join(', ')
+      : '(none captured)';
+  const sourceNote =
+    k.source === 'ai'
+      ? 'Resolved by an AI knowledge call for this specific industry — treat as authoritative.'
+      : k.source === 'template'
+        ? 'Derived from the curated industry template — reliable but generic.'
+        : 'Safe defaults — generic service-business shape.';
+  return [
+    `Source: ${sourceNote}`,
+    '',
+    'Customer pain points (what brings them to this trade):',
+    painList,
+    '',
+    'Desired outcomes (what success looks like to them):',
+    outcomeList,
+    '',
+    `Trust signals customers look for: ${trustList}`,
+    '',
+    `Voice recommendation for this trade: ${k.voiceRecommendation || '(none captured)'}`,
+    '',
+    'Weave these pain points + outcomes into the headlines, subheadings, and CTAs naturally. Never repeat them verbatim; they are the conversion levers, not copy.',
+  ].join('\n');
 }
 
 /** The conversion job each page type has to do — appended to the questions

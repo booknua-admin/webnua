@@ -82,6 +82,7 @@ export async function POST(request: Request): Promise<Response> {
       serviceArea: brief.business.serviceArea ?? '',
       industry: brief.industry,
       businessName: brief.business.name,
+      industryKnowledge: brief.industryKnowledge,
     };
 
     // Two parallel Opus calls — landing (Step 1) + qualification (Step 2).

@@ -131,6 +131,21 @@ type GenerateOfferRequest = {
   funnelService?: unknown;
   funnelCustomerPain?: unknown;
   funnelGuarantee?: unknown;
+  /** Optional — conversational onboarding's industry-knowledge AI result,
+   *  threaded through from the wizard. When present, the user message
+   *  gains an additive "Industry knowledge" subblock so Sonnet grounds
+   *  the four-field offer in real per-trade pain + outcomes + voice.
+   *  Absent on the operator concierge path; the offer still generates
+   *  cleanly without it (the cached system prompt is untouched). */
+  industryKnowledge?: unknown;
+};
+
+type IndustryKnowledgeInput = {
+  customerPainPoints: string[];
+  desiredOutcomes: string[];
+  trustSignals: string[];
+  voiceRecommendation: string;
+  source: 'ai' | 'template' | 'fallback';
 };
 
 export async function POST(request: Request): Promise<Response> {
@@ -162,6 +177,8 @@ export async function POST(request: Request): Promise<Response> {
     '\n',
   );
   const briefHasPrice = hasPricePattern(briefText);
+  const knowledge = readIndustryKnowledge(body.industryKnowledge);
+  const knowledgeBlock = knowledge ? composeIndustryKnowledgeBlock(knowledge) : '';
 
   const baseUserMessage = `Brief
 -----
@@ -176,6 +193,7 @@ ${funnelCustomerPain}
 
 What the business can confidently promise / guarantee:
 ${funnelGuarantee}
+${knowledgeBlock}
 
 Write the four-field offer.`;
 
@@ -328,4 +346,77 @@ function pickString(obj: Record<string, unknown>, ...keys: string[]): string {
 
 function readString(v: unknown): string {
   return typeof v === 'string' ? v.trim() : '';
+}
+
+function readStringArray(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+    .map((x) => x.trim());
+}
+
+/** Defensively coerce the optional industryKnowledge body field. Returns
+ *  null when absent, malformed, or carrying empty arrays — the offer
+ *  generator simply omits the supplemental block and runs as before. */
+function readIndustryKnowledge(v: unknown): IndustryKnowledgeInput | null {
+  if (!v || typeof v !== 'object') return null;
+  const obj = v as Record<string, unknown>;
+  const customerPainPoints = readStringArray(obj.customerPainPoints).slice(0, 5);
+  const desiredOutcomes = readStringArray(obj.desiredOutcomes).slice(0, 5);
+  const trustSignals = readStringArray(obj.trustSignals).slice(0, 8);
+  const voiceRecommendation = readString(obj.voiceRecommendation);
+  // At least pain OR outcomes must be non-empty for the subblock to add
+  // value; otherwise treat as absent so we don't pad the user message
+  // with empty bullet lists.
+  if (customerPainPoints.length === 0 && desiredOutcomes.length === 0) return null;
+  const rawSource = readString(obj.source);
+  const source: IndustryKnowledgeInput['source'] =
+    rawSource === 'ai' || rawSource === 'template' || rawSource === 'fallback'
+      ? rawSource
+      : 'fallback';
+  return { customerPainPoints, desiredOutcomes, trustSignals, voiceRecommendation, source };
+}
+
+/** Compose the industry-knowledge subblock for the offer user message.
+ *  Additive — the cached system prompt is untouched (preserves Sonnet's
+ *  prompt-cache hit). Source disclosed so the model knows whether to
+ *  lean harder on the signals (`ai` = bespoke per-trade) or treat them
+ *  as a safe backup. */
+function composeIndustryKnowledgeBlock(k: IndustryKnowledgeInput): string {
+  const painList =
+    k.customerPainPoints.length > 0
+      ? k.customerPainPoints.map((p) => `  - ${p}`).join('\n')
+      : '  (none captured)';
+  const outcomeList =
+    k.desiredOutcomes.length > 0
+      ? k.desiredOutcomes.map((o) => `  - ${o}`).join('\n')
+      : '  (none captured)';
+  const trustList =
+    k.trustSignals.length > 0
+      ? k.trustSignals.slice(0, 8).join(', ')
+      : '(none captured)';
+  const sourceNote =
+    k.source === 'ai'
+      ? 'Resolved by an AI knowledge call for this specific trade — treat as authoritative.'
+      : k.source === 'template'
+        ? 'Derived from the curated industry template — reliable but generic.'
+        : 'Safe defaults — generic service-business shape.';
+  return [
+    '',
+    'Industry knowledge (resolved live for this trade)',
+    '-------------------------------------------------',
+    `Source: ${sourceNote}`,
+    '',
+    'Customer pain points (what brings them to this trade):',
+    painList,
+    '',
+    'Desired outcomes (what success looks like to them):',
+    outcomeList,
+    '',
+    `Trust signals customers look for: ${trustList}`,
+    '',
+    `Voice recommendation for this trade: ${k.voiceRecommendation || '(none captured)'}`,
+    '',
+    'Weave these pain points + outcomes naturally into the headline + promise. Never repeat verbatim.',
+  ].join('\n');
 }

@@ -2,11 +2,12 @@
 // Rate limiter — DB-backed, generic over (action, key, window, limit).
 //
 // Backs every Pattern B quota:
-//   • signup_attempt    {ip}        10/IP/hour
-//   • signup_success    {ip}         3/IP/24h
-//   • ai_site_gen       {client_id}  3/client/24h
-//   • ai_funnel_gen     {client_id}  3/client/24h
-//   • ai_section_regen  {client_id} 10/client/hour
+//   • signup_attempt          {ip}        10/IP/hour
+//   • signup_success          {ip}         3/IP/24h
+//   • ai_site_gen             {client_id}  3/client/24h
+//   • ai_funnel_gen           {client_id}  3/client/24h
+//   • ai_section_regen        {client_id} 10/client/hour
+//   • ai_industry_knowledge   {ip}         5/IP/hour
 //
 // Storage is `public.rate_limit_hits` (migration 0085) — one append-only row
 // per attempt. The 0086 cron deletes rows older than 7 days. The query shape
@@ -37,6 +38,7 @@ export type RateLimitAction =
   | 'ai_site_gen'
   | 'ai_funnel_gen'
   | 'ai_section_regen'
+  | 'ai_industry_knowledge'
   | 'verification_code_request'
   | 'verification_code_attempt';
 
@@ -86,6 +88,18 @@ export const RATE_LIMITS: Record<RateLimitAction, RateLimitConfig> = {
     action: 'ai_section_regen',
     windowSeconds: 60 * 60,
     limit: 10,
+    windowLabel: 'hour',
+  },
+  // Conversational onboarding — industry-knowledge AI call (fires once
+  // per signup, between business-name capture and the services picker).
+  // Per-IP because the call runs BEFORE the client row is referenced by
+  // the route (it's just a Sonnet read; the cached result lands on
+  // capturedFacts via the conversation-state route). 5/IP/hour covers a
+  // single signup retry budget without enabling abuse.
+  ai_industry_knowledge: {
+    action: 'ai_industry_knowledge',
+    windowSeconds: 60 * 60,
+    limit: 5,
     windowLabel: 'hour',
   },
   // Conversational onboarding — code verification (Session B).
@@ -233,6 +247,7 @@ function humanise(action: RateLimitAction): string {
     case 'ai_site_gen': return 'site-generation';
     case 'ai_funnel_gen': return 'funnel-generation';
     case 'ai_section_regen': return 'section-regeneration';
+    case 'ai_industry_knowledge': return 'industry-knowledge';
     case 'verification_code_request': return 'verification-code';
     case 'verification_code_attempt': return 'verification-code';
   }

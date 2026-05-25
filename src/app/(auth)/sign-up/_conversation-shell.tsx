@@ -66,6 +66,7 @@ import {
   type RefuseReason,
 } from '@/lib/onboarding/conversation-types';
 import { deriveBriefFromConversation } from '@/lib/onboarding/derive-brief';
+import { resolveIndustryKnowledge } from '@/lib/onboarding/industry-knowledge';
 import {
   runConversationGeneration,
   type GenerationProgressEvent,
@@ -103,6 +104,7 @@ type Phase =
   | 'verifying'
   | 'extracting'
   | 'clarifying'
+  | 'awaiting-business-name'
   | 'turn-2-services'
   | 'turn-3-brand'
   | 'turn-4-offer'
@@ -174,6 +176,18 @@ const BOT_EXTRACTION_DONE = (e: ConversationExtraction) => {
   const tail = e.location ? ` in ${e.location}` : '';
   return `Got it — ${industryLine}${tail}. Now your services.`;
 };
+/** Compose the business-name ask. When the extraction surfaced a derived
+ *  name we drop it into the suggestion ("even 'Cork Painters' works");
+ *  otherwise stay generic. The customer answers freeform — empty / 'skip'
+ *  / 'no' falls back to the derived name. */
+const BOT_ASK_BUSINESS_NAME = (suggested: string): string => {
+  const hint = suggested
+    ? `Just keep it simple — even "${suggested}" works if you trade under that.`
+    : "Just keep it simple — even your own name works if you trade under that.";
+  return `What's your business called? ${hint}`;
+};
+const BOT_NAME_SAVED = (name: string) =>
+  `Saved as "${name}". One moment — pulling together what your trade typically offers…`;
 const BOT_TURN2_PROMPT =
   "Tick the services you offer. We'll build your site around these.";
 const BOT_SERVICES_DONE = "Saved. Now your brand colors.";
@@ -212,6 +226,8 @@ function phaseToStepLabel(phase: Phase): string {
     case 'awaiting-code':
     case 'verifying':
       return '// step 2 of 5 · verify email';
+    case 'awaiting-business-name':
+      return '// step 3 of 5 · your business';
     case 'turn-2-services':
       return '// step 3 of 5 · services';
     case 'turn-3-brand':
@@ -443,11 +459,25 @@ export function ConversationShell() {
         }
         switch (state.current_turn) {
           case 2:
-            // Verified but services not yet picked. If extraction is in
-            // capturedFacts, jump to turn-2 services; otherwise run
-            // extraction now.
+            // Verified but services not yet picked. Three sub-states under
+            // current_turn=2:
+            //   - extraction present + businessNameConfirmedAt present
+            //     → customer confirmed the name, on services picker.
+            //   - extraction present + no businessNameConfirmedAt
+            //     → customer needs to confirm the business name.
+            //   - no extraction but firstMessage present
+            //     → run extraction now; post-verify effect handles it.
+            //   - neither → state is partial, restart conservatively.
             if (state.capturedFacts.extraction) {
-              setPhase('turn-2-services');
+              if (state.capturedFacts.businessNameConfirmedAt) {
+                // Cached industryKnowledge (if present) reads off
+                // capturedFacts directly; the kick callback is only
+                // invoked from handleBusinessNameSubmit, which won't
+                // fire on resume since we land past it.
+                setPhase('turn-2-services');
+              } else {
+                setPhase('awaiting-business-name');
+              }
             } else if (state.capturedFacts.firstMessage) {
               setPhase('extracting');
               // The post-verify effect will fire the extraction call.
@@ -751,22 +781,31 @@ export function ConversationShell() {
         ...capturedFacts,
         firstMessage,
         email,
-        // Capture the business name on capturedFacts so
+        // Capture the AI-derived business name on capturedFacts so
         // deriveBriefFromConversation can read it without unpacking
-        // extraction, AND so resume hydrates it cleanly.
+        // extraction, AND so resume hydrates it cleanly. The customer
+        // confirms / overrides this on the next turn
+        // (`awaiting-business-name`) before services.
         businessName: extractedName || capturedFacts.businessName,
         clientSlug: clientSlug ?? capturedFacts.clientSlug,
         extraction: e,
         clarifyingQuestion: undefined,
       };
+      // Insert the explicit business-name capture turn between extraction
+      // and the services picker. We send TWO bubbles: the extraction
+      // confirmation ("Got it — painter in Cork") + the name ask.
+      // Persist `current_turn: 2` so a refresh lands back in this state
+      // (the resume branch checks businessNameConfirmedAt to decide
+      // business-name vs services).
+      const suggestedName = extractedName || capturedFacts.businessName || '';
       const nextMessages: LocalChatMessage[] = [
         ...messages,
         { id: newId('bot'), author: 'bot', text: confirmation },
-        { id: newId('bot'), author: 'bot', text: BOT_TURN2_PROMPT },
+        { id: newId('bot'), author: 'bot', text: BOT_ASK_BUSINESS_NAME(suggestedName) },
       ];
       setCapturedFacts(nextFacts);
       setMessages(nextMessages);
-      setPhase('turn-2-services');
+      setPhase('awaiting-business-name');
       void persistState({
         capturedFacts: nextFacts,
         current_turn: 2,
@@ -774,6 +813,156 @@ export function ConversationShell() {
       });
     },
     [capturedFacts, clientSlug, email, firstMessage, messages, persistState, persistBusinessIdentity],
+  );
+
+  // ---- business-name turn (between extraction + services picker) --------
+  // Fires the industry-knowledge AI call in the background and advances to
+  // turn-2-services. The call is non-blocking: if Sonnet takes 8 seconds we
+  // still let the customer start ticking services — the picker uses the
+  // template's defaults as a fallback when industryKnowledge hasn't landed
+  // yet, and the funnel/site prompts pick up whichever value is on
+  // capturedFacts at turn-5 time. The route never 5xx's (it returns the
+  // template/generic fallback as a 200 on every error path), so a
+  // background failure becomes silent observable noise, not a UX block.
+  const industryKnowledgeFiredRef = useRef(false);
+  const kickIndustryKnowledgeCall = useCallback(
+    (factsAtFire: ConversationCapturedFacts) => {
+      if (industryKnowledgeFiredRef.current) return;
+      if (factsAtFire.industryKnowledge) {
+        // Already cached (e.g. resumed signup) — nothing to fire.
+        industryKnowledgeFiredRef.current = true;
+        return;
+      }
+      const e = factsAtFire.extraction;
+      if (!e) return;
+      industryKnowledgeFiredRef.current = true;
+      const industry = e.industryFreeText?.trim() || e.industry;
+      void (async () => {
+        try {
+          const knowledge = await resolveIndustryKnowledge({
+            industry,
+            location: e.location?.trim() || undefined,
+            specialty: e.specialty?.trim() || undefined,
+            businessName: factsAtFire.businessName?.trim() || undefined,
+          });
+          // Read-then-write — the user may have advanced through more
+          // turns while we awaited; preserve their later edits.
+          setCapturedFacts((prev) => {
+            const merged: ConversationCapturedFacts = {
+              ...prev,
+              industryKnowledge: knowledge,
+            };
+            // Persist so a refresh hydrates the cached knowledge.
+            void persistState({
+              capturedFacts: merged,
+              // current_turn stays whatever it is by the time we land — the
+              // industry-knowledge write is independent of turn progress.
+              current_turn: Math.max(2, /* see below */ 2),
+              messages,
+            });
+            return merged;
+          });
+        } catch (err) {
+          // Silent — the route's fallback path means this should rarely
+          // surface, and the picker still works off the template defaults.
+          console.warn('[sign-up] industry-knowledge call failed', err);
+        }
+      })();
+    },
+    [messages, persistState],
+  );
+
+  const handleBusinessNameSubmit = useCallback(
+    (rawName: string) => {
+      if (phase !== 'awaiting-business-name') return;
+      const trimmed = rawName.trim();
+      const extracted = (capturedFacts.extraction?.businessName ?? '').trim();
+      const derivedFromAI = (capturedFacts.businessName ?? '').trim();
+      const fallbackName = derivedFromAI || extracted;
+
+      // Resolution order: customer's typed name (clear) > "just me, [name]"
+      // pattern derived as "[Name's] [Trade]" > skip / empty → fallback to
+      // the AI-derived name. Casefold tokens so common skip phrases never
+      // get captured as a literal business name.
+      const lowered = trimmed.toLowerCase();
+      const isSkip =
+        !trimmed ||
+        lowered === 'skip' ||
+        lowered === 'no' ||
+        lowered === 'none' ||
+        lowered === 'n/a' ||
+        lowered === '-';
+
+      let resolvedName: string;
+      if (isSkip) {
+        resolvedName = fallbackName || 'My business';
+      } else {
+        // "Just me, Bob" / "Trading as Bob" / "Just Bob" → "Bob's [Trade]"
+        const justMeMatch = /^(?:just\s+me[,\s]+|just\s+|trading\s+as\s+|under\s+my\s+name[,\s]+)([a-z][a-z'\-\s]+)$/i.exec(trimmed);
+        if (justMeMatch) {
+          const firstName = justMeMatch[1].trim().split(/\s+/)[0];
+          const properName = firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+          const tradeWord =
+            capturedFacts.extraction?.industryDescription?.trim() ||
+            capturedFacts.extraction?.industryFreeText?.trim() ||
+            (capturedFacts.extraction?.industry
+              ? prettyIndustry(capturedFacts.extraction.industry)
+              : 'Services');
+          resolvedName = `${properName}'s ${tradeWord}`;
+        } else {
+          resolvedName = trimmed;
+        }
+      }
+
+      const userBubbleText = isSkip
+        ? `(use what you've got — ${fallbackName || 'my business'})`
+        : trimmed;
+
+      const confirmedAt = new Date().toISOString();
+      const nextFacts: ConversationCapturedFacts = {
+        ...capturedFacts,
+        businessName: resolvedName,
+        businessNameConfirmedAt: confirmedAt,
+      };
+      const nextMessages: LocalChatMessage[] = [
+        ...messages,
+        { id: newId('user'), author: 'user', text: userBubbleText },
+        { id: newId('bot'), author: 'bot', text: BOT_NAME_SAVED(resolvedName) },
+        { id: newId('bot'), author: 'bot', text: BOT_TURN2_PROMPT },
+      ];
+      setCapturedFacts(nextFacts);
+      setMessages(nextMessages);
+      setPhase('turn-2-services');
+
+      // If the customer's confirmed name differs from the email-derived
+      // placeholder OR the AI's earlier derivation, push it to clients.name
+      // + re-slugify. The route is idempotent — re-firing with the same
+      // value is a no-op. Fire-and-forget; the conversation continues.
+      if (resolvedName && resolvedName !== fallbackName) {
+        void persistBusinessIdentity(resolvedName);
+      }
+
+      // Kick the industry-knowledge AI call. Background — the services
+      // picker mounts immediately with template defaults; if the call
+      // returns by the time the customer hits Continue, downstream
+      // generation gets the AI knowledge. If not, the funnel/site
+      // prompts skip the supplemental block and fall back to the template.
+      kickIndustryKnowledgeCall(nextFacts);
+
+      void persistState({
+        capturedFacts: nextFacts,
+        current_turn: 2,
+        messages: nextMessages,
+      });
+    },
+    [
+      capturedFacts,
+      kickIndustryKnowledgeCall,
+      messages,
+      persistBusinessIdentity,
+      persistState,
+      phase,
+    ],
   );
 
   // Refusal handler — fires when the extract step classified the business
@@ -1040,8 +1229,24 @@ export function ConversationShell() {
       funnelService,
       funnelCustomerPain: customerPain,
       funnelGuarantee: guarantee,
+      // Pass the resolved industry knowledge straight through — the route
+      // tolerates absence (operator concierge path doesn't fetch it) and
+      // weaves it into the user message as an additive block when
+      // present. Picks up the cached value from capturedFacts; absent on
+      // a slow-network case where the background call hasn't returned
+      // by the time the customer reaches turn 4 (rare — the call fires
+      // 2-3 turns earlier).
+      industryKnowledge: capturedFacts.industryKnowledge
+        ? {
+            customerPainPoints: capturedFacts.industryKnowledge.customerPainPoints,
+            desiredOutcomes: capturedFacts.industryKnowledge.desiredOutcomes,
+            trustSignals: capturedFacts.industryKnowledge.trustSignals,
+            voiceRecommendation: capturedFacts.industryKnowledge.voiceRecommendation,
+            source: capturedFacts.industryKnowledge.source,
+          }
+        : undefined,
     };
-  }, [capturedFacts.services, extraction]);
+  }, [capturedFacts.industryKnowledge, capturedFacts.services, extraction]);
 
   const callOfferGenerator = useCallback(async () => {
     initialOfferStartedRef.current = true;
@@ -1359,11 +1564,35 @@ export function ConversationShell() {
 
   const showTurn1Composer = phase === 'turn-1-input';
   const showClarifyingComposer = phase === 'clarifying';
+  const showBusinessNameComposer = phase === 'awaiting-business-name';
+  // Pre-fill suggestion for the composer placeholder — the AI's extracted
+  // / derived name, when available.
+  const suggestedBusinessName =
+    capturedFacts.extraction?.businessName?.trim() ||
+    capturedFacts.businessName?.trim() ||
+    '';
 
   const industryForBrandStep: IndustryKey = extraction?.industry ?? 'generic';
-  const servicesCatalogue = extraction
-    ? resolveIndustryTemplate(extraction.industry).defaultServices
-    : INDUSTRY_TEMPLATES.generic.defaultServices;
+  // Services catalogue resolution mirrors derive-brief's:
+  //   - Mapped industries (the 10 named trades): template defaults stay
+  //     authoritative; the AI knowledge supplements the GENERATION prompts
+  //     but never replaces the curated picker list.
+  //   - Unmapped industries (`generic`): prefer industryKnowledge.services
+  //     when the AI call resolved; the generic template's defaults are
+  //     intentionally vague and not useful for a real picker.
+  //   - Fallback when industryKnowledge hasn't landed (still in flight on
+  //     a slow connection): template defaults so the picker mounts cleanly.
+  const servicesCatalogue = (() => {
+    if (!extraction) return INDUSTRY_TEMPLATES.generic.defaultServices;
+    if (
+      extraction.industry === 'generic' &&
+      capturedFacts.industryKnowledge &&
+      capturedFacts.industryKnowledge.services.length > 0
+    ) {
+      return capturedFacts.industryKnowledge.services;
+    }
+    return resolveIndustryTemplate(extraction.industry).defaultServices;
+  })();
   const industryDisplay = extraction
     ? prettyIndustry(extraction.industry)
     : 'Your business';
@@ -1618,6 +1847,18 @@ export function ConversationShell() {
           disabled={botThinking}
           sendLabel="Send"
           onSend={handleClarifyingReply}
+        />
+      ) : null}
+      {showBusinessNameComposer ? (
+        <ChatComposer
+          placeholder={
+            suggestedBusinessName
+              ? `e.g. ${suggestedBusinessName} — or "skip" to use what you've got`
+              : 'Your business name, or "skip" to use a placeholder'
+          }
+          disabled={botThinking}
+          sendLabel="Save"
+          onSend={handleBusinessNameSubmit}
         />
       ) : null}
 
