@@ -3,10 +3,17 @@
 // =============================================================================
 // ChatOfferCard — turn-4 offer iteration UI for the conversational signup.
 //
+// Visual language matches the GenerationBlueprint: the offer card mounts
+// inside a `SpecSheet` ("// YOUR OFFER") so it reads as the architect's
+// draft of the funnel offer page. Each row uses the same mono `// LABEL`
+// + body vocabulary the blueprint progress sheet uses — every field is
+// a labelled spec line, not a chat-bubble factoid.
+//
 // Two modes:
-//   - display — AI-generated offer rendered as a read-only card. Actions:
-//     Use this (accept), Refine (regenerate; capped at 2 per locked
-//     decision), Use my own (open editor), Skip (no offer captured).
+//   - display — AI-generated offer rendered as a read-only set of spec
+//     lines. Actions: Use this (accept), Refine (regenerate; capped at 2
+//     per locked decision), Use my own (open editor), Skip (no offer
+//     captured).
 //   - editor — four editable inputs the customer types their own offer
 //     into. Actions: Save (accept the custom offer), Cancel (back to
 //     display mode without committing).
@@ -40,6 +47,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { OFFER_REFINEMENT_LIMIT } from '@/lib/onboarding/conversation-types';
 import type { FunnelOffer } from '@/lib/website/offer-generate';
 import { cn } from '@/lib/utils';
+
+import { SpecSheet } from './SpecSheet';
 
 export type ChatOfferCardProps = {
   /** The offer to display. null = the first generation is still in flight
@@ -81,97 +90,101 @@ export function ChatOfferCard({
 
   if (mode === 'editor') {
     return (
-      <OfferEditor
-        seed={offer}
-        onSave={(o) => {
-          onUseMyOwn(o);
-        }}
-        onCancel={() => setMode('display')}
-        disabled={loading}
-      />
+      <SpecSheet label="// YOUR OFFER" hint="offer / editing">
+        <OfferEditor
+          seed={offer}
+          onSave={(o) => {
+            onUseMyOwn(o);
+          }}
+          onCancel={() => setMode('display')}
+          disabled={loading}
+        />
+      </SpecSheet>
     );
   }
 
   // display mode
   return (
-    <div className="flex flex-col gap-3">
-      <p className="text-[12px] leading-[1.4] text-ink-quiet">
-        Here&apos;s a draft offer for your funnel. Keep it, refine it, or write
-        your own.
-      </p>
-
-      <div
-        className={cn(
-          'rounded-lg border border-rule bg-card px-4 py-4',
-          loading && 'opacity-60',
-        )}
-        aria-busy={loading}
-      >
-        {offer ? (
-          <>
-            <OfferRow label="Headline" value={offer.headline} />
-            <OfferRow label="Promise" value={offer.promise} />
-            <OfferRow label="Risk reversal" value={offer.riskReversal} />
-            <OfferRow label="CTA" value={offer.ctaText} mono />
-          </>
-        ) : (
-          <p className="font-mono text-[12px] uppercase tracking-[0.12em] text-ink-quiet">
-            {loading ? 'Drafting your offer…' : 'No offer yet.'}
-          </p>
-        )}
-      </div>
-
-      {error ? (
-        <p role="alert" className="rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-[12px] text-warn">
-          {error}
+    <SpecSheet label="// YOUR OFFER" hint="offer.json">
+      <div className="flex flex-col gap-3">
+        <p className="text-[12px] leading-[1.4] text-ink-mid">
+          Here&apos;s a draft offer for your funnel. Keep it, refine it, or write
+          your own.
         </p>
-      ) : null}
 
-      {refinementsLabel ? (
-        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
-          {refinementsLabel}
-        </p>
-      ) : null}
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          onClick={() => offer && onAccept(offer)}
-          disabled={!offer || loading}
-          className="min-h-[44px]"
+        <div
+          className={cn(
+            'rounded-md border-2 border-ink/15 bg-paper/60 px-4 py-3.5',
+            loading && 'opacity-60',
+          )}
+          aria-busy={loading}
         >
-          {loading && offer ? 'Refining…' : 'Use this offer →'}
-        </Button>
-        {canRefine ? (
+          {offer ? (
+            <>
+              <OfferRow label="// HEADLINE" value={offer.headline} />
+              <OfferRow label="// PROMISE" value={offer.promise} />
+              <OfferRow label="// RISK REVERSAL" value={offer.riskReversal} />
+              <OfferRow label="// CTA" value={offer.ctaText} mono />
+            </>
+          ) : (
+            <p className="font-mono text-[12px] uppercase tracking-[0.12em] text-ink-quiet">
+              {loading ? 'Drafting your offer…' : 'No offer yet.'}
+            </p>
+          )}
+        </div>
+
+        {error ? (
+          <p role="alert" className="rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-[12px] text-warn">
+            {error}
+          </p>
+        ) : null}
+
+        {refinementsLabel ? (
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
+            {refinementsLabel}
+          </p>
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-2 border-t border-ink/10 pt-3">
           <Button
             type="button"
-            variant="secondary"
-            onClick={onRefine}
+            onClick={() => offer && onAccept(offer)}
+            disabled={!offer || loading}
+            className="min-h-[44px]"
+          >
+            {loading && offer ? 'Refining…' : 'Use this offer →'}
+          </Button>
+          {canRefine ? (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={onRefine}
+              disabled={loading}
+              className="min-h-[44px]"
+            >
+              ✦ Refine
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setMode('editor')}
             disabled={loading}
             className="min-h-[44px]"
           >
-            ✦ Refine
+            Use my own
           </Button>
-        ) : null}
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => setMode('editor')}
-          disabled={loading}
-          className="min-h-[44px]"
-        >
-          Use my own
-        </Button>
-        <button
-          type="button"
-          onClick={onSkip}
-          disabled={loading}
-          className="ml-auto min-h-[44px] px-2 font-mono text-[11px] uppercase tracking-[0.12em] text-ink-quiet hover:text-ink disabled:opacity-50"
-        >
-          Skip
-        </button>
+          <button
+            type="button"
+            onClick={onSkip}
+            disabled={loading}
+            className="ml-auto min-h-[44px] px-2 font-mono text-[11px] uppercase tracking-[0.12em] text-ink-quiet hover:text-ink disabled:opacity-50"
+          >
+            Skip
+          </button>
+        </div>
       </div>
-    </div>
+    </SpecSheet>
   );
 }
 
@@ -187,11 +200,11 @@ function OfferRow({
   mono?: boolean;
 }) {
   return (
-    <div className="border-b border-paper-2 py-2 last:border-b-0 last:pb-0 first:pt-0">
+    <div className="border-b border-ink/10 py-2.5 last:border-b-0 last:pb-0 first:pt-0">
       <div className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
         {label}
       </div>
-      <div className={cn('mt-0.5 text-[14px] text-ink', mono && 'font-mono')}>
+      <div className={cn('mt-1 text-[14px] leading-[1.45] text-ink', mono && 'font-mono')}>
         {value}
       </div>
     </div>
@@ -233,12 +246,12 @@ function OfferEditor({
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-[12px] leading-[1.4] text-ink-quiet">
+      <p className="text-[12px] leading-[1.4] text-ink-mid">
         Write your own offer. Each field is shown back to your customer.
       </p>
 
       <div className="flex flex-col gap-3">
-        <EditorField label="Headline" hint="≤ 12 words. Name the pain, promise the outcome.">
+        <EditorField label="// HEADLINE" hint="≤ 12 words. Name the pain, promise the outcome.">
           <Input
             value={headline}
             onChange={(e) => setHeadline(e.target.value)}
@@ -247,7 +260,7 @@ function OfferEditor({
             className="min-h-[44px] text-base sm:text-[14px]"
           />
         </EditorField>
-        <EditorField label="Promise" hint="≤ 25 words. Specific timeframe or outcome.">
+        <EditorField label="// PROMISE" hint="≤ 25 words. Specific timeframe or outcome.">
           <Textarea
             value={promise}
             onChange={(e) => setPromise(e.target.value)}
@@ -257,7 +270,7 @@ function OfferEditor({
             className="text-base sm:text-[14px]"
           />
         </EditorField>
-        <EditorField label="Risk reversal" hint="≤ 15 words. A concrete guarantee.">
+        <EditorField label="// RISK REVERSAL" hint="≤ 15 words. A concrete guarantee.">
           <Input
             value={riskReversal}
             onChange={(e) => setRiskReversal(e.target.value)}
@@ -266,7 +279,7 @@ function OfferEditor({
             className="min-h-[44px] text-base sm:text-[14px]"
           />
         </EditorField>
-        <EditorField label="CTA" hint="≤ 6 words. First-person, action-led.">
+        <EditorField label="// CTA" hint="≤ 6 words. First-person, action-led.">
           <Input
             value={ctaText}
             onChange={(e) => setCtaText(e.target.value)}
@@ -277,7 +290,7 @@ function OfferEditor({
         </EditorField>
       </div>
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-3 border-t border-ink/10 pt-3">
         <button
           type="button"
           onClick={onCancel}
@@ -311,7 +324,7 @@ function EditorField({
   return (
     <div>
       <div className="mb-1 flex items-baseline justify-between gap-2">
-        <label className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink">
+        <label className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
           {label}
         </label>
         <span className="font-mono text-[10px] text-ink-quiet">{hint}</span>

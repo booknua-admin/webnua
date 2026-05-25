@@ -3,12 +3,18 @@
 // =============================================================================
 // ChatServicePicker — turn-2 services-pick UI for the conversational signup.
 //
+// Visual language matches the GenerationBlueprint: the whole picker mounts
+// inside a `SpecSheet` ("// SERVICES") so it reads as a labelled section
+// on the architect's drawing rather than a card floating in the chat
+// stream. Selected service rows use rust-soft bg + rust border (same
+// "this is active / picked" cue the blueprint progress sheet uses).
+//
 // Two render modes driven by the catalogue size (per CLAUDE.md locked
 // decision "Service picker: ≥6 → Dialog, ≤5 → inline"):
 //
 //   - ≤ SERVICE_PICKER_INLINE_LIMIT (5) services → inline checkbox column
-//     mounted directly inside the ChatBubble's `rich` slot.
-//   - ≥ 6 services → a "Pick your services →" button inside the bubble that
+//     mounted directly inside the SpecSheet.
+//   - ≥ 6 services → a "Pick your services →" button inside the sheet that
 //     opens a Dialog (the trade-default catalogues are 10-12 services per
 //     industry, so this is the default path for nearly every signup).
 //
@@ -38,6 +44,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { SERVICE_PICKER_INLINE_LIMIT } from '@/lib/onboarding/conversation-types';
 import { cn } from '@/lib/utils';
+
+import { SpecSheet } from './SpecSheet';
 
 export type ChatServicePickerProps = {
   /** Display name of the industry — for the dialog title + the inline
@@ -84,35 +92,37 @@ function ServicePickerInline({
   );
 
   return (
-    <div className="flex flex-col gap-3">
-      <p className="text-[12px] leading-[1.4] text-ink-quiet">
-        Tick the services you offer — we&apos;ll write your site around these.
-      </p>
-      <div className="flex flex-col gap-1.5">
-        {options.map((service) => (
-          <ServiceCheckboxRow
-            key={service}
-            label={service}
-            checked={picked.has(service)}
-            disabled={disabled}
-            onChange={(next) =>
-              setPicked((prev) => {
-                const out = new Set(prev);
-                if (next) out.add(service);
-                else out.delete(service);
-                return out;
-              })
-            }
-          />
-        ))}
+    <SpecSheet label="// SERVICES" hint="services.json">
+      <div className="flex flex-col gap-3">
+        <p className="text-[12px] leading-[1.4] text-ink-mid">
+          Tick the services you offer — we&apos;ll write your site around these.
+        </p>
+        <div className="flex flex-col gap-1.5">
+          {options.map((service) => (
+            <ServiceCheckboxRow
+              key={service}
+              label={service}
+              checked={picked.has(service)}
+              disabled={disabled}
+              onChange={(next) =>
+                setPicked((prev) => {
+                  const out = new Set(prev);
+                  if (next) out.add(service);
+                  else out.delete(service);
+                  return out;
+                })
+              }
+            />
+          ))}
+        </div>
+        <SubmitRow
+          disabled={disabled}
+          onSubmit={() => onSubmit(orderedFromSet(picked, options))}
+          onSkip={onSkip}
+          submitLabel="Continue →"
+        />
       </div>
-      <SubmitRow
-        disabled={disabled}
-        onSubmit={() => onSubmit(orderedFromSet(picked, options))}
-        onSkip={onSkip}
-        submitLabel="Continue →"
-      />
-    </div>
+    </SpecSheet>
   );
 }
 
@@ -167,39 +177,41 @@ function ServicePickerDialog({
   }
 
   return (
-    <div className="flex flex-col gap-2.5">
-      <p className="text-[12px] leading-[1.4] text-ink-quiet">
-        Tick what you offer — we&apos;ll write your site around these.
-      </p>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        disabled={disabled}
-        className={cn(
-          'min-h-[44px] inline-flex items-center justify-between rounded-md',
-          'border border-rule bg-card px-4 py-2.5',
-          'text-left text-[14px] text-ink',
-          'hover:border-rust focus:border-rust focus:outline-none focus:ring-2 focus:ring-rust/[0.2]',
-          'disabled:opacity-50 disabled:cursor-not-allowed',
-        )}
-      >
-        <span>
-          <span className="font-bold">Pick your services →</span>
-          <span className="ml-2 font-mono text-[11px] uppercase tracking-[0.12em] text-ink-quiet">
-            {launcherSummary}
+    <SpecSheet label="// SERVICES" hint="services.json">
+      <div className="flex flex-col gap-2.5">
+        <p className="text-[12px] leading-[1.4] text-ink-mid">
+          Tick what you offer — we&apos;ll write your site around these.
+        </p>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          disabled={disabled}
+          className={cn(
+            'min-h-[44px] inline-flex items-center justify-between rounded-md',
+            'border-2 border-ink/20 bg-paper/40 px-4 py-2.5',
+            'text-left text-[14px] text-ink',
+            'hover:border-rust focus:border-rust focus:outline-none focus:ring-2 focus:ring-rust/[0.2]',
+            'disabled:opacity-50 disabled:cursor-not-allowed',
+          )}
+        >
+          <span>
+            <span className="font-bold">Pick your services →</span>
+            <span className="ml-2 font-mono text-[11px] uppercase tracking-[0.12em] text-ink-quiet">
+              {launcherSummary}
+            </span>
           </span>
-        </span>
-      </button>
-      <SubmitRow
-        disabled={disabled || (picked.size === 0 && customs.length === 0)}
-        onSubmit={handleSubmit}
-        onSkip={onSkip}
-        submitLabel={
-          picked.size + customs.length > 0
-            ? `Continue with ${picked.size + customs.length} →`
-            : 'Continue →'
-        }
-      />
+        </button>
+        <SubmitRow
+          disabled={disabled || (picked.size === 0 && customs.length === 0)}
+          onSubmit={handleSubmit}
+          onSkip={onSkip}
+          submitLabel={
+            picked.size + customs.length > 0
+              ? `Continue with ${picked.size + customs.length} →`
+              : 'Continue →'
+          }
+        />
+      </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent size="default">
@@ -231,7 +243,7 @@ function ServicePickerDialog({
               ))}
             </div>
 
-            <div className="mt-4 border-t border-rule pt-4">
+            <div className="mt-4 border-t border-ink/10 pt-4">
               <p className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
                 {'// Custom services'}
               </p>
@@ -240,7 +252,7 @@ function ServicePickerDialog({
                   {customs.map((c) => (
                     <div
                       key={c}
-                      className="flex items-center justify-between rounded-md border border-rust-soft bg-rust-soft/40 px-3 py-2 text-[14px] text-ink"
+                      className="flex items-center justify-between rounded-md border-2 border-rust/50 bg-rust-soft/40 px-3 py-2 text-[14px] text-ink"
                     >
                       <span>{c}</span>
                       <button
@@ -303,7 +315,7 @@ function ServicePickerDialog({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </SpecSheet>
   );
 }
 
@@ -324,11 +336,11 @@ function ServiceCheckboxRow({
   return (
     <label
       className={cn(
-        'flex items-center gap-3 rounded-md border bg-card px-3 py-3',
+        'flex items-center gap-3 rounded-md border-2 px-3 py-3',
         'cursor-pointer transition-colors',
         checked
-          ? 'border-rust bg-rust-soft'
-          : 'border-rule hover:border-ink',
+          ? 'border-rust bg-rust-soft/60'
+          : 'border-ink/20 bg-paper/40 hover:border-ink/40',
         disabled && 'cursor-not-allowed opacity-50',
         'min-h-[44px]',
       )}
@@ -357,7 +369,7 @@ function SubmitRow({
   submitLabel: string;
 }) {
   return (
-    <div className="mt-1 flex items-center justify-between gap-3">
+    <div className="mt-1 flex items-center justify-between gap-3 border-t border-ink/10 pt-3">
       <button
         type="button"
         onClick={onSkip}
