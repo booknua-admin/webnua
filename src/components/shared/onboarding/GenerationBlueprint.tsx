@@ -271,20 +271,38 @@ function BlueprintRunningBody({
   return (
     <BlueprintShell>
       <div className="relative z-10 flex h-full w-full flex-col">
-        {/* header — brand + step label */}
-        <header className="flex items-center justify-center gap-3 px-4 pt-5 sm:pt-7">
+        {/* header — brand + step label. Slim so the sheets get the
+            viewport real estate. */}
+        <header className="flex items-center justify-center gap-3 px-4 pt-4 sm:pt-5">
           <BrandMark size="default" className="text-ink" />
           <span className="font-mono text-[10px] uppercase tracking-[0.14em] font-bold text-ink-quiet">
             {'// step 5 of 5 · building'}
           </span>
         </header>
 
-        {/* body — drawings + progress text. Responsive: drawings stack
-            below the progress on small screens, side-by-side above sm. */}
-        <div className="flex flex-1 flex-col gap-6 px-4 pt-6 pb-8 sm:px-10 sm:pt-10 sm:pb-12">
-          {/* Progress block — kept on top so on mobile it's seen first. */}
-          <div className="mx-auto w-full max-w-2xl">
-            <ProgressMessages
+        {/* body — three blueprint sheets on desktop (progress / site /
+            funnel). On mobile they stack vertically with the progress
+            sheet condensed to a single active-step strip up top.
+            DESIGN DECISION (Option A from the integration brief): the
+            progress checklist is rendered as a third blueprint sheet
+            with the same chrome as the site + funnel sheets (rounded
+            border-2 on ink/20, paper/40 surface, mono `// LABEL`
+            corner eyebrow + mono filename-style hint, SVG glyphs in
+            the same stroke-draw aesthetic), so the whole screen reads
+            as one architect's drawing rather than a checklist sitting
+            on top of a drawing. The previous v1 layout stacked a
+            centred max-w-2xl ProgressMessages block ABOVE the
+            wireframe sheets, which ate the top half of a 1080p
+            viewport and pushed the wireframes (the "hero of the
+            screen" per the user) below the fold; the sheet framing
+            folds it into the layout instead of stacking above it. */}
+        <div className="flex flex-1 flex-col gap-4 overflow-hidden px-4 pt-4 pb-6 sm:gap-5 sm:px-8 sm:pt-6 sm:pb-8">
+          {/* Mobile-only: compact strip showing just the active step.
+              Hides the full progress list (it lives in the sheet below
+              on tablet+; on phone the list collapses entirely so the
+              wireframes stay above the fold). */}
+          <div className="sm:hidden">
+            <ProgressStripMobile
               stages={STAGES}
               stageIndex={honestStageIndex}
               industryDisplay={industryDisplay}
@@ -292,8 +310,22 @@ function BlueprintRunningBody({
             />
           </div>
 
-          {/* Sheets — site + funnel side-by-side on sm+, stacked below */}
-          <div className="mx-auto grid w-full max-w-5xl flex-1 grid-cols-1 gap-5 sm:grid-cols-[1.5fr_1fr]">
+          {/* Three-sheet grid. The progress sheet is fixed 260px on sm+
+              so the site (the hero of the screen) gets the most width,
+              with funnel sitting beside it. Below sm everything stacks. */}
+          <div className="mx-auto grid w-full max-w-[1400px] flex-1 grid-cols-1 gap-4 overflow-hidden sm:grid-cols-[260px_minmax(0,1.6fr)_minmax(0,1fr)] sm:gap-5">
+            {/* The progress sheet is desktop-only. On mobile the strip
+                above already covers the surface; rendering the full
+                sheet below the wireframes would re-introduce the
+                "list dominates the screen" problem on a 375px viewport. */}
+            <div className="hidden sm:block">
+              <ProgressSheet
+                stages={STAGES}
+                stageIndex={honestStageIndex}
+                industryDisplay={industryDisplay}
+                serviceCount={serviceCount}
+              />
+            </div>
             <BlueprintSheet
               label="// SITE"
               kind="site"
@@ -364,9 +396,16 @@ function BlueprintShell({ children }: { children: React.ReactNode }) {
 }
 
 // ---------------------------------------------------------------------------
-// progress messages — list of stages with done/active/pending styles
+// progress sheet — Option A: the checklist rendered as a third blueprint
+// sheet sitting beside the site + funnel sheets. Same chrome: rounded
+// border-2 on ink/20, paper/40 surface, mono `// PROGRESS` corner label,
+// mono filename hint. Each step row is `[ stroke-drawn status glyph ]
+// [ mono eyebrow ] [ descriptive line ]`. Done glyphs are SVG checkmarks
+// that draw in via the same stroke-dashoffset @keyframes draw animation
+// the wireframe blocks use — so the checklist feels sketched onto the
+// same blueprint sheet, not pasted on top.
 
-function ProgressMessages({
+function ProgressSheet({
   stages,
   stageIndex,
   industryDisplay,
@@ -378,67 +417,180 @@ function ProgressMessages({
   serviceCount: number;
 }) {
   const fmtCtx = { industryDisplay, serviceCount };
-
-  // Show only the stages up to the active stage + ONE upcoming, so the
-  // list doesn't dominate the viewport on small screens. The animation
-  // fades each one in as it activates.
-  const visibleEnd = Math.min(stages.length - 1, Math.max(0, stageIndex) + 1);
-  const visibleStages = stages.slice(0, visibleEnd + 1);
+  const totalSteps = stages.length;
+  // Progress as a fraction so the corner indicator reads concrete
+  // (e.g. "4/9") — keeps the sheet feeling like a real artefact with a
+  // status field, mirroring how the site/funnel sheet labels carry a
+  // file-name hint in their header.
+  const shownIndex = Math.min(
+    Math.max(0, stageIndex) + 1,
+    totalSteps,
+  );
 
   return (
-    <ol
-      aria-live="polite"
-      aria-busy={stageIndex < stages.length - 1}
-      className="flex flex-col gap-3"
+    <div className="relative flex flex-col overflow-hidden rounded-lg border-2 border-ink/20 bg-paper/40 px-4 py-4 sm:px-5 sm:py-5">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="font-mono text-[10px] uppercase tracking-[0.14em] font-bold text-ink-quiet">
+          {'// PROGRESS'}
+        </span>
+        <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-quiet/60">
+          {shownIndex.toString().padStart(2, '0')}/
+          {totalSteps.toString().padStart(2, '0')}
+        </span>
+      </div>
+      <ol
+        aria-live="polite"
+        aria-busy={stageIndex < totalSteps - 1}
+        className="flex flex-1 flex-col gap-2.5 overflow-y-auto"
+      >
+        {stages.map((stage, i) => {
+          const state: 'done' | 'active' | 'pending' =
+            i < stageIndex ? 'done' : i === stageIndex ? 'active' : 'pending';
+          return (
+            <li key={stage.id} className="flex items-start gap-2.5">
+              <StatusGlyph state={state} />
+              <div className="min-w-0 flex-1">
+                <div
+                  className={cn(
+                    'font-mono text-[9px] uppercase tracking-[0.14em] font-bold leading-tight',
+                    state === 'done' && 'text-ink-quiet',
+                    state === 'active' && 'text-rust',
+                    state === 'pending' && 'text-ink-quiet/50',
+                  )}
+                >
+                  {stage.eyebrow.replace('// ', '')}
+                </div>
+                {state === 'active' ? (
+                  // Only the active row carries the descriptive line —
+                  // keeps the sheet from getting wordy when 6 steps are
+                  // marked done. Done rows compress to just the eyebrow
+                  // (struck through), pending rows are eyebrow-only too.
+                  <div className="mt-1 text-[12px] leading-[1.4] text-ink animate-in fade-in duration-300">
+                    {stage.line(fmtCtx)}
+                  </div>
+                ) : null}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+/** SVG status glyph for the progress sheet. Drawn in the same stroke
+ *  aesthetic as the wireframe blocks: pending = dashed empty square,
+ *  active = a small pulsing rust dot, done = an ink checkmark that
+ *  draws in via the shared @keyframes draw on first reveal. */
+function StatusGlyph({ state }: { state: 'done' | 'active' | 'pending' }) {
+  return (
+    <span
+      aria-hidden
+      className="relative mt-[2px] inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center"
     >
-      {visibleStages.map((stage, i) => {
-        const state: 'done' | 'active' | 'pending' =
-          i < stageIndex ? 'done' : i === stageIndex ? 'active' : 'pending';
-        return (
-          <li
-            key={stage.id}
-            className={cn(
-              'animate-in fade-in slide-in-from-bottom-2 duration-300',
-              'flex items-start gap-3',
-            )}
-          >
-            <span
-              aria-hidden
-              className={cn(
-                'mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold',
-                state === 'done' && 'bg-good text-paper',
-                state === 'active' && 'animate-pulse bg-rust text-paper',
-                state === 'pending' && 'border border-rule text-transparent',
-              )}
-            >
-              {state === 'done' ? '✓' : state === 'active' ? '◆' : '·'}
-            </span>
-            <div className="min-w-0 flex-1">
-              <div
-                className={cn(
-                  'font-mono text-[10px] uppercase tracking-[0.14em] font-bold',
-                  state === 'done' && 'text-ink-quiet',
-                  state === 'active' && 'text-rust',
-                  state === 'pending' && 'text-ink-quiet/60',
-                )}
-              >
-                {stage.eyebrow}
-              </div>
-              <div
-                className={cn(
-                  'mt-0.5 text-[14px] leading-[1.45]',
-                  state === 'done' && 'text-ink-quiet line-through decoration-ink-quiet/30',
-                  state === 'active' && 'font-semibold text-ink',
-                  state === 'pending' && 'text-ink-quiet/60',
-                )}
-              >
-                {stage.line(fmtCtx)}
-              </div>
-            </div>
-          </li>
-        );
-      })}
-    </ol>
+      <svg viewBox="0 0 14 14" className="h-full w-full" aria-hidden>
+        {/* Outline square — drawn for every state so the glyph always
+            occupies the same footprint. Pending = dashed thin, active
+            = solid rust ring, done = solid ink ring. */}
+        <rect
+          x="1.5"
+          y="1.5"
+          width="11"
+          height="11"
+          rx="1.5"
+          fill="none"
+          strokeWidth={state === 'pending' ? '1' : '1.4'}
+          strokeDasharray={state === 'pending' ? '2 2' : undefined}
+          className={cn(
+            state === 'done' && 'stroke-ink/70',
+            state === 'active' && 'stroke-rust',
+            state === 'pending' && 'stroke-ink/30',
+          )}
+        />
+        {state === 'done' ? (
+          // Checkmark — draws in on mount via the shared @keyframes
+          // draw animation. Path length is ~10 units, the dasharray
+          // 24 is comfortably longer than that so the animation runs
+          // cleanly to offset 0.
+          <path
+            d="M3.8 7.2 L6 9.4 L10.4 4.6"
+            fill="none"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="stroke-ink [stroke-dasharray:24] [stroke-dashoffset:24] animate-[draw_0.45s_ease-out_forwards]"
+          />
+        ) : null}
+        {state === 'active' ? (
+          // Pulsing rust dot — keeps the glyph honest about where the
+          // build currently is. Reuses tailwind's animate-pulse rather
+          // than a bespoke keyframe.
+          <circle
+            cx="7"
+            cy="7"
+            r="2"
+            className="animate-pulse fill-rust"
+          />
+        ) : null}
+      </svg>
+    </span>
+  );
+}
+
+/** Mobile-only compact strip: single-line summary of the active step
+ *  with a thin paper-2 progress bar underneath. Renders above the
+ *  stacked site + funnel sheets so the wireframes themselves still get
+ *  the bulk of the viewport. The full step list is intentionally NOT
+ *  exposed on mobile — the wireframes are the hero of the screen and a
+ *  9-step list collapsed inside a sheet would re-introduce the
+ *  "checklist dominates the screen" problem on a 375px viewport. */
+function ProgressStripMobile({
+  stages,
+  stageIndex,
+  industryDisplay,
+  serviceCount,
+}: {
+  stages: readonly Stage[];
+  stageIndex: number;
+  industryDisplay: string;
+  serviceCount: number;
+}) {
+  const fmtCtx = { industryDisplay, serviceCount };
+  const active = stages[Math.min(Math.max(0, stageIndex), stages.length - 1)];
+  const completedFraction =
+    Math.max(0, Math.min(stageIndex, stages.length - 1)) /
+    Math.max(1, stages.length - 1);
+
+  return (
+    <div className="rounded-lg border-2 border-ink/20 bg-paper/40 px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <StatusGlyph state="active" />
+        <span className="font-mono text-[9px] uppercase tracking-[0.14em] font-bold text-rust">
+          {active.eyebrow.replace('// ', '')}
+        </span>
+        <span className="ml-auto font-mono text-[9px] uppercase tracking-[0.14em] text-ink-quiet/60">
+          {(Math.min(stageIndex + 1, stages.length))
+            .toString()
+            .padStart(2, '0')}
+          /{stages.length.toString().padStart(2, '0')}
+        </span>
+      </div>
+      <div className="mt-1.5 text-[12px] leading-[1.4] text-ink">
+        {active.line(fmtCtx)}
+      </div>
+      {/* Thin progress bar — the only progress indicator the mobile
+          surface gets beyond the active-step copy. paper-2 track, rust
+          fill. */}
+      <div
+        aria-hidden
+        className="mt-2 h-1 overflow-hidden rounded-full bg-paper-2"
+      >
+        <div
+          className="h-full bg-rust transition-all duration-500 ease-out"
+          style={{ width: `${completedFraction * 100}%` }}
+        />
+      </div>
+    </div>
   );
 }
 
