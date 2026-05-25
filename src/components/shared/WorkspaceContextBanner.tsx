@@ -6,9 +6,17 @@
 // Picker is the primary control; this banner lives on context-aware page
 // headers so the operator always knows where they are even if the sidebar
 // scrolls out of view.
+//
+// Role-gated: the agency / sub-account distinction is an operator-only
+// concept. A client-role user IS the client — they have no "all clients"
+// view to be in. Rendering the "All clients · birds-eye" pill (or even the
+// sub-account pill) on a client surface leaks operator chrome. The banner
+// returns null for client-role users regardless of mount site, so any
+// existing or future shared mount stays safe by construction.
 // =============================================================================
 
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
+import { useRole } from '@/lib/auth/user-stub';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -25,9 +33,12 @@ export function WorkspaceContextBanner({
   hideReturnButton = false,
   className,
 }: WorkspaceContextBannerProps) {
+  const { role, hydrated: roleHydrated } = useRole();
   const { activeClient, hydrated, clearActiveClient } = useWorkspace();
 
-  if (!hydrated) return null;
+  if (!hydrated || !roleHydrated) return null;
+  // Client-role users have no agency/sub-account axis — never render either pill.
+  if (role === 'client') return null;
 
   if (!activeClient) {
     return (
