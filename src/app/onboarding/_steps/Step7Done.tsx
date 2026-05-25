@@ -46,6 +46,11 @@ type Step7Props = {
   /** Diagnostic from the last generation attempt — surfaced inline on
    *  the failed surface so the customer / support sees what happened. */
   generationError: string | null;
+  /** Non-blocking warning from a sub-generator (currently only the
+   *  funnel-offer call). When set, the BuildReady surface renders an
+   *  inline note so the customer knows part of the run didn't land but
+   *  the site + funnel are still usable. Null = no warning. */
+  generationWarning?: string | null;
   onRetryGeneration: () => void;
   onComplete: () => void;
   onBack: () => void;
@@ -56,6 +61,7 @@ export function Step7Done({
   clientSlug,
   generationStatus,
   generationError,
+  generationWarning = null,
   onRetryGeneration,
   onComplete,
   onBack,
@@ -84,6 +90,7 @@ export function Step7Done({
       <BuildReady
         state={state}
         previewUrl={previewUrl}
+        warning={generationWarning}
         onComplete={onComplete}
       />
     );
@@ -197,10 +204,12 @@ function BuildingSequence() {
 function BuildReady({
   state,
   previewUrl,
+  warning,
   onComplete,
 }: {
   state: WizardState;
   previewUrl: string;
+  warning: string | null;
   onComplete: () => void;
 }) {
   const integrationsConnected = countConnected(state);
@@ -233,6 +242,20 @@ function BuildReady({
         automation defaults. Take a look around — when you&rsquo;re ready
         to go live, hit Publish on your dashboard.
       </p>
+
+      {/* Non-blocking warning slot — a sub-generator (currently only the
+          funnel-offer call) failed but the site + funnel still published.
+          Amber-tinted inline note rather than the BuildFailed surface
+          because the customer's work IS usable. */}
+      {warning ? (
+        <div
+          role="status"
+          className="mt-6 rounded-lg border border-warn/[0.35] bg-warn/[0.06] px-4 py-3 text-[13px] leading-[1.5] text-ink-soft"
+        >
+          <span className="mr-1.5 font-bold text-warn">Heads up:</span>
+          {warning}
+        </div>
+      ) : null}
 
       {/* Primary action surface — the single thing we want the customer
           to do next is open their preview. Secondary is the dashboard. */}

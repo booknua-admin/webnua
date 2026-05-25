@@ -22,10 +22,12 @@
 
 import type { ClientBrief } from '@/lib/website/site-generation-stub';
 import { resolveIndustryTemplate } from '@/lib/website/industry-templates';
-import type { BrandObject, VoiceToneAxis } from '@/lib/website/types';
+import type { BrandObject } from '@/lib/website/types';
 
 import { INDUSTRY_PRIMARY_COLORS, deriveSecondaryColor } from './industry-colors';
 import type { WizardState } from './types';
+import { NEUTRAL_VOICE, toneToVoice } from './voice-presets';
+import type { FunnelOffer } from '@/lib/website/offer-generate';
 
 export type DeriveBriefInput = {
   state: WizardState;
@@ -34,6 +36,13 @@ export type DeriveBriefInput = {
   fallbackBusinessName: string;
   fallbackEmail: string;
   fallbackIndustry: string;
+  /** Optional pre-generated four-field funnel offer. The wizard fires the
+   *  Sonnet-backed offer generator alongside site + funnel generation when
+   *  step 4 commits (Phase 2 parity fix); the resolved offer is injected
+   *  here so the funnel persistence writes it to `funnels.funnel_offer`.
+   *  Null when the call failed (the wizard surfaces a warning + the
+   *  customer can run it manually from the editor later) or skipped. */
+  offerOverride?: FunnelOffer | null;
 };
 
 /** Derive a `ClientBrief` from the wizard state. Used twice: once at step 4
@@ -44,7 +53,7 @@ export type DeriveBriefInput = {
  *  Every other step is optional — defaults flow through from the industry
  *  template + the signup fallbacks. */
 export function deriveBriefFromWizard(input: DeriveBriefInput): ClientBrief {
-  const { state, fallbackBusinessName, fallbackEmail, fallbackIndustry } = input;
+  const { state, fallbackBusinessName, fallbackEmail, fallbackIndustry, offerOverride } = input;
   const { step1, step2, step3, step4, step5 } = state.step_data;
 
   // Step 1 is required — but guard defensively so a corrupted state doesn't
@@ -88,13 +97,7 @@ export function deriveBriefFromWizard(input: DeriveBriefInput): ClientBrief {
     INDUSTRY_PRIMARY_COLORS.generic;
   const secondaryColor =
     step4?.secondaryColor?.trim() || deriveSecondaryColor(primaryColor);
-  const voice = step4
-    ? toneToVoice(step4.tone)
-    : {
-        formality: 3 as VoiceToneAxis,
-        urgency: 3 as VoiceToneAxis,
-        technicality: 3 as VoiceToneAxis,
-      };
+  const voice = step4 ? toneToVoice(step4.tone) : NEUTRAL_VOICE;
   const brand: BrandObject = {
     accentColor: primaryColor,
     brandColors: [primaryColor, secondaryColor].filter(Boolean),
@@ -140,31 +143,19 @@ export function deriveBriefFromWizard(input: DeriveBriefInput): ClientBrief {
       customerPain: funnelCustomerPain,
       guarantee: funnelGuarantee,
       testimonials,
-      offer: null, // wizard doesn't run the four-field offer generator
-      //                  (operator-concierge path does; wizard skips for speed)
+      // The wizard now fires the Sonnet-backed offer generator alongside
+      // site + funnel generation (Phase 2 parity fix) — when it resolves
+      // the caller injects the result via `offerOverride`. Null means
+      // either the wizard is calling pre-generation (the deriver is run
+      // twice: once to feed offer-gen its inputs, once with the result)
+      // OR the offer call failed (the funnel publishes without one — the
+      // operator can run it later from the editor).
+      offer: offerOverride ?? null,
     },
   };
 }
 
 // --- internals --------------------------------------------------------------
-
-function toneToVoice(tone: 'friendly' | 'professional' | 'casual'): {
-  formality: VoiceToneAxis;
-  urgency: VoiceToneAxis;
-  technicality: VoiceToneAxis;
-} {
-  // VoiceToneAxis is the literal union 1|2|3|4|5. Inline literals would
-  // widen to `number` through the switch return, so we type each return
-  // explicitly through the alias.
-  switch (tone) {
-    case 'friendly':
-      return { formality: 2 as VoiceToneAxis, urgency: 2 as VoiceToneAxis, technicality: 2 as VoiceToneAxis };
-    case 'professional':
-      return { formality: 4 as VoiceToneAxis, urgency: 2 as VoiceToneAxis, technicality: 3 as VoiceToneAxis };
-    case 'casual':
-      return { formality: 1 as VoiceToneAxis, urgency: 3 as VoiceToneAxis, technicality: 2 as VoiceToneAxis };
-  }
-}
 
 // PrimaryIntent narrowing: 'other' carries a required `text` field; the
 // non-'other' variants are bare. Step 1's urgency-mode map only emits the

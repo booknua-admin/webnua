@@ -24,7 +24,7 @@ import { NextResponse } from 'next/server';
 
 import { requireClientAccess } from '@/lib/integrations/_shared/operator-auth';
 import { getServiceClient } from '@/lib/supabase/server';
-import type { WizardState } from '@/lib/onboarding/types';
+import type { Step2Data, WizardState } from '@/lib/onboarding/types';
 
 export async function GET(
   request: Request,
@@ -96,6 +96,29 @@ export async function POST(
     update.wizard_completed_at = new Date().toISOString();
   }
 
+  // Phase 2 parity fix — mirror Step 2 fields onto the `clients` columns
+  // the concierge path (createClientWithGeneration) writes at insert time.
+  // The wizard previously left clients.name / primary_contact_phone /
+  // service_area at their signup-time defaults regardless of what the
+  // customer entered on Step 2 — Step 2 only landed in the wizard_state
+  // jsonb, so any surface reading the canonical clients columns (the
+  // hub, /settings/profile, the sidebar workspace card, the public-site
+  // resolver) saw stale data until the customer manually edited from
+  // /settings/profile post-publish.
+  //
+  // Only mirror columns the clients schema actually carries (name, phone,
+  // service_area). Step 2's `hours` + `address` fields live only in
+  // wizard_state.step_data.step2 — the deriver picks them up from there.
+  // Idempotent — re-POSTing the same state runs the same UPDATE; we filter
+  // to only fields the customer actually supplied (a trimmed empty stays
+  // null at the schema level — don't clobber a real value with empty).
+  const step2 = extractStep2(state);
+  if (step2) {
+    if (step2.businessName) update.name = step2.businessName;
+    if (step2.phone) update.primary_contact_phone = step2.phone;
+    if (step2.serviceArea) update.service_area = step2.serviceArea;
+  }
+
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ ok: true, noop: true });
   }
@@ -107,4 +130,27 @@ export async function POST(
     return NextResponse.json({ error: 'update-failed' }, { status: 500 });
   }
   return NextResponse.json({ ok: true });
+}
+
+// --- internals --------------------------------------------------------------
+
+/** Extract Step 2 data from the wizard state, returning trimmed values for
+ *  the three fields the clients table carries (businessName / phone /
+ *  serviceArea). Returns null when step 2 was skipped (null slot) or when
+ *  the state shape is wrong. Hours + address have no clients column and
+ *  stay only in wizard_state.step_data.step2. */
+function extractStep2(state: WizardState | null): {
+  businessName: string;
+  phone: string;
+  serviceArea: string;
+} | null {
+  if (!state) return null;
+  const slot = state.step_data?.step2;
+  if (!slot || typeof slot !== 'object') return null;
+  const s = slot as Partial<Step2Data>;
+  return {
+    businessName: typeof s.businessName === 'string' ? s.businessName.trim() : '',
+    phone: typeof s.phone === 'string' ? s.phone.trim() : '',
+    serviceArea: typeof s.serviceArea === 'string' ? s.serviceArea.trim() : '',
+  };
 }
