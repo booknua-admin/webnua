@@ -1148,6 +1148,7 @@ export type Database = {
       clients: {
         Row: {
           cancelled_at: string | null
+          conversation_state: Json | null
           created_at: string
           data_deletion_scheduled_at: string | null
           hard_delete_warning_sent_at: string | null
@@ -1173,6 +1174,7 @@ export type Database = {
         }
         Insert: {
           cancelled_at?: string | null
+          conversation_state?: Json | null
           created_at?: string
           data_deletion_scheduled_at?: string | null
           hard_delete_warning_sent_at?: string | null
@@ -1198,6 +1200,7 @@ export type Database = {
         }
         Update: {
           cancelled_at?: string | null
+          conversation_state?: Json | null
           created_at?: string
           data_deletion_scheduled_at?: string | null
           hard_delete_warning_sent_at?: string | null
@@ -1420,6 +1423,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      email_verification_codes: {
+        Row: {
+          attempts: number
+          code_hash: string
+          consumed_at: string | null
+          created_at: string
+          email: string
+          expires_at: string
+        }
+        Insert: {
+          attempts?: number
+          code_hash: string
+          consumed_at?: string | null
+          created_at?: string
+          email: string
+          expires_at: string
+        }
+        Update: {
+          attempts?: number
+          code_hash?: string
+          consumed_at?: string | null
+          created_at?: string
+          email?: string
+          expires_at?: string
+        }
+        Relationships: []
       }
       force_publish_audit_log: {
         Row: {
@@ -3671,7 +3701,7 @@ export type Database = {
           {
             foreignKeyName: "websites_client_id_fkey"
             columns: ["client_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "clients"
             referencedColumns: ["id"]
           },
