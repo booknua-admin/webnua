@@ -38,6 +38,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { generateFunnelStub } from '@/lib/funnel/generation-stub';
 import { generateSiteStub } from '@/lib/website/site-generation-stub';
+import { generateFunnelOffer, type FunnelOffer } from '@/lib/website/offer-generate';
 import { deriveBriefFromWizard } from '@/lib/onboarding/derive-brief';
 import {
   INITIAL_WIZARD_STATE,
@@ -91,6 +92,11 @@ export function WizardShell({
   const [persistError, setPersistError] = useState<string | null>(null);
   const [genState, setGenState] = useState<'idle' | 'running' | 'ready' | 'failed'>('idle');
   const [genError, setGenError] = useState<string | null>(null);
+  // Non-blocking warning for the funnel-offer generator. Failure here does
+  // NOT fail the wizard (site + funnel still publish, just without an
+  // AI-drafted offer); the customer can run it from the editor later.
+  // Surfaced on step 7's BuildReady surface as an inline note.
+  const [offerWarning, setOfferWarning] = useState<string | null>(null);
   const generationStartedRef = useRef(false);
   // Stamp `wizard_completed_at` the moment step 7 is reached — NOT just on
   // the "See my dashboard" CTA. Most customers close the tab on step 7
@@ -155,8 +161,17 @@ export function WizardShell({
       generationStartedRef.current = true;
       setGenState('running');
       setGenError(null);
+      setOfferWarning(null);
 
-      const brief = deriveBriefFromWizard({
+      // Build the initial brief WITHOUT the offer — the offer generator
+      // takes raw funnel inputs (industry / serviceArea / service / pain /
+      // guarantee), all of which come from the wizard state, not from the
+      // offer struct itself. We re-derive the brief with the resolved
+      // offer below before kicking off funnel generation, so the funnel
+      // generator (which threads offer.headline / promise / risk_reversal /
+      // cta_text through every section) and the funnels.funnel_offer
+      // persistence both see it.
+      const briefWithoutOffer = deriveBriefFromWizard({
         state: latestState,
         fallbackBusinessName,
         fallbackEmail,
@@ -221,14 +236,69 @@ export function WizardShell({
           await sleep(attempts[i]);
         }
         try {
-          // Run the generators in PARALLEL (independent calls; the website
-          // generator is the heavy one, funnel is lighter). Each generator
-          // returns the in-memory section data; persistence happens via
-          // the wizard-assets POST below.
-          const [siteResult, funnelResult] = await Promise.all([
-            alreadyHasWebsite ? Promise.resolve(null) : generateSiteStub(brief, { clientId }),
-            alreadyHasFunnel ? Promise.resolve(null) : generateFunnelStub(brief, { clientId }),
+          // Phase 2 parity fix — fire the Sonnet-backed funnel-offer
+          // generator alongside site generation (in parallel). Adds
+          // ~5s + ~$0.01/customer; brings the wizard into parity with
+          // the concierge path (which always generates an offer at
+          // step 7-equivalent in CreateClientModal).
+          //
+          // The funnel generator (generate-funnel-live.ts:611-620) reads
+          // brief.funnel.offer to thread headline / promise / risk_reversal
+          // / cta_text through every funnel section, so we MUST wait for
+          // the offer before kicking off funnel generation. We don't wait
+          // for the offer to start the site (the website generator
+          // doesn't read it) — that stays in parallel.
+          //
+          // Offer-failure policy: NON-BLOCKING. If the offer call fails
+          // (key unset → 503, real failure → 500, network), we surface
+          // a warning on step 7 ("Offer generation failed — you can run
+          // it from the editor") and continue with `offer: null`. The
+          // funnel still generates (generic copy instead of offer-driven)
+          // and persists. This matches "fall back to offer: null and
+          // continue" from the Phase 2 brief.
+          const offerInputs = {
+            industry: briefWithoutOffer.industry,
+            serviceArea: briefWithoutOffer.business.serviceArea,
+            funnelService: briefWithoutOffer.funnel.service,
+            funnelCustomerPain: briefWithoutOffer.funnel.customerPain,
+            funnelGuarantee: briefWithoutOffer.funnel.guarantee,
+          };
+          const offerPromise: Promise<FunnelOffer | null> = alreadyHasFunnel
+            ? Promise.resolve(null) // funnel already exists; no offer needed
+            : generateFunnelOffer(offerInputs).catch((error) => {
+                const msg = error instanceof Error ? error.message : String(error);
+                console.warn('[wizard] offer generation failed (non-blocking)', msg);
+                setOfferWarning(
+                  `We couldn't draft your AI offer (${msg}). Your site + funnel published with placeholder copy — you can generate the offer from the funnel editor any time.`,
+                );
+                return null;
+              });
+
+          // Fire site + offer in parallel. Site doesn't depend on the
+          // offer; funnel does.
+          const [siteResult, offerResult] = await Promise.all([
+            alreadyHasWebsite ? Promise.resolve(null) : generateSiteStub(briefWithoutOffer, { clientId }),
+            offerPromise,
           ]);
+
+          // Re-derive the brief with the resolved offer (or null on
+          // failure / when the funnel already exists). The new brief
+          // feeds BOTH the funnel generator (so it threads offer copy
+          // through every section) AND the wizard-assets POST (so the
+          // offer lands on funnels.funnel_offer via offerToRow).
+          const brief = offerResult
+            ? deriveBriefFromWizard({
+                state: latestState,
+                fallbackBusinessName,
+                fallbackEmail,
+                fallbackIndustry,
+                offerOverride: offerResult,
+              })
+            : briefWithoutOffer;
+
+          const funnelResult = alreadyHasFunnel
+            ? null
+            : await generateFunnelStub(brief, { clientId });
 
           // POST to wizard-assets to persist whichever arms produced content.
           // The route re-probes for idempotency before each insert — a
@@ -311,6 +381,7 @@ export function WizardShell({
   const retryGeneration = useCallback(async () => {
     generationStartedRef.current = false;
     setGenError(null);
+    setOfferWarning(null);
     await triggerGeneration(state);
   }, [state, triggerGeneration]);
 
@@ -538,6 +609,7 @@ export function WizardShell({
             clientSlug={clientSlug}
             generationStatus={genState}
             generationError={genError}
+            generationWarning={offerWarning}
             onRetryGeneration={retryGeneration}
             onComplete={continueFromStep.onStep7Complete}
             onBack={goBack}
