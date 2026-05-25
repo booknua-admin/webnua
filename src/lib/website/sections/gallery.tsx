@@ -22,7 +22,7 @@ import {
 } from '../section-theme';
 import { ColumnsField } from './_shared/ColumnsField';
 import { CopyField } from './_shared/CopyField';
-import { SurfaceLink } from './_shared/live-surface';
+import { BundleButton } from './_shared/BundleButton';
 import { gridColumnsClass, masonryColumnsClass } from './_shared/grid';
 import { MediaField } from './_shared/MediaField';
 import { coerceImageDisplay, imageBoxClasses, type ImageDisplay } from './_shared/image-display';
@@ -708,25 +708,14 @@ function GalleryPreview({
                   display="inline-block"
                   className={ctaShown ? undefined : 'opacity-40'}
                 >
-                  {d.ctaStyle === 'outline' ? (
-                    <SurfaceLink
-                      href={d.ctaHref}
-                      className="inline-flex items-center gap-2 rounded-lg border-2 px-6 py-3 text-[14px] font-semibold"
-                      style={{ borderColor: theme.heading, color: theme.heading }}
-                    >
-                      {d.ctaLabel}
-                      <span aria-hidden>→</span>
-                    </SurfaceLink>
-                  ) : (
-                    <SurfaceLink
-                      href={d.ctaHref}
-                      className="inline-flex items-center gap-2 rounded-lg px-6 py-3 text-[14px] font-semibold"
-                      style={{ backgroundColor: accent, color: '#ffffff' }}
-                    >
-                      {d.ctaLabel}
-                      <span aria-hidden>→</span>
-                    </SurfaceLink>
-                  )}
+                  <BundleButton
+                    href={d.ctaHref}
+                    variant={d.ctaStyle === 'outline' ? 'secondary' : 'primary'}
+                    accent={d.ctaStyle === 'outline' ? theme.heading : accent}
+                    trailing={<span aria-hidden>→</span>}
+                  >
+                    {d.ctaLabel}
+                  </BundleButton>
                 </SelectableElement>
               </div>
             ) : null}

@@ -10,7 +10,7 @@ import { heroMeta } from './registry-meta';
 import { brandThemeDefaults, resolveTheme, type SectionTheme } from '../section-theme';
 import { CopyField } from './_shared/CopyField';
 import { LinkField } from './_shared/LinkField';
-import { SurfaceLink } from './_shared/live-surface';
+import { BundleButton } from './_shared/BundleButton';
 import { MediaField } from './_shared/MediaField';
 import {
   coerceImageDisplay,
@@ -516,13 +516,13 @@ function HeroPreview({
                     display="inline-block"
                     className={primaryShown ? undefined : 'opacity-40'}
                   >
-                    <SurfaceLink
+                    <BundleButton
                       href={d.ctaPrimaryHref}
-                      className="inline-flex items-center rounded-lg px-6 py-3 text-[14px] font-semibold"
-                      style={{ backgroundColor: accent, color: '#ffffff' }}
+                      variant="primary"
+                      accent={accent}
                     >
                       {d.ctaPrimaryLabel}
-                    </SurfaceLink>
+                    </BundleButton>
                   </SelectableElement>
                 ) : null}
                 {renderSecondary ? (
@@ -531,13 +531,13 @@ function HeroPreview({
                     display="inline-block"
                     className={secondaryShown ? undefined : 'opacity-40'}
                   >
-                    <SurfaceLink
+                    <BundleButton
                       href={d.ctaSecondaryHref}
-                      className="inline-flex items-center rounded-lg border px-6 py-3 text-[14px] font-semibold"
-                      style={{ borderColor: theme.heading, color: theme.heading }}
+                      variant="secondary"
+                      accent={theme.heading}
                     >
                       {d.ctaSecondaryLabel}
-                    </SurfaceLink>
+                    </BundleButton>
                   </SelectableElement>
                 ) : null}
               </div>

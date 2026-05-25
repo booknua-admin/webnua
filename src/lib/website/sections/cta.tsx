@@ -20,7 +20,7 @@ import {
 } from '../section-theme';
 import { CopyField } from './_shared/CopyField';
 import { LinkField } from './_shared/LinkField';
-import { SurfaceLink } from './_shared/live-surface';
+import { BundleButton } from './_shared/BundleButton';
 import { IconField } from './_shared/IconField';
 import { MediaField } from './_shared/MediaField';
 import {
@@ -931,17 +931,18 @@ function DualPanel({
           </p>
         ) : null}
         {panel.buttonLabel ? (
-          <SurfaceLink
-            href={panel.buttonHref}
-            className="mt-5 inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-[13.5px] font-semibold"
-            style={{
-              backgroundColor: dark ? '#ffffff' : accent,
-              color: dark ? '#111111' : '#ffffff',
-            }}
-          >
-            {panel.buttonLabel}
-            <span aria-hidden>→</span>
-          </SurfaceLink>
+          <div className="mt-5">
+            <BundleButton
+              href={panel.buttonHref}
+              variant="primary"
+              size="sm"
+              accent={dark ? '#ffffff' : accent}
+              accentText={dark ? '#111111' : '#ffffff'}
+              trailing={<span aria-hidden>→</span>}
+            >
+              {panel.buttonLabel}
+            </BundleButton>
+          </div>
         ) : null}
       </div>
     </div>
@@ -963,31 +964,33 @@ function CtaButton({
   theme: ResolvedTheme;
   arrow?: boolean;
 }) {
-  const base = 'inline-flex items-center gap-2 rounded-lg px-6 py-3 text-[14px] font-semibold';
+  const trailing = arrow ? <span aria-hidden>→</span> : null;
   if (tone === 'outline') {
     return (
-      <SurfaceLink
-        href={href}
-        className={`${base} border-2`}
-        style={{ borderColor: theme.heading, color: theme.heading }}
-      >
+      <BundleButton href={href} variant="secondary" accent={theme.heading} trailing={trailing}>
         {label}
-      </SurfaceLink>
+      </BundleButton>
     );
   }
   if (tone === 'light') {
+    // Dark-bg variant — white fill + ink text overrides the brand accent so
+    // the CTA reads cleanly against the dark backdrop.
     return (
-      <SurfaceLink href={href} className={base} style={{ backgroundColor: '#ffffff', color: '#0f1115' }}>
+      <BundleButton
+        href={href}
+        variant="primary"
+        accent="#ffffff"
+        accentText="#0f1115"
+        trailing={trailing}
+      >
         {label}
-        {arrow ? <span aria-hidden>→</span> : null}
-      </SurfaceLink>
+      </BundleButton>
     );
   }
   return (
-    <SurfaceLink href={href} className={base} style={{ backgroundColor: accent, color: '#ffffff' }}>
+    <BundleButton href={href} variant="primary" accent={accent} trailing={trailing}>
       {label}
-      {arrow ? <span aria-hidden>→</span> : null}
-    </SurfaceLink>
+    </BundleButton>
   );
 }
 
