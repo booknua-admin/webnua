@@ -110,7 +110,14 @@ export function deriveBriefFromWizard(input: DeriveBriefInput): ClientBrief {
     voice,
     audienceLine: step3?.targetCustomer?.trim() || '',
     industryCategory: industry,
-    topJobsToBeBooked: services.slice(0, 3),
+    // FIX (Session X): no truncation. The AI generator's `topJobsToBeBooked`
+    // block + the deterministic stub's services-iteration both render every
+    // entry, so capping at 3 made every customer's site show only 3 services
+    // regardless of how many they ticked. The downstream section schemas
+    // (services V1 cards / features cards / etc.) each clamp to a sensible
+    // visual N during their own variant pick — that's where rendering caps
+    // belong, NOT here in the data layer.
+    topJobsToBeBooked: services,
   };
 
   // Funnel brief — derived per the locked plan. service = first listed
@@ -194,6 +201,16 @@ export function deriveBriefFromConversation(
 ): ClientBrief {
   const { capturedFacts: facts, email, fallbackBusinessName } = input;
 
+  // Business name resolution order (most specific → least): the AI-extracted
+  // name kept on capturedFacts.businessName → the extraction's own field →
+  // the signup-time placeholder fallback. The conversation shell writes
+  // `businessName` onto capturedFacts as soon as the extraction lands with
+  // sufficient confidence, so by turn-5 generation the right name is there.
+  const businessName =
+    facts.businessName?.trim() ||
+    facts.extraction?.businessName?.trim() ||
+    fallbackBusinessName;
+
   // The extraction is the conversation's anchor — turn 1 + clarifying-
   // question loop produced it. A missing extraction means a customer
   // somehow reached turn 5 without one; fall back to generic so
@@ -229,7 +246,14 @@ export function deriveBriefFromConversation(
     voice: NEUTRAL_VOICE,
     audienceLine: facts.extraction?.specialty?.trim() || '',
     industryCategory: industryDisplay,
-    topJobsToBeBooked: services.slice(0, 3),
+    // FIX (Session X): no truncation. The AI generator's `topJobsToBeBooked`
+    // block + the deterministic stub's services-iteration both render every
+    // entry, so capping at 3 made every customer's site show only 3 services
+    // regardless of how many they ticked. The downstream section schemas
+    // (services V1 cards / features cards / etc.) each clamp to a sensible
+    // visual N during their own variant pick — that's where rendering caps
+    // belong, NOT here in the data layer.
+    topJobsToBeBooked: services,
   };
 
   // Funnel brief — derive from extraction + industry template, same shape
@@ -257,7 +281,7 @@ export function deriveBriefFromConversation(
 
   return {
     business: {
-      name: fallbackBusinessName,
+      name: businessName,
       ownerName: '',
       phone: '',
       email,

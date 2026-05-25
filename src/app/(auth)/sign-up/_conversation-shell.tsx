@@ -136,26 +136,40 @@ type ExtractResponse = {
 // ---------------------------------------------------------------------------
 // bot copy
 
+// FIX (Session X — conversational critical fixes): bot copy rewrite to
+// honest expectations framing + direct/clear voice. The previous strings
+// were chatty and performative; the new ones tell the customer what's
+// happening and what's next, briefly. Three principles:
+//   1. Direct, not performative — no enthusiasm-acting.
+//   2. Brief — short acknowledgments, no filler.
+//   3. Clear about what's coming next.
+// Also fixed: hardcoded HTML entities (`&apos;`) — these render literally
+// inside chat bubbles since the strings are read as plain text, not parsed
+// as HTML. Use a real apostrophe.
 const BOT_TURN1 =
-  "Hey — I'm here to get your business live on Webnua. To start, tell me what you do and where (one sentence is fine).";
-const BOT_ASK_EMAIL =
-  "Great. What's the best email to reach you on? I'll send a 6-digit code to verify it.";
+  "Hey — I'm here to get your site set up. I'll ask a few quick questions about your business so we can build your site right first time. You can edit anything later. To start, what do you do and where?";
+const BOT_ASK_EMAIL = "What's your email? I'll send a 6-digit code to verify.";
 const BOT_CODE_SENT = (email: string) =>
   `Code sent to ${email}. Type the 6 digits below — it expires in 10 minutes.`;
-const BOT_POST_VERIFY = "You're in. Reading what you told me now…";
+const BOT_POST_VERIFY = "Verified. Reading what you told me…";
 const BOT_EXTRACTION_DONE = (e: ConversationExtraction) => {
-  const industryLine = e.industryFreeText ?? prettyIndustry(e.industry);
+  // "Got it — painter in Cork. Now your services." (industry + location
+  // interpolation). Brief and direct.
+  const industryLine = e.industryFreeText ?? prettyIndustry(e.industry).toLowerCase();
   const tail = e.location ? ` in ${e.location}` : '';
-  return `Got it — ${industryLine}${tail}. Quick pass on what you offer next.`;
+  return `Got it — ${industryLine}${tail}. Now your services.`;
 };
 const BOT_TURN2_PROMPT =
-  "Tick the services you offer. We&apos;ll write your site around these.";
+  "Tick the services you offer. We'll build your site around these.";
+const BOT_SERVICES_DONE = "Saved. Now your brand colors.";
 const BOT_TURN3_PROMPT =
-  "Now your brand. Pick a colour and drop a logo if you have one — both optional.";
+  "Brand colors and logo next. Both optional.";
+const BOT_BRAND_DONE = "Locked in. Generating your offer next.";
 const BOT_TURN4_PROMPT =
-  "Here&apos;s a draft offer for your funnel. Keep it, refine it, or write your own.";
-const BOT_TURN5_PROMPT =
-  "We&apos;re building your site + funnel now. This takes about a minute.";
+  "Here's a draft marketing offer for your landing page. Use it, refine it, or write your own.";
+// BOT_OFFER_DONE doubles as the turn-5 framing — the generation card
+// renders its own status, so we don't need a separate "building now" bubble.
+const BOT_OFFER_DONE = "Offer locked. Building your site now — takes about a minute.";
 
 const RESEND_AVAILABLE_AFTER_MS = 10_000;
 
@@ -343,6 +357,8 @@ export function ConversationShell() {
         if (state.capturedFacts.firstMessage) {
           setFirstMessage(state.capturedFacts.firstMessage);
         }
+        // businessName hydrates via capturedFacts directly (the deriver
+        // reads it from there for generation). No separate state slot.
         // Hydrate messages — the route stores them as { id, role, content,
         // timestamp }; map back to the local Author shape.
         setMessages(
@@ -475,7 +491,7 @@ export function ConversationShell() {
       setCode(['', '', '', '', '', '']);
       setNowMs(now);
       setResendReadyAt(now + RESEND_AVAILABLE_AFTER_MS);
-      appendMessage('bot', 'Fresh code on the way — same 6-digit drill.');
+      appendMessage('bot', 'Fresh code sent.');
     }
   }, [appendMessage, email, requestCode, resendReadyAt]);
 
@@ -587,6 +603,43 @@ export function ConversationShell() {
   // over it cleanly. Each appends two-or-three new bot messages, updates
   // capturedFacts, persists, and advances the phase.
 
+  // Write the AI-extracted business name to clients.name + re-slugify the
+  // workspace URL. Fire-and-forget — failures surface in console but don't
+  // block forward progress (the email-derived placeholder still works as a
+  // fallback name + slug). Updates clientSlug local state on success so the
+  // generation handoff uses the new slug.
+  const persistBusinessIdentity = useCallback(
+    async (businessName: string) => {
+      if (!clientId || !businessName.trim()) return;
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) return;
+        const res = await fetch(`/api/clients/${clientId}/business-identity`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ businessName: businessName.trim() }),
+        });
+        if (!res.ok) {
+          console.warn(
+            `[sign-up] business-identity update failed (${res.status})`,
+          );
+          return;
+        }
+        const body = (await res.json()) as { slug?: string; name?: string };
+        if (typeof body.slug === 'string' && body.slug.length > 0) {
+          setClientSlug(body.slug);
+        }
+      } catch (e) {
+        console.warn('[sign-up] business-identity network error', e);
+      }
+    },
+    [clientId],
+  );
+
   const handleExtractionDone = useCallback(
     async (e: ConversationExtraction) => {
       setExtraction(e);
@@ -615,11 +668,26 @@ export function ConversationShell() {
         return;
       }
 
+      // FIX (Session X): fire business-identity update with the extracted
+      // name AS SOON AS extraction lands at high-confidence. This rewrites
+      // clients.name + the workspace slug from the email-derived placeholder
+      // ("Gmail") to the customer's actual business name ("Cork Painters").
+      // Fire-and-forget — the call updates local clientSlug state on success
+      // so turn-5 generation lands on the right subdomain.
+      const extractedName = e.businessName.trim();
+      if (extractedName) {
+        void persistBusinessIdentity(extractedName);
+      }
+
       const confirmation = BOT_EXTRACTION_DONE(e);
       const nextFacts: ConversationCapturedFacts = {
         ...capturedFacts,
         firstMessage,
         email,
+        // Capture the business name on capturedFacts so deriveBriefFrom
+        // Conversation can read it without unpacking extraction, AND so
+        // resume hydrates it cleanly.
+        businessName: extractedName || capturedFacts.businessName,
         clientSlug: clientSlug ?? capturedFacts.clientSlug,
         extraction: e,
         clarifyingQuestion: undefined,
@@ -638,7 +706,7 @@ export function ConversationShell() {
         messages: nextMessages,
       });
     },
-    [capturedFacts, clientSlug, email, firstMessage, messages, persistState],
+    [capturedFacts, clientSlug, email, firstMessage, messages, persistState, persistBusinessIdentity],
   );
 
   const runExtraction = useCallback(
@@ -648,6 +716,7 @@ export function ConversationShell() {
       extractionStartedRef.current = true;
       setBotThinking(true);
       const fallback: ConversationExtraction = {
+        businessName: '',
         industry: 'generic',
         industryFreeText: null,
         location: '',
@@ -732,6 +801,8 @@ export function ConversationShell() {
                 : `${services.length} services picked`
               : '(no services picked)',
         },
+        // Brief acknowledgment + transition to next step.
+        { id: newId('bot'), author: 'bot', text: BOT_SERVICES_DONE },
         { id: newId('bot'), author: 'bot', text: BOT_TURN3_PROMPT },
       ];
       setCapturedFacts(nextFacts);
@@ -762,6 +833,8 @@ export function ConversationShell() {
             ? `Brand colour ${brand.primaryColor}${brand.logoUrl ? ' + logo uploaded' : ''}`
             : '(brand skipped — use the industry default)',
         },
+        // Brief acknowledgment + transition.
+        { id: newId('bot'), author: 'bot', text: BOT_BRAND_DONE },
         { id: newId('bot'), author: 'bot', text: BOT_TURN4_PROMPT },
       ];
       setCapturedFacts(nextFacts);
@@ -899,7 +972,10 @@ export function ConversationShell() {
             ? `Offer locked: "${offer.headline}"`
             : '(offer skipped — placeholder copy will sit here)',
         },
-        { id: newId('bot'), author: 'bot', text: BOT_TURN5_PROMPT },
+        // Brief acknowledgment + transition. BOT_OFFER_DONE doubles as the
+        // turn-5 framing; no separate BOT_TURN5_PROMPT bubble (the
+        // generation card itself shows status).
+        { id: newId('bot'), author: 'bot', text: BOT_OFFER_DONE },
       ];
       setCapturedFacts(nextFacts);
       setMessages(nextMessages);
@@ -988,6 +1064,33 @@ export function ConversationShell() {
       current_turn: 6,
       messages,
     });
+    // FIX (Session X): Mark the wizard complete so the dashboard's gate
+    // doesn't bounce this customer to /onboarding (the 7-step legacy wizard).
+    // The conversational flow IS the onboarding wizard — wizard_completed_at
+    // is the canonical "onboarding done" flag the dashboard reads.
+    // Fire-and-forget — the dashboard re-checks every navigation and will
+    // pick up the flag on the redirect from this page.
+    void (async () => {
+      try {
+        const res = await fetch(`/api/clients/${clientId}/wizard-state`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          // No `state` field — we don't want to clobber wizard_state with
+          // our null. Just stamp wizard_completed_at.
+          body: JSON.stringify({ complete: true }),
+        });
+        if (!res.ok) {
+          console.warn(
+            `[sign-up] wizard-state complete stamp failed (${res.status})`,
+          );
+        }
+      } catch (e) {
+        console.warn('[sign-up] wizard-state complete network error', e);
+      }
+    })();
   }, [capturedFacts, clientId, clientSlug, email, extraction, messages, persistState]);
 
   // Trigger generation when we enter turn 5. Once-only guard inside

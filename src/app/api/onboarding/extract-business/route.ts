@@ -68,6 +68,7 @@ You are NOT writing copy. You are NOT making the customer feel good. You are ext
 
 \`\`\`
 {
+  "businessName": string,
   "industry": "electrician" | "plumber" | "cleaner" | "landscaper" | "roofer" | "painter" | "hvac" | "locksmith" | "handyman" | "carpenter" | "generic",
   "industryFreeText": string | null,
   "location": string,
@@ -79,6 +80,14 @@ You are NOT writing copy. You are NOT making the customer feel good. You are ext
   "ambiguities": string[]
 }
 \`\`\`
+
+## businessName
+The customer's business name. Three patterns:
+- The customer named the business directly: "We're Smith & Sons Plumbing in Galway" → "Smith & Sons Plumbing". "I'm Bob's Electrical" → "Bob's Electrical". Use the exact business name as given (preserve apostrophes, ampersands, casing).
+- The customer described what they do + where but did NOT name a business: "I'm a painter from Cork" → "Cork Painters". "Sparkie in Dublin" → "Dublin Electrical". Compose a plain "{Location} {Trade-plural}" name. Capitalise Title Case. Use the COMMON English trade name ("Electrical" / "Plumbing" / "Cleaning" / "Painters" / "Landscaping" / "Roofing" / "Locksmiths" / "HVAC" / "Carpentry" / "Handyman") — not the slang the customer used ("sparkie"/"chippy" stay in industryFreeText, not the business name).
+- The customer described what they do without a location AND without a business name: "I'm a painter" → "" (empty). Do NOT invent a location.
+
+If you're unsure between a derived name and an extracted one, prefer the extracted one. Empty string is safer than a wrong name.
 
 ## industry
 The customer's trade, normalised to one of the closed values above. \`generic\` ONLY when the message contains no trade signal at all (rare — most messages do).
@@ -263,6 +272,7 @@ function readPriorAttemptMessages(value: unknown): string[] {
 }
 
 type RawExtraction = {
+  businessName?: unknown;
   industry?: unknown;
   industryFreeText?: unknown;
   location?: unknown;
@@ -318,7 +328,18 @@ function normaliseExtraction(
         .slice(0, 4)
     : [];
 
+  // Business name — trim, cap length defensively, drop pathological model
+  // output ("undefined", "null", "n/a") to empty so the downstream slugify
+  // doesn't produce nonsense workspace URLs.
+  const businessNameRaw = readString(raw.businessName);
+  const businessName =
+    businessNameRaw.length > 0 && businessNameRaw.length <= 80 &&
+    !/^(undefined|null|n\/?a|none|nil|tbd|tbc)$/i.test(businessNameRaw)
+      ? businessNameRaw
+      : '';
+
   return {
+    businessName,
     industry,
     industryFreeText,
     location: readString(raw.location),

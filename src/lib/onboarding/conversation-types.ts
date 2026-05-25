@@ -54,6 +54,14 @@ export type ConversationBrandFacts = {
  *  this onto capturedFacts.extraction as soon as turn 1 + verification
  *  complete and we can call Sonnet with the first message. */
 export type ConversationExtraction = {
+  /** The business name the customer mentioned OR a sensibly-derived one
+   *  ("painter in Cork" → "Cork Painters"). Empty string when the message
+   *  carries no name signal AND deriving one would be too speculative
+   *  (rare — most messages support a derivation). When non-empty AND
+   *  confidence ≥ EXTRACTION_CONFIDENCE_THRESHOLD, the verify-code route's
+   *  post-extraction handler overwrites the email-derived placeholder on
+   *  clients.name AND re-slugifies the workspace URL. */
+  businessName: string;
   /** Normalised industry key (one of the 11 templates). */
   industry: IndustryKey;
   /** The free-text industry phrase the customer used (e.g. "sparkie"),
@@ -96,6 +104,11 @@ export type ConversationCapturedFacts = {
   firstMessage?: string;
   /** Email the customer verified. */
   email?: string;
+  /** Business name as extracted/derived by the AI in turn 1 OR as edited
+   *  by a later flow. The verify-code route's post-extraction handler
+   *  writes this onto `clients.name` AND re-slugifies the workspace URL
+   *  when the extraction surfaces a name with sufficient confidence. */
+  businessName?: string;
   /** The client's slug — written by the shell on first persist after
    *  verification. Persisted into capturedFacts (rather than a top-level
    *  state column) because the route's `conversation_state` shape is

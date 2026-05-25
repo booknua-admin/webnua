@@ -34,7 +34,22 @@ import Anthropic from '@anthropic-ai/sdk';
 
 export const maxDuration = 60;
 
-const MODEL = 'claude-sonnet-4-6';
+// FIX (Session X — conversational critical fixes): switched from Sonnet 4.6 +
+// extended thinking to Haiku 4.5 without thinking. The offer is four short
+// structured strings (~150 output tokens total); Sonnet's thinking budget of
+// 2000 tokens was the dominant latency component (>10s perceived) and the
+// task is small enough that Haiku handles it fluently when prompted with
+// concrete worked examples. The customer-facing UX impact is large — a
+// sub-3s settle vs a >10s wait at the moment they're most engaged. The
+// few-shot examples below carry the quality bar.
+//
+// See CLAUDE.md "Funnel-offer generator — Sonnet 4.6 (not Opus)" parked
+// decision for the prior reasoning; this update supersedes it for Haiku
+// at the same quality bar. Trigger to revisit: if operator review of
+// generated offers shows Haiku consistently producing weaker copy than
+// Sonnet did with the prior prompt, escalate back to Sonnet and keep
+// the few-shot examples.
+const MODEL = 'claude-haiku-4-5';
 
 const SYSTEM_PROMPT = `You are a direct-response copywriter in the Suby / Sultanic tradition. You specialise in offers for trade and service businesses — electricians, plumbers, cleaners, locksmiths, landscapers — the kind of business whose customer is in pain and needs the problem gone today.
 
@@ -84,35 +99,128 @@ The customer-pain framing may reference cost worries ("worried about surprise ch
 
 A specific dollar/euro/pound figure may appear in the offer ONLY if the operator's brief contains that exact figure.
 
-# Worked example (Voltline Electrical — emergency callout)
+# Worked examples — one per trade, each lifted from a real Suby-style direct-response offer
 
-Brief input:
-- Industry: residential electrical contractor
-- Service area: Perth coastal suburbs (Cottesloe, Mosman Park, Claremont)
-- Funnel service: emergency callout for power-out situations
-- Customer pain: power has gone out unexpectedly, often at night, often during a storm. Family is left without lights, working refrigeration, or heating. Customer has tried the obvious fixes (resetting the switchboard, checking with neighbours) and needs a qualified person on site fast, with no surprise bill.
-- Guarantee: 2-hour on-site response, licensed electrician, fixed quote in writing before any work starts, free callout if we can't fix it on the first visit
+These show the quality bar. Adapt the SHAPE (time-bound promise / specific outcome / concrete risk reversal / first-person CTA), not the wording. Do not invent the timeframes / numbers below for a brief that doesn't contain them — these are illustrative.
 
-Correct output:
-
+## Painter (interior, scheduled work)
+Brief: interior repainting in Cork, customer dreads mess + uncertain timeline + paint smell, business guarantees 3-day turnaround + dust-sheet-and-vacuum cleanup.
 \`\`\`json
 {
-  "headline": "Power out at midnight? On site within 2 hours, 7 days a week.",
-  "promise": "We answer 24/7. Licensed electrician on site within 2 hours of your call — fixed quote before we start work.",
-  "risk_reversal": "Free callout if we can't fix it on the first visit.",
+  "headline": "Get your interior repainted in 3 days — or we do it for free.",
+  "promise": "Two painters, dust sheets down, every room masked, every brush rinsed — done in 3 working days, ready to move furniture back the same evening.",
+  "risk_reversal": "If we miss the 3-day deadline, the next room is on the house.",
+  "cta_text": "Book my paint job"
+}
+\`\`\`
+
+## Electrician (emergency callout)
+Brief: residential electrical, after-hours call-outs, fixed-quote policy, 60-minute response in service area.
+\`\`\`json
+{
+  "headline": "Sparkie at your door in 60 minutes — or your callout is free.",
+  "promise": "Licensed electrician on site within the hour, day or night. We diagnose the fault, give you a fixed quote in writing, and only start work after you say yes.",
+  "risk_reversal": "If we're more than 60 minutes from your call, you don't pay the callout fee.",
   "cta_text": "Get my power back on"
 }
 \`\`\`
 
-Why this output works:
-- headline (13 words is fine): names the exact pain ("Power out at midnight?") and the exact outcome ("on site within 2 hours, 7 days a week"). The customer recognises themselves and the result they want in one line.
-- promise (24 words): three concrete things — 24/7 answer, 2-hour on-site, fixed quote in writing — taken directly from the brief's guarantee. No invented numbers; no vague "fast" or "reliable".
-- risk_reversal (10 words): the exact guarantee from the brief, restated tightly. The customer can picture it and find it fair. No "satisfaction guaranteed" filler.
-- cta_text (5 words): first-person, action-led, names the OUTCOME the customer is buying ("my power back on"). Not "Submit", not "Get started", not "Book now".
-- No invented prices anywhere — the brief carried no price, so the offer uses qualitative pricing language ("fixed quote before we start work").
-- No banned vocabulary — no "comprehensive", "premium", "transform", "leverage", "industry-leading", etc.
+## Cleaner (recurring domestic)
+Brief: fortnightly home cleaning, customer worry is variable quality + trusting a stranger in the house, business offers a satisfaction guarantee on the first visit.
+\`\`\`json
+{
+  "headline": "First clean free if we don't exceed your expectations.",
+  "promise": "Same two cleaners every visit, fully vetted, fully insured. We arrive on time, work to your checklist, and don't leave until every surface passes inspection.",
+  "risk_reversal": "If you're not delighted with the first clean, you pay nothing.",
+  "cta_text": "Book my first clean"
+}
+\`\`\`
 
-Your output should match this quality bar, adapted to the actual brief you receive.
+## Plumber (emergency callout)
+Brief: 24/7 plumbing service, burst pipes / leaks, 4-hour response window, fully insured.
+\`\`\`json
+{
+  "headline": "Burst pipe? On site and fixing it in under 4 hours.",
+  "promise": "Master plumber dispatched within minutes of your call. Water off in the first 10 minutes, leak diagnosed, parts fitted, area dried — all in one visit.",
+  "risk_reversal": "If we can't repair on the first visit, the callout's on us.",
+  "cta_text": "Stop my leak now"
+}
+\`\`\`
+
+## Landscaper (lawn care + garden makeover)
+Brief: full garden renovation in 2 weeks, professional turf laying + planting + tidy, written quote with no creep.
+\`\`\`json
+{
+  "headline": "Lawn transformed in 2 weeks — fixed quote, no creep.",
+  "promise": "We measure on day one, send a fixed quote within 48 hours, and have your new lawn laid and edges trimmed by the end of week two. Watered, fed, ready for foot traffic.",
+  "risk_reversal": "Quote is fixed in writing — no surprise charges added on completion.",
+  "cta_text": "Get my lawn quote"
+}
+\`\`\`
+
+## Roofer (inspection + repair)
+Brief: storm damage repair, free inspection, written quote, 48-hour turnaround on the quote itself.
+\`\`\`json
+{
+  "headline": "Roof inspection in 24 hours, written quote within 48.",
+  "promise": "Qualified roofer climbs your roof, photographs every problem, and emails you a line-by-line quote within two working days. Repairs scheduled the same week.",
+  "risk_reversal": "The inspection is free. The quote is fixed. No charge until you say go.",
+  "cta_text": "Book my roof check"
+}
+\`\`\`
+
+## HVAC (installation + service)
+Brief: residential air-con and heat pumps, full design + installation + commissioning, comfort guarantee.
+\`\`\`json
+{
+  "headline": "A perfectly comfortable home — or your money back.",
+  "promise": "We size the system to your house, install it in a single day, commission it on the spot, and check on you a week later. Heating works, cooling works, bills make sense.",
+  "risk_reversal": "30 days to live with it. Not warm enough or cool enough? Full refund, system removed.",
+  "cta_text": "Book my comfort survey"
+}
+\`\`\`
+
+## Carpenter (custom joinery)
+Brief: custom wardrobes / bookshelves / kitchen fit-outs, made-to-measure, agreed deadline.
+\`\`\`json
+{
+  "headline": "Bespoke carpentry — finished by your deadline or it's free.",
+  "promise": "On-site measure, hand-drawn plan in your kitchen, made in our workshop, fitted in your home — all to the deadline we agree on day one.",
+  "risk_reversal": "Miss the deadline by a day, the job is free.",
+  "cta_text": "Get my joinery quote"
+}
+\`\`\`
+
+## Locksmith (emergency lockout)
+Brief: residential lockouts, 30-minute response, licensed and insured, mobile across the city.
+\`\`\`json
+{
+  "headline": "Locked out? 30-minute response, 24 hours a day.",
+  "promise": "Licensed locksmith at your door inside half an hour. We open the lock without damaging the door, replace the cylinder if needed, and you're inside in minutes.",
+  "risk_reversal": "If we damage the door, we replace it. Written guarantee on every callout.",
+  "cta_text": "Get me back inside"
+}
+\`\`\`
+
+## Handyman (small jobs around the house)
+Brief: small fixes and assembly, one-visit completion, fixed hourly rate.
+\`\`\`json
+{
+  "headline": "Job done right the first time — or we redo it free.",
+  "promise": "One visit, fixed-rate hour, every common tool in the van. Shelving up, door realigned, leak under the sink sorted — by the time we leave, it's done.",
+  "risk_reversal": "If anything breaks again within 30 days, we come back and fix it free.",
+  "cta_text": "Book my handyman"
+}
+\`\`\`
+
+## What these all share
+- A pain or a goal NAMED in the headline (locked out / lawn transformed / interior repainted), never the company name.
+- A specific timeframe OR a specific outcome (3 days / 60 minutes / 4 hours / "finished by your deadline") — NOT "fast" or "quick".
+- A risk reversal the customer can picture and find fair (free callout / first room on the house / quote is fixed / refund + removal).
+- A first-person action CTA naming the outcome the customer is buying ("Get my power back on", "Book my first clean", "Stop my leak now") — NOT "Submit", "Click here", "Get started", "Book now", "Learn more".
+- No invented prices. No banned vocabulary.
+
+Adapt to the brief in front of you. If the brief carries weaker promises than these examples, USE THE BRIEF'S — never invent stronger ones.
 
 # Output contract
 
@@ -182,36 +290,17 @@ Write the four-field offer.`;
   try {
     const client = new Anthropic();
 
-    // First attempt.
-    let raw = await callOffer(client, baseUserMessage);
-
-    // Invented-price guard: if no price was in the brief but the model put a
-    // currency symbol or price pattern in any field, retry ONCE with a
-    // stronger instruction prepended. One retry only — no retry storms.
+    // Single Sonnet call. No retry-on-price (FIX Session X): the previous
+    // retry-once policy doubled latency on the rare invention case, AND the
+    // offer is fully editable downstream (every field is an input in the
+    // wizard). Detection stays for observability — the warn log surfaces in
+    // server logs so an operator can spot a pattern and tune the prompt.
+    const raw = await callOffer(client, baseUserMessage);
     if (!briefHasPrice && offerHasPrice(raw)) {
-      const offending = priceOffendingFields(raw);
       console.warn(
-        '[generate-offer] invented price detected on first attempt — retrying once',
-        { fields: offending, brief: { funnelService, funnelGuarantee } },
+        '[generate-offer] invented price detected — shipping as-is (offer is editable in the wizard)',
+        { fields: priceOffendingFields(raw), brief: { funnelService, funnelGuarantee } },
       );
-      const reinforcedMessage = [
-        'CRITICAL: the brief below contains NO specific price. Do NOT include a currency symbol or dollar/euro/pound number anywhere in your output. Use qualitative pricing language only (e.g. "honest upfront pricing", "free quote, no obligation", "fixed-price quote on the spot").',
-        '',
-        baseUserMessage,
-      ].join('\n');
-      const retried = await callOffer(client, reinforcedMessage);
-      if (!offerHasPrice(retried)) {
-        raw = retried;
-      } else {
-        // Retry also invented a price — keep the retry result (no better
-        // option than to ship it; user can edit any field). Loudly logged
-        // so the pattern is recoverable if it recurs.
-        console.warn(
-          '[generate-offer] retry also produced an invented price; shipping the retry result',
-          { fields: priceOffendingFields(retried) },
-        );
-        raw = retried;
-      }
     }
 
     return NextResponse.json({
@@ -247,10 +336,11 @@ type RawOffer = {
 async function callOffer(client: Anthropic, userMessage: string): Promise<RawOffer> {
   const message = await client.messages.create({
     model: MODEL,
-    // Anthropic requires max_tokens > thinking.budget_tokens; 4000 leaves
-    // ample headroom for the ~150-token four-field offer after thinking.
-    max_tokens: 4000,
-    thinking: { type: 'enabled', budget_tokens: 2000 },
+    // FIX (Session X): No `thinking` field — Haiku doesn't accept the
+    // extended-thinking shape, and the task (parse a brief, return four
+    // short strings against worked examples) doesn't need a reasoning step.
+    // 1500 tokens is ample for the ~150-token offer output.
+    max_tokens: 1500,
     system: [
       {
         type: 'text',

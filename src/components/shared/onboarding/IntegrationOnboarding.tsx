@@ -102,6 +102,13 @@ function IntegrationOnboarding({
   // person's name), not per-workspace (the business name lives in the body).
   const greetingName = firstNameFrom(user?.displayName);
 
+  // FIX (Session X — conversational critical fixes): when the customer has
+  // a draft, lead with the preview CTA. The previous layout put Publish at
+  // the top with the preview hint buried in dimmed text at the bottom — so
+  // a customer who'd just been through 90s of conversational onboarding
+  // landed on a "pay €299" screen with no way to see what they'd built.
+  const previewSiteUrl = `https://${clientSlug}.webnua.dev`;
+
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb current="Get started" />} />
@@ -117,11 +124,11 @@ function IntegrationOnboarding({
           subtitle={
             hasAnyDraft ? (
               <>
-                Your <strong>{clientName}</strong> workspace is live in preview
-                at <strong>{clientSlug}.webnua.dev</strong>. Connect your
-                business accounts so Webnua can run reviews + ads on your
-                behalf — then hit <strong>Publish to go live</strong> when
-                you&rsquo;re ready.
+                Your <strong>{clientName}</strong> site is ready in preview at{' '}
+                <strong>{clientSlug}.webnua.dev</strong>. Take a look — you
+                can edit content, design, services and your offer anytime in
+                the editor. When you&rsquo;re ready,{' '}
+                <strong>Publish to go live</strong>.
               </>
             ) : (
               <>
@@ -154,22 +161,55 @@ function IntegrationOnboarding({
                 </p>
               </div>
               <Button asChild size="lg">
-                {/* Session C wired the wizard at /onboarding. The wizard
-                    captures industry / business / brand / etc., then fires
-                    background site + funnel generation on step 4 — so by
-                    the time the customer reaches step 7 there's a draft
-                    ready. If they already completed the wizard but somehow
-                    have no draft (edge), /onboarding's own gate hands them
-                    off cleanly. */}
                 <Link href="/onboarding">Start setup →</Link>
               </Button>
             </div>
           </div>
         ) : null}
 
-        {/* PUBLISH CTA — the conversion moment. Mounted at the top so the
-            customer sees it whenever they return to the dashboard. Gated on
-            having something to publish (a draft website OR funnel). */}
+        {/* PREVIEW CTA — the FIRST thing the customer sees after onboarding.
+            Conversion psychology 101: let them admire what we built before
+            we ask for payment. Big rust-soft band, large action targets, the
+            site URL in mono so it reads as a real address. Edit-anytime
+            promise is right there so the customer doesn't feel locked in by
+            the preview. */}
+        {draftsResolved && hasAnyDraft ? (
+          <div className="overflow-hidden rounded-xl border border-rust bg-rust-soft px-7 py-6 md:px-9 md:py-8">
+            <div className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust">
+              {'// Your site is live in preview'}
+            </div>
+            <h2 className="text-[24px] leading-[1.15] font-extrabold tracking-[-0.02em] text-ink md:text-[28px] [&_em]:not-italic [&_em]:text-rust">
+              See what we built for <em>{clientName}</em>.
+            </h2>
+            <p className="mt-3 text-[15px] leading-[1.55] text-ink-soft md:text-[15.5px]">
+              Take a look — you can edit content, design, services and your
+              offer anytime in the editor.
+            </p>
+            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-[auto_auto_1fr] sm:items-center">
+              <Button asChild size="lg">
+                <a
+                  href={previewSiteUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  See your site ↗
+                </a>
+              </Button>
+              <Button asChild variant="outline" size="lg">
+                <Link href="/website">Edit your site →</Link>
+              </Button>
+              <div className="hidden font-mono text-[12px] font-semibold tracking-[0.02em] text-ink-quiet sm:block sm:text-right">
+                {clientSlug}.webnua.dev
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {/* PUBLISH CTA — secondary now, mounted under the preview CTA. The
+            customer sees what they built, decides they like it, then hits
+            Publish to get a custom domain + start collecting leads. Gated
+            on having something to publish; the disabledReason copy below
+            covers the empty-workspace edge case. */}
         <PublishToGoLiveCTA
           clientSlug={clientSlug}
           clientName={clientName}
@@ -232,15 +272,10 @@ function IntegrationOnboarding({
             clientName={clientName}
             clientSlug={clientSlug}
           />
-        ) : hasAnyDraft ? (
-          <p className="rounded-xl border border-dashed border-rule bg-paper-2 px-6 py-5 text-[13.5px] leading-[1.55] text-ink-quiet [&_strong]:font-semibold [&_strong]:text-ink">
-            Want to see what your site looks like first?{' '}
-            <strong>Open {clientSlug}.webnua.dev</strong> in a new tab — every
-            edit you make in the editor lands there immediately (preview mode,
-            so forms stay disabled). Hit Publish above when you&rsquo;re ready
-            to go live.
-          </p>
         ) : null}
+        {/* The bottom "preview hint" card from earlier versions of this
+            surface is gone — the preview CTA at the top now leads the
+            page, so a second mention here is redundant. */}
       </div>
     </>
   );
