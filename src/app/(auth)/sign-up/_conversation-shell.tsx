@@ -44,6 +44,7 @@ import { ChatBubble } from '@/components/shared/conversation/ChatBubble';
 import { ChatBrandPicker } from '@/components/shared/conversation/ChatBrandPicker';
 import { ChatComposer } from '@/components/shared/conversation/ChatComposer';
 import { ChatOfferCard } from '@/components/shared/conversation/ChatOfferCard';
+import { ChatRefuseScreen } from '@/components/shared/conversation/ChatRefuseScreen';
 import { ChatServicePicker } from '@/components/shared/conversation/ChatServicePicker';
 import { TypingIndicator } from '@/components/shared/conversation/TypingIndicator';
 import {
@@ -62,6 +63,7 @@ import {
   type ConversationMessage,
   type ConversationOfferRow,
   type ConversationState,
+  type RefuseReason,
 } from '@/lib/onboarding/conversation-types';
 import { deriveBriefFromConversation } from '@/lib/onboarding/derive-brief';
 import {
@@ -105,6 +107,7 @@ type Phase =
   | 'turn-3-brand'
   | 'turn-4-offer'
   | 'turn-5-generation'
+  | 'refused'
   | 'done';
 
 type RequestCodeResponse = {
@@ -130,11 +133,22 @@ type VerifyCodeResponse = {
   attemptsRemaining?: number;
 };
 
-type ExtractResponse = {
-  extraction?: ConversationExtraction;
-  error?: string;
-  detail?: string;
-};
+type ExtractResponse =
+  | {
+      refused: true;
+      refuseReason: RefuseReason;
+    }
+  | {
+      refused: false;
+      extraction: ConversationExtraction;
+    }
+  | {
+      // 4xx / 5xx body shape — no `refused` key, just error metadata.
+      refused?: undefined;
+      extraction?: undefined;
+      error?: string;
+      detail?: string;
+    };
 
 // ---------------------------------------------------------------------------
 // bot copy
@@ -208,6 +222,10 @@ export function ConversationShell() {
   const [clientSlug, setClientSlug] = useState<string | null>(null);
   const [capturedFacts, setCapturedFacts] = useState<ConversationCapturedFacts>({});
   const [extraction, setExtraction] = useState<ConversationExtraction | null>(null);
+  // Refusal state — populated when the extraction step classified the business
+  // as restaurant or ecom. Drives the `refused` phase + the `ChatRefuseScreen`
+  // render branch. Persisted to capturedFacts so resume re-mounts the screen.
+  const [refusedReason, setRefusedReason] = useState<RefuseReason | null>(null);
   // Per-turn local state — these are derived from / write into capturedFacts
   // but kept separately so the turn UIs stay responsive without each keystroke
   // costing a round-trip.
@@ -380,6 +398,18 @@ export function ConversationShell() {
         );
 
         // Resume at the persisted current_turn.
+        // Refusal is a terminal state — re-mount the RefuseScreen regardless
+        // of which turn was last persisted.
+        const persistedRefuseReason = (state.capturedFacts as { refusedReason?: unknown })
+          .refusedReason;
+        if (
+          persistedRefuseReason === 'restaurant' ||
+          persistedRefuseReason === 'ecom'
+        ) {
+          setRefusedReason(persistedRefuseReason);
+          setPhase('refused');
+          return;
+        }
         switch (state.current_turn) {
           case 2:
             // Verified but services not yet picked. If extraction is in
@@ -715,6 +745,62 @@ export function ConversationShell() {
     [capturedFacts, clientSlug, email, firstMessage, messages, persistState, persistBusinessIdentity],
   );
 
+  // Refusal handler — fires when the extract step classified the business
+  // as restaurant or ecom. Flips the workspace to lifecycle_status='banned'
+  // via the refuse-signup route (so the seat is freed), persists the reason
+  // onto capturedFacts (so resume re-mounts the refuse screen), and lands
+  // the shell in the `refused` phase which renders ChatRefuseScreen.
+  const handleRefusal = useCallback(
+    async (reason: RefuseReason) => {
+      setRefusedReason(reason);
+      const refusedAt = new Date().toISOString();
+      const nextFacts: ConversationCapturedFacts = {
+        ...capturedFacts,
+        firstMessage,
+        email,
+        clientSlug: clientSlug ?? capturedFacts.clientSlug,
+        refusedReason: reason,
+        refusedAt,
+      };
+      setCapturedFacts(nextFacts);
+      setPhase('refused');
+
+      // Persist capturedFacts (so resume re-mounts the refuse screen even
+      // if the ban call below fails) + flip the workspace to banned. Both
+      // are fire-and-forget — the refuse screen renders regardless of
+      // server state.
+      void persistState({
+        capturedFacts: nextFacts,
+        current_turn: 1,
+        messages,
+      });
+
+      if (!clientId) return;
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) return;
+        const res = await fetch(`/api/clients/${clientId}/refuse-signup`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ refuseReason: reason }),
+        });
+        if (!res.ok) {
+          console.warn(
+            '[sign-up] refuse-signup ban call failed — workspace remains in preview',
+            await res.text().catch(() => '(no body)'),
+          );
+        }
+      } catch (e) {
+        console.warn('[sign-up] refuse-signup network error', e);
+      }
+    },
+    [capturedFacts, clientId, clientSlug, email, firstMessage, messages, persistState],
+  );
+
   const runExtraction = useCallback(
     async (priorMessages?: string[]) => {
       if (!clientId || !firstMessage) return;
@@ -725,6 +811,7 @@ export function ConversationShell() {
         businessName: '',
         industry: 'generic',
         industryFreeText: null,
+        industryDescription: '',
         location: '',
         specialty: '',
         teamSize: '',
@@ -743,11 +830,17 @@ export function ConversationShell() {
           }),
         });
         const body = (await res.json().catch(() => ({}))) as ExtractResponse;
-        if (!res.ok || !body.extraction) {
+        if (!res.ok) {
           console.warn('[sign-up] extraction failed', body);
           await handleExtractionDone(fallback);
-        } else {
+        } else if (body.refused === true) {
+          await handleRefusal(body.refuseReason);
+        } else if (body.refused === false && body.extraction) {
           await handleExtractionDone(body.extraction);
+        } else {
+          // Shape didn't match either branch — log + degrade to fallback.
+          console.warn('[sign-up] extraction response missing refused flag', body);
+          await handleExtractionDone(fallback);
         }
       } catch (e) {
         console.warn('[sign-up] extraction network error', e);
@@ -756,7 +849,7 @@ export function ConversationShell() {
         setBotThinking(false);
       }
     },
-    [clientId, firstMessage, handleExtractionDone],
+    [clientId, firstMessage, handleExtractionDone, handleRefusal],
   );
 
   // Fire the extraction once we land in 'extracting' for the first time.
@@ -1255,6 +1348,25 @@ export function ConversationShell() {
     capturedFacts.businessName?.trim() ||
     capturedFacts.extraction?.businessName?.trim() ||
     undefined;
+
+  // Terminal refusal branch — extract step classified the business as
+  // restaurant/ecom. No chat UI, no composer; just the friendly redirect
+  // screen. ChatRefuseScreen renders on a paper-bg full-screen layout so
+  // we don't wrap it in the chat shell. Returned early so the main chat
+  // tree below is never mounted for a refused signup.
+  if (phase === 'refused' && refusedReason) {
+    return (
+      <div className="fixed inset-0 overflow-y-auto bg-paper">
+        <ChatRefuseScreen
+          refuseReason={refusedReason}
+          onSignOut={async () => {
+            await supabase.auth.signOut();
+            router.replace('/');
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 flex w-full flex-col bg-paper">

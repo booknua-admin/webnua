@@ -2,17 +2,37 @@
 // POST /api/onboarding/extract-business — turn-1 freeform → structured facts.
 //
 // Body: { firstMessage: string, industryHint?: string, priorAttempt?: { messages: string[] } }
-// Response: { extraction: ConversationExtraction }
+// Response (discriminated):
+//   { refused: true, refuseReason: 'restaurant' | 'ecom' }
+//   | { refused: false, extraction: ConversationExtraction }
+//
+// (Pre-catch-all the response was { extraction: ConversationExtraction }
+// straight — the discriminated shape is additive: the shell looks at
+// `refused` first.)
 //
 // Sonnet 4.6 (mirrors /api/generate-offer's model choice). Returns structured
-// JSON the conversation shell uses to skip ahead to turn 2 (services picker)
-// with a pre-ticked service list — OR, when confidence is low, returns
-// `ambiguities[]` so the shell can ask a clarifying question and re-extract.
+// JSON the conversation shell uses to:
+//   • skip ahead to turn 2 (services picker) with a pre-ticked service list, OR
+//   • ask a clarifying question + re-extract when confidence < 0.6, OR
+//   • mount the refusal screen when the business is a restaurant / ecom store.
+//
+// Catch-all framing (May 2026):
+//   Webnua supports ANY service business that needs leads — trades, professional
+//   services (accountants, photographers, consultants), personal services
+//   (personal trainers, dog grooming, car valeting, tutoring, physio…). The 10
+//   curated industries (`electrician`, `plumber`, etc.) keep their bespoke
+//   prompts; everything else resolves to `generic` AND the conversation
+//   continues silently — the customer never sees that they hit a fallback.
+//
+//   The two exclusions are restaurants/food and ecommerce — both need different
+//   tools (booking + menu, cart + fulfilment), so we refuse the signup and
+//   route the customer to hello@webnua.com for a manual build at the same
+//   price. The refused workspace is flipped to `lifecycle_status='banned'`
+//   by the shell so it doesn't count as a seat.
 //
 // Auth: open (matches /api/generate-offer). The route does not write
-// anywhere — it only reads from Sonnet + the closed industry vocabulary —
-// so the same model-call rate limiting applies (Anthropic-side) but no
-// tenant authorisation is needed.
+// anywhere — it only reads from Sonnet — so the same model-call rate
+// limiting applies (Anthropic-side) but no tenant authorisation is needed.
 //
 // Fallback:
 //   - 503 when ANTHROPIC_API_KEY is unset (the caller surfaces a clear
@@ -35,6 +55,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import {
   EXTRACTION_CONFIDENCE_THRESHOLD,
   type ConversationExtraction,
+  type RefuseReason,
 } from '@/lib/onboarding/conversation-types';
 import {
   INDUSTRY_TEMPLATES,
@@ -60,7 +81,13 @@ const KNOWN_INDUSTRIES: readonly IndustryKey[] = [
   'generic',
 ] as const;
 
-const SYSTEM_PROMPT = `You are an extraction step inside a conversational onboarding flow for trades-business owners (electricians, plumbers, cleaners, landscapers, roofers, painters, HVAC, locksmiths, handymen, carpenters). A customer has just sent ONE freeform message describing their business. Your only job is to read that message and return strict-JSON structured facts.
+const REFUSE_REASONS: readonly RefuseReason[] = ['restaurant', 'ecom'];
+
+const SYSTEM_PROMPT = `You are an extraction step inside a conversational onboarding flow for service-business owners. The customer has just sent ONE freeform message describing their business. Your only job is to read that message and return strict-JSON structured facts.
+
+Webnua is built for any service business that needs leads — trades (electricians, plumbers, cleaners, landscapers, roofers, painters, HVAC, locksmiths, handymen, carpenters), but ALSO any other local or professional service: car valeting, dog grooming, mobile mechanics, personal trainers, tutors, accountants, wedding photographers, physiotherapists, consultants, etc. The 10 trades above have bespoke template content; everything else resolves to \`generic\` and the conversation continues seamlessly.
+
+The ONLY two business types Webnua refuses are restaurants (any food-service venue: cafes, takeaways, bars, food trucks) and ecommerce stores (online shops, dropshipping, Shopify stores, marketplace sellers, digital products). Those need different tools (booking + menu management for restaurants; cart + fulfilment for ecommerce) — we politely redirect those to hello@webnua.com for a manual build.
 
 You are NOT writing copy. You are NOT making the customer feel good. You are extracting. Brevity > completeness.
 
@@ -68,9 +95,11 @@ You are NOT writing copy. You are NOT making the customer feel good. You are ext
 
 \`\`\`
 {
+  "refused": false,
   "businessName": string,
   "industry": "electrician" | "plumber" | "cleaner" | "landscaper" | "roofer" | "painter" | "hvac" | "locksmith" | "handyman" | "carpenter" | "generic",
   "industryFreeText": string | null,
+  "industryDescription": string,
   "location": string,
   "specialty": string,
   "teamSize": string,
@@ -81,6 +110,24 @@ You are NOT writing copy. You are NOT making the customer feel good. You are ext
 }
 \`\`\`
 
+OR (when refused):
+
+\`\`\`
+{
+  "refused": true,
+  "refuseReason": "restaurant" | "ecom"
+}
+\`\`\`
+
+When refused: return ONLY \`refused\` + \`refuseReason\`. Do NOT also return extraction fields.
+
+## refused
+\`true\` only when the business is unambiguously a restaurant/food-service OR an ecommerce store. Default \`false\`. When in doubt about whether something is "service business that needs leads" — DEFAULT TO \`false\` and let it fall through to \`generic\`. We'd rather support a niche service business with a generic template than wrongly refuse a real customer.
+
+## refuseReason
+- \`"restaurant"\` — cafes, restaurants, bars, takeaways, food trucks, catering venues (with a fixed location). A private chef cooking at customers' homes for events is NOT a restaurant — it is a service business (\`generic\`).
+- \`"ecom"\` — online stores, dropshipping, Shopify shops, digital product sellers, marketplace sellers (Amazon FBA, Etsy stores). A trade business that ALSO has a small webshop for branded merch is NOT ecom — it is the trade.
+
 ## businessName
 The customer's business name. Three patterns:
 - The customer named the business directly: "We're Smith & Sons Plumbing in Galway" → "Smith & Sons Plumbing". "I'm Bob's Electrical" → "Bob's Electrical". Use the exact business name as given (preserve apostrophes, ampersands, casing).
@@ -90,10 +137,20 @@ The customer's business name. Three patterns:
 If you're unsure between a derived name and an extracted one, prefer the extracted one. Empty string is safer than a wrong name.
 
 ## industry
-The customer's trade, normalised to one of the closed values above. \`generic\` ONLY when the message contains no trade signal at all (rare — most messages do).
+The customer's trade, normalised to one of the closed values above. Use one of the 10 named trades when the message clearly matches that trade's vocabulary. Use \`generic\` for ANY service business outside those 10 — be generous; don't try to force a near-match. Examples:
+- "I'm an electrician" → \`electrician\`
+- "I do dog grooming" → \`generic\`
+- "Personal trainer in Galway" → \`generic\`
+- "Accountant for small businesses" → \`generic\`
+- "Car valet in Perth" → \`generic\`
+- "Wedding photographer" → \`generic\`
+- "Mobile mechanic" → \`generic\` (NOT \`hvac\` even though it involves engines)
 
 ## industryFreeText
-The exact phrase the customer used (e.g. "sparkie", "drain man", "Christmas-light installer"). Null when they used a normal industry name that resolves cleanly. Preserves their voice for downstream prompts.
+The exact phrase the customer used for their trade (e.g. "sparkie", "drain man", "dog groomer", "car valet"). Null when they used a normal industry name that resolves cleanly to one of the 10. For \`generic\` results, ALWAYS populate this — it is the bridge between the customer's actual words and the neutral template, so the generator can write copy that says "your car valeting" instead of "your services".
+
+## industryDescription
+A short professional descriptor of the business — 2-6 words, Title Case. Examples: "Mobile car valeting", "Residential dog grooming", "Personal training", "Wedding photography", "Small-business accounting", "Mobile mechanic services". For one of the 10 named trades you can leave this empty (the template covers it). For \`generic\` ALWAYS populate this. Do NOT invent: stay close to the customer's own words.
 
 ## location
 The city / region / suburb / postcode the customer mentioned, verbatim. Empty string when not present. Examples: "Dublin", "Cottesloe", "Perth coastal suburbs", "north Manchester". Do NOT invent a location.
@@ -110,26 +167,138 @@ Verbatim: "15 years on the tools", "started last year", "3rd generation". Empty 
 ## mentionedServices
 Array of services the customer mentioned, normalised to match the catalogue below for their resolved industry. Order matches the catalogue (NOT message order — the customer picks visually). Empty array when nothing specific. The shell uses this to pre-tick turn 2's services picker, so accuracy matters more than recall — don't tick things the customer didn't actually say.
 
+For \`generic\` industries: return an empty array. The customer's services are their own words — we don't try to match them to a closed catalogue here.
+
 ## confidence
 Number 0.0–1.0. How confident are you that the extracted industry + specialty + services accurately represent the customer's business?
 - ≥ 0.6 → the shell proceeds directly to turn 2 with the extraction.
 - < 0.6 → the shell asks ONE clarifying question (from your \`ambiguities\` array) and re-runs the extraction with the new context.
 
 Lower confidence when:
-- The trade signal is genuinely ambiguous ("we do houses" — could be cleaner, painter, builder, handyman, …)
+- The trade signal is genuinely ambiguous between two of the 10 named trades that have different prompt content ("we do houses" — cleaner vs painter vs builder vs handyman)
 - The customer mentioned multiple trades that don't normally cohabit
 - The message is < 5 words AND carries no trade name
 - The customer asked a question instead of describing their business
 
-Don't drive confidence artificially low — a clear "I'm an electrician in Dublin" with no other detail is ≥ 0.85 even though it's short. Length is not the signal; clarity is.
+Don't drive confidence artificially low — a clear "I'm an electrician in Dublin" with no other detail is ≥ 0.85 even though it's short. A clear "I do dog grooming in Hobart" with no further detail is ALSO ≥ 0.85 — \`generic\` is a confident answer when the message itself is clear; it is NOT an "I don't know" answer. Length is not the signal; clarity is.
 
 ## ambiguities
 When confidence < 0.6, list 1–2 short phrases the shell can use to formulate a clarifying question. Each item is a single concept the model couldn't resolve.
-- Good: ["industry — \"do houses\" could be cleaning, painting, building, or handyman work", "location — none mentioned"]
+- Good: ["industry — \\"do houses\\" could be cleaning, painting, building, or handyman work", "location — none mentioned"]
 - Good: ["which side of HVAC — heating only, cooling only, or both"]
 - Bad: ["everything"] — too vague to help the shell ask a follow-up
 
 Empty array when confidence ≥ 0.6.
+
+# Worked examples
+
+\`\`\`
+"car valet in perth"
+→ {
+  "refused": false,
+  "industry": "generic",
+  "industryFreeText": "car valet",
+  "industryDescription": "Mobile car valeting",
+  "location": "Perth",
+  ...
+  "confidence": 0.85,
+  "ambiguities": []
+}
+
+"I do dog grooming, mostly small breeds, mobile in Auckland"
+→ {
+  "refused": false,
+  "industry": "generic",
+  "industryFreeText": "dog grooming",
+  "industryDescription": "Mobile dog grooming",
+  "location": "Auckland",
+  "specialty": "mostly small breeds, mobile service",
+  ...
+  "confidence": 0.9
+}
+
+"personal trainer in Galway, just me at the moment"
+→ {
+  "refused": false,
+  "industry": "generic",
+  "industryFreeText": "personal trainer",
+  "industryDescription": "Personal training",
+  "teamSize": "just me at the moment",
+  ...
+}
+
+"I'm an accountant for small businesses"
+→ {
+  "refused": false,
+  "industry": "generic",
+  "industryFreeText": "accountant",
+  "industryDescription": "Small-business accounting",
+  "specialty": "small businesses",
+  ...
+}
+
+"I run a coffee shop in Galway"
+→ { "refused": true, "refuseReason": "restaurant" }
+
+"We have a cafe with takeaway"
+→ { "refused": true, "refuseReason": "restaurant" }
+
+"I sell sneakers on Shopify"
+→ { "refused": true, "refuseReason": "ecom" }
+
+"I run a dropshipping store"
+→ { "refused": true, "refuseReason": "ecom" }
+
+"I'm a personal chef cooking for private events in clients' homes"
+→ {
+  "refused": false,
+  "industry": "generic",
+  "industryFreeText": "personal chef",
+  "industryDescription": "Private-event personal chef",
+  ...
+}
+(NOT a restaurant — no fixed venue, service delivered to customers.)
+
+"Plumber in Dublin, 10 years"
+→ {
+  "refused": false,
+  "industry": "plumber",
+  "industryFreeText": null,
+  "industryDescription": "",
+  ...
+}
+
+"Wedding photographer covering all of Ireland"
+→ {
+  "refused": false,
+  "industry": "generic",
+  "industryFreeText": "wedding photographer",
+  "industryDescription": "Wedding photography",
+  "location": "Ireland",
+  ...
+}
+
+"Physio clinic in Cork, two practitioners"
+→ {
+  "refused": false,
+  "industry": "generic",
+  "industryFreeText": "physio",
+  "industryDescription": "Physiotherapy practice",
+  "location": "Cork",
+  "teamSize": "two practitioners",
+  ...
+}
+
+"Tutoring business — primary school maths"
+→ {
+  "refused": false,
+  "industry": "generic",
+  "industryFreeText": "tutor",
+  "industryDescription": "Primary-school maths tutoring",
+  "specialty": "primary school maths",
+  ...
+}
+\`\`\`
 
 # Service catalogues per industry
 
@@ -162,6 +331,10 @@ type Body = {
   industryHint?: unknown;
   priorAttempt?: unknown;
 };
+
+type ExtractionResponseBody =
+  | { refused: true; refuseReason: RefuseReason }
+  | { refused: false; extraction: ConversationExtraction };
 
 export async function POST(request: Request): Promise<Response> {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -216,8 +389,8 @@ export async function POST(request: Request): Promise<Response> {
       .join('')
       .trim();
     const parsed = parseExtraction(text);
-    const normalised = normaliseExtraction(parsed, { firstMessage });
-    return NextResponse.json({ extraction: normalised });
+    const responseBody = normaliseResponse(parsed, { firstMessage });
+    return NextResponse.json(responseBody);
   } catch (error) {
     console.error('[extract-business] extraction failed', error);
     const detail = error instanceof Error ? error.message : String(error);
@@ -272,9 +445,12 @@ function readPriorAttemptMessages(value: unknown): string[] {
 }
 
 type RawExtraction = {
+  refused?: unknown;
+  refuseReason?: unknown;
   businessName?: unknown;
   industry?: unknown;
   industryFreeText?: unknown;
+  industryDescription?: unknown;
   location?: unknown;
   specialty?: unknown;
   teamSize?: unknown;
@@ -295,6 +471,34 @@ function parseExtraction(text: string): RawExtraction {
     throw new Error('extract-business: model response contained no JSON object');
   }
   return JSON.parse(body.slice(start, end + 1)) as RawExtraction;
+}
+
+/** Normalise the raw model output into the discriminated response shape.
+ *  Refusal short-circuits — every other field is dropped on refusal so the
+ *  shell can't accidentally read partial extraction state for a banned
+ *  signup. A malformed refuse-reason falls through to the extraction path
+ *  (we'd rather seat-cost a misclassified ecom signup than reject a real
+ *  customer). */
+function normaliseResponse(
+  raw: RawExtraction,
+  ctx: { firstMessage: string },
+): ExtractionResponseBody {
+  if (raw.refused === true) {
+    const refuseReasonRaw = readString(raw.refuseReason).toLowerCase();
+    if ((REFUSE_REASONS as readonly string[]).includes(refuseReasonRaw)) {
+      return { refused: true, refuseReason: refuseReasonRaw as RefuseReason };
+    }
+    // Model said refused: true but gave an unrecognised reason. Fall
+    // through to the extraction path rather than guess — the model
+    // already returned no extraction fields, so let it resolve as
+    // generic with low confidence + a clarifying question.
+    console.warn('[extract-business] refused=true with unknown refuseReason:', raw.refuseReason);
+  }
+
+  return {
+    refused: false,
+    extraction: normaliseExtraction(raw, ctx),
+  };
 }
 
 function normaliseExtraction(
@@ -338,10 +542,21 @@ function normaliseExtraction(
       ? businessNameRaw
       : '';
 
+  // Industry description — for generic, the human-readable bridge between
+  // the customer's free-text trade name and the generic template. For one
+  // of the 10 named trades this is usually empty (the template covers it),
+  // but we still trim + cap defensively when populated.
+  const industryDescriptionRaw = readString(raw.industryDescription);
+  const industryDescription =
+    industryDescriptionRaw.length > 0 && industryDescriptionRaw.length <= 80
+      ? industryDescriptionRaw
+      : '';
+
   return {
     businessName,
     industry,
     industryFreeText,
+    industryDescription,
     location: readString(raw.location),
     specialty: readString(raw.specialty),
     teamSize: readString(raw.teamSize),

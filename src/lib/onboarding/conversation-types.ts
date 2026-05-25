@@ -50,6 +50,16 @@ export type ConversationBrandFacts = {
   logoUrl?: string | null;
 };
 
+/** Closed set of refusal reasons the extraction can return when the
+ *  customer's business is outside what Webnua supports. The conversation
+ *  shell mounts a `RefuseScreen` and persists the reason onto
+ *  `capturedFacts.refusedReason`; the workspace's `lifecycle_status` is
+ *  flipped to `'banned'` via `/api/clients/[id]/refuse-signup` so the
+ *  row no longer counts as a seat. Webnua is built for service businesses
+ *  that need leads — restaurants need booking + menu tools, ecommerce
+ *  stores need cart + fulfilment, both of which are outside scope. */
+export type RefuseReason = 'restaurant' | 'ecom';
+
 /** AI extraction output. The /api/onboarding/extract-business route writes
  *  this onto capturedFacts.extraction as soon as turn 1 + verification
  *  complete and we can call Sonnet with the first message. */
@@ -68,6 +78,15 @@ export type ConversationExtraction = {
    *  preserved so prompts can carry their phrasing. NULL when the model
    *  resolved a known industry without ambiguity. */
   industryFreeText: string | null;
+  /** Short professional descriptor of the business (2-6 words, Title Case)
+   *  — e.g. "Mobile car valeting", "Wedding photography", "Small-business
+   *  accounting". For `industry: 'generic'` this is the BRIDGE between the
+   *  customer's own words and the neutral template — the generator + the
+   *  brand row's industryCategory both consume it so an "accountant"
+   *  catch-all signup doesn't get framed as "Local service business" in
+   *  every downstream copy. Empty for the 10 named trades (the template's
+   *  displayName covers it). Defaults to empty when the model omits it. */
+  industryDescription: string;
   /** Location / service area string the customer mentioned. Empty when
    *  not present in the first message. */
   location: string;
@@ -142,6 +161,13 @@ export type ConversationCapturedFacts = {
   /** A clarifying question the bot asked after a low-confidence
    *  extraction. Persisted so a refresh re-mounts the same question. */
   clarifyingQuestion?: string;
+  /** Refusal reason when the extraction classified the business as out of
+   *  scope (restaurant / ecommerce). Set in lockstep with `refusedAt` so
+   *  resume hydration can re-mount the `RefuseScreen` without re-running
+   *  the extraction call. */
+  refusedReason?: RefuseReason;
+  /** ISO-8601 timestamp the refusal was captured. Audit + analytics. */
+  refusedAt?: string;
 };
 
 /** The full persisted state. Mirrors the inline type in the conversation-

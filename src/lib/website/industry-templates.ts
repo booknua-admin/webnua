@@ -833,59 +833,67 @@ const CARPENTER: IndustryTemplate = {
     'Bespoke carpentry — built for your space, finished properly, on the timeline we agreed.',
 };
 
-// GENERIC — fallback for any local service not in the trade list. Customer
-// will type their own services in the conversational flow; this list is
-// intentionally broad (project type + lifecycle stages) rather than
-// trade-specific. The AI extraction layer should pre-tick few or none of
-// these by default — they're starter slots the customer overrides.
-// Replaces the previous CTA-style entries ("Get in touch for a quote",
-// "View our recent work") which weren't services at all.
+// GENERIC — catch-all for ANY service business outside the 10 curated
+// trades. The customer's actual trade is captured in
+// `brand.industryCategory` (the AI extraction's `industryDescription`
+// field — e.g. "Mobile car valeting", "Wedding photography",
+// "Small-business accounting") and lands in this prompt as the
+// `Industry: ...` line. The template's job is NOT to pretend to know
+// the trade — it's to give the model a SAFE NEUTRAL FRAME that lets the
+// customer's own words drive the copy.
+//
+// The service list below is intentionally broad (project type + lifecycle
+// stages) rather than trade-specific. The AI extraction layer never
+// pre-ticks them — for generic industries, the customer's own services
+// (turn 2 free-text additions) are the anchor, not these.
 const GENERIC: IndustryTemplate = {
   key: 'generic',
-  displayName: 'Local service business',
+  displayName: 'Service business',
   urgencyMode: 'mixed',
   contextForModel:
-    'A local service business that does not map onto any specific tradie category. Customer mindset depends on the service — could be reactive (something broken) or planned (booking ahead). Conversion levers that work across most local services: (1) clear pricing posture, (2) genuine local — service area named, (3) honest about scope, (4) reliable — turn up when you say you will. Voice: warm, practical, no corporate words. Avoid: claiming category-specific certifications. Lean on the brief\'s own offer copy and service list — never invent industry-specific proofs (no "Gas Safe" if we don\'t know the trade).',
+    "This is a service business outside the 10 named trades. The customer's actual trade is named in the `Industry:` line above (\"Mobile car valeting\", \"Wedding photography\", \"Personal training\", \"Small-business accounting\", etc.) — that line is the ANCHOR for every piece of copy you write. Use the customer's own framing. Customer mindset depends on the trade: reactive emergencies for some (\"my car needs valeting today before I sell it\"), planned bookings for most (a personal trainer client, a tutor session, a photographer wedding), project work for some (an accountant onboarding a new business). Conversion levers that work across local services: (1) clear pricing posture (fixed quote / hourly / free first consult — whatever the brief says), (2) genuine local — service area named, (3) honest about scope, (4) reliable — turn up when you say you will, (5) lean on the customer's own service description. Voice: warm, practical, no corporate words. Avoid: claiming category-specific certifications you don't have evidence for (no \"Gas Safe\" for a car valet, no \"CFA charter\" for an accountant unless the brief says so). Avoid: making up industry-specific jargon — write in the trade's own ordinary vocabulary the customer used.",
   valuePropositions: [
-    'Local — we live and work in the area, and we\'re here for the long run',
-    'Reliable — when we say we\'ll be there, we\'re there',
-    'Honest pricing — quoted clearly before any work starts',
-    'Workmanship guarantee on every job',
+    "Local — we live and work in the area, and we're here for the long run",
+    "Reliable — when we say we'll be there, we're there",
+    'Honest pricing — quoted clearly before we get started',
+    'Care about the work — we do it properly and stand behind it',
     'Real people, real phone numbers — you can always reach us',
   ],
   proofPoints: [
     'Serving the local area for years',
     'Hundreds of happy customers and counting',
     'Fully insured and locally owned',
-    'Recommended by neighbours and on local Facebook',
+    'Recommended by word of mouth and on local Facebook',
   ],
   objectionHandlers: [
     {
       objection: 'Worried about price surprises',
-      response: 'Clear quote before any work starts. The number we agree is the number you pay.',
+      response: "Clear quote up front. The number we agree is the number you pay.",
     },
     {
       objection: 'Worried about reliability',
-      response: 'We turn up when we say we will. If anything changes, you hear from us first.',
+      response: "We turn up when we say we will. If anything changes, you hear from us first.",
     },
     {
       objection: 'Worried about getting through to a real person',
       response: 'Real phone, real people. Pick up or call back within the hour.',
     },
   ],
+  // Broad service categories that read sensibly across any service business
+  // (a car valet, dog groomer, photographer, accountant, etc.). These are
+  // STARTER slots only — the conversational flow captures the customer's own
+  // services in turn 2; for generic industries the AI extraction never
+  // pre-ticks any of these.
   defaultServices: [
-    'New Installations',
-    'Repairs & Maintenance',
-    'Emergency Callouts',
-    'Servicing & Inspections',
-    'Project Work',
-    'Consultations & Quotes',
-    'Annual Service Plans',
-    'Commercial Work',
+    'New customers',
+    'Regular bookings',
+    'One-off jobs',
+    'Quotes & consultations',
+    'Premium / package service',
   ],
   ctaPrimary: 'Get in touch',
   ctaSecondary: 'Request a quote',
-  trustSignals: ['Locally owned', 'Fully insured', 'Workmanship guaranteed'],
+  trustSignals: ['Locally owned', 'Fully insured', 'Reviewed locally'],
   stockImages: {
     hero: U('1556910103-1c02745aae4d'),
     gallery: [

@@ -51,9 +51,15 @@ export const INDUSTRY_PRIMARY_COLORS: Record<IndustryKey, string> = {
   hvac: '#0891b2', // cool cyan (heating + cooling)
   roofer: '#7c2d12', // tile brown
 
-  // Fallback — Webnua brand rust so an unmapped industry still produces a
-  // colour the design system is built around.
-  generic: '#d24317',
+  // Catch-all for any service business outside the 10 curated trades
+  // (car valet, dog grooming, personal trainer, accountant, photographer,
+  // physio, tutor, etc.). Deliberately NOT Webnua rust (`#d24317`) — that
+  // is the platform's brand colour and reusing it as a customer default
+  // makes every catch-all signup look like the Webnua marketing site at
+  // first glance. Professional blue reads as "any service business,
+  // anywhere" without claiming a trade category. Customer overrides via
+  // the wizard's step 4 / the conversational turn 3 colour picker.
+  generic: '#3b6ba5',
 };
 
 /** Derive a sensible secondary colour from a primary. Used as the step 4
