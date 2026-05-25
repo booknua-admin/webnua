@@ -558,7 +558,7 @@ export const contactMeta: SectionMeta = {
   type: 'contact',
   label: '// CONTACT',
   description:
-    'Contact block — header, contact details, and a message form, in four layouts.',
+    'Contact block — header, contact details, and a CTA that opens a lead-capture popup (or an inline form, your call).',
   allowedContainers: ['page', 'funnelStep'],
   implemented: true,
   capabilityHints: {
@@ -568,6 +568,8 @@ export const contactMeta: SectionMeta = {
       'headlineAccent',
       'sub',
       'items',
+      'ctaLabel',
+      'ctaHref',
       'formTitle',
       'formButtonLabel',
     ],
@@ -578,6 +580,7 @@ export const contactMeta: SectionMeta = {
     headline: 'Headline',
     subheadline: 'Sub-headline',
     items: 'Contact details',
+    cta: 'Call-to-action',
     form: 'Message form',
     media: 'Image / map',
   },
@@ -592,6 +595,14 @@ export const contactMeta: SectionMeta = {
     'headlineAccent',
     'sub',
     'items',
+    // Default-CTA mode (C1): a single primary CTA that opens the popup
+    // form modal. `showInlineForm` flips the section back to the legacy
+    // two-column "details + inline form" layout when the operator wants
+    // it. The popup uses the platform-standard `Section.popup` envelope
+    // + `PopupHost` modal — no contact-specific modal component.
+    'showInlineForm',
+    'ctaLabel',
+    'ctaHref',
     'formTitle',
     'formButtonLabel',
     'showPhoneField',

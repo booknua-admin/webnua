@@ -38,7 +38,7 @@ import { useUserPendingFunnelSubmission } from '@/lib/funnel/queries';
 import type { Funnel, FunnelStep } from '@/lib/funnel/types';
 import type { DraftSlot } from '@/lib/website/content-drafts';
 import { defaultFormConfig, type FormConfig, type FormPageLink } from '@/lib/website/form-config';
-import type { PopupConfig } from '@/lib/website/popup-config';
+import { defaultPopupConfig, type PopupConfig } from '@/lib/website/popup-config';
 import { saveSeoForPages } from '@/lib/website/mutations';
 import { useBrandForClient, useWebsiteForClient } from '@/lib/website/queries';
 import { applyCtaDefaults } from '@/lib/website/cta-defaults';
@@ -269,6 +269,14 @@ export function SectionEditor({ mode }: SectionEditorProps) {
     // on the envelope. Every other section starts form-less; the operator
     // attaches a form via the fields panel.
     if (type === 'form') newSection.form = defaultFormConfig();
+    // C1: a new `contact` section ships with the CTA-only default shape
+    // (see contact.tsx DEFAULTS). The CTA points at the popup sentinel
+    // (`POPUP_HREF`), so seed an empty popup on the envelope too — that
+    // way the editor lights up immediately with a workable popup form
+    // instead of the "no popup configured" empty state the operator would
+    // otherwise have to walk past. The popup is the platform-standard
+    // `Section.popup` envelope; the modal renderer is `PopupHost`.
+    if (type === 'contact') newSection.popup = defaultPopupConfig();
     // Point the new section's CTA at a real page (website page mode only).
     if (mode.kind === 'page') {
       newSection = applyCtaDefaults(newSection, mode.pages);

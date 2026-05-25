@@ -203,64 +203,190 @@ export function stripHallucinatedImages(
 // Pass 3 — stock-image injection
 // =============================================================================
 
+/** Surface the section belongs to. `'site'` = a website page; `'funnel'` =
+ *  a funnel step. Used as a seed token so the same (industry, section,
+ *  field) on a website and on its sibling funnel never collide on the
+ *  identical hero — see `resolveStockImage`. */
+export type StockImageSurface = 'site' | 'funnel';
+
+/** A deterministic 32-bit FNV-1a hash of a string. Pure, no I/O. Used as
+ *  the slot-diversity seed: a hash of `${slug}:${sectionType}:${fieldKey}`
+ *  picks a stable gallery index per slot, so the same site always gets the
+ *  same photo per slot (no churn on re-render) but different slots on the
+ *  same page pick different photos when alternatives exist. */
+function fnv1aHash(input: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    // 32-bit FNV prime multiply, kept inside 32-bit via Math.imul.
+    hash = Math.imul(hash, 0x01000193);
+  }
+  // Coerce to unsigned 32-bit so the consumer can take a positive modulo.
+  return hash >>> 0;
+}
+
+/** Options carried through every injection call to drive slot diversity.
+ *  Optional fields fall back to fixed positions when absent (the pre-C1
+ *  behaviour) so the helper stays callable from the deterministic-fallback
+ *  path which has no slug. */
+export type StockImageOptions = {
+  /** Stable per-site identifier — usually `clients.slug`. Hashed with the
+   *  field key to pick a gallery index. When absent, falls back to fixed
+   *  positions (the pre-C1 behaviour: gallery[0/1/2] per slot). */
+  slug?: string;
+  /** `'site'` vs `'funnel'`. Lets a customer's website + funnel never
+   *  collide on the identical hero, since the surface token rides in the
+   *  hash key. Defaults to `'site'`. */
+  surface?: StockImageSurface;
+  /** Item index inside an array field (gallery items only). Used as the
+   *  per-item offset so a 4-item gallery keeps its sequential variety while
+   *  the per-site starting offset rotates. */
+  index?: number;
+};
+
 /** A pure helper for the deterministic fallback path AND the live path.
- *  Takes (industry, sectionType, fieldKey, optional index) and returns the
+ *  Takes (industry, sectionType, fieldKey, options) and returns the
  *  matching curated URL — or an empty string if the industry kit can't
- *  supply one. Index is used for arrays (gallery items, about's
- *  imageUrl2/imageUrl3) so a same-industry page doesn't put the same photo
- *  in two slots when alternatives exist. */
+ *  supply one. The options carry the per-site slug + surface that drive
+ *  per-slot diversity (C1). When the slug is absent the helper falls back
+ *  to fixed positions (pre-C1 behaviour) so the deterministic fallback
+ *  generator still works without a slug. */
 export function resolveStockImage(
   industry: IndustryKey | string,
   sectionType: SectionType,
   fieldKey: string,
-  index = 0,
+  options: StockImageOptions = {},
 ): string {
   const template = resolveIndustryTemplate(industry);
-  return pickTemplateUrl(template, sectionType, fieldKey, index);
+  return pickTemplateUrl(template, sectionType, fieldKey, options);
+}
+
+/** Pick a gallery index for a given (slug, surface, sectionType, fieldKey)
+ *  tuple. The hash is stable per-tuple, so re-renders never churn the
+ *  selection. The same site reliably gets the same photo per slot. When
+ *  `slug` is absent, returns `fallbackIndex` (the pre-C1 fixed position) so
+ *  deterministic-fallback callers without a slug see no behaviour change. */
+function pickGalleryIndex(
+  slug: string | undefined,
+  surface: StockImageSurface,
+  sectionType: SectionType,
+  fieldKey: string,
+  galleryLength: number,
+  fallbackIndex: number,
+): number {
+  if (galleryLength <= 0) return 0;
+  if (!slug) {
+    // No slug: behave like pre-C1 (fixed positions). Clamp the fixed
+    // position into range so a sparse gallery can't out-of-bounds.
+    return Math.min(fallbackIndex, galleryLength - 1);
+  }
+  const seed = `${slug}:${surface}:${sectionType}:${fieldKey}`;
+  return fnv1aHash(seed) % galleryLength;
 }
 
 function pickTemplateUrl(
   template: IndustryTemplate,
   sectionType: SectionType,
   fieldKey: string,
-  index: number,
+  options: StockImageOptions,
 ): string {
   const gallery = template.stockImages.gallery;
   const team = template.stockImages.team ?? '';
+  const slug = options.slug;
+  const surface: StockImageSurface = options.surface ?? 'site';
+  const heroFallback = template.stockImages.hero;
 
-  // Hero-shaped slots: single big "we do this work" image.
+  // Hero-shaped slots: a single big "we do this work" image. With a slug
+  // present, pick a hero/gallery slot via the per-slot hash so the funnel
+  // hero never lands on the same photo as the website hero of the same
+  // brand (`surface` rides in the hash key, guaranteeing distinctness).
   if (sectionType === 'hero' && fieldKey === 'heroImageUrl') {
-    return template.stockImages.hero;
-  }
-  if (sectionType === 'cta' && fieldKey === 'imageUrl') {
-    // Use the second gallery image for CTA so it differs from the hero on
-    // the same page when alternatives exist; fall back to hero otherwise.
-    return gallery[1] ?? template.stockImages.hero;
-  }
-  if (sectionType === 'offer' && fieldKey === 'imageUrl') {
-    return gallery[2] ?? template.stockImages.hero;
-  }
-  if (sectionType === 'reviews' && fieldKey === 'spotlightImageUrl') {
-    return team || gallery[0] || template.stockImages.hero;
+    if (!slug) return heroFallback;
+    // Site hero CAN be the template's headline `hero` URL; the funnel hero
+    // must be DIFFERENT, so we exclude index 0 of the [hero, ...gallery]
+    // pool when surface === 'funnel' AND alternatives exist. We treat the
+    // template's `hero` as pool index 0 and the gallery items as 1..N.
+    const pool: readonly string[] = [heroFallback, ...gallery];
+    if (surface === 'funnel' && pool.length > 1) {
+      // Funnel: pick from gallery only (skip pool[0] = template hero).
+      const idx = pickGalleryIndex(slug, surface, sectionType, fieldKey, gallery.length, 0);
+      return gallery[idx] ?? heroFallback;
+    }
+    // Site: hash across the full pool, biased to start at hero by including
+    // it as index 0 — site visitors see the curated hero unless the hash
+    // rotates them onto a gallery photo, which is fine variety.
+    const idx = pickGalleryIndex(slug, surface, sectionType, fieldKey, pool.length, 0);
+    return pool[idx] ?? heroFallback;
   }
 
-  // About — supports a primary + two collage slots.
+  if (sectionType === 'cta' && fieldKey === 'imageUrl') {
+    // Pre-C1: gallery[1] (fixed). With a slug: hash across the full gallery
+    // so two CTA sections on the same page can land on different photos.
+    if (gallery.length === 0) return heroFallback;
+    const idx = pickGalleryIndex(slug, surface, sectionType, fieldKey, gallery.length, 1);
+    return gallery[idx] ?? heroFallback;
+  }
+
+  if (sectionType === 'offer' && fieldKey === 'imageUrl') {
+    if (gallery.length === 0) return heroFallback;
+    const idx = pickGalleryIndex(slug, surface, sectionType, fieldKey, gallery.length, 2);
+    return gallery[idx] ?? heroFallback;
+  }
+
+  if (sectionType === 'reviews' && fieldKey === 'spotlightImageUrl') {
+    // Prefer the team portrait if the template carries one; otherwise pick
+    // a gallery slot via the hash so reviews don't collide with hero/cta.
+    if (team) return team;
+    if (gallery.length === 0) return heroFallback;
+    const idx = pickGalleryIndex(slug, surface, sectionType, fieldKey, gallery.length, 0);
+    return gallery[idx] ?? heroFallback;
+  }
+
+  // About — supports a primary + two collage slots. Each slot hashes with
+  // its own fieldKey, so the three slots reliably pick three different
+  // photos when the gallery is ≥3 wide.
   if (sectionType === 'about') {
-    if (fieldKey === 'imageUrl') return team || template.stockImages.hero;
-    if (fieldKey === 'imageUrl2') return gallery[0] ?? '';
-    if (fieldKey === 'imageUrl3') return gallery[1] ?? '';
+    if (fieldKey === 'imageUrl') {
+      if (team) return team;
+      if (gallery.length === 0) return heroFallback;
+      const idx = pickGalleryIndex(slug, surface, sectionType, fieldKey, gallery.length, 0);
+      return gallery[idx] ?? heroFallback;
+    }
+    if (fieldKey === 'imageUrl2') {
+      if (gallery.length === 0) return '';
+      const idx = pickGalleryIndex(slug, surface, sectionType, fieldKey, gallery.length, 1);
+      return gallery[idx] ?? '';
+    }
+    if (fieldKey === 'imageUrl3') {
+      if (gallery.length === 0) return '';
+      const idx = pickGalleryIndex(slug, surface, sectionType, fieldKey, gallery.length, 2);
+      return gallery[idx] ?? '';
+    }
   }
 
   // Contact — optional brand photo, the `mapImageUrl` is operator-supplied.
   if (sectionType === 'contact' && fieldKey === 'imageUrl') {
-    return gallery[0] ?? template.stockImages.hero;
+    if (gallery.length === 0) return heroFallback;
+    const idx = pickGalleryIndex(slug, surface, sectionType, fieldKey, gallery.length, 0);
+    return gallery[idx] ?? heroFallback;
   }
 
-  // Gallery items — index into the curated gallery array.
+  // Gallery items — each item lands on its own gallery index. The index is
+  // (perSiteOffset + i) mod galleryLength so the per-site offset rotates
+  // the starting photo without losing the sequential per-item variety.
   if (sectionType === 'gallery' && fieldKey === 'items[i].imageUrl') {
-    const url = gallery[index];
-    if (url) return url;
-    return gallery[gallery.length - 1] ?? template.stockImages.hero;
+    if (gallery.length === 0) return heroFallback;
+    const itemIndex = options.index ?? 0;
+    if (!slug) {
+      const url = gallery[itemIndex];
+      if (url) return url;
+      return gallery[gallery.length - 1] ?? heroFallback;
+    }
+    // Per-site starting offset (hashed once for the array, not per item).
+    const offset =
+      fnv1aHash(`${slug}:${surface}:${sectionType}:${fieldKey}`) % gallery.length;
+    const idx = (offset + itemIndex) % gallery.length;
+    return gallery[idx] ?? gallery[0] ?? heroFallback;
   }
 
   // Trust items - operator brand mark slots, no stock equivalent.
@@ -274,11 +400,18 @@ function pickTemplateUrl(
  *  paths have been stripped (Pass 2), so a field cleared by the strip pass
  *  gets refilled here. Every injection emits a `missing` fallback whose
  *  `modelValue` carries the URL we injected — that string is the audit
- *  signal that distinguishes "we filled it" from "we left it empty". */
+ *  signal that distinguishes "we filled it" from "we left it empty".
+ *
+ *  C1: takes an optional `options` carrying `{ slug, surface }`. The slug
+ *  drives per-slot hash-based diversity (so the same site picks consistent
+ *  but distinct photos across its hero / cta / about / contact slots), and
+ *  `surface` guarantees a customer's website hero and funnel hero never
+ *  collide on the same photo. */
 export function injectStockImages(
   type: SectionType,
   data: Record<string, unknown>,
   industry: IndustryKey | string,
+  options: StockImageOptions = {},
 ): RepairResult {
   const out = shallowClone(data);
   const fallbacks: PipelineFallback[] = [];
@@ -294,7 +427,7 @@ export function injectStockImages(
     }
     const value = out[field];
     if (typeof value === 'string' && value.trim() !== '') continue;
-    const injected = resolveStockImage(industry, type, field);
+    const injected = resolveStockImage(industry, type, field, options);
     if (!injected) continue;
     out[field] = injected;
     fallbacks.push({
@@ -305,9 +438,11 @@ export function injectStockImages(
     });
   }
 
-  // Gallery items — fill each empty `imageUrl` with the matching gallery
-  // index. Item arrays are only walked when they exist; we don't fabricate
-  // items the AI didn't emit.
+  // Gallery items — fill each empty `imageUrl`. The per-site offset (from
+  // the slug hash) rotates the starting photo; the item index advances
+  // through the gallery so the four items still pick four distinct photos
+  // when the gallery is 4 wide. Item arrays are only walked when they
+  // exist; we don't fabricate items the AI didn't emit.
   if (type === 'gallery' && Array.isArray(out.items)) {
     let touched = false;
     const nextItems = (out.items as unknown[]).map((raw, index) => {
@@ -319,7 +454,7 @@ export function injectStockImages(
         industry,
         'gallery',
         'items[i].imageUrl',
-        index,
+        { ...options, index },
       );
       if (!injected) return item;
       touched = true;
