@@ -472,7 +472,19 @@ export function FormBlock({
       </SelectableElement>
 
       {isPublic && notice ? (
-        <p className={'mt-2 text-[13px] ' + (notice.tone === 'good' ? 'text-good' : 'text-warn')}>
+        // Status-colour refit (Bundle C2b-1). Reads --status-good /
+        // --status-warn (set by SectionShell from the brand-derived
+        // palette) with the global --color-* fallback when this form
+        // renders outside a customer-site context.
+        <p
+          className="mt-2 text-[13px]"
+          style={{
+            color:
+              notice.tone === 'good'
+                ? 'var(--status-good, var(--color-good))'
+                : 'var(--status-warn, var(--color-warn))',
+          }}
+        >
           {notice.text}
         </p>
       ) : null}
@@ -492,11 +504,15 @@ export function FormBlock({
             {busy ? 'Submitting…' : 'Test submit →'}
           </button>
           {notice ? (
+            // Same status-colour refit as the public-notice branch above.
             <p
-              className={
-                'mt-2 text-[12px] leading-[1.5] ' +
-                (notice.tone === 'good' ? 'text-good' : 'text-warn')
-              }
+              className="mt-2 text-[12px] leading-[1.5]"
+              style={{
+                color:
+                  notice.tone === 'good'
+                    ? 'var(--status-good, var(--color-good))'
+                    : 'var(--status-warn, var(--color-warn))',
+              }}
             >
               {notice.text}
             </p>

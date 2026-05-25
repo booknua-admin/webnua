@@ -14,9 +14,24 @@
 
 export type GoogleFontCategory = 'sans' | 'serif';
 
+/** The closed set of curated font ids. Widens to `string` when the
+ *  browse-everything picker lands; for now design bundles + brand storage
+ *  type-check against this union. */
+export type GoogleFontId =
+  | 'inter-tight'
+  | 'manrope'
+  | 'plus-jakarta-sans'
+  | 'archivo'
+  | 'sora'
+  | 'playfair-display'
+  | 'fraunces'
+  | 'dm-serif-display'
+  | 'lora'
+  | 'spectral';
+
 export type GoogleFont = {
   /** Stable id stored on BrandObject. */
-  id: string;
+  id: GoogleFontId;
   /** The Google Fonts family name (for display in a picker). */
   family: string;
   category: GoogleFontCategory;

@@ -16,15 +16,37 @@
 // heading / body font stacks + the brand accent.
 // =============================================================================
 
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 
 import { FormBlock } from '@/components/shared/website/FormBlock';
+import {
+  derivePalette,
+  isDerivedPalette,
+  paletteCssVars,
+  type DerivedPalette,
+} from '@/lib/website/color-derivation';
+import { bundleCssVars, getBundle } from '@/lib/website/design-bundles';
 import { getFont } from '@/lib/website/google-fonts';
 import type { ResolvedTheme } from '@/lib/website/section-theme';
 import type { BrandObject } from '@/lib/website/types';
 
 import { GoogleFontLoader } from './GoogleFontLoader';
 import { useSectionFormSlot } from './section-form-slot';
+
+/** Resolve a brand row to its design palette. Reads the cached
+ *  `derivedPalette` JSON when present; falls back to re-deriving from
+ *  `accentColor` + (optional) `brandColors[1]` so legacy rows (pre-0092)
+ *  and edits that bypass the palette write still render in-brand. */
+function resolveBrandPalette(brand: BrandObject): DerivedPalette {
+  if (isDerivedPalette(brand.derivedPalette)) {
+    return brand.derivedPalette;
+  }
+  return derivePalette({
+    primary: brand.accentColor,
+    secondary: brand.brandColors?.[1],
+    industry: brand.industryCategory,
+  });
+}
 
 export type SectionShellRenderProps = {
   /** Resolved colour tokens for the section's theme. */
@@ -88,6 +110,22 @@ export function SectionShell({
   const headingFont = getFont(brand.headingFont);
   const bodyFont = getFont(brand.bodyFont);
   const banded = inset === 'band';
+
+  // Bundle C2b-1 — inject the design-bundle's `--bundle-*` tokens + the
+  // derived palette's `--palette-*` + `--status-*` tokens as inline CSS
+  // custom properties on the section root. Descendant components inherit
+  // them via `var(...)` so any future bundle-aware component (button
+  // primitive, eyebrow, status pill) reads its own scale without prop
+  // drilling. The Webnua `--color-*` globals in `globals.css` stay as
+  // fallbacks for descendants outside a customer-site context (admin
+  // surfaces, onboarding) — see the `--status-*` refit in FormBlock /
+  // footer / MediaField.
+  const bundle = getBundle(brand.designBundleId);
+  const palette = resolveBrandPalette(brand);
+  const tokenStyle = {
+    ...bundleCssVars(bundle),
+    ...paletteCssVars(palette),
+  } as CSSProperties;
   // When the section has an attached form and isn't placing it itself,
   // render it within this band so it reads as part of the section.
   const slot = useSectionFormSlot();
@@ -109,6 +147,7 @@ export function SectionShell({
     <section
       className={sectionClass}
       style={{
+        ...tokenStyle,
         backgroundColor: tokens.background,
         color: tokens.body,
         fontFamily: bodyFont.stack,

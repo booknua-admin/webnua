@@ -11,6 +11,8 @@
 import { AppError, normalizeError } from '@/lib/errors';
 import { generateFunnelStub } from '@/lib/funnel/generation-stub';
 import { supabase } from '@/lib/supabase/client';
+import { derivePalette } from '@/lib/website/color-derivation';
+import { getBundleForIndustry } from '@/lib/website/industry-bundle-defaults';
 import { offerToRow } from '@/lib/website/offer-generate';
 import { generateSiteStub, type ClientBrief } from '@/lib/website/site-generation-stub';
 import { MAX_NAV_LINKS } from '@/lib/website/types';
@@ -112,9 +114,22 @@ export async function createClientWithGeneration(
   if (!client) throw new Error('Could not allocate a unique client slug.');
 
   // -- 2. brand --
+  //
+  // Bundle C2b-1 — assign design_bundle_id from the industry default and
+  // pre-derive the colour palette so every section the customer renders
+  // inherits the bundle + palette without a hot path re-derivation. Both
+  // are nullable — a legacy row without them re-derives at render time —
+  // but writing them at create time is the canonical path.
+  const designBundleId = getBundleForIndustry(brief.brand.industryCategory);
+  const derivedPalette = derivePalette({
+    primary: brief.brand.accentColor,
+    secondary: brief.brand.brandColors?.[1],
+    industry: brief.brand.industryCategory,
+  });
   const { error: brandErr } = await supabase.from('brands').insert({
     client_id: client.id,
     accent_color: brief.brand.accentColor,
+    brand_colors: brief.brand.brandColors ?? [],
     logo_url: brief.brand.logoUrl,
     favicon_url: brief.brand.faviconUrl,
     voice_formality: brief.brand.voice.formality,
@@ -123,6 +138,8 @@ export async function createClientWithGeneration(
     audience_line: brief.brand.audienceLine,
     industry_category: brief.brand.industryCategory,
     top_jobs_to_be_booked: brief.brand.topJobsToBeBooked,
+    design_bundle_id: designBundleId,
+    derived_palette: derivedPalette as never,
   });
   if (brandErr) throw normalizeError(brandErr);
 
@@ -246,9 +263,17 @@ export async function createWebsiteForClient(
     .eq('client_id', clientId)
     .maybeSingle();
   if (!existingBrand) {
+    const scaffoldPrimary = brief.brand.accentColor || '#d24317';
+    const scaffoldBundle = getBundleForIndustry(brief.brand.industryCategory);
+    const scaffoldPalette = derivePalette({
+      primary: scaffoldPrimary,
+      secondary: brief.brand.brandColors?.[1],
+      industry: brief.brand.industryCategory,
+    });
     const { error: brandErr } = await supabase.from('brands').insert({
       client_id: clientId,
-      accent_color: brief.brand.accentColor || '#d24317',
+      accent_color: scaffoldPrimary,
+      brand_colors: brief.brand.brandColors ?? [],
       logo_url: brief.brand.logoUrl,
       favicon_url: brief.brand.faviconUrl,
       voice_formality: brief.brand.voice.formality,
@@ -257,6 +282,8 @@ export async function createWebsiteForClient(
       audience_line: brief.brand.audienceLine,
       industry_category: brief.brand.industryCategory,
       top_jobs_to_be_booked: brief.brand.topJobsToBeBooked,
+      design_bundle_id: scaffoldBundle,
+      derived_palette: scaffoldPalette as never,
     });
     if (brandErr) {
       // Non-fatal — the website CAN still be created. The brand-missing

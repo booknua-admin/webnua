@@ -333,6 +333,8 @@ async function fetchBrandForClient(slug: string): Promise<BrandObject | null> {
     heading_color: string | null;
     body_color: string | null;
     background_color: string | null;
+    design_bundle_id: string | null;
+    derived_palette: unknown;
   };
   return {
     accentColor: row.accent_color,
@@ -353,6 +355,8 @@ async function fetchBrandForClient(slug: string): Promise<BrandObject | null> {
     headingColor: row.heading_color ?? undefined,
     bodyColor: row.body_color ?? undefined,
     backgroundColor: row.background_color ?? undefined,
+    designBundleId: row.design_bundle_id ?? undefined,
+    derivedPalette: row.derived_palette ?? undefined,
   };
 }
 

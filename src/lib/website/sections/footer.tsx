@@ -420,7 +420,12 @@ function FooterFields({
                     onClick={() =>
                       setColumn(ci, { ...column, links: column.links.slice(0, -1) })
                     }
-                    className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet hover:text-warn"
+                    // Status-colour refit (Bundle C2b-1) — Tailwind v4
+                    // arbitrary-property hover variant reads --status-warn
+                    // (brand-tinted via SectionShell) with the global
+                    // --color-warn fallback so editor surfaces outside a
+                    // customer-site context still hover to the warn red.
+                    className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet transition-colors hover:[color:var(--status-warn,var(--color-warn))]"
                   >
                     − Remove link
                   </button>
