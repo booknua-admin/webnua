@@ -21,8 +21,8 @@ import {
   type ResolvedTheme,
   type SectionTheme,
 } from '../section-theme';
+import { BundleButton } from './_shared/BundleButton';
 import { CopyField } from './_shared/CopyField';
-import { SurfaceLink } from './_shared/live-surface';
 import { IconField } from './_shared/IconField';
 import { MediaField } from './_shared/MediaField';
 import {
@@ -51,12 +51,31 @@ export type AboutMediaShape = 'rounded' | 'arc';
 export type AboutOverlay = 'none' | 'stat' | 'quote';
 export type HeadlineSize = 'm' | 'l' | 'xl';
 
+// C2b-3: the `layout` field is the top-level structural switch.
+// - `split` (default, V1) = the existing 2-column copy + media layout.
+//                           The existing `imageSide`/`extra`/`mediaMode`/
+//                           `overlay`/`mediaShape` knobs all apply here.
+//                           V3 stats-brief is reached via this layout +
+//                           `extra: 'stats'` (a bundle rule can narrow to
+//                           those combos for the bold_direct register).
+// - `story-arc` (V2)      = vertical narrative — eyebrow + headline + lead
+//                           paragraph + chapters (subhead/body pairs) +
+//                           optional pull-quote + optional bottom photo.
+//                           No left/right media column; reads like an
+//                           editorial article.
+export type AboutLayout = 'split' | 'story-arc';
+
 type AboutElement =
   | 'eyebrow'
   | 'headline'
   | 'subheadline'
   | 'extra'
-  | 'overlay';
+  | 'overlay'
+  // V2 story-arc adds two element targets for the inspector — chapters as
+  // a single editable unit (operator edits the array as one group, same
+  // asymmetry pattern Trust V3 compact-icons uses) and the pull-quote.
+  | 'chapters'
+  | 'pullQuote';
 
 export type AboutFeature = {
   id: string;
@@ -72,9 +91,21 @@ export type AboutStat = {
   label: string;
 };
 
+/** Story-arc chapter: a subheading + body-paragraph pair. V2 renders 2-3 of
+ *  these as the editorial-narrative core. */
+export type AboutChapter = {
+  id: string;
+  heading: string;
+  body: string;
+};
+
 export type AboutData = {
   /** Per-section colour overrides — absent fields inherit the brand default. */
   theme: SectionTheme;
+  /** C2b-3 — top-level layout selector. Defaults to `split` (the V1
+   *  shape — also the V3 stats-brief register via `extra: 'stats'`).
+   *  `story-arc` is the V2 vertical narrative. */
+  layout: AboutLayout;
   imageSide: 'left' | 'right';
   headlineSize: HeadlineSize;
   showHeadlineRule: boolean;
@@ -103,6 +134,17 @@ export type AboutData = {
   badgeValue: string;
   badgeLabel: string;
   badgeQuote: string;
+  // -- V2 story-arc fields ----------------------------------------------
+  //
+  // Reused on the split layout when the operator wants them: the lead
+  // paragraph IS the existing `sub` field; the headline IS the existing
+  // `headline`. The two new pieces below are the narrative middle: 2-3
+  // chapters (subhead + body) and an optional pull-quote.
+  /** 2-3 subhead / body-paragraph pairs. Story-arc only — split ignores. */
+  chapters: AboutChapter[];
+  /** Optional middle pull-quote rendered in large italic typography.
+   *  Story-arc only. Empty = no pull-quote. */
+  pullQuote: string;
 };
 
 /** The about block's own colours — last link in the resolve chain. */
@@ -133,8 +175,18 @@ const EDITOR_SEED_STATS: Omit<AboutStat, 'id'>[] = [
   { icon: 'check', value: '', label: 'Stat label 3' },
 ];
 
+// Editor seed for story-arc chapters. Same discipline as the other arrays:
+// generic placeholders that don't masquerade as real content — an AI omission
+// shouldn't leak invented chapter copy onto a brand-new business.
+const EDITOR_SEED_CHAPTERS: Omit<AboutChapter, 'id'>[] = [
+  { heading: 'Where we started', body: 'A short paragraph telling part of the story.' },
+  { heading: 'How we work', body: 'A short paragraph telling part of the story.' },
+  { heading: 'Why it matters', body: 'A short paragraph telling part of the story.' },
+];
+
 const DEFAULTS: AboutData = {
   theme: {},
+  layout: 'split',
   imageSide: 'right',
   headlineSize: 'l',
   showHeadlineRule: true,
@@ -161,6 +213,8 @@ const DEFAULTS: AboutData = {
   badgeValue: '',
   badgeLabel: '',
   badgeQuote: '',
+  chapters: [],
+  pullQuote: '',
 };
 
 function defaultData(): AboutData {
@@ -169,6 +223,7 @@ function defaultData(): AboutData {
     theme: {},
     features: EDITOR_SEED_FEATURES.map((f) => ({ ...f, id: makeId('feat') })),
     stats: EDITOR_SEED_STATS.map((s) => ({ ...s, id: makeId('stat') })),
+    chapters: EDITOR_SEED_CHAPTERS.map((c) => ({ ...c, id: makeId('chap') })),
   };
 }
 
@@ -182,6 +237,7 @@ function withDefaults(data: AboutData): AboutData {
     // unlicensed business.
     features: data.features ?? [],
     stats: data.stats ?? [],
+    chapters: data.chapters ?? [],
   };
 }
 
@@ -209,6 +265,11 @@ const SUB_ALTS = [
   'From start to finish, we deliver exceptional service and lasting value.',
   'We believe in honest communication, transparent pricing, and doing the job right the first time.',
 ] as const;
+
+const LAYOUT_OPTIONS: readonly VariantOption<AboutLayout>[] = [
+  { id: 'split', label: 'Split (copy + image)' },
+  { id: 'story-arc', label: 'Story arc (vertical narrative)' },
+];
 
 const IMAGE_SIDE_OPTIONS: readonly VariantOption<'left' | 'right'>[] = [
   { id: 'left', label: 'Image left' },
@@ -315,6 +376,31 @@ function AboutFields({
   }, [d, onChange]);
   const removeStat = useCallback(
     (id: string) => onChange({ ...d, stats: d.stats.filter((s) => s.id !== id) }),
+    [d, onChange],
+  );
+
+  // Story-arc chapter callbacks — mirror the features/stats shape so the
+  // CRUD pattern stays consistent across the section's item arrays.
+  const setChapter = useCallback(
+    (index: number, next: AboutChapter) => {
+      const chapters = d.chapters.slice();
+      chapters[index] = next;
+      onChange({ ...d, chapters });
+    },
+    [d, onChange],
+  );
+  const addChapter = useCallback(() => {
+    onChange({
+      ...d,
+      chapters: [
+        ...d.chapters,
+        { id: makeId('chap'), heading: '', body: '' },
+      ],
+    });
+  }, [d, onChange]);
+  const removeChapter = useCallback(
+    (id: string) =>
+      onChange({ ...d, chapters: d.chapters.filter((c) => c.id !== id) }),
     [d, onChange],
   );
 
@@ -547,6 +633,79 @@ function AboutFields({
     );
   }
 
+  if (selectedElement === 'chapters') {
+    return (
+      <BuilderFormSection>
+        {d.chapters.map((chapter, i) => (
+          <div
+            key={chapter.id}
+            className="mb-3.5 rounded-lg border border-rule bg-paper p-3.5 last:mb-0"
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+                Chapter {i + 1}
+              </p>
+              <CapabilityGate capability="editLayout" mode="hide">
+                <button
+                  type="button"
+                  onClick={() => removeChapter(chapter.id)}
+                  className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust hover:text-rust-deep"
+                >
+                  Remove ×
+                </button>
+              </CapabilityGate>
+            </div>
+            <CopyField
+              label="Heading"
+              value={chapter.heading}
+              onChange={(v) => setChapter(i, { ...chapter, heading: v })}
+            />
+            <CopyField
+              label="Body"
+              value={chapter.body}
+              onChange={(v) => setChapter(i, { ...chapter, body: v })}
+              multiline
+              rows={4}
+            />
+          </div>
+        ))}
+        <CapabilityGate capability="editLayout" mode="disable">
+          <BuilderField label="">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={addChapter}
+              className="w-full"
+            >
+              + Add chapter
+            </Button>
+          </BuilderField>
+        </CapabilityGate>
+      </BuilderFormSection>
+    );
+  }
+
+  if (selectedElement === 'pullQuote') {
+    return (
+      <BuilderFormSection>
+        <CopyField
+          label="Pull-quote"
+          value={d.pullQuote}
+          originalValue={DEFAULTS.pullQuote}
+          onChange={(v) => set('pullQuote', v)}
+          multiline
+          rows={3}
+          helper={
+            <>
+              Rendered as a large italic line in the middle of the story.
+              Leave empty to hide.
+            </>
+          }
+        />
+      </BuilderFormSection>
+    );
+  }
+
   if (selectedElement === 'overlay') {
     if (d.overlay === 'stat') {
       return (
@@ -592,6 +751,11 @@ function AboutFields({
   }
 
   // -- section-level settings (no element selected) --
+  // Story-arc owns a smaller set of section-level knobs — the media column
+  // + overlay card + image-side + collage mode don't apply. The single
+  // optional bottom photo is the only image slot, configured via the
+  // existing `imageUrl` field.
+  const isStoryArc = d.layout === 'story-arc';
   return (
     <>
       <BuilderFormSection>
@@ -606,51 +770,69 @@ function AboutFields({
       </BuilderFormSection>
       <BuilderFormSection>
         <VariantField
-          label="Image side"
-          value={d.imageSide}
-          options={IMAGE_SIDE_OPTIONS}
-          onChange={(v) => set('imageSide', v)}
+          label="Layout"
+          value={d.layout}
+          options={LAYOUT_OPTIONS}
+          onChange={(v) => set('layout', v)}
         />
-        <VariantField
-          label="Extra block"
-          value={d.extra}
-          options={EXTRA_OPTIONS}
-          onChange={(v) => set('extra', v)}
-        />
-      </BuilderFormSection>
-      <BuilderFormSection>
-        <VariantField
-          label="Media"
-          value={d.mediaMode}
-          options={MEDIA_MODE_OPTIONS}
-          onChange={(v) => set('mediaMode', v)}
-        />
-        {d.mediaMode === 'single' ? (
+        {!isStoryArc ? (
           <VariantField
-            label="Image shape"
-            value={d.mediaShape}
-            options={MEDIA_SHAPE_OPTIONS}
-            onChange={(v) => set('mediaShape', v)}
+            label="Image side"
+            value={d.imageSide}
+            options={IMAGE_SIDE_OPTIONS}
+            onChange={(v) => set('imageSide', v)}
           />
         ) : null}
-        {d.mediaMode === 'single' ? (
+        {!isStoryArc ? (
           <VariantField
-            label="Overlay card"
-            value={d.overlay}
-            options={OVERLAY_OPTIONS}
-            onChange={(v) => set('overlay', v)}
+            label="Extra block"
+            value={d.extra}
+            options={EXTRA_OPTIONS}
+            onChange={(v) => set('extra', v)}
           />
         ) : null}
       </BuilderFormSection>
+      {!isStoryArc ? (
+        <BuilderFormSection>
+          <VariantField
+            label="Media"
+            value={d.mediaMode}
+            options={MEDIA_MODE_OPTIONS}
+            onChange={(v) => set('mediaMode', v)}
+          />
+          {d.mediaMode === 'single' ? (
+            <VariantField
+              label="Image shape"
+              value={d.mediaShape}
+              options={MEDIA_SHAPE_OPTIONS}
+              onChange={(v) => set('mediaShape', v)}
+            />
+          ) : null}
+          {d.mediaMode === 'single' ? (
+            <VariantField
+              label="Overlay card"
+              value={d.overlay}
+              options={OVERLAY_OPTIONS}
+              onChange={(v) => set('overlay', v)}
+            />
+          ) : null}
+        </BuilderFormSection>
+      ) : null}
       <BuilderFormSection>
         <MediaField
-          label={d.mediaMode === 'collage' ? 'Main image' : 'Image'}
+          label={
+            isStoryArc
+              ? 'Bottom photo (optional)'
+              : d.mediaMode === 'collage'
+                ? 'Main image'
+                : 'Image'
+          }
           value={d.imageUrl}
           onChange={(v) => set('imageUrl', v)}
           display={coerceImageDisplay(d.imageDisplay)}
           onDisplayChange={(v) => set('imageDisplay', v)}
         />
-        {d.mediaMode === 'collage' ? (
+        {!isStoryArc && d.mediaMode === 'collage' ? (
           <>
             <MediaField
               label="Collage image 2"
@@ -698,6 +880,19 @@ function AboutPreview({
           selected: selectedElement === id,
           onSelect: onSelectElement,
         });
+
+        // V2 story-arc — vertical narrative; no media column, no overlay.
+        if (d.layout === 'story-arc') {
+          return (
+            <AboutStoryArc
+              data={d}
+              theme={theme}
+              accent={accent}
+              headingFont={headingFont}
+              sel={sel}
+            />
+          );
+        }
 
         const copy = (
           <div className="flex flex-col">
@@ -776,6 +971,157 @@ function AboutPreview({
         );
       }}
     </SectionShell>
+  );
+}
+
+// -- V2 story-arc — vertical narrative -------------------------------------
+//
+// Reads like an editorial article: eyebrow + headline + lead paragraph,
+// then 2-3 chapters of subhead + body, with an optional pull-quote in the
+// middle and an optional team photo at the bottom. Single column, max-width
+// constrained for line-length readability.
+
+function AboutStoryArc({
+  data,
+  theme,
+  accent,
+  headingFont,
+  sel,
+}: {
+  data: AboutData;
+  theme: ResolvedTheme;
+  accent: string;
+  headingFont: string;
+  sel: (id: AboutElement) => {
+    id: AboutElement;
+    selected: boolean;
+    onSelect?: (id: string) => void;
+  };
+}) {
+  // Insert the pull-quote between chapter 1 and chapter 2 (or after
+  // chapter 1 if there's only one). Empty pull-quote = no insertion.
+  const pullQuoteIndex = data.pullQuote ? Math.min(1, data.chapters.length) : -1;
+
+  return (
+    <div className="mx-auto flex max-w-[720px] flex-col">
+      {data.eyebrow ? (
+        <SelectableElement {...sel('eyebrow')}>
+          <p
+            className="text-[12px] font-bold uppercase tracking-[0.18em]"
+            style={{ color: accent }}
+          >
+            {data.eyebrow}
+          </p>
+        </SelectableElement>
+      ) : null}
+      <SelectableElement {...sel('headline')} className="mt-3">
+        <h2
+          className={`${HEADLINE_SIZE_CLASS[data.headlineSize]} whitespace-pre-line font-bold leading-[1.12] tracking-[-0.02em]`}
+          style={{ fontFamily: headingFont, color: theme.heading }}
+        >
+          {data.headline}
+          {data.headlineAccent ? (
+            <span className="block" style={{ color: accent }}>
+              {data.headlineAccent}
+            </span>
+          ) : null}
+        </h2>
+      </SelectableElement>
+      {data.sub ? (
+        <SelectableElement {...sel('subheadline')} className="mt-6">
+          <p
+            className="whitespace-pre-line text-[17px] leading-[1.6] @2xl:text-[19px]"
+            style={{ color: theme.body }}
+          >
+            {data.sub}
+          </p>
+        </SelectableElement>
+      ) : null}
+
+      {data.chapters.length > 0 ? (
+        <SelectableElement {...sel('chapters')} className="mt-10">
+          <div className="flex flex-col gap-9 @2xl:gap-11">
+            {data.chapters.map((chapter, i) => (
+              <div key={chapter.id} className="flex flex-col">
+                <h3
+                  className="text-[20px] font-bold leading-[1.25] tracking-[-0.01em] @2xl:text-[24px]"
+                  style={{ fontFamily: headingFont, color: theme.heading }}
+                >
+                  {chapter.heading || `Chapter ${i + 1}`}
+                </h3>
+                {chapter.body ? (
+                  <p
+                    className="mt-3 whitespace-pre-line text-[15px] leading-[1.65] @2xl:text-[16px]"
+                    style={{ color: theme.body }}
+                  >
+                    {chapter.body}
+                  </p>
+                ) : null}
+                {/* Pull-quote interleaved AFTER chapter at pullQuoteIndex. */}
+                {pullQuoteIndex === i ? (
+                  <SelectableElement {...sel('pullQuote')} className="mt-9">
+                    <figure
+                      className="border-l-4 pl-6 @2xl:pl-8"
+                      style={{ borderColor: accent }}
+                    >
+                      <blockquote
+                        className="text-[22px] italic leading-[1.4] @2xl:text-[28px]"
+                        style={{ fontFamily: headingFont, color: theme.heading }}
+                      >
+                        “{data.pullQuote}”
+                      </blockquote>
+                    </figure>
+                  </SelectableElement>
+                ) : null}
+              </div>
+            ))}
+            {/* Edge case: pull-quote without any chapters yet. */}
+            {data.pullQuote && data.chapters.length === 0 ? (
+              <SelectableElement {...sel('pullQuote')}>
+                <figure
+                  className="border-l-4 pl-6 @2xl:pl-8"
+                  style={{ borderColor: accent }}
+                >
+                  <blockquote
+                    className="text-[22px] italic leading-[1.4] @2xl:text-[28px]"
+                    style={{ fontFamily: headingFont, color: theme.heading }}
+                  >
+                    “{data.pullQuote}”
+                  </blockquote>
+                </figure>
+              </SelectableElement>
+            ) : null}
+          </div>
+        </SelectableElement>
+      ) : data.pullQuote ? (
+        <SelectableElement {...sel('pullQuote')} className="mt-10">
+          <figure
+            className="border-l-4 pl-6 @2xl:pl-8"
+            style={{ borderColor: accent }}
+          >
+            <blockquote
+              className="text-[22px] italic leading-[1.4] @2xl:text-[28px]"
+              style={{ fontFamily: headingFont, color: theme.heading }}
+            >
+              “{data.pullQuote}”
+            </blockquote>
+          </figure>
+        </SelectableElement>
+      ) : null}
+
+      {/* Optional bottom team photo — single image slot, story-led so it
+          sits AFTER the narrative, not beside it. */}
+      {data.imageUrl ? (
+        <div className="mt-12 overflow-hidden rounded-xl">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={data.imageUrl}
+            alt=""
+            className={`block w-full ${imageBoxClasses(data.imageDisplay).fitClass}`}
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -883,15 +1229,18 @@ function AboutExtraBlock({
   }
 
   if (data.extra === 'button') {
+    // C2b-3: BundleButton replaces the inline-styled SurfaceLink. Adopts
+    // the bundle's --bundle-radius-button + --bundle-button-style so the
+    // CTA reflects the active design bundle.
     return (
-      <SurfaceLink
+      <BundleButton
         href={data.buttonHref}
-        className="inline-flex items-center gap-2 rounded-lg px-6 py-3 text-[14px] font-semibold"
-        style={{ backgroundColor: accent, color: '#ffffff' }}
+        variant="primary"
+        accent={accent}
+        trailing={<span aria-hidden>→</span>}
       >
         {data.buttonLabel || 'Learn more'}
-        <span aria-hidden>→</span>
-      </SurfaceLink>
+      </BundleButton>
     );
   }
 

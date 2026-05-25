@@ -59,6 +59,8 @@ import {
 } from './generation-stub';
 import {
   assignBundleVariants,
+  coerceDeprecatedSection,
+  enforceTrustCompactSingleWord,
   injectStockImages,
   reconcileColumns,
   resolveIndustryString,
@@ -742,14 +744,21 @@ function validateAndAssemble(
 
   for (const raw of rawSections) {
     if (typeof raw?.type !== 'string') continue;
-    const type = raw.type as SectionType;
-    const meta = getSectionMeta(type);
-    if (!meta || !meta.allowedContainers.includes('funnelStep')) continue;
-
-    let data: Record<string, unknown> =
+    // Pass A0 — deprecated-section coercion (Bundle C2b-3). Same rule the
+    // website pipeline runs. The funnel prompt's catalog is also filtered
+    // through `isEligible`, so this is a defence-in-depth pass for models
+    // that have seen the old vocabulary in training.
+    const rawData: Record<string, unknown> =
       typeof raw.data === 'object' && raw.data !== null
         ? { ...(raw.data as Record<string, unknown>) }
         : {};
+    const coerced = coerceDeprecatedSection(raw.type as SectionType, rawData);
+    for (const fb of coerced.fallbacks) fallbackLog.push({ generationId, ...fb });
+    const type = coerced.type;
+    const meta = getSectionMeta(type);
+    if (!meta || !meta.allowedContainers.includes('funnelStep')) continue;
+
+    let data: Record<string, unknown> = coerced.data;
 
     // Pass A — theme-discard guard. Per-section theme overrides fight
     // the brand palette; strip them so brand defaults apply uniformly.
@@ -787,6 +796,13 @@ function validateAndAssemble(
     );
     data = variantPass.data;
     for (const fb of variantPass.fallbacks) {
+      fallbackLog.push({ generationId, ...fb });
+    }
+
+    // Pass B++ — trust V3 single-word enforcement (Bundle C2b-3).
+    const trustPass = enforceTrustCompactSingleWord(type, data);
+    data = trustPass.data;
+    for (const fb of trustPass.fallbacks) {
       fallbackLog.push({ generationId, ...fb });
     }
 

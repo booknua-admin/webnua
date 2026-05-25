@@ -199,6 +199,12 @@ function buildRegistryBlock(ctx: GenerationContext): string {
 }
 
 function isEligible(def: SectionMeta, ctx: GenerationContext): boolean {
+  // Deprecated section types stay in the registry so existing seed data still
+  // renders, but the generator must NOT see them as a placement target — the
+  // prompt's catalog is the model's pick-from list. (Bundle C2b-3: `services`
+  // is deprecated in favour of `features`; if the model emits one anyway the
+  // pipeline coerces it via `coerceDeprecatedSection`.)
+  if (!def.implemented) return false;
   if (!def.allowedContainers.includes('page')) return false;
   if (def.allowedPageTypes && def.allowedPageTypes.length > 0) {
     return def.allowedPageTypes.includes(ctx.pageType);
@@ -404,7 +410,12 @@ export const SECTION_SHAPE_CATALOG: Partial<Record<SectionType, SectionShape>> =
   },
   features: {
     variants: [
-      { key: 'layout', values: ['cards', 'plain'] },
+      {
+        key: 'layout',
+        values: ['cards', 'plain', 'numbered', 'dark-band'],
+        guidance:
+          "'cards' = V2 icon grid (the default — N cards side by side); 'plain' = the legacy plain-text layout; 'numbered' = V1 vertical list with big bold numbers (no icons, the numbers are the visual); 'dark-band' = V3 full-bleed dark section breaking the page rhythm horizontally. Pick `numbered` for ordered how-it-works lists, `dark-band` to add visual punctuation to a long page, `cards` otherwise.",
+      },
       {
         key: 'mediaStyle',
         values: ['icon', 'image', 'image-icon'],
@@ -431,14 +442,24 @@ export const SECTION_SHAPE_CATALOG: Partial<Record<SectionType, SectionShape>> =
       },
     ],
   },
+  // C2b-3 NOTE: `featuredIndex: number | null` is the item-array asymmetry
+  // primitive. When set on the cards layout, the indexed item renders as a
+  // wider featured card. Not exposed to the AI by default (the brief usually
+  // wants a uniform grid); operator surfaces it in the editor.
   about: {
     variants: [
+      {
+        key: 'layout',
+        values: ['split', 'story-arc'],
+        guidance:
+          "'split' = V1 two-column layout (copy beside an image, with an optional features list / stats row / signoff / button via `extra`). The V3 'stats-brief' register is reached via split + extra='stats'. 'story-arc' = V2 vertical narrative — eyebrow + headline + lead paragraph + 2-3 chapters of subhead + body + optional middle pull-quote + optional bottom team photo. No media column. Pick story-arc for businesses with a strong founder / heritage / craft story; pick split for credentials-led 'why choose us' framing.",
+      },
       { key: 'imageSide', values: ['left', 'right'] },
       { key: 'headlineSize', values: ['m', 'l', 'xl'] },
       {
         key: 'extra',
         values: ['none', 'features', 'stats', 'note', 'button'],
-        guidance: 'which block follows the intro copy; pick one.',
+        guidance: "which block follows the intro copy; pick one. Split layout only — story-arc ignores this.",
       },
       { key: 'mediaMode', values: ['single', 'collage'] },
       { key: 'mediaShape', values: ['rounded', 'arc'] },
@@ -452,6 +473,11 @@ export const SECTION_SHAPE_CATALOG: Partial<Record<SectionType, SectionShape>> =
       {
         key: 'stats',
         shape: `{ id: string, icon: ${ICON_ID_NOTE}, value: string, label: string }`,
+      },
+      // V2 story-arc chapters — 2-3 subhead + body pairs.
+      {
+        key: 'chapters',
+        shape: '{ id: string, heading: string, body: string }',
       },
     ],
   },
@@ -559,7 +585,7 @@ export const SECTION_SHAPE_CATALOG: Partial<Record<SectionType, SectionShape>> =
         key: 'display',
         values: ['stats', 'logos', 'compact-icons'],
         guidance:
-          "'stats' = a row of N icon+number+label tiles ('500+ jobs', '4.9/5 rating'); 'logos' = client / partner logos; 'compact-icons' = thin horizontal band of small icon + single-word labels ('Insured · Vetted · Local · Certified'), no decoration — pick this when the bundle prefers restraint or for a low-friction sub-page social-proof band.",
+          "'stats' = a row of N icon+number+label tiles ('500+ jobs', '4.9/5 rating'); 'logos' = client / partner logos; 'compact-icons' = thin horizontal band of small icon + label, with labels rendered as SINGLE WORDS ONLY (each `items[i].label` MUST be one word — 'Insured', 'Vetted', 'Local', 'Certified', not 'Fully insured', 'Background-checked', 'Locally owned'). The pipeline enforces this by abbreviating multi-word labels to their first word; emit single words to avoid the abbreviation. Pick `compact-icons` when the bundle prefers restraint or for a low-friction sub-page social-proof band.",
       },
       { key: 'headerAlign', values: ['left', 'center', 'right'] },
       { key: 'headlineSize', values: ['m', 'l', 'xl'] },

@@ -218,6 +218,12 @@ export const DESIGN_BUNDLES: Record<DesignBundleId, DesignBundle> = {
         contact: { layout: ['map', 'details', 'minimal-cta'] },
         '*': { layout: ['minimal-cta', 'details'] },
       },
+      // C2b-3 — Sharp & Direct prefers split (credentials-led "why choose
+      // us") over the editorial story-arc, and reaches for either V1
+      // numbered or V3 dark-band on features (the bundle's geometric,
+      // no-nonsense register).
+      about: { '*': { layout: ['split'] } },
+      features: { '*': { layout: ['numbered', 'dark-band'] } },
     },
   },
   warm_established: {
@@ -254,6 +260,13 @@ export const DESIGN_BUNDLES: Record<DesignBundleId, DesignBundle> = {
         contact: { layout: ['details', 'cards'] },
         '*': { layout: ['details', 'minimal-cta'] },
       },
+      // C2b-3 — Warm & Established can carry either layout: split for the
+      // straightforward "settled rhythm" framing, story-arc for the
+      // founder/heritage register the bundle's soft type pairing flatters.
+      // Features stays V2 cards — the bundle's filled icons + rounded
+      // chrome are at their best in card form.
+      about: { '*': { layout: ['split', 'story-arc'] } },
+      features: { '*': { layout: ['cards'] } },
     },
   },
   clean_premium: {
@@ -291,6 +304,11 @@ export const DESIGN_BUNDLES: Record<DesignBundleId, DesignBundle> = {
         contact: { layout: ['minimal-cta', 'details'] },
         '*': { layout: ['minimal-cta'] },
       },
+      // C2b-3 — Clean & Premium IS the editorial register; story-arc
+      // dominates. Features splits between V2 cards (still calm) and V3
+      // dark band (deliberate punctuation in an otherwise airy page).
+      about: { '*': { layout: ['story-arc'] } },
+      features: { '*': { layout: ['cards', 'dark-band'] } },
     },
   },
   bold_direct: {
@@ -325,6 +343,15 @@ export const DESIGN_BUNDLES: Record<DesignBundleId, DesignBundle> = {
       reviews: { '*': { layout: ['grid', 'spotlight'] } },
       // Single big CTA — Bold & Direct's defining behaviour.
       contact: { '*': { layout: ['minimal-cta', 'details'] } },
+      // C2b-3 — Bold & Direct picks split + stats together: the V3
+      // "stats-brief" register the brief named (credentials-led, big
+      // numbers, short body). The dual-key rule narrows BOTH `layout`
+      // and `extra` — assignBundleVariants iterates Object.keys(rule)
+      // so the model's pick gets re-picked on whichever key drifts.
+      about: { '*': { layout: ['split'], extra: ['stats'] } },
+      // Features: all three new variants are in-register for the bold
+      // bundle. Bold takes layout-pick variety as a feature.
+      features: { '*': { layout: ['numbered', 'cards', 'dark-band'] } },
     },
   },
 };

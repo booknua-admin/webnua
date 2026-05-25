@@ -228,7 +228,12 @@ export const featuresMeta: SectionMeta = {
   allowedContainers: ['page', 'funnelStep'],
   implemented: true,
   capabilityHints: {
-    copyFields: ['eyebrow', 'headline', 'headlineAccent', 'sub', 'ctaLabel', 'ctaHref', 'items'],
+    // `featuredIndex` is an editorial choice (which item is the focal one),
+    // not a layout knob — surfaced on the items element-inspector.
+    copyFields: [
+      'eyebrow', 'headline', 'headlineAccent', 'sub',
+      'ctaLabel', 'ctaHref', 'items', 'featuredIndex',
+    ],
     mediaFields: ['items'],
   },
   elementLabels: {
@@ -258,6 +263,9 @@ export const featuresMeta: SectionMeta = {
     'ctaLabel',
     'ctaHref',
     'items',
+    // C2b-3 — item-array asymmetry primitive. `null` = uniform grid;
+    // 0..items.length-1 = the index of the featured (larger) item.
+    'featuredIndex',
   ],
 };
 
@@ -277,7 +285,7 @@ export const aboutMeta: SectionMeta = {
   type: 'about',
   label: '// ABOUT',
   description:
-    'About / why-choose-us block — copy beside an image, with feature list, stats, signoff, or button.',
+    'About / why-choose-us block — copy beside an image (split), or a vertical narrative with chapters and an optional pull-quote (story-arc).',
   allowedContainers: ['page', 'funnelStep'],
   implemented: true,
   capabilityHints: {
@@ -294,6 +302,9 @@ export const aboutMeta: SectionMeta = {
       'badgeValue',
       'badgeLabel',
       'badgeQuote',
+      // C2b-3 — V2 story-arc fields are editorial copy.
+      'chapters',
+      'pullQuote',
     ],
     mediaFields: ['imageUrl', 'imageUrl2', 'imageUrl3'],
   },
@@ -303,9 +314,15 @@ export const aboutMeta: SectionMeta = {
     subheadline: 'Intro paragraph',
     extra: 'Extra block',
     overlay: 'Overlay card',
+    // C2b-3 — V2 story-arc elements.
+    chapters: 'Chapters',
+    pullQuote: 'Pull-quote',
   },
   defaultDataKeys: [
     'theme',
+    // C2b-3 — top-level layout switch. `split` (default) = the existing
+    // 2-column copy+media layout; `story-arc` = V2 vertical narrative.
+    'layout',
     'imageSide',
     'headlineSize',
     'showHeadlineRule',
@@ -332,6 +349,10 @@ export const aboutMeta: SectionMeta = {
     'badgeValue',
     'badgeLabel',
     'badgeQuote',
+    // C2b-3 — V2 story-arc narrative fields. `chapters` is an array of
+    // { id, heading, body }; `pullQuote` is an optional middle pull-quote.
+    'chapters',
+    'pullQuote',
   ],
 };
 

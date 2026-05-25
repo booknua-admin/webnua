@@ -20,6 +20,8 @@ import type {
 import { getBundle } from './design-bundles';
 import {
   assignBundleVariants,
+  coerceDeprecatedSection,
+  enforceTrustCompactSingleWord,
   injectStockImages,
   reconcileColumns,
   resolveIndustryString,
@@ -390,18 +392,29 @@ function runValidationPipeline(
   // behaviour inside the helper.
   const slugSeed = ctx.business?.name?.trim() || undefined;
 
-  for (const s of sections) {
+  for (const sIn of sections) {
+    // Pass A0 — deprecated-section coercion (Bundle C2b-3). If the model
+    // emitted a section type that has since been retired (e.g. `services`),
+    // remap to the replacement type before the rest of the pipeline runs.
+    // The coercion's `__sectionType` fallback row carries the original
+    // type as `modelValue` so generation_log telemetry shows how often the
+    // model still reaches for deprecated vocabulary.
+    const coerced = coerceDeprecatedSection(sIn.type, { ...sIn.data });
+    if (coerced.fallbacks.length > 0) {
+      for (const fb of coerced.fallbacks) fallbackLog.push({ generationId, ...fb });
+    }
+    const sectionType = coerced.type;
     // Server-safe metadata: the section .tsx modules are 'use client', so
     // we can't reach their full defineSection() object from the server
     // bundle. SectionMeta carries the keys + container constraints; the
     // editor's withDefaults() fills missing fields at render time.
-    const def = getSectionMeta(s.type);
+    const def = getSectionMeta(sectionType);
     if (!def) {
-      droppedSections.push({ generationId, type: s.type, reason: 'unknown-type' });
+      droppedSections.push({ generationId, type: sectionType, reason: 'unknown-type' });
       continue;
     }
     if (!def.allowedContainers.includes('page')) {
-      droppedSections.push({ generationId, type: s.type, reason: 'invalid-container' });
+      droppedSections.push({ generationId, type: sectionType, reason: 'invalid-container' });
       continue;
     }
     if (
@@ -409,9 +422,23 @@ function runValidationPipeline(
       def.allowedPageTypes.length > 0 &&
       !def.allowedPageTypes.includes(ctx.pageType)
     ) {
-      droppedSections.push({ generationId, type: s.type, reason: 'invalid-page-type' });
+      droppedSections.push({ generationId, type: sectionType, reason: 'invalid-page-type' });
       continue;
     }
+    // Carry the (possibly coerced) section forward. `s` reads as the
+    // post-coercion section the rest of the pipeline operates on.
+    const s: GeneratedSection = {
+      type: sectionType,
+      enabled: true,
+      data: coerced.data,
+      // Coerced sections have a fresh shape — drop the original
+      // populatedFields (which named the source type's keys); rebuild from
+      // the coerced data's non-null entries.
+      populatedFields:
+        sectionType === sIn.type
+          ? sIn.populatedFields
+          : Object.keys(coerced.data).filter((k) => coerced.data[k] != null),
+    };
     let data: Record<string, unknown> = { ...s.data };
     const populated = new Set(s.populatedFields);
 
@@ -463,6 +490,17 @@ function runValidationPipeline(
     );
     data = variantPass.data;
     for (const fb of variantPass.fallbacks) {
+      fallbackLog.push({ generationId, ...fb });
+    }
+
+    // Pass B++ — trust V3 single-word enforcement (Bundle C2b-3). The
+    // `compact-icons` display renders each item as `icon + single-word
+    // label` ("Insured · Vetted · Local · Certified"). Multi-word labels
+    // break the rhythm. Runs AFTER bundle variant assignment so a bundle
+    // that just promoted the section to compact-icons gets enforced too.
+    const trustPass = enforceTrustCompactSingleWord(s.type, data);
+    data = trustPass.data;
+    for (const fb of trustPass.fallbacks) {
       fallbackLog.push({ generationId, ...fb });
     }
 
