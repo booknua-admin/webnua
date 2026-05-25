@@ -28,6 +28,7 @@ import {
   deriveSecondaryColor,
 } from '@/lib/onboarding/industry-colors';
 import type { Step4Data } from '@/lib/onboarding/types';
+import { toneToVoice } from '@/lib/onboarding/voice-presets';
 import { supabase } from '@/lib/supabase/client';
 import { derivePalette } from '@/lib/website/color-derivation';
 import type { IndustryKey } from '@/lib/website/industry-templates';
@@ -105,14 +106,32 @@ export function Step4Brand({ initial, industryKey, clientId, onContinue, onSkip,
     // Bundle C2b-1 — re-derive the palette alongside the colour update so
     // the customer's preview surfaces (which render the moment they hit
     // continue) inherit the new colour story. Bundle id stays put — only
-    // the colour input changed.
-    const palette = derivePalette({ primary: primaryColor, secondary: secondaryColor });
+    // the colour input changed. Phase 2 parity fix — pass `industry` to
+    // derivePalette so industry-temperature classification matches the
+    // concierge path (createWebsiteForClient passes it; we did not).
+    //
+    // Phase 2 parity fix — also persist the voice axes (formality / urgency
+    // / technicality) derived from the tone preset. Previously the tone
+    // was captured in wizard_state but never written to the brand row, so
+    // the generator's voice cues stayed at signup's 3/3/3 neutral default
+    // regardless of what the customer picked. The three presets are locked
+    // in `voice-presets.ts` (friendly={2,2,2}, professional={4,2,3},
+    // casual={1,3,2}).
+    const palette = derivePalette({
+      primary: primaryColor,
+      secondary: secondaryColor,
+      industry: industryKey,
+    });
+    const voice = toneToVoice(tone);
     void supabase
       .from('brands')
       .update({
         accent_color: primaryColor,
         brand_colors: [primaryColor, secondaryColor].filter(Boolean),
         derived_palette: palette as never,
+        voice_formality: voice.formality,
+        voice_urgency: voice.urgency,
+        voice_technicality: voice.technicality,
         ...(logoUrl ? { logo_url: logoUrl } : {}),
         ...(tagline.trim() ? { tagline: tagline.trim() } : {}),
       } as never)
