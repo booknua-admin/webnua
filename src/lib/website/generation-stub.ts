@@ -17,6 +17,14 @@ import type {
   GenerationContext,
   PrimaryIntent,
 } from './generation-context';
+import {
+  injectStockImages,
+  reconcileColumns,
+  resolveIndustryString,
+  resolveStockImage,
+  stripHallucinatedImages,
+  validateEnums,
+} from './generation-validation';
 import { getSectionMeta } from './sections/registry-meta';
 import { aboutSection } from './sections/about';
 import { contactSection } from './sections/contact';
@@ -320,6 +328,9 @@ function runValidationPipeline(
   const fallbackLog: FallbackLogEntry[] = [];
   const droppedSections: DroppedSectionLog[] = [];
   const kept: GeneratedSection[] = [];
+  const industry = resolveIndustryString({
+    brand: { industryCategory: ctx.brand.industryCategory },
+  });
 
   for (const s of sections) {
     // Server-safe metadata: the section .tsx modules are 'use client', so
@@ -343,14 +354,16 @@ function runValidationPipeline(
       droppedSections.push({ generationId, type: s.type, reason: 'invalid-page-type' });
       continue;
     }
-    const data = { ...s.data };
+    let data: Record<string, unknown> = { ...s.data };
     const populated = new Set(s.populatedFields);
-    // Theme-discard guard: the model is told not to emit a `theme` field, but
-    // it sometimes still does — and a per-section theme can fight the brand
-    // defaults (text-on-bg contrast bugs). Strip it before the section lands
-    // in the editor so brand defaults apply uniformly. Logged as a fallback
-    // (reason='invalid') so /api/generate-site's generation_log writer can
-    // track whether the model is still attempting it after the prompt change.
+
+    // Pass A — theme-discard guard: the model is told not to emit a `theme`
+    // field, but it sometimes still does — and a per-section theme can
+    // fight the brand defaults (text-on-bg contrast bugs). Strip it before
+    // the section lands in the editor so brand defaults apply uniformly.
+    // Logged as a fallback (reason='invalid') so /api/generate-site's
+    // generation_log writer can track whether the model is still attempting
+    // it after the prompt change.
     if ('theme' in data) {
       const modelValue = data.theme;
       delete data.theme;
@@ -363,6 +376,52 @@ function runValidationPipeline(
         modelValue,
       });
     }
+
+    // Pass B — enum validation. The model is told the catalog of allowed
+    // values per variant key in `SECTION_SHAPE_CATALOG`; sometimes it
+    // hallucinates outside that set (audit found `offer.layout='single'`
+    // surviving in 12.5% of offers). Substitute with the catalog's first
+    // listed value AND log so we can track which keys drift.
+    const enumPass = validateEnums(s.type, data);
+    data = enumPass.data;
+    for (const fb of enumPass.fallbacks) {
+      fallbackLog.push({ generationId, ...fb });
+      // The field is now valid (substituted) — keep it in populatedFields.
+    }
+
+    // Pass C — hallucinated image-path stripping. The model occasionally
+    // emits `/images/work-extension-1.jpg`-style paths that 404 in prod
+    // (audit: 12.5% of heroes, 14.3% of gallery items, 18.3% of about).
+    // Clear them so Pass D can refill from the industry stock kit.
+    const stripPass = stripHallucinatedImages(s.type, data);
+    data = stripPass.data;
+    for (const fb of stripPass.fallbacks) {
+      fallbackLog.push({ generationId, ...fb });
+      // Field name in the fb may be array-indexed (`items[3].imageUrl`);
+      // we don't try to maintain populatedFields for array elements.
+    }
+
+    // Pass D — stock-image injection. Fill any image slot that's now empty
+    // (AI omitted OR Pass C cleared) from the industry kit. Logged as
+    // `missing` with `modelValue=<the injected URL>` so the audit signal
+    // distinguishes "we injected" from "we left empty".
+    const injectPass = injectStockImages(s.type, data, industry);
+    data = injectPass.data;
+    for (const fb of injectPass.fallbacks) {
+      fallbackLog.push({ generationId, ...fb });
+      // The field is now populated; mark it on the populated set when the
+      // field name has no array index (scalar slots only).
+      if (!fb.fieldName.includes('[')) {
+        populated.add(fb.fieldName);
+      }
+    }
+
+    // Pass E — items/columns reconciliation. When `items.length < columns`,
+    // clamp columns down so the renderer doesn't pad with empty cards.
+    data = reconcileColumns(s.type, data);
+
+    // Pass F — missing-field reporting. The §4.4 contract; runs LAST so
+    // injected/substituted fields aren't double-flagged as missing.
     for (const key of def.defaultDataKeys) {
       const value = data[key];
       if (value === undefined || value === null) {
@@ -375,6 +434,7 @@ function runValidationPipeline(
         });
       }
     }
+
     kept.push({ ...s, data, populatedFields: Array.from(populated) });
   }
   return { sections: kept, fallbackLog, droppedSections };
@@ -575,8 +635,15 @@ function fillHero(
       headlineAccent: '',
       sub,
       // Industry-template hero image — credible default for the trade.
-      // Operator brand photography replaces this once uploaded.
-      heroImageUrl: template.stockImages.hero,
+      // Operator brand photography replaces this once uploaded. Shared
+      // resolver (resolveStockImage) is the single source of stock URLs
+      // for both this deterministic path AND the live Bundle B injection
+      // path, so the two routes can never drift.
+      heroImageUrl: resolveStockImage(
+        ctx.brand.industryCategory,
+        'hero',
+        'heroImageUrl',
+      ),
       ctaPrimaryLabel: industryCtaPrimary(ctx, template),
       ctaPrimaryHref: intentHref(ctx.primaryIntent),
       ctaSecondaryLabel: phone ? `Call ${phone}` : template.ctaSecondary,
@@ -726,15 +793,30 @@ function fillGallery(
   d: SectionDesign,
 ): GeneratedSection {
   const base = gallerySection.defaultData();
-  const template = resolveIndustryTemplate(ctx.brand.industryCategory);
   // Overlay the industry stock URLs onto the base item set so the gallery
-  // doesn't render four broken-image tiles in the fallback path. Image
-  // count matches what the template supplies; remaining defaults keep
-  // their (empty) urls so the operator can clearly see which to swap.
+  // doesn't render four broken-image tiles in the fallback path. Uses the
+  // shared resolveStockImage helper so this path and the live-AI Bundle B
+  // injection share the same URL source.
   type GalleryItem = (typeof base.items)[number];
-  const sourcedImages = [...template.stockImages.gallery];
-  const items: GalleryItem[] = base.items.map((item, i) => {
-    const url = sourcedImages[i];
+  // The base.items array may be empty (post-Bundle-A defaults sweep);
+  // grow a minimum set of 3 placeholder items so the deterministic
+  // fallback still renders a visible gallery.
+  const baseItems: GalleryItem[] =
+    base.items.length > 0
+      ? base.items
+      : [0, 1, 2].map(() => ({
+          id: `gal-${rid()}`,
+          imageUrl: '',
+          caption: '',
+          category: '',
+        }));
+  const items: GalleryItem[] = baseItems.map((item, i) => {
+    const url = resolveStockImage(
+      ctx.brand.industryCategory,
+      'gallery',
+      'items[i].imageUrl',
+      i,
+    );
     return url ? { ...item, imageUrl: url } : item;
   });
   return {

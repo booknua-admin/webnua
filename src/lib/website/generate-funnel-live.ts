@@ -53,6 +53,13 @@ import {
 import { getSectionMeta } from './sections/registry-meta';
 import type { BrandObject, Section, SectionType } from './types';
 import type { FallbackLogEntry } from './generation-stub';
+import {
+  injectStockImages,
+  reconcileColumns,
+  resolveIndustryString,
+  stripHallucinatedImages,
+  validateEnums,
+} from './generation-validation';
 
 const MODEL = 'claude-opus-4-7';
 
@@ -723,6 +730,10 @@ function validateAndAssemble(
   const out: Section[] = [];
   let heroEnvelopeAttached = false;
   const formConfig = cfg.formBuilder(brief);
+  const industry = resolveIndustryString({
+    industry: brief.industry,
+    brand: { industryCategory: brief.brand.industryCategory },
+  });
 
   for (const raw of rawSections) {
     if (typeof raw?.type !== 'string') continue;
@@ -730,15 +741,13 @@ function validateAndAssemble(
     const meta = getSectionMeta(type);
     if (!meta || !meta.allowedContainers.includes('funnelStep')) continue;
 
-    const data =
+    let data: Record<string, unknown> =
       typeof raw.data === 'object' && raw.data !== null
         ? { ...(raw.data as Record<string, unknown>) }
         : {};
 
-    // Theme-discard guard: brand-default theming flows from the renderer.
-    // Strip any model-emitted `theme` so per-section overrides don't fight
-    // the brand palette. Logged as 'invalid' so the route's generation_log
-    // writer can track whether the model is still emitting it.
+    // Pass A — theme-discard guard. Per-section theme overrides fight
+    // the brand palette; strip them so brand defaults apply uniformly.
     if ('theme' in data) {
       const modelValue = data.theme;
       delete data.theme;
@@ -751,6 +760,34 @@ function validateAndAssemble(
       });
     }
 
+    // Pass B — enum validation. Substitute invalid enum values with the
+    // catalog's first listed value; log the rejected value.
+    const enumPass = validateEnums(type, data);
+    data = enumPass.data;
+    for (const fb of enumPass.fallbacks) {
+      fallbackLog.push({ generationId, ...fb });
+    }
+
+    // Pass C — hallucinated image-path strip.
+    const stripPass = stripHallucinatedImages(type, data);
+    data = stripPass.data;
+    for (const fb of stripPass.fallbacks) {
+      fallbackLog.push({ generationId, ...fb });
+    }
+
+    // Pass D — stock-image injection. Funnel brief has both `industry`
+    // and `brand.industryCategory`; the resolver picks whichever is set.
+    const injectPass = injectStockImages(type, data, industry);
+    data = injectPass.data;
+    for (const fb of injectPass.fallbacks) {
+      fallbackLog.push({ generationId, ...fb });
+    }
+
+    // Pass E — items/columns reconciliation.
+    data = reconcileColumns(type, data);
+
+    // Pass F — missing-field reporting (runs LAST so injected /
+    // substituted fields aren't double-flagged as missing).
     for (const key of meta.defaultDataKeys) {
       const v = data[key];
       if (v === undefined || v === null) {

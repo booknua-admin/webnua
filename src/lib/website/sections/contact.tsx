@@ -100,11 +100,17 @@ function makeId(): string {
   return `con-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-const SEED_ITEMS: Omit<ContactInfoItem, 'id'>[] = [
-  { icon: 'phone', label: 'Phone', value: '(555) 123-4567', sub: 'Call us anytime' },
-  { icon: 'mail', label: 'Email', value: 'hello@example.com', sub: 'We reply within 24 hours' },
-  { icon: 'map-pin', label: 'Address', value: '123 Main Street, Anytown', sub: 'Visit our office' },
-  { icon: 'clock', label: 'Business hours', value: 'Mon–Fri: 8AM–5PM', sub: 'Sat: 9AM–1PM' },
+// Editor placeholder seed - populated only by `defaultData()`. Generic
+// placeholder labels (no fake phone numbers / addresses / emails — those
+// previously leaked as `(555) 123-4567` / `hello@example.com` to any
+// customer page where the AI emitted a contact section without items).
+// The generation pipeline goes through `withDefaults` with an empty
+// fallback; the deterministic path fills these from `ctx.business`.
+const EDITOR_SEED_ITEMS: Omit<ContactInfoItem, 'id'>[] = [
+  { icon: 'phone', label: 'Phone', value: '', sub: '' },
+  { icon: 'mail', label: 'Email', value: '', sub: '' },
+  { icon: 'map-pin', label: 'Address', value: '', sub: '' },
+  { icon: 'clock', label: 'Business hours', value: '', sub: '' },
 ];
 
 const DEFAULTS: ContactData = {
@@ -116,8 +122,8 @@ const DEFAULTS: ContactData = {
   eyebrow: 'CONTACT US',
   headline: "We're here to help",
   headlineAccent: '',
-  sub: "Have a question or need a quote? Fill out the form and we'll get back to you as soon as possible.",
-  items: SEED_ITEMS.map((it) => ({ ...it, id: makeId() })),
+  sub: 'Send a message and we will get back to you.',
+  items: [],
   formTitle: 'Send us a message',
   formButtonLabel: 'Send message',
   showPhoneField: true,
@@ -131,7 +137,7 @@ function defaultData(): ContactData {
   return {
     ...DEFAULTS,
     theme: {},
-    items: SEED_ITEMS.map((it) => ({ ...it, id: makeId() })),
+    items: EDITOR_SEED_ITEMS.map((it) => ({ ...it, id: makeId() })),
   };
 }
 
@@ -139,7 +145,9 @@ function withDefaults(data: ContactData): ContactData {
   return {
     ...DEFAULTS,
     ...data,
-    items: data.items ?? DEFAULTS.items,
+    // Empty-array fallback (NOT editor seed) so an AI omission shows
+    // no placeholder contact info, not "(555) 123-4567" / "hello@example.com".
+    items: data.items ?? [],
   };
 }
 

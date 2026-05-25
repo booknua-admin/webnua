@@ -95,33 +95,19 @@ function makeId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-const SEED_ITEMS: Omit<FAQItem, 'id'>[] = [
-  {
-    question: 'What areas do you service?',
-    answer:
-      "We proudly serve all surrounding areas within 50 miles. If you're unsure whether we cover your location, give us a call or send a message.",
-  },
-  {
-    question: 'How do I get a quote?',
-    answer:
-      'Reach out via the contact form or give us a call — we’ll get back to you with a clear, written quote, usually the same day.',
-  },
-  {
-    question: 'How long does a typical project take?',
-    answer:
-      'It depends on the scope, but most standard jobs are done within a day. We’ll give you a realistic timeframe up front.',
-  },
-  {
-    question: 'Do you offer warranties on your work?',
-    answer:
-      'Yes — all our work is backed by a workmanship guarantee, so you can book with confidence.',
-  },
+// Editor placeholder seed — populated only by `defaultData()`. Generic
+// placeholder Q&A so the operator sees the section's shape; the
+// generation pipeline supplies real Q&A from the brief. Previously the
+// signals row leaked "Licensed & insured" as a fabricated claim.
+const EDITOR_SEED_ITEMS: Omit<FAQItem, 'id'>[] = [
+  { question: 'Question 1?', answer: 'Answer 1.' },
+  { question: 'Question 2?', answer: 'Answer 2.' },
+  { question: 'Question 3?', answer: 'Answer 3.' },
 ];
 
-const SEED_SIGNALS: Omit<FAQSignal, 'id'>[] = [
-  { icon: 'shield-check', title: 'Licensed & insured', sub: 'Your property is in safe hands.' },
-  { icon: 'star', title: 'Satisfaction guaranteed', sub: "We're not happy until you are." },
-  { icon: 'headphones', title: 'Friendly support', sub: 'Here to help, every step of the way.' },
+const EDITOR_SEED_SIGNALS: Omit<FAQSignal, 'id'>[] = [
+  { icon: 'check', title: 'Trust signal 1', sub: 'A short description.' },
+  { icon: 'check', title: 'Trust signal 2', sub: 'A short description.' },
 ];
 
 const DEFAULTS: FAQData = {
@@ -134,8 +120,8 @@ const DEFAULTS: FAQData = {
   eyebrow: 'FAQ',
   headline: 'Frequently asked questions',
   headlineAccent: '',
-  sub: 'Find answers to the most common questions about our services and process.',
-  items: SEED_ITEMS.map((it) => ({ ...it, id: makeId('faq') })),
+  sub: 'Common questions, answered.',
+  items: [],
   footer: 'link',
   footerText: 'Still have questions?',
   footerLinkLabel: 'Contact us',
@@ -143,15 +129,15 @@ const DEFAULTS: FAQData = {
   footerCardIcon: 'headphones',
   footerCardTitle: 'Need more help?',
   footerCardText: 'Our team is here for you.',
-  signals: SEED_SIGNALS.map((s) => ({ ...s, id: makeId('sig') })),
+  signals: [],
 };
 
 function defaultData(): FAQData {
   return {
     ...DEFAULTS,
     theme: {},
-    items: SEED_ITEMS.map((it) => ({ ...it, id: makeId('faq') })),
-    signals: SEED_SIGNALS.map((s) => ({ ...s, id: makeId('sig') })),
+    items: EDITOR_SEED_ITEMS.map((it) => ({ ...it, id: makeId('faq') })),
+    signals: EDITOR_SEED_SIGNALS.map((s) => ({ ...s, id: makeId('sig') })),
   };
 }
 
@@ -159,8 +145,10 @@ function withDefaults(data: FAQData): FAQData {
   return {
     ...DEFAULTS,
     ...data,
-    items: data.items ?? DEFAULTS.items,
-    signals: data.signals ?? DEFAULTS.signals,
+    // Empty-array fallbacks (NOT editor seeds). Previously the signals
+    // fallback leaked "Licensed & insured" as a fabricated claim.
+    items: data.items ?? [],
+    signals: data.signals ?? [],
   };
 }
 

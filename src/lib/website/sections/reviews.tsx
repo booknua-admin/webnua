@@ -111,25 +111,32 @@ function makeId(): string {
   return `rev-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-const SEED_ITEMS: Omit<ReviewItem, 'id'>[] = [
+// Editor placeholder seed — populated only by `defaultData()`. These are
+// generic placeholder rows, NOT fabricated customer quotes — the operator
+// sees what a populated reviews section looks like, but the strings make
+// it obvious the rows are placeholders to replace. The generation pipeline
+// goes through `withDefaults` with an empty fallback, so an AI omission
+// never leaks invented testimonials. (AI-emitted testimonials are tracked
+// separately by `placeholder-testimonials.ts` — the B16 nudge.)
+const EDITOR_SEED_ITEMS: Omit<ReviewItem, 'id'>[] = [
   {
-    quote: 'The team was professional, on time, and did an amazing job. Our home has never looked better!',
-    authorName: 'Jessica M.',
-    authorRole: 'Homeowner',
+    quote: 'Add a real customer quote here.',
+    authorName: 'Customer name',
+    authorRole: 'Role',
     avatarUrl: '',
     rating: 5,
   },
   {
-    quote: 'Highly recommend! They fixed our issue quickly and explained everything clearly.',
-    authorName: 'Daniel R.',
-    authorRole: 'Homeowner',
+    quote: 'Add a real customer quote here.',
+    authorName: 'Customer name',
+    authorRole: 'Role',
     avatarUrl: '',
     rating: 5,
   },
   {
-    quote: "Reliable, affordable, and easy to work with. We'll definitely call them again for future projects.",
-    authorName: 'Sarah L.',
-    authorRole: 'Business owner',
+    quote: 'Add a real customer quote here.',
+    authorName: 'Customer name',
+    authorRole: 'Role',
     avatarUrl: '',
     rating: 5,
   },
@@ -145,12 +152,12 @@ const DEFAULTS: ReviewsData = {
   eyebrow: 'TESTIMONIALS',
   headline: 'What our customers say',
   headlineAccent: '',
-  sub: "We're proud to earn the trust of homeowners and businesses through reliable service and real results.",
-  items: SEED_ITEMS.map((it) => ({ ...it, id: makeId() })),
+  sub: 'Real feedback from real customers.',
+  items: [],
   showRatingSummary: false,
   ratingStars: 5,
-  ratingValue: '4.9/5',
-  ratingCount: 'From 200+ reviews',
+  ratingValue: '',
+  ratingCount: '',
   nav: 'none',
   ctaVisible: true,
   ctaStyle: 'link',
@@ -164,7 +171,7 @@ function defaultData(): ReviewsData {
   return {
     ...DEFAULTS,
     theme: {},
-    items: SEED_ITEMS.map((it) => ({ ...it, id: makeId() })),
+    items: EDITOR_SEED_ITEMS.map((it) => ({ ...it, id: makeId() })),
   };
 }
 
@@ -172,7 +179,9 @@ function withDefaults(data: ReviewsData): ReviewsData {
   return {
     ...DEFAULTS,
     ...data,
-    items: data.items ?? DEFAULTS.items,
+    // Empty-array fallback (NOT editor seed). AI omissions show no
+    // testimonials rather than leaking placeholder quotes.
+    items: data.items ?? [],
   };
 }
 

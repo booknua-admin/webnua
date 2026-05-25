@@ -124,67 +124,66 @@ function makeId(): string {
   return `sig-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-const SEED_SIGNALS: Omit<CtaSignal, 'id'>[] = [
-  { icon: 'shield-check', label: '100% satisfaction' },
-  { icon: 'lock', label: 'Secure & reliable' },
-  { icon: 'headphones', label: '24/7 support' },
+// Editor placeholder seed — populated only by `defaultData()` so an operator
+// adding a fresh CTA section sees representative placeholder rows. The
+// generation pipeline NEVER overlays these onto a customer's snapshot.
+const EDITOR_SEED_SIGNALS: Omit<CtaSignal, 'id'>[] = [
+  { icon: 'check', label: 'Trust signal 1' },
+  { icon: 'check', label: 'Trust signal 2' },
+  { icon: 'check', label: 'Trust signal 3' },
 ];
+
+// Neutral placeholder for the dual-panel layout - editor mounts these
+// when an operator picks `layout=dual` and starts populating; the
+// generation pipeline supplies its own panel copy.
+const NEUTRAL_PANEL = {
+  icon: 'message',
+  heading: 'Panel heading',
+  sub: 'A short description.',
+  buttonLabel: 'Get in touch',
+  buttonHref: '/contact',
+  bgType: 'colour' as const,
+  bgColor: '',
+  imageUrl: '',
+  display: defaultImageDisplay(),
+  overlayColor: '#0a0a0a',
+  overlayOpacity: 55,
+};
 
 const DEFAULTS: CTAData = {
   theme: {},
   layout: 'centered',
   align: 'center',
   headlineSize: 'l',
-  eyebrow: 'READY TO GET STARTED?',
-  headline: "Let's build something great together",
+  eyebrow: 'READY?',
+  headline: 'Your call-to-action headline.',
   headlineAccent: '',
-  sub: 'Join thousands of satisfied customers who trust us to deliver quality and results.',
+  sub: 'A short sentence inviting the visitor to take the next step.',
   primaryVisible: true,
-  primaryLabel: 'Get started now',
-  primaryHref: '#',
+  primaryLabel: 'Get in touch',
+  primaryHref: '/contact',
   secondaryVisible: true,
-  secondaryLabel: 'Contact us',
+  secondaryLabel: 'Learn more',
   secondaryHref: '#',
   showSignals: true,
-  signals: SEED_SIGNALS.map((s) => ({ ...s, id: makeId() })),
+  signals: [],
   imageUrl: '',
   imageDisplay: defaultImageDisplay(),
   imageSide: 'right',
   overlayOpacity: 72,
-  panelA: {
-    icon: 'mail',
-    heading: 'Stay in the loop',
-    sub: 'Subscribe to our newsletter for the latest updates, tips, and offers.',
-    buttonLabel: 'Subscribe now',
-    buttonHref: '#',
-    bgType: 'colour',
-    bgColor: '',
-    imageUrl: '',
-    display: defaultImageDisplay(),
-    overlayColor: '#0a0a0a',
-    overlayOpacity: 55,
-  },
-  panelB: {
-    icon: 'headphones',
-    heading: 'Need help?',
-    sub: 'Our support team is here to help you with anything you need.',
-    buttonLabel: 'Contact support',
-    buttonHref: '#',
-    bgType: 'colour',
-    bgColor: '',
-    imageUrl: '',
-    display: defaultImageDisplay(),
-    overlayColor: '#0a0a0a',
-    overlayOpacity: 55,
-  },
+  panelA: { ...NEUTRAL_PANEL, heading: 'Left panel heading' },
+  panelB: { ...NEUTRAL_PANEL, heading: 'Right panel heading' },
   dualDivider: 'OR',
 };
 
+// Editor seed: defaultData() runs in the "add new section" flow — fills
+// signals + panels with placeholder rows so the operator sees the shape.
+// The generation pipeline goes through withDefaults() with empty fallbacks.
 function defaultData(): CTAData {
   return {
     ...DEFAULTS,
     theme: {},
-    signals: SEED_SIGNALS.map((s) => ({ ...s, id: makeId() })),
+    signals: EDITOR_SEED_SIGNALS.map((s) => ({ ...s, id: makeId() })),
     panelA: { ...DEFAULTS.panelA },
     panelB: { ...DEFAULTS.panelB },
   };
@@ -194,7 +193,9 @@ function withDefaults(data: CTAData): CTAData {
   return {
     ...DEFAULTS,
     ...data,
-    signals: data.signals ?? DEFAULTS.signals,
+    // Empty-array fallback (NOT editor seed) so an AI omission doesn't
+    // leak placeholder trust signals into a customer-facing snapshot.
+    signals: data.signals ?? [],
     panelA: { ...DEFAULTS.panelA, ...data.panelA },
     panelB: { ...DEFAULTS.panelB, ...data.panelB },
   };
