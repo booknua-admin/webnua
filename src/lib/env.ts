@@ -65,6 +65,13 @@ const envSchema = z.object({
   // --- public-site routing + self-addressing --------------------------------
   APP_HOST: optionalStr,
   PUBLIC_SITE_DOMAIN: optionalStr,
+  // Browser-readable mirror of PUBLIC_SITE_DOMAIN. Required by any 'use
+  // client' surface composing a preview URL (eg. Step7Done's
+  // `{slug}.{host}`); the server-only PUBLIC_SITE_DOMAIN can't be read in
+  // the browser because Next only inlines NEXT_PUBLIC_* literals. Set both
+  // to the same value in deployment env. Optional here — callers fall back
+  // to 'webnua.dev'.
+  NEXT_PUBLIC_PUBLIC_SITE_DOMAIN: optionalStr,
   // Absolute origin of the Webnua app, used to self-POST the job executor.
   // Falls back to VERCEL_URL then APP_HOST — see getAppBaseUrl().
   APP_BASE_URL: optionalStr,

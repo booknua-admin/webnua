@@ -19,7 +19,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
-import { useRole, useUser } from '@/lib/auth/user-stub';
+import { useRole, useUser, useUserContext } from '@/lib/auth/user-stub';
 import {
   dashboardIsInPreOnboarding,
 } from '@/lib/auth/lifecycle';
@@ -45,10 +45,17 @@ export default function OnboardingPage() {
   const router = useRouter();
   const { role } = useRole();
   const user = useUser();
+  const { hydrated } = useUserContext();
   const clients = useAdminClients();
   const [load, setLoad] = useState<LoadState>({ kind: 'resolving' });
 
   useEffect(() => {
+    // Wait for auth resolution before any redirect / fetch decision. Without
+    // this gate, the first render (pre-hydration) sees `!user` and bounces to
+    // /dashboard — a flash-of-wrong-redirect — and the bearer-token fetch
+    // below races the session and 401s when getSession() resolves to null.
+    if (!hydrated) return;
+
     // Operators never see the wizard — concierge close uses the dashboard's
     // IntegrationOnboarding surface. Bounce. (No setState; the route change
     // is the signal — `react-hooks/set-state-in-effect` lint rule.)
@@ -92,9 +99,16 @@ export default function OnboardingPage() {
     (async () => {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
+      // No token after the hydration gate above means the session genuinely
+      // expired or is missing. Stay in `resolving` rather than firing a
+      // guaranteed-401 fetch — the parent auth listener will refresh the
+      // user (effect re-runs with `hydrated` flipping) or the user can
+      // re-auth. Redirecting here would loop against the dashboard's own
+      // wizard check.
+      if (!token) return;
       const res = await fetch(`/api/clients/${uuid}/wizard-state`, {
         method: 'GET',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (cancelled) return;
       if (res.ok) {
@@ -129,7 +143,7 @@ export default function OnboardingPage() {
     return () => {
       cancelled = true;
     };
-  }, [role, user, clients, router]);
+  }, [hydrated, role, user, clients, router]);
 
   if (load.kind === 'resolving') {
     return (
