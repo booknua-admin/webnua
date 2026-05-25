@@ -725,25 +725,37 @@ export function ConversationShell() {
   // over it cleanly. Each appends two-or-three new bot messages, updates
   // capturedFacts, persists, and advances the phase.
 
-  // Write the AI-extracted business name to clients.name + re-slugify the
-  // workspace URL. Fire-and-forget — failures surface in console but don't
-  // block forward progress (the email-derived placeholder still works as a
-  // fallback name + slug). Updates clientSlug local state on success so the
+  // Write the AI-extracted business name (+ industry) to clients.name (+
+  // .industry) and re-slugify the workspace URL. Fire-and-forget —
+  // failures surface in console but don't block forward progress (the
+  // email-derived placeholder still works as a fallback name + slug, and
+  // brand.industry_category drives generation reads regardless of
+  // clients.industry). Updates clientSlug local state on success so the
   // generation handoff uses the new slug.
+  //
+  // Industry parity: verify-code seeds clients.industry with a
+  // placeholder ('Pending — captured in chat'). Without an overwrite
+  // here, every conversationally-onboarded client kept the placeholder
+  // forever (operator-side filters / search would surface the string).
+  // We pass `extraction.industryFreeText` when present (preserves the
+  // customer's own framing for unmapped industries — "residential
+  // sparkie") otherwise the mapped industry's display name.
   const persistBusinessIdentity = useCallback(
-    async (businessName: string) => {
+    async (businessName: string, industry?: string) => {
       if (!clientId || !businessName.trim()) return;
       try {
         const { data: sessionData } = await supabase.auth.getSession();
         const token = sessionData.session?.access_token;
         if (!token) return;
+        const payload: Record<string, string> = { businessName: businessName.trim() };
+        if (industry && industry.trim()) payload.industry = industry.trim();
         const res = await fetch(`/api/clients/${clientId}/business-identity`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ businessName: businessName.trim() }),
+          body: JSON.stringify(payload),
         });
         if (!res.ok) {
           console.warn(
@@ -790,15 +802,24 @@ export function ConversationShell() {
         return;
       }
 
-      // Fire business-identity update with the extracted name AS SOON AS
-      // extraction lands at high-confidence. This rewrites clients.name +
-      // the workspace slug from the email-derived placeholder ("Gmail")
-      // to the customer's actual business name ("Cork Painters"). The
-      // call updates local clientSlug state on success so turn-5
-      // generation lands on the right subdomain.
+      // Fire business-identity update with the extracted name + industry
+      // AS SOON AS extraction lands at high-confidence. This rewrites
+      // clients.name + the workspace slug from the email-derived
+      // placeholder ("Gmail") to the customer's actual business name
+      // ("Cork Painters"), and overwrites the verify-code placeholder on
+      // clients.industry with the extracted industry. The call updates
+      // local clientSlug state on success so turn-5 generation lands on
+      // the right subdomain.
+      //
+      // Industry prefers `industryFreeText` (the customer's own framing
+      // — e.g. "residential sparkie") when present, otherwise the mapped
+      // industry's display name; falls back to nothing if neither
+      // resolves so we never wipe with an empty string.
       const extractedName = e.businessName.trim();
       if (extractedName) {
-        void persistBusinessIdentity(extractedName);
+        const extractedIndustry =
+          e.industryFreeText?.trim() || prettyIndustry(e.industry);
+        void persistBusinessIdentity(extractedName, extractedIndustry);
       }
 
       const confirmation = BOT_EXTRACTION_DONE(e);

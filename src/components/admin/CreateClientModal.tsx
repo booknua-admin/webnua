@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { AppError } from '@/lib/errors';
+import { resolveIndustryKnowledge } from '@/lib/onboarding/industry-knowledge';
 import { cn } from '@/lib/utils';
 import { enhanceField } from '@/lib/website/field-enhance';
 import {
@@ -35,7 +36,11 @@ import {
 } from '@/lib/website/generation-context';
 import { CURATED_FONTS } from '@/lib/website/google-fonts';
 import { enhanceFunnelOfferText, generateFunnelOffer, type FunnelOffer } from '@/lib/website/offer-generate';
-import type { ClientBrief, FunnelTestimonial } from '@/lib/website/site-generation-stub';
+import type {
+  ClientBrief,
+  FunnelTestimonial,
+  IndustryKnowledge,
+} from '@/lib/website/site-generation-stub';
 import { uploadSectionImage } from '@/lib/website/upload-image';
 import { VOICE_TONE_PRESETS, type BrandObject } from '@/lib/website/types';
 
@@ -121,6 +126,33 @@ export function CreateClientModal({
   const [wantFunnel, setWantFunnel] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Industry knowledge — closes the conversational/concierge parity gap.
+  // The conversational path fires resolveIndustryKnowledge after the
+  // business-name turn and threads the result into every downstream prompt
+  // (site/funnel/offer). The concierge path didn't, so unmapped industries
+  // generated against template defaults only. We kick off the same fetch
+  // when the user clicks Continue out of the business step (industry +
+  // area are settled by then) and hold the in-flight promise on a ref;
+  // runGeneration awaits it with a short timeout fallback so a slow / down
+  // route never blocks the generate path. The resolver itself always
+  // returns a usable shape, so the only way industryKnowledge ends up
+  // null on the brief is the timeout — same field is optional on the
+  // ClientBrief, so both paths handle absence cleanly.
+  const industryKnowledgePromise = useRef<Promise<IndustryKnowledge | null> | null>(null);
+
+  const kickoffIndustryKnowledge = () => {
+    if (industryKnowledgePromise.current) return;
+    if (!industry.trim() || !name.trim()) return;
+    industryKnowledgePromise.current = resolveIndustryKnowledge({
+      industry: industry.trim(),
+      location: area.trim() || undefined,
+      businessName: name.trim(),
+    }).catch((e) => {
+      console.warn('[create-client] industry-knowledge fetch failed', e);
+      return null;
+    });
+  };
+
   const reset = () => {
     setPhase('business');
     setName(''); setIndustry(''); setOwnerName(''); setPhone(''); setEmail(''); setArea('');
@@ -133,6 +165,7 @@ export function CreateClientModal({
     setBrandColors([DEFAULT_BRAND_COLOR]); setHeadingFont('inter-tight'); setBodyFont('inter-tight');
     setLogoUrl(''); setLogoUploading(false);
     setWantWebsite(true); setWantFunnel(true); setError(null);
+    industryKnowledgePromise.current = null;
   };
 
   const close = (next: boolean) => {
@@ -183,6 +216,21 @@ export function CreateClientModal({
   const runGeneration = async () => {
     setPhase('generating');
     setError(null);
+    // Defensive — if the user advanced through the steps fast enough that
+    // the kickoff didn't fire (or never settled), try once more here. By
+    // the time we hit runGeneration the user has clicked Continue multiple
+    // times so the kickoff should already have fired; this is the safety net.
+    kickoffIndustryKnowledge();
+    // Await the in-flight knowledge promise with a 8s ceiling — the user's
+    // already on the generation splash, and industry-knowledge typically
+    // resolves in 2-4s. If it overruns, we ship without it; the brief
+    // field is optional and the generator handles absence cleanly.
+    const industryKnowledge = industryKnowledgePromise.current
+      ? await Promise.race<IndustryKnowledge | null>([
+          industryKnowledgePromise.current,
+          new Promise((resolve) => setTimeout(() => resolve(null), 8000)),
+        ])
+      : null;
     const cleanServices = services.map((s) => s.trim()).filter(Boolean);
     const business: BusinessDetails = {
       name: name.trim(),
@@ -223,6 +271,7 @@ export function CreateClientModal({
         testimonials: cleanTestimonials,
         offer: funnelOffer,
       },
+      ...(industryKnowledge ? { industryKnowledge } : {}),
     };
     try {
       // Lazy-loaded — keeps the heavy generation + Supabase write graph out
@@ -857,7 +906,14 @@ export function CreateClientModal({
               </Button>
             ) : (
               <Button
-                onClick={() => setPhase(STEPS[STEPS.indexOf(phase as Step) + 1])}
+                onClick={() => {
+                  // Kick off industry-knowledge in the background the
+                  // moment the operator leaves the business step. By the
+                  // time runGeneration awaits the promise (3+ steps
+                  // later) it's almost always resolved.
+                  if (phase === 'business') kickoffIndustryKnowledge();
+                  setPhase(STEPS[STEPS.indexOf(phase as Step) + 1]);
+                }}
                 disabled={
                   (phase === 'business' && !businessValid) ||
                   (phase === 'build' && !wantWebsite && !wantFunnel)

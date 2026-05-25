@@ -1,6 +1,6 @@
 // =============================================================================
-// /api/clients/[id]/business-identity — POST { businessName } for the
-// conversational onboarding flow.
+// /api/clients/[id]/business-identity — POST { businessName, industry? }
+// for the conversational onboarding flow.
 //
 // Why this exists:
 //
@@ -11,11 +11,24 @@
 // once Session C started doing AI extraction — the customer might have
 // said "I'm a painter in Cork" and got a slug like `gmail-7a3f.webnua.dev`.
 //
+// `clients.industry` is also seeded by verify-code with a placeholder
+// string ('Pending — captured in chat'), which had nowhere to get
+// overwritten before this route accepted it. Without that overwrite,
+// every conversationally-onboarded client carried the placeholder string
+// in `clients.industry` permanently — a latent data bug, since operator
+// surfaces that read the column directly (filtering, search) would see
+// the placeholder. (Brand-side reads were fine — generation reads
+// `brands.industry_category` which the wizard-assets path writes.)
+//
 // This route closes the loop: after `/api/onboarding/extract-business`
-// returns a high-confidence `businessName`, the conversation shell POSTs
-// here to:
+// returns a high-confidence `businessName` + industry, the conversation
+// shell POSTs here to:
 //   1. Update `clients.name` to the AI-extracted business name.
-//   2. Re-slugify the workspace URL from the new name, retrying on
+//   2. Optionally update `clients.industry` if the caller passes one
+//      (the extraction's industryFreeText or the mapped industry's
+//      display name). Skipped when the field is omitted — back-compat
+//      with callers that only want the name+slug update.
+//   3. Re-slugify the workspace URL from the new name, retrying on
 //      uniqueness collision the same way `provisionPendingSignup` does.
 //      The new slug becomes the workspace's primary URL; the previous
 //      placeholder slug is NOT redirected (a few-minute-old preview that
@@ -36,9 +49,11 @@ import { getServiceClient } from '@/lib/supabase/server';
 
 type Body = {
   businessName?: unknown;
+  industry?: unknown;
 };
 
 const MAX_BUSINESS_NAME_LENGTH = 80;
+const MAX_INDUSTRY_LENGTH = 80;
 
 /** Mirror the slugify in `lib/auth/signup-workspace.ts`. Kept local so this
  *  route doesn't pull the server-only signup module (which carries the
@@ -86,29 +101,52 @@ export async function POST(
     return NextResponse.json({ error: 'business-name-too-long' }, { status: 400 });
   }
 
+  // Industry is OPTIONAL — when present, overwrites the placeholder seeded
+  // by verify-code. Trimmed empty string is treated as "not provided" so
+  // a caller can safely pass `extraction.industryFreeText ?? ''` without
+  // wiping a previously-set value.
+  const industryRaw = typeof body.industry === 'string' ? body.industry.trim() : '';
+  if (industryRaw.length > MAX_INDUSTRY_LENGTH) {
+    return NextResponse.json({ error: 'industry-too-long' }, { status: 400 });
+  }
+
   const svc = getServiceClient();
 
   // Read the current row so we can short-circuit when nothing needs to change.
   const { data: current, error: readError } = await svc
     .from('clients')
-    .select('name, slug')
+    .select('name, slug, industry')
     .eq('id', clientId)
     .maybeSingle();
   if (readError || !current) {
     return NextResponse.json({ error: 'client-not-found' }, { status: 404 });
   }
-  const row = current as { name: string; slug: string };
+  const row = current as { name: string; slug: string; industry: string | null };
 
-  // Idempotency — same name, same derived slug, no work to do.
+  // Idempotency — same name, same derived slug, AND (when industry is
+  // provided) same industry. With nothing changing, no work to do.
   const desiredSlugBase = slugify(raw);
-  if (row.name === raw && row.slug === desiredSlugBase) {
-    return NextResponse.json({ ok: true, name: row.name, slug: row.slug, changed: false });
+  const industryUnchanged = !industryRaw || row.industry === industryRaw;
+  if (row.name === raw && row.slug === desiredSlugBase && industryUnchanged) {
+    return NextResponse.json({
+      ok: true,
+      name: row.name,
+      slug: row.slug,
+      industry: row.industry,
+      changed: false,
+    });
   }
 
+  // Build the update payload once. Industry is only included when the
+  // caller actually passed a non-empty value, so absent / empty-string
+  // industry doesn't wipe a previously-set column.
+  const updatePayload: Record<string, string> = { name: raw };
+  if (industryRaw) updatePayload.industry = industryRaw;
+
   // If the slug already matches the desired base, skip the slug rewrite —
-  // only the name is changing. (Can happen if the customer's email-derived
-  // placeholder name happened to slugify the same as their real name —
-  // unlikely but the check is free.)
+  // only the name (+ optional industry) is changing. (Can happen if the
+  // customer's email-derived placeholder name happened to slugify the
+  // same as their real name — unlikely but the check is free.)
   let nextSlug = row.slug;
   if (row.slug !== desiredSlugBase) {
     // Try base, then base-XXXX twice (same shape as provisionPendingSignup).
@@ -118,7 +156,7 @@ export async function POST(
     for (const candidate of candidates) {
       const { error: updateError } = await svc
         .from('clients')
-        .update({ name: raw, slug: candidate } as never)
+        .update({ ...updatePayload, slug: candidate } as never)
         .eq('id', clientId);
       if (!updateError) {
         allocated = candidate;
@@ -139,10 +177,10 @@ export async function POST(
     }
     nextSlug = allocated;
   } else {
-    // Slug already matches; just update the name.
+    // Slug already matches; just update the name (+ optional industry).
     const { error: updateError } = await svc
       .from('clients')
-      .update({ name: raw } as never)
+      .update(updatePayload as never)
       .eq('id', clientId);
     if (updateError) {
       console.error('[business-identity] name update failed:', updateError.message);
@@ -150,5 +188,11 @@ export async function POST(
     }
   }
 
-  return NextResponse.json({ ok: true, name: raw, slug: nextSlug, changed: true });
+  return NextResponse.json({
+    ok: true,
+    name: raw,
+    slug: nextSlug,
+    industry: industryRaw || row.industry,
+    changed: true,
+  });
 }
