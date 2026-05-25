@@ -11,6 +11,7 @@ import { CapabilityGate } from '@/components/shared/CapabilityGate';
 import { Button } from '@/components/ui/button';
 
 import { setBrandStyleValue } from '../brand-style';
+import { POPUP_HREF } from '../popup-config';
 import { defineSection, type SectionFieldsProps, type SectionPreviewProps } from '../registry';
 import { contactMeta } from './registry-meta';
 import { getSectionIcon } from '../section-icons';
@@ -23,6 +24,7 @@ import {
 } from '../section-theme';
 import { CopyField } from './_shared/CopyField';
 import { IconField } from './_shared/IconField';
+import { LinkField } from './_shared/LinkField';
 import { MediaField } from './_shared/MediaField';
 import {
   coerceImageDisplay,
@@ -32,6 +34,7 @@ import {
 } from './_shared/image-display';
 import { SectionShell } from './_shared/SectionShell';
 import { SelectableElement } from './_shared/SelectableElement';
+import { SurfaceLink } from './_shared/live-surface';
 import { ColorField, ThemePresetField } from './_shared/ThemeField';
 import { ToggleField } from './_shared/ToggleField';
 import { VariantField, type VariantOption } from './_shared/VariantField';
@@ -57,6 +60,7 @@ type ContactElement =
   | 'headline'
   | 'subheadline'
   | 'items'
+  | 'cta'
   | 'form'
   | 'media';
 
@@ -80,6 +84,20 @@ export type ContactData = {
   headlineAccent: string;
   sub: string;
   items: ContactInfoItem[];
+  /** When true, the inline message form renders alongside the contact
+   *  details (the historical contact-section shape). When false (the
+   *  default for new sections), a single primary CTA renders instead —
+   *  its `ctaHref` decides what happens (open the popup form modal,
+   *  navigate to a page, dial a phone, open an email client). The
+   *  reusable popup modal is the platform-level `Section.popup`
+   *  envelope + `PopupHost` — no contact-specific modal. */
+  showInlineForm: boolean;
+  /** Label shown on the contact CTA (when `showInlineForm` is false). */
+  ctaLabel: string;
+  /** CTA destination. `'#popup'` (POPUP_HREF) → opens the section's popup
+   *  form modal. A page path / full URL / `tel:` / `mailto:` → SurfaceLink
+   *  routes accordingly. Empty → button renders inert. */
+  ctaHref: string;
   formTitle: string;
   formButtonLabel: string;
   showPhoneField: boolean;
@@ -124,6 +142,14 @@ const DEFAULTS: ContactData = {
   headlineAccent: '',
   sub: 'Send a message and we will get back to you.',
   items: [],
+  // New default: render a single CTA that opens the popup form modal,
+  // instead of the inline two-column "details + form" layout. The popup
+  // is the platform-standard `Section.popup` + `PopupHost` (the same
+  // mechanism every other section uses for a button-opens-modal pattern),
+  // so contact reuses the modal renderer rather than shipping its own.
+  showInlineForm: false,
+  ctaLabel: 'Send us a message',
+  ctaHref: POPUP_HREF,
   formTitle: 'Send us a message',
   formButtonLabel: 'Send message',
   showPhoneField: true,
@@ -142,12 +168,26 @@ function defaultData(): ContactData {
 }
 
 function withDefaults(data: ContactData): ContactData {
+  // Back-compat: a stored contact section from before C1 has no
+  // `ctaLabel` / `ctaHref` / `showInlineForm` fields. Such rows kept their
+  // inline-form behaviour for years — we MUST NOT flip them to a CTA they
+  // never asked for. Detect "pre-C1 row" by the absence of `ctaLabel` AND
+  // `ctaHref`, and force `showInlineForm: true` (the old shape) in that
+  // case. New rows (`defaultData()`) explicitly opt into the CTA-only
+  // shape by setting `showInlineForm: false` + `ctaLabel`/`ctaHref`. AI
+  // injection paths get whatever DEFAULTS say (which is now CTA-only).
+  const dataKeys = data as Partial<ContactData>;
+  const isPreC1 =
+    dataKeys.ctaLabel === undefined &&
+    dataKeys.ctaHref === undefined &&
+    dataKeys.showInlineForm === undefined;
   return {
     ...DEFAULTS,
     ...data,
     // Empty-array fallback (NOT editor seed) so an AI omission shows
     // no placeholder contact info, not "(555) 123-4567" / "hello@example.com".
     items: data.items ?? [],
+    showInlineForm: isPreC1 ? true : data.showInlineForm ?? DEFAULTS.showInlineForm,
   };
 }
 
@@ -209,6 +249,7 @@ function ContactFields({
   selectedElement,
   clientId,
   brand,
+  pageLinks,
 }: SectionFieldsProps<ContactData>) {
   const d = withDefaults(data);
   const set = <K extends keyof ContactData>(key: K, value: ContactData[K]) =>
@@ -391,9 +432,41 @@ function ContactFields({
     );
   }
 
+  if (selectedElement === 'cta') {
+    return (
+      <BuilderFormSection>
+        <CopyField
+          label="CTA label"
+          value={d.ctaLabel}
+          originalValue={DEFAULTS.ctaLabel}
+          onChange={(v) => set('ctaLabel', v)}
+        />
+        <LinkField
+          label="CTA destination"
+          value={d.ctaHref}
+          pageLinks={pageLinks ?? []}
+          onChange={(v) => set('ctaHref', v)}
+          helper={
+            <>
+              Pick &quot;Open a popup&quot; to capture leads inside this page
+              without sending the visitor anywhere. The popup form lives below.
+              Other options route to a page, a phone (<code>tel:</code>), or an
+              email (<code>mailto:</code>).
+            </>
+          }
+        />
+      </BuilderFormSection>
+    );
+  }
+
   if (selectedElement === 'form') {
     return (
       <BuilderFormSection>
+        <ToggleField
+          label="Show inline form (instead of a CTA button)"
+          value={d.showInlineForm}
+          onChange={(v) => set('showInlineForm', v)}
+        />
         <CopyField
           label="Form title"
           value={d.formTitle}
@@ -467,6 +540,11 @@ function ContactFields({
         />
       </BuilderFormSection>
       <BuilderFormSection>
+        <ToggleField
+          label="Show inline form (instead of a CTA button)"
+          value={d.showInlineForm}
+          onChange={(v) => set('showInlineForm', v)}
+        />
         <VariantField
           label="Layout"
           value={d.layout}
@@ -574,6 +652,19 @@ function ContactPreview({
           </SelectableElement>
         );
 
+        // Either an inline form (legacy + opt-in) OR a CTA button that
+        // hands the lead off to the popup modal / a page / a phone /
+        // an email. SurfaceLink dispatches on the href: POPUP_HREF →
+        // opens the section's popup (the platform-standard popup modal,
+        // shared with every other section that uses this pattern).
+        const cta = (
+          <SelectableElement {...sel('cta')}>
+            <ContactCta data={d} theme={theme} accent={accent} headingFont={headingFont} />
+          </SelectableElement>
+        );
+
+        const formOrCta = d.showInlineForm ? form : cta;
+
         const detailItems = (
           <SelectableElement {...sel('items')}>
             <DetailsBlock data={d} theme={theme} accent={accent} headingFont={headingFont} />
@@ -595,7 +686,7 @@ function ContactPreview({
                 </SelectableElement>
                 <div className="flex flex-col gap-6">
                   {header(d.headerAlign)}
-                  {form}
+                  {formOrCta}
                 </div>
               </div>
               {detailItems}
@@ -613,19 +704,19 @@ function ContactPreview({
                 <SelectableElement {...sel('media')} className="hidden @3xl:block">
                   <ImageBox url={d.imageUrl} theme={theme} display={d.imageDisplay} />
                 </SelectableElement>
-                {form}
+                {formOrCta}
               </div>
             </div>
           );
         }
 
-        // -- details / cards: header on top, then details | form --
+        // -- details / cards: header on top, then details | form-or-cta --
         return (
           <div className="flex flex-col">
             <div className="mb-9">{header(d.headerAlign)}</div>
             <div className="grid items-start gap-9 @3xl:grid-cols-2">
               {detailItems}
-              {form}
+              {formOrCta}
             </div>
           </div>
         );
@@ -821,6 +912,55 @@ function ContactForm({
           <span aria-hidden>➤</span>
         </span>
       </div>
+    </div>
+  );
+}
+
+// -- contact CTA (the new default; replaces the inline form) ---------------
+
+function ContactCta({
+  data,
+  theme,
+  accent,
+  headingFont,
+}: {
+  data: ContactData;
+  theme: ResolvedTheme;
+  accent: string;
+  headingFont: string;
+}) {
+  // The CTA card mirrors the form card's chrome (card surface, padding,
+  // rounded corners) so swapping between "inline form" and "CTA only"
+  // doesn't change the section's visual rhythm in either layout. The
+  // SurfaceLink dispatches by href: POPUP_HREF → opens the section popup
+  // (reusable platform modal); tel:/mailto:/path → routes normally.
+  const label = data.ctaLabel?.trim() || 'Send us a message';
+  return (
+    <div
+      className="flex flex-col items-start gap-4 rounded-2xl p-6 @2xl:p-7"
+      style={{
+        backgroundColor: theme.card,
+        border: `1px solid ${theme.cardBorder}`,
+      }}
+    >
+      <p
+        className="text-[17px] font-bold"
+        style={{ fontFamily: headingFont, color: theme.heading }}
+      >
+        {data.formTitle || 'Get in touch'}
+      </p>
+      <p className="text-[14px] leading-[1.55]" style={{ color: theme.body }}>
+        {data.sub ||
+          'Tap the button — we will get straight back to you.'}
+      </p>
+      <SurfaceLink
+        href={data.ctaHref}
+        className="inline-flex w-fit items-center gap-2 rounded-lg px-5 py-2.5 text-[14px] font-semibold"
+        style={{ backgroundColor: accent, color: '#ffffff' }}
+      >
+        {label}
+        <span aria-hidden>➤</span>
+      </SurfaceLink>
     </div>
   );
 }
