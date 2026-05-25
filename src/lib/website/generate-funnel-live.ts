@@ -777,7 +777,14 @@ function validateAndAssemble(
 
     // Pass D — stock-image injection. Funnel brief has both `industry`
     // and `brand.industryCategory`; the resolver picks whichever is set.
-    const injectPass = injectStockImages(type, data, industry);
+    // C1: pass `surface: 'funnel'` + the business-name seed so the funnel
+    // hero never lands on the same photo as the site hero of the same
+    // customer (the helper excludes the template's headline `hero` URL
+    // from the funnel hero pool, picking from gallery only).
+    const injectPass = injectStockImages(type, data, industry, {
+      slug: brief.businessName?.trim() || undefined,
+      surface: 'funnel',
+    });
     data = injectPass.data;
     for (const fb of injectPass.fallbacks) {
       fallbackLog.push({ generationId, ...fb });

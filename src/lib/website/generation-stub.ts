@@ -331,6 +331,14 @@ function runValidationPipeline(
   const industry = resolveIndustryString({
     brand: { industryCategory: ctx.brand.industryCategory },
   });
+  // C1: per-slot image-diversity seed. The business name is the stable
+  // per-customer identifier the deterministic hash uses to pick a starting
+  // gallery offset for each slot — so two clients on the same industry get
+  // different photo combinations, but the SAME client reliably picks the
+  // same photo for the same slot across re-runs (no churn). Absent name
+  // (some dev-flow paths) falls back to the pre-C1 fixed-position
+  // behaviour inside the helper.
+  const slugSeed = ctx.business?.name?.trim() || undefined;
 
   for (const s of sections) {
     // Server-safe metadata: the section .tsx modules are 'use client', so
@@ -405,7 +413,10 @@ function runValidationPipeline(
     // (AI omitted OR Pass C cleared) from the industry kit. Logged as
     // `missing` with `modelValue=<the injected URL>` so the audit signal
     // distinguishes "we injected" from "we left empty".
-    const injectPass = injectStockImages(s.type, data, industry);
+    const injectPass = injectStockImages(s.type, data, industry, {
+      slug: slugSeed,
+      surface: 'site',
+    });
     data = injectPass.data;
     for (const fb of injectPass.fallbacks) {
       fallbackLog.push({ generationId, ...fb });
@@ -643,6 +654,7 @@ function fillHero(
         ctx.brand.industryCategory,
         'hero',
         'heroImageUrl',
+        { slug: ctx.business?.name?.trim() || undefined, surface: 'site' },
       ),
       ctaPrimaryLabel: industryCtaPrimary(ctx, template),
       ctaPrimaryHref: intentHref(ctx.primaryIntent),
@@ -810,12 +822,13 @@ function fillGallery(
           caption: '',
           category: '',
         }));
+  const slugSeed = ctx.business?.name?.trim() || undefined;
   const items: GalleryItem[] = baseItems.map((item, i) => {
     const url = resolveStockImage(
       ctx.brand.industryCategory,
       'gallery',
       'items[i].imageUrl',
-      i,
+      { slug: slugSeed, surface: 'site', index: i },
     );
     return url ? { ...item, imageUrl: url } : item;
   });
