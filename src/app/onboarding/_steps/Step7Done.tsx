@@ -33,6 +33,10 @@ type Step7Props = {
   state: WizardState;
   clientSlug: string;
   generationStatus: 'idle' | 'running' | 'ready' | 'failed';
+  /** Diagnostic message from the last generation attempt. Surfaced inline
+   *  inside the failed-state banner so the customer / support sees what
+   *  actually happened (instead of the previous silent `console.warn`). */
+  generationError: string | null;
   onRetryGeneration: () => void;
   onComplete: () => void;
   onBack: () => void;
@@ -42,6 +46,7 @@ export function Step7Done({
   state,
   clientSlug,
   generationStatus,
+  generationError,
   onRetryGeneration,
   onComplete,
   onBack,
@@ -85,6 +90,7 @@ export function Step7Done({
         <GenerationStatusCard
           status={generationStatus}
           previewUrl={previewUrl}
+          errorMessage={generationError}
           onRetry={onRetryGeneration}
         />
 
@@ -141,10 +147,12 @@ export function Step7Done({
 function GenerationStatusCard({
   status,
   previewUrl,
+  errorMessage,
   onRetry,
 }: {
   status: 'idle' | 'running' | 'ready' | 'failed';
   previewUrl: string;
+  errorMessage: string | null;
   onRetry: () => void;
 }) {
   switch (status) {
@@ -194,6 +202,11 @@ function GenerationStatusCard({
             and an operator will pick it up if it still isn&rsquo;t ready in a
             few minutes.
           </p>
+          {errorMessage ? (
+            <p className="mt-2 rounded-md bg-warn/[0.08] px-3 py-2 font-mono text-[11px] leading-[1.4] text-warn">
+              {errorMessage}
+            </p>
+          ) : null}
           <div className="mt-3">
             <Button onClick={onRetry} variant="outline" size="sm">
               ↻ Retry generation
