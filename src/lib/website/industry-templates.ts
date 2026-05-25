@@ -119,7 +119,18 @@ const U = (id: string): string =>
 // =============================================================================
 // Per-industry templates
 // =============================================================================
+//
+// Each template's `defaultServices` array is the canonical list of typical
+// services for that trade, drawn from UK/IE market vocabulary. The
+// conversational onboarding services checkbox UI renders these as the full
+// list the customer can tick/untick; the AI extraction layer (Session C)
+// pre-ticks a subset based on what the customer mentioned in their first
+// message. Title Case throughout; 2-5 word labels; no marketing copy.
 
+// ELECTRICIAN — full residential + light commercial coverage. Emergency
+// callouts lead since that's the highest-urgency entry point; rewires +
+// fuse-board (consumer-unit) upgrades + EV chargers are the big-ticket
+// jobs; certification + testing items cover landlord / compliance demand.
 const ELECTRICIAN: IndustryTemplate = {
   key: 'electrician',
   displayName: 'Electrician',
@@ -154,12 +165,18 @@ const ELECTRICIAN: IndustryTemplate = {
     },
   ],
   defaultServices: [
-    'Emergency callouts',
-    'Switchboard upgrades',
-    'EV charger installation',
-    'Lighting & power points',
-    'Smoke alarm compliance',
-    'Safety certificates & inspections',
+    'Emergency Callouts',
+    'Fuse Board Replacement',
+    'Full & Partial Rewires',
+    'EV Charger Installation',
+    'Lighting Installation',
+    'Sockets & Power Points',
+    'Smoke Alarm Installation',
+    'Safety Certificates & Inspections',
+    'Fault Finding & Repairs',
+    'PAT Testing',
+    'Outdoor & Garden Lighting',
+    'Bathroom Extractor Fans',
   ],
   ctaPrimary: 'Call now',
   ctaSecondary: 'Get a written quote',
@@ -182,6 +199,10 @@ const ELECTRICIAN: IndustryTemplate = {
     'Fixed-price callouts. Licensed, on the tools today, in and out clean.',
 };
 
+// PLUMBER — emergency leaks lead (highest-urgency entry); boiler work +
+// bathroom installs are the big-ticket projects; drain unblocking + tap
+// + radiator work cover the mid-range repair jobs. Gas Safe / RGI lives
+// on trust signals, not here.
 const PLUMBER: IndustryTemplate = {
   key: 'plumber',
   displayName: 'Plumber',
@@ -216,12 +237,18 @@ const PLUMBER: IndustryTemplate = {
     },
   ],
   defaultServices: [
-    'Emergency leaks & burst pipes',
-    'Blocked drains & toilets',
-    'Boiler installation & service',
-    'Hot water cylinders',
-    'Bathroom installations',
-    'Outside taps & garden plumbing',
+    'Emergency Leaks & Burst Pipes',
+    'Blocked Drains & Toilets',
+    'Boiler Installation',
+    'Boiler Repairs & Servicing',
+    'Bathroom Installation',
+    'Hot Water Cylinder Installation',
+    'Radiator Installation & Repair',
+    'Tap & Mixer Replacement',
+    'Toilet Repair & Replacement',
+    'Leak Detection',
+    'Power Flushing',
+    'Outside Taps & Garden Plumbing',
   ],
   ctaPrimary: 'Call now',
   ctaSecondary: 'Request a quote',
@@ -244,6 +271,10 @@ const PLUMBER: IndustryTemplate = {
     'Local plumber, on the road today. Fixed quote before any spanner turns.',
 };
 
+// CLEANER — recurring domestic at the top (weekly + fortnightly are the
+// bread-and-butter); end-of-tenancy + post-build are the high-margin
+// one-offs; oven + carpet + window are common add-ons customers tick on
+// top of a regular clean.
 const CLEANER: IndustryTemplate = {
   key: 'cleaner',
   displayName: 'Cleaning service',
@@ -278,12 +309,17 @@ const CLEANER: IndustryTemplate = {
     },
   ],
   defaultServices: [
-    'Weekly home cleaning',
-    'Fortnightly home cleaning',
-    'End-of-tenancy deep clean',
-    'Post-build / renovation clean',
-    'Holiday-let turnovers',
-    'Office cleaning',
+    'Weekly House Cleaning',
+    'Fortnightly House Cleaning',
+    'End of Tenancy Cleaning',
+    'Post-Build & Renovation Cleaning',
+    'Holiday Let Turnovers',
+    'Office Cleaning',
+    'One-Off Deep Cleans',
+    'Oven Cleaning',
+    'Carpet Cleaning',
+    'Window Cleaning',
+    'Spring Cleaning',
   ],
   ctaPrimary: 'Book a clean',
   ctaSecondary: 'Get a quote',
@@ -306,6 +342,10 @@ const CLEANER: IndustryTemplate = {
     'Weekly cleans, holiday turnovers, end-of-tenancy deep cleans. Insured, reliable, the same trusted person each time.',
 };
 
+// LANDSCAPER — mix of recurring maintenance (mowing, hedge) and project
+// work (patio, decking, design). Lawn mowing leads as the highest-volume
+// recurring booking; hard-landscaping items (patio / decking / driveway /
+// fencing) are the higher-ticket project work.
 const LANDSCAPER: IndustryTemplate = {
   key: 'landscaper',
   displayName: 'Landscaper / Gardener',
@@ -340,12 +380,18 @@ const LANDSCAPER: IndustryTemplate = {
     },
   ],
   defaultServices: [
-    'Weekly / fortnightly lawn maintenance',
-    'Hedge trimming & pruning',
-    'Garden tidy-ups & seasonal clean',
-    'Patio & paving installation',
-    'Planting & soft landscaping',
-    'Tree work & stump removal',
+    'Lawn Mowing & Maintenance',
+    'Hedge Trimming & Pruning',
+    'Garden Tidy-Ups',
+    'Patio Installation',
+    'Decking Installation',
+    'Planting & Soft Landscaping',
+    'Tree Surgery & Stump Removal',
+    'Fencing & Gates',
+    'Turfing & Lawn Laying',
+    'Driveway Installation',
+    'Garden Design',
+    'Seasonal Garden Clear-Up',
   ],
   ctaPrimary: 'Book a visit',
   ctaSecondary: 'Get a project quote',
@@ -367,6 +413,10 @@ const LANDSCAPER: IndustryTemplate = {
     'Garden care that turns up. Weekly mow to full redesign — honestly quoted, neatly delivered.',
 };
 
+// ROOFER — emergency leaks + storm damage lead the urgent entries; tile +
+// slate variants matter (different UK/IE roof stock); flat roofs, gutters,
+// fascia/soffit, and chimney work cover the project + repair spread.
+// Insurance work + free surveys are the high-trust conversion levers.
 const ROOFER: IndustryTemplate = {
   key: 'roofer',
   displayName: 'Roofer',
@@ -401,12 +451,17 @@ const ROOFER: IndustryTemplate = {
     },
   ],
   defaultServices: [
-    'Emergency leak repairs',
-    'Storm damage assessments',
-    'Full roof replacements',
-    'Gutter cleaning & repair',
-    'Chimney repointing & flashing',
-    'Insurance claim work',
+    'Emergency Leak Repairs',
+    'Storm Damage Repairs',
+    'Full Roof Replacement',
+    'Roof Tile Replacement',
+    'Slate Roof Repair',
+    'Flat Roof Installation & Repair',
+    'Gutter Cleaning & Repair',
+    'Fascia & Soffit Replacement',
+    'Chimney Repointing & Flashing',
+    'Roof Surveys',
+    'Insurance Claim Work',
   ],
   ctaPrimary: 'Book a roof survey',
   ctaSecondary: 'Get a quote',
@@ -428,6 +483,10 @@ const ROOFER: IndustryTemplate = {
     'Honest roofing. Free survey, photos of what we find, fix what needs fixing — no upsell.',
 };
 
+// PAINTER — interior + exterior at the top (the headline split); wallpaper
+// + feature walls as common styling adds; trim / ceiling / spray as
+// finish-grade options; plastering + patch repair captures the
+// pre-paint surface work many decorators offer.
 const PAINTER: IndustryTemplate = {
   key: 'painter',
   displayName: 'Painter & Decorator',
@@ -462,12 +521,17 @@ const PAINTER: IndustryTemplate = {
     },
   ],
   defaultServices: [
-    'Interior painting & decorating',
-    'Exterior painting',
-    'Wallpapering & feature walls',
-    'Woodwork & trim',
-    'Colour consultation',
-    'Pre-sale freshen-up',
+    'Interior Painting',
+    'Exterior Painting',
+    'Wallpapering',
+    'Feature Walls',
+    'Woodwork & Trim Painting',
+    'Ceiling Painting',
+    'Spray Painting',
+    'Plastering & Patch Repairs',
+    'Colour Consultation',
+    'Pre-Sale Refresh',
+    'Commercial Painting',
   ],
   ctaPrimary: 'Get a quote',
   ctaSecondary: 'Book a colour consult',
@@ -489,6 +553,10 @@ const PAINTER: IndustryTemplate = {
     'Painting and decorating done properly. Prep, paint, tidy exit — on the timeline we agreed.',
 };
 
+// HVAC — boiler work dominates the UK/IE residential market (install /
+// replace / service / breakdown); AC + heat pumps are the growth-side
+// installs; underfloor heating + radiators + thermostat work cover the
+// system extensions. Gas Safe / F-Gas lives on trust signals, not here.
 const HVAC: IndustryTemplate = {
   key: 'hvac',
   displayName: 'Heating & Cooling',
@@ -523,12 +591,18 @@ const HVAC: IndustryTemplate = {
     },
   ],
   defaultServices: [
-    'Boiler installation & replacement',
-    'Boiler servicing & annual checks',
-    'Heating breakdowns & repairs',
-    'Air conditioning installation',
-    'Heat pump installation',
-    'Ventilation & ductwork',
+    'Boiler Installation',
+    'Boiler Replacement',
+    'Boiler Servicing & Annual Checks',
+    'Heating Breakdown Repairs',
+    'Air Conditioning Installation',
+    'Air Conditioning Servicing',
+    'Heat Pump Installation',
+    'Underfloor Heating Installation',
+    'Radiator Installation',
+    'Smart Thermostat Installation',
+    'Power Flushing',
+    'Ventilation & Ductwork',
   ],
   ctaPrimary: 'Book a callout',
   ctaSecondary: 'Get an install quote',
@@ -551,6 +625,10 @@ const HVAC: IndustryTemplate = {
     'Heating and cooling that works when you need it. Same-day breakdown, honest install quote, annual service plan.',
 };
 
+// LOCKSMITH — narrower trade than the others (per brief: "some industries
+// naturally have fewer real services"). Emergency lockouts lead; uPVC
+// door lock work is a UK/IE staple (multi-point mechanisms fail often);
+// smart locks + safe work cover the modern + commercial spread.
 const LOCKSMITH: IndustryTemplate = {
   key: 'locksmith',
   displayName: 'Locksmith',
@@ -585,12 +663,15 @@ const LOCKSMITH: IndustryTemplate = {
     },
   ],
   defaultServices: [
-    'Emergency lockouts',
-    'Lost key replacement',
-    'Lock changes & upgrades',
-    'Post-break-in security restoration',
-    'Commercial & retail locks',
-    'Smart-lock installation',
+    'Emergency Lockouts',
+    'Lost Key Replacement',
+    'Lock Changes & Upgrades',
+    'Post-Break-In Security Restoration',
+    'uPVC Door Lock Repair',
+    'Smart Lock Installation',
+    'Key Cutting',
+    'Safe Opening & Installation',
+    'Commercial & Retail Locks',
   ],
   ctaPrimary: 'Call now',
   ctaSecondary: 'Get a quote',
@@ -613,6 +694,10 @@ const LOCKSMITH: IndustryTemplate = {
     '30 minutes to the door. Fixed callout fee, picked not drilled where possible.',
 };
 
+// HANDYMAN — broad small-jobs coverage by design (the trade's whole pitch
+// is "one person, one visit, several jobs"). Hung-on-wall items, flatpack,
+// and small fixes lead since they're the highest-volume bookings; outdoor
+// + tile + paint touch-ups cover the rest of the typical to-do list.
 const HANDYMAN: IndustryTemplate = {
   key: 'handyman',
   displayName: 'Handyman',
@@ -647,12 +732,19 @@ const HANDYMAN: IndustryTemplate = {
     },
   ],
   defaultServices: [
-    'Shelving, mirrors & artwork hung',
-    'Door hanging & adjustment',
-    'Flatpack assembly',
-    'Small plumbing fixes (taps, washers)',
-    'Small electrical fixes (where safe)',
-    'General repairs & touch-ups',
+    'Shelving & Mirrors Hung',
+    'Picture & Artwork Hanging',
+    'Door Hanging & Adjustment',
+    'Flatpack Assembly',
+    'TV Wall Mounting',
+    'Curtain Pole & Blind Fitting',
+    'Small Plumbing Fixes',
+    'Small Electrical Fixes',
+    'Fence & Gate Repairs',
+    'Tile Repairs & Re-Grouting',
+    'Garden Furniture Assembly',
+    'Paint Touch-Ups',
+    'General Repairs',
   ],
   ctaPrimary: 'Book a visit',
   ctaSecondary: 'Get a quote',
@@ -670,6 +762,10 @@ const HANDYMAN: IndustryTemplate = {
     'The to-do list gone in a day. One person, one visit, honest pricing.',
 };
 
+// CARPENTER — bespoke joinery work; fitted wardrobes + kitchen installs
+// are the high-ticket projects; staircase + decking + garden joinery
+// cover the structural + outdoor work; skirting + architrave + window
+// + floor laying are the finish-grade items customers commission.
 const CARPENTER: IndustryTemplate = {
   key: 'carpenter',
   displayName: 'Carpenter',
@@ -704,12 +800,18 @@ const CARPENTER: IndustryTemplate = {
     },
   ],
   defaultServices: [
-    'Bespoke fitted wardrobes',
-    'Kitchen carcass & install',
-    'Decking & garden joinery',
-    'Staircase repair & rebuild',
-    'Feature joinery & shelving',
-    'Door hanging & frames',
+    'Bespoke Fitted Wardrobes',
+    'Kitchen Installation',
+    'Built-In Shelving',
+    'Decking',
+    'Staircase Repair & Rebuild',
+    'Door Hanging & Frames',
+    'Skirting & Architrave Fitting',
+    'Loft Conversion Carpentry',
+    'Window Frame Repair',
+    'Garden Joinery (Sheds & Pergolas)',
+    'Floor Laying',
+    'Feature Joinery',
   ],
   ctaPrimary: 'Get a quote',
   ctaSecondary: 'Book a consultation',
@@ -731,6 +833,13 @@ const CARPENTER: IndustryTemplate = {
     'Bespoke carpentry — built for your space, finished properly, on the timeline we agreed.',
 };
 
+// GENERIC — fallback for any local service not in the trade list. Customer
+// will type their own services in the conversational flow; this list is
+// intentionally broad (project type + lifecycle stages) rather than
+// trade-specific. The AI extraction layer should pre-tick few or none of
+// these by default — they're starter slots the customer overrides.
+// Replaces the previous CTA-style entries ("Get in touch for a quote",
+// "View our recent work") which weren't services at all.
 const GENERIC: IndustryTemplate = {
   key: 'generic',
   displayName: 'Local service business',
@@ -765,10 +874,14 @@ const GENERIC: IndustryTemplate = {
     },
   ],
   defaultServices: [
-    'Get in touch for a quote',
-    'View our recent work',
-    'Read what customers say',
-    'Find our service area',
+    'New Installations',
+    'Repairs & Maintenance',
+    'Emergency Callouts',
+    'Servicing & Inspections',
+    'Project Work',
+    'Consultations & Quotes',
+    'Annual Service Plans',
+    'Commercial Work',
   ],
   ctaPrimary: 'Get in touch',
   ctaSecondary: 'Request a quote',
