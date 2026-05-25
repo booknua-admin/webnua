@@ -23,6 +23,7 @@ import {
 } from '../section-theme';
 import { ColumnsField } from './_shared/ColumnsField';
 import { CopyField } from './_shared/CopyField';
+import { BundleButton } from './_shared/BundleButton';
 import { SurfaceLink } from './_shared/live-surface';
 import { gridColumnsClass } from './_shared/grid';
 import { IconField } from './_shared/IconField';
@@ -833,14 +834,15 @@ function FaqFooter({
           ) : null}
         </div>
         {data.footerLinkLabel ? (
-          <SurfaceLink
+          <BundleButton
             href={data.footerLinkHref}
-            className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-semibold"
-            style={{ backgroundColor: accent, color: '#ffffff' }}
+            variant="primary"
+            size="sm"
+            accent={accent}
+            trailing={<span aria-hidden>→</span>}
           >
             {data.footerLinkLabel}
-            <span aria-hidden>→</span>
-          </SurfaceLink>
+          </BundleButton>
         ) : null}
       </div>
     );

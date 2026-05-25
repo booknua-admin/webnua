@@ -34,6 +34,7 @@ import {
 } from './_shared/image-display';
 import { SectionShell } from './_shared/SectionShell';
 import { SelectableElement } from './_shared/SelectableElement';
+import { BundleButton } from './_shared/BundleButton';
 import { SurfaceLink } from './_shared/live-surface';
 import { ColorField, ThemePresetField } from './_shared/ThemeField';
 import { ToggleField } from './_shared/ToggleField';
@@ -727,14 +728,15 @@ function ContactPreview({
               <div className="w-full max-w-[680px]">
                 {header('center')}
                 <SelectableElement {...sel('cta')} className="mt-9" display="inline-block">
-                  <SurfaceLink
+                  <BundleButton
                     href={ctaHref}
-                    className="inline-flex min-h-[52px] items-center justify-center gap-2 rounded-lg px-7 py-3.5 text-[15px] font-semibold @sm:text-[16px]"
-                    style={{ backgroundColor: accent, color: '#ffffff' }}
+                    variant="primary"
+                    size="lg"
+                    accent={accent}
+                    trailing={<span aria-hidden>➤</span>}
                   >
                     {ctaLabel}
-                    <span aria-hidden>➤</span>
-                  </SurfaceLink>
+                  </BundleButton>
                 </SelectableElement>
                 {phone ? (
                   <p
@@ -1038,14 +1040,15 @@ function ContactCta({
         {data.sub ||
           'Tap the button — we will get straight back to you.'}
       </p>
-      <SurfaceLink
+      <BundleButton
         href={data.ctaHref}
-        className="inline-flex w-fit items-center gap-2 rounded-lg px-5 py-2.5 text-[14px] font-semibold"
-        style={{ backgroundColor: accent, color: '#ffffff' }}
+        variant="primary"
+        size="sm"
+        accent={accent}
+        trailing={<span aria-hidden>➤</span>}
       >
         {label}
-        <span aria-hidden>➤</span>
-      </SurfaceLink>
+      </BundleButton>
     </div>
   );
 }

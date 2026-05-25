@@ -22,6 +22,7 @@ import {
 } from '../section-theme';
 import { ColumnsField } from './_shared/ColumnsField';
 import { CopyField } from './_shared/CopyField';
+import { BundleButton } from './_shared/BundleButton';
 import { SurfaceLink } from './_shared/live-surface';
 import { gridColumnsClass } from './_shared/grid';
 import { MediaField } from './_shared/MediaField';
@@ -963,26 +964,22 @@ function ReviewsCta({
 }) {
   if (style === 'solid') {
     return (
-      <SurfaceLink
-        href={href}
-        className="inline-flex items-center rounded-lg px-6 py-3 text-[14px] font-semibold"
-        style={{ backgroundColor: accent, color: '#ffffff' }}
-      >
+      <BundleButton href={href} variant="primary" accent={accent}>
         {label}
-      </SurfaceLink>
+      </BundleButton>
     );
   }
   if (style === 'outline') {
     return (
-      <SurfaceLink
-        href={href}
-        className="inline-flex items-center rounded-lg border-2 px-6 py-3 text-[14px] font-semibold"
-        style={{ borderColor: accent, color: accent }}
-      >
+      <BundleButton href={href} variant="secondary" accent={accent}>
         {label}
-      </SurfaceLink>
+      </BundleButton>
     );
   }
+  // `link` style — operator explicitly chose a subtle inline text link.
+  // Stays a SurfaceLink rather than a BundleButton: BundleButton's secondary
+  // variant promotes to outlined in most bundles, whereas the operator's
+  // `link` pick should always read as a text link regardless of bundle.
   return (
     <SurfaceLink
       href={href}
