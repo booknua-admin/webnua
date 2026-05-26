@@ -1,32 +1,48 @@
-import { SettingsFieldRow } from '@/components/shared/settings/SettingsFieldRow';
+import Link from 'next/link';
+
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
-import { Switch } from '@/components/ui/switch';
-import { cn } from '@/lib/utils';
-import {
-  adminDefaultsAutomations,
-  adminDefaultsBranding,
-  adminDefaultsPricing,
-} from '@/lib/settings/admin-defaults';
+import { Button } from '@/components/ui/button';
+
+// Agency-wide defaults applied to new client onboarding — default branding
+// (fonts + accent colour) + default pricing (suggested currency + flat-rate
+// buffer). The full editor is V2 work that comes online when the agency plan
+// launches; the previous page rendered hardcoded stubs ("Inter Tight" /
+// "JetBrains Mono" / "AUD ($)" / "15% buffer") that misled operators about
+// what was actually wired.
+//
+// What IS wired today: `automationDefaults` (the on/off flags for the four
+// default automations seeded per new client) — see `lib/agency/agency-
+// policy-stub.ts`. That data is consumed by the agency policy resolver, not
+// rendered through this surface.
+//
+// When the V2 editor ships: the "Plan currency" field should source from
+// the platform's Stripe Price (via `lib/integrations/stripe/plan-info.ts`)
+// rather than carry a hardcoded default — Stripe is the SoT for the
+// platform's billing currency.
 
 export default function AdminSettingsDefaultsPage() {
   return (
     <>
-      <Topbar breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="Defaults" />} />
+      <Topbar
+        breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="Defaults" />}
+      />
       <SettingsShell
-        eyebrow="Workspace · Webnua"
+        eyebrow="Agency · Webnua"
         title={
           <>
-            Settings + <em>integrations</em>.
+            Onboarding <em>defaults</em>.
           </>
         }
         subtitle={
           <>
-            Workspace-wide defaults applied to new clients.{' '}
-            <strong>Set once, applied to every new onboarding.</strong> Per-client overrides are
-            still possible.
+            <strong>This surface comes online when you launch the agency
+            plan.</strong> Default branding (fonts + accent colour) and
+            default pricing applied to new client onboarding will live here.
+            Default automations are already wired — they apply per new
+            client via the agency policy resolver.
           </>
         }
       >
@@ -34,93 +50,16 @@ export default function AdminSettingsDefaultsPage() {
           <SettingsSection
             heading={
               <>
-                Default <em>automations</em>
+                Coming <em>soon</em>
               </>
             }
-            description="Which flows are turned on by default when you onboard a new client. They can override per-client during setup."
+            description="Edit default automations from inside a sub-account today; default branding + pricing become editable in V2."
           >
-            <div className="flex flex-col gap-4">
-              {adminDefaultsAutomations.map((automation) => (
-                <div
-                  key={automation.id}
-                  className="border-b border-dotted border-rule-soft pb-4 last:border-b-0 last:pb-0"
-                >
-                  <div className="mb-1 text-[15px] font-bold text-ink">{automation.name}</div>
-                  <div className="mb-2.5 text-[13px] leading-[1.45] text-ink-quiet">
-                    {automation.description}
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Switch defaultChecked={automation.defaultOn} />
-                    <span
-                      className={cn(
-                        'text-[13px] font-bold',
-                        automation.defaultOn ? 'text-ink' : 'text-ink-quiet',
-                      )}
-                    >
-                      {automation.defaultOn ? 'ON by default' : 'OFF by default'}
-                    </span>
-                  </div>
-                </div>
-              ))}
+            <div className="flex flex-wrap items-center gap-3">
+              <Button asChild>
+                <Link href="/dashboard">Back to dashboard</Link>
+              </Button>
             </div>
-          </SettingsSection>
-
-          <SettingsSection
-            heading={
-              <>
-                Default <em>branding</em>
-              </>
-            }
-            description="Used as a starting point for new client funnels. Per-client branding overrides this."
-          >
-            {adminDefaultsBranding.map((field) => (
-              <SettingsFieldRow
-                key={field.label}
-                label={field.label}
-                value={
-                  field.swatch ? (
-                    <span className="inline-flex items-center gap-2">
-                      <span className="inline-block h-3.5 w-3.5 rounded-sm bg-rust" />
-                      {field.value}
-                    </span>
-                  ) : (
-                    field.value
-                  )
-                }
-                action={
-                  field.editable ? (
-                    <span className="cursor-pointer font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-rust hover:text-rust-deep">
-                      Edit ✎
-                    </span>
-                  ) : undefined
-                }
-              />
-            ))}
-          </SettingsSection>
-
-          <SettingsSection
-            heading={
-              <>
-                Default <em>pricing</em>
-              </>
-            }
-            description="Suggested defaults for the offer fields in new client onboarding."
-          >
-            {adminDefaultsPricing.map((field) => (
-              <SettingsFieldRow
-                key={field.label}
-                label={field.label}
-                sub={field.sub}
-                value={field.value}
-                action={
-                  field.editable ? (
-                    <span className="cursor-pointer font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-rust hover:text-rust-deep">
-                      Edit ✎
-                    </span>
-                  ) : undefined
-                }
-              />
-            ))}
           </SettingsSection>
         </SettingsPanel>
       </SettingsShell>
