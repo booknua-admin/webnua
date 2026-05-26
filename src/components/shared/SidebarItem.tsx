@@ -36,7 +36,7 @@ function SidebarItem({ label, href, icon, badge, className }: SidebarItemProps) 
         {icon}
       </span>
       <span className="flex-1 truncate">{label}</span>
-      {badge ? (
+      {badge && badge.text && badge.text !== '0' ? (
         <span
           className={cn(
             'shrink-0 rounded-full px-2 py-[2px] font-mono text-[10px] font-bold tracking-[0.06em]',

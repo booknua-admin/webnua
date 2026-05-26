@@ -8,9 +8,8 @@
 // most damaging confidence-breaking moment in the product — a paying tradie
 // seeing someone else's business name in their own dashboard.
 //
-// The badge counts in `clientNav` ("5"/"2"/"+2") are presentational
-// placeholders pending the unread-count wiring (separate session — flagged in
-// the audit's "honourable mentions"). Drop or recompute as those land.
+// Leads + Tickets nav badges are injected live in ClientSidebar via
+// `useClientNavBadgeCounts()`. Do NOT add hardcoded `badge:` entries here.
 // =============================================================================
 
 import type { NavSection } from './types';

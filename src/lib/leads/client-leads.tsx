@@ -12,8 +12,13 @@ export const clientLeadsTabs: LeadTab[] = [
   { id: 'all', label: 'All' },
 ];
 
+/** Copy-only hero defaults. The `eyebrow` is computed live in
+ *  `_client-content.tsx` from `useClientLeadsInbox()` — previously
+ *  hardcoded "// Voltline · 23 leads total" which (a) leaked another
+ *  customer's name into every client's dashboard and (b) showed a fake
+ *  count. The status-summary prose in the subtitle was likewise fake;
+ *  removed in favour of the live tab counts the user can see directly. */
 export const clientLeadsHero = {
-  eyebrow: '// Voltline · 23 leads total',
   title: (
     <>
       Lead <em>inbox</em>.
@@ -21,9 +26,8 @@ export const clientLeadsHero = {
   ),
   subtitle: (
     <>
-      Every lead from your funnel.{' '}
-      <strong>5 new, 4 you&rsquo;ve contacted, 12 booked</strong>. Click a row
-      to see the full conversation thread.
+      Every lead from your funnel. Click a row to see the full conversation
+      thread.
     </>
   ),
 };

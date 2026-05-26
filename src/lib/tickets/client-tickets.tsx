@@ -18,8 +18,12 @@ export type ClientTicketRow = {
   href: string;
 };
 
+/** Copy-only hero defaults. The `tag` is computed live in
+ *  `_client-content.tsx` from `useClientTicketsInbox()` — "N need your reply"
+ *  maps to `awaiting === 'client'`. "Craig" was removed: the support contact
+ *  is the operator the client is matched with (see clientSupportContact in
+ *  `lib/nav/client-nav.ts`), not a hardcoded name. */
 export const clientTicketsHero = {
-  tag: 'Live · 2 need your reply',
   title: (
     <>
       Your <em>tickets</em>
@@ -29,7 +33,7 @@ export const clientTicketsHero = {
     <>
       Anything you&apos;ve asked Webnua to handle — website changes, ad tweaks,
       billing questions.{' '}
-      <strong>Tap a ticket to see status and reply to Craig.</strong>
+      <strong>Tap a ticket to see status and reply.</strong>
     </>
   ),
 };

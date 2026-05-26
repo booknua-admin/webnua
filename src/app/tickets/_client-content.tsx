@@ -51,6 +51,16 @@ function ClientTicketsContent() {
     [allTickets, activeTab],
   );
 
+  // Live "N need your reply" tag — matches the badge's awaiting='client'
+  // definition. Goes quiet when the inbox is caught up.
+  const heroTag = useMemo(() => {
+    const needsReply = allTickets.filter(
+      (t) => t.awaiting === 'client',
+    ).length;
+    if (needsReply === 0) return 'All caught up · nothing waiting for you';
+    return `Live · ${needsReply} need${needsReply === 1 ? 's' : ''} your reply`;
+  }, [allTickets]);
+
   return (
     <>
       <Topbar
@@ -58,7 +68,7 @@ function ClientTicketsContent() {
       />
       <div className="flex flex-col gap-[18px] px-4 py-6 md:px-10 md:py-10">
         <TicketsHero
-          tag={clientTicketsHero.tag}
+          tag={heroTag}
           title={clientTicketsHero.title}
           subtitle={clientTicketsHero.subtitle}
           right={
