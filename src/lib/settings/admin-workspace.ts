@@ -6,7 +6,7 @@ type WorkspaceField = {
 };
 
 export const adminWorkspaceFields: WorkspaceField[] = [
-  { label: 'Workspace name', value: 'Webnua Perth' },
+  { label: 'Workspace name', value: 'Webnua' },
   {
     label: 'Workspace ID',
     sub: 'For API + webhook routing',

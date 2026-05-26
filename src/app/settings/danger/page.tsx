@@ -11,7 +11,7 @@ export default function AdminSettingsDangerPage() {
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="Danger zone" />} />
       <SettingsShell
-        eyebrow="Workspace · Webnua Perth"
+        eyebrow="Workspace · Webnua"
         title={
           <>
             Settings + <em>integrations</em>.
@@ -31,7 +31,7 @@ export default function AdminSettingsDangerPage() {
                 Workspace <em>destruction</em>
               </>
             }
-            description="Permanent operations that affect your entire Webnua Perth workspace."
+            description="Permanent operations that affect your entire Webnua workspace."
           >
             {adminDangerWorkspace.map((entry) => (
               <DangerRow

@@ -58,7 +58,7 @@ function AgencyTeamContent() {
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="Team" />} />
       <SettingsShell
-        eyebrow="Workspace · Webnua Perth"
+        eyebrow="Workspace · Webnua"
         title={
           <>
             Settings + <em>integrations</em>.

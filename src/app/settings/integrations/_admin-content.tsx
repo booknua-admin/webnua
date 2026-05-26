@@ -51,7 +51,7 @@ function AgencyIntegrationsView() {
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="Integrations" />} />
       <SettingsShell
-        eyebrow="Agency · Webnua Perth"
+        eyebrow="Agency · Webnua"
         title={
           <>
             Client <em>integrations</em>.

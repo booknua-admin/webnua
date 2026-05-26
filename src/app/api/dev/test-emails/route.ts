@@ -24,6 +24,7 @@
 import { NextResponse } from 'next/server';
 
 import { env } from '@/lib/env';
+import { EMAIL_BRAND_FOOTER, EMAIL_BRAND_FOOTER_TEXT } from '@/lib/email/footer';
 import { sendReEngagementEmail } from '@/lib/auth/re-engagement-email';
 import { sendVerificationCodeEmail } from '@/lib/auth/verification-code-email';
 import { sendVerificationEmail } from '@/lib/auth/verification-email';
@@ -53,7 +54,7 @@ function buildStripePaymentFailedTestHtml(clientName: string, billingLink: strin
       <a href="${e(billingLink)}" style="display:inline-block;background:#d24317;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:700;font-size:14px;">View billing →</a>
     </p>
   </div>
-  <div style="text-align:center;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e685c;margin-top:18px;">&copy; Webnua &middot; Perth</div>
+  ${EMAIL_BRAND_FOOTER}
 </body></html>`;
 }
 
@@ -67,7 +68,7 @@ function buildStripePaymentFailedTestText(clientName: string, billingLink: strin
     '',
     `View billing: ${billingLink}`,
     '',
-    '© Webnua · Perth',
+    EMAIL_BRAND_FOOTER_TEXT,
   ].join('\n');
 }
 
@@ -199,7 +200,7 @@ async function trigger(kind: Kind, recipientEmail: string): Promise<string> {
         recipientEmail,
         recipientName: 'Sam (test)',
         inviterName: 'Craig at Webnua',
-        workspaceName: 'Webnua Perth',
+        workspaceName: 'Webnua',
         roleLabel: 'Operator',
         magicLink: `${base}/invite/test-team-token-stub`,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),

@@ -19,7 +19,7 @@ export default function AdminSettingsPlatformTemplatesPage() {
         }
       />
       <SettingsShell
-        eyebrow="Agency · Webnua Perth"
+        eyebrow="Agency · Webnua"
         title={
           <>
             Platform <em>templates</em>.

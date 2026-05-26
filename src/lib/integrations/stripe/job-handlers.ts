@@ -18,6 +18,7 @@ import { getAppBaseUrl } from '@/lib/env';
 
 import { STRIPE_PAYMENT_FAILED_JOB, type StripePaymentFailedPayload } from './job-types';
 import { sendOperatorEmail } from './notify';
+import { EMAIL_BRAND_FOOTER, EMAIL_BRAND_FOOTER_TEXT } from '@/lib/email/footer';
 
 /** Minimal HTML escape for interpolated values. */
 function escapeHtml(value: string): string {
@@ -51,7 +52,7 @@ function buildPaymentFailedHtml(input: {
       <a href="${link}" style="display:inline-block;background:#d24317;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:700;font-size:14px;">View billing →</a>
     </p>${invoice}
   </div>
-  <div style="text-align:center;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e685c;margin-top:18px;">&copy; Webnua &middot; Perth</div>
+  ${EMAIL_BRAND_FOOTER}
 </body></html>`;
 }
 
@@ -70,7 +71,7 @@ function buildPaymentFailedText(input: {
     `View billing: ${input.billingLink}`,
     ...(input.invoiceId ? ['', `Stripe invoice: ${input.invoiceId}`] : []),
     '',
-    '© Webnua · Perth',
+    EMAIL_BRAND_FOOTER_TEXT,
   ].join('\n');
 }
 

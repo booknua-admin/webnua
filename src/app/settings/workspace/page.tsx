@@ -10,7 +10,7 @@ export default function AdminSettingsWorkspacePage() {
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="Workspace" />} />
       <SettingsShell
-        eyebrow="Workspace · Webnua Perth"
+        eyebrow="Workspace · Webnua"
         title={
           <>
             Workspace <em>settings</em>.
@@ -18,7 +18,7 @@ export default function AdminSettingsWorkspacePage() {
         }
         subtitle={
           <>
-            Workspace-level settings for Webnua Perth.{' '}
+            Workspace-level settings for Webnua.{' '}
             <strong>Identity, plan, usage.</strong> Most of this you set once and forget.
           </>
         }
@@ -40,7 +40,7 @@ export default function AdminSettingsWorkspacePage() {
 
           <SettingsSection
             heading="Plan + usage"
-            description="Webnua Perth is on the operator plan. Pricing scales with active clients, not features."
+            description="Webnua is on the operator plan. Pricing scales with active clients, not features."
           >
             {adminWorkspacePlanFields.map((field) => (
               <SettingsFieldRow

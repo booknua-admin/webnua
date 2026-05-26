@@ -20,7 +20,7 @@ export const adminBillingPlan = {
 export const adminBillingMethod = {
   cardIcon: 'VISA',
   name: 'Visa ending in 4242',
-  meta: 'Expires 09/28 · Craig Fremantle · default for Webnua Perth',
+  meta: 'Expires 09/28 · Craig Fremantle · default for Webnua',
 };
 
 export const adminBillingInvoices: Invoice[] = [

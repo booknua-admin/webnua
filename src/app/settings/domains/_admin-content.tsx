@@ -43,7 +43,7 @@ function AgencyDomainsView() {
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="Domains" />} />
       <SettingsShell
-        eyebrow="Agency · Webnua Perth"
+        eyebrow="Agency · Webnua"
         title={
           <>
             Client <em>domains</em>.

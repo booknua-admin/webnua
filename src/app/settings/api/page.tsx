@@ -14,7 +14,7 @@ export default function AdminSettingsApiPage() {
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="API & services" />} />
       <SettingsShell
-        eyebrow="Agency · Webnua Perth"
+        eyebrow="Agency · Webnua"
         title={
           <>
             API &amp; <em>services</em>.

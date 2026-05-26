@@ -16,7 +16,7 @@ export default function AdminSettingsDefaultsPage() {
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="Defaults" />} />
       <SettingsShell
-        eyebrow="Workspace · Webnua Perth"
+        eyebrow="Workspace · Webnua"
         title={
           <>
             Settings + <em>integrations</em>.

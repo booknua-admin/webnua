@@ -14,6 +14,7 @@
 // =============================================================================
 
 import type { EmailTemplateKey } from '@/lib/integrations/resend/types';
+import { EMAIL_BRAND_FOOTER } from '@/lib/email/footer';
 
 export type EmailTemplateBody = {
   subject: string;
@@ -126,7 +127,7 @@ function BRANDED_SHELL(input: {
       <a href="${input.ctaHref}" style="display:inline-block;background:#d24317;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:700;font-size:14px;">${input.ctaLabel}</a>
     </p>
   </div>
-  <div style="text-align:center;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e685c;margin-top:18px;">&copy; Webnua &middot; Perth</div>
+  ${EMAIL_BRAND_FOOTER}
 </body></html>`;
 }
 
