@@ -17,6 +17,7 @@
 
 import { env } from '@/lib/env';
 import { callExternal } from '@/lib/integrations/_shared/call';
+import { EMAIL_BRAND_FOOTER } from '@/lib/email/footer';
 
 export type VerificationEmailInput = {
   recipientEmail: string;
@@ -52,7 +53,7 @@ function buildHtml(input: VerificationEmailInput): string {
     <p style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;line-height:1.45;color:#4a4a45;word-break:break-all;background:#f5f1ea;border:1px solid #c9c0b0;border-radius:6px;padding:10px 12px;margin:0 0 22px 0;">${safeLink}</p>
     <p style="font-size:12px;line-height:1.5;color:#6e685c;margin:0;">Didn&rsquo;t sign up? Ignore this email — your workspace stays unverified and is auto-cleaned in 7 days.</p>
   </div>
-  <div style="text-align:center;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e685c;margin-top:18px;">&copy; Webnua &middot; Perth</div>
+  ${EMAIL_BRAND_FOOTER}
 </body></html>`;
 }
 

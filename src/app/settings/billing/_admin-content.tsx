@@ -1,7 +1,7 @@
 'use client';
 
 // The operator's /settings/billing branch. Dispatches on workspace mode
-// (Cluster 9 · Session 3): agency mode → Webnua Perth's own billing (a stub);
+// (Cluster 9 · Session 3): agency mode → Webnua's own billing (a stub);
 // sub-account mode → the drilled-in client's plan assignment + resolved policy
 // bundle + invoices.
 
@@ -43,7 +43,7 @@ function AgencyBillingView() {
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="Billing" />} />
       <SettingsShell
-        eyebrow="Workspace · Webnua Perth"
+        eyebrow="Workspace · Webnua"
         title={
           <>
             Settings + <em>integrations</em>.
@@ -52,7 +52,7 @@ function AgencyBillingView() {
         subtitle={
           <>
             Your plan, payment method, and invoice history.{' '}
-            <strong>Webnua Perth is billed monthly in AUD</strong> — base plan plus usage.
+            <strong>Webnua is billed monthly in AUD</strong> — base plan plus usage.
           </>
         }
       >

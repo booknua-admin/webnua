@@ -61,7 +61,7 @@ export default function DefaultSeatLimitPage() {
         }
       />
       <SettingsShell
-        eyebrow="Agency · Webnua Perth"
+        eyebrow="Agency · Webnua"
         title={
           <>
             Default <em>seat limit</em>.

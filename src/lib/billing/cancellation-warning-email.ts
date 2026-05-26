@@ -13,6 +13,7 @@
 
 import { env } from '@/lib/env';
 import { callExternal } from '@/lib/integrations/_shared/call';
+import { EMAIL_BRAND_FOOTER, EMAIL_BRAND_FOOTER_TEXT } from '@/lib/email/footer';
 
 export type CancellationWarningEmailInput = {
   recipientEmail: string;
@@ -55,7 +56,7 @@ function buildHtml(input: CancellationWarningEmailInput): string {
     </ul>
     <p style="font-size:12px;line-height:1.5;color:#6e685c;margin:0;">This is the only notice you&rsquo;ll receive. If you&rsquo;re sure you don&rsquo;t need your data, you can ignore this email.</p>
   </div>
-  <div style="text-align:center;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e685c;margin-top:18px;">&copy; Webnua &middot; Perth</div>
+  ${EMAIL_BRAND_FOOTER}
 </body></html>`;
 }
 
@@ -78,7 +79,7 @@ function buildText(input: CancellationWarningEmailInput): string {
     '',
     "This is the only notice you'll receive. If you're sure you don't need your data, you can ignore this email.",
     '',
-    '© Webnua · Perth',
+    EMAIL_BRAND_FOOTER_TEXT,
   ].join('\n');
 }
 

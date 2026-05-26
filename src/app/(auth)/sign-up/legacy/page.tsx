@@ -29,7 +29,6 @@ import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
-import { BrandMark } from '@/components/ui/BrandMark';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -152,7 +151,7 @@ function SignUpForm() {
   return (
     <div className="flex w-full max-w-md flex-col items-stretch gap-8">
       <div className="flex flex-col items-center gap-3 text-ink">
-        <BrandMark size="lg" />
+        <img src="/webnua-logo.png" alt="Webnua" width={160} height={40} className="h-10 w-auto" />
         <Eyebrow tone="quiet">{'// Webnua platform'}</Eyebrow>
       </div>
 
@@ -258,7 +257,7 @@ function CheckYourEmail({ email, outcome }: SuccessState) {
   return (
     <div className="flex w-full max-w-md flex-col items-stretch gap-8">
       <div className="flex flex-col items-center gap-3 text-ink">
-        <BrandMark size="lg" />
+        <img src="/webnua-logo.png" alt="Webnua" width={160} height={40} className="h-10 w-auto" />
         <Eyebrow tone="quiet">{'// Webnua platform'}</Eyebrow>
       </div>
 
@@ -299,10 +298,6 @@ function CheckYourEmail({ email, outcome }: SuccessState) {
           </Button>
         </CardContent>
       </Card>
-
-      <p className="text-center font-mono text-[10px] font-bold tracking-[0.14em] uppercase text-ink-quiet/70">
-        &copy; Webnua &middot; Perth
-      </p>
     </div>
   );
 }

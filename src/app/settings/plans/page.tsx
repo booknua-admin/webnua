@@ -52,7 +52,7 @@ export default function PlansPage() {
         breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="Plans" />}
       />
       <SettingsShell
-        eyebrow="Agency · Webnua Perth"
+        eyebrow="Agency · Webnua"
         title={
           <>
             Plan <em>catalog</em>.

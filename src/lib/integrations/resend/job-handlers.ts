@@ -35,7 +35,11 @@ import {
   DEFAULT_EMAIL_TEMPLATES,
   type EmailTemplateBody,
 } from '@/lib/email/default-templates';
-import { renderEmail, type EmailRenderContext } from '@/lib/email/templates';
+import {
+  appendCustomerFooter,
+  renderEmail,
+  type EmailRenderContext,
+} from '@/lib/email/templates';
 // Phase 8 Session 2: the sms_templates / email_templates tables are gone.
 // Bodies live on the originating automation_action's action_config (or in
 // DEFAULT_EMAIL_TEMPLATES for operator-facing keys). The previous
@@ -122,6 +126,16 @@ registerJobHandler(SEND_EMAIL_JOB, async (rawPayload, ctx: JobContext) => {
     return { sent: false, reason: 'empty-body' };
   }
 
+  // Customer-facing emails (operator → lead) ship plain-text only with the
+  // "Powered by Webnua" footer. Operator-facing emails (Webnua → operator)
+  // keep their branded HTML.
+  let finalText = rendered.text;
+  let finalHtml = rendered.html;
+  if (isCustomerFacingTemplate(templateKey)) {
+    finalText = appendCustomerFooter(rendered.text);
+    finalHtml = '';
+  }
+
   // --- threading ------------------------------------------------------------
   // Only outbound emails to a known lead carry a reply-to thread token —
   // operator notifications and the digest go to operators (who reply to us
@@ -142,8 +156,8 @@ registerJobHandler(SEND_EMAIL_JOB, async (rawPayload, ctx: JobContext) => {
     to: recipientEmail,
     replyTo,
     subject: rendered.subject,
-    text: rendered.text,
-    html: rendered.html,
+    text: finalText,
+    html: finalHtml,
     inReplyTo: payload.inReplyTo ?? undefined,
     attachments: payload.attachments,
     correlationId: ctx.correlationId ?? undefined,
@@ -157,8 +171,8 @@ registerJobHandler(SEND_EMAIL_JOB, async (rawPayload, ctx: JobContext) => {
       recipient_address: recipientEmail,
       reply_to_address: replyTo ?? null,
       subject: rendered.subject,
-      body_text: rendered.text,
-      body_html: rendered.html,
+      body_text: finalText,
+      body_html: finalHtml,
       resend_message_id: result.data.id,
       in_reply_to_message_id: payload.inReplyTo ?? null,
       status: 'sent',
@@ -195,7 +209,7 @@ registerJobHandler(SEND_EMAIL_JOB, async (rawPayload, ctx: JobContext) => {
     payload,
     fromAddress,
     rendered.subject,
-    rendered.text,
+    finalText,
     resendError,
     threadToken,
   );
@@ -310,6 +324,7 @@ registerJobHandler(BATCH_NOTIFICATION_DIGEST_JOB, async () => {
       continue;
     }
     const summary = formatDigestSummary(leadsForClient);
+    const summaryHtml = formatDigestSummaryHtml(leadsForClient);
     for (const recipient of recipients) {
       batches += 1;
       await enqueueJob(
@@ -321,6 +336,7 @@ registerJobHandler(BATCH_NOTIFICATION_DIGEST_JOB, async () => {
           contextOverrides: {
             'digest.count': String(leadsForClient.length),
             'digest.summary': summary,
+            'digest.summaryHtml': summaryHtml,
           },
         } satisfies SendEmailPayload,
         { provider: 'resend', clientId },
@@ -648,6 +664,33 @@ function formatDigestSummary(leads: PendingLeadRow[]): string {
       return `• ${name} — ${service}`;
     })
     .join('\n');
+}
+
+function escapeHtmlForDigest(value: string): string {
+  return value.replace(
+    /[&<>"]/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string,
+  );
+}
+
+/** Render the lead-digest summary as a stacked card list — one row per lead
+ *  with a rust left-rail (matches the lead_notification single-lead block).
+ *  Sibling of `formatDigestSummary` (the plain-text version). */
+function formatDigestSummaryHtml(leads: PendingLeadRow[]): string {
+  return leads
+    .map((lead) => {
+      const name = escapeHtmlForDigest(lead.customer_name_snapshot || 'New enquiry');
+      const service = escapeHtmlForDigest(
+        serviceFromEvents(lead.lead_events ?? []) || lead.source || 'enquiry',
+      );
+      return (
+        `<div style="margin:0 0 8px 0;padding:10px 14px;background:#f5f1ea;border-left:3px solid #d24317;border-radius:6px;">` +
+        `<div style="font-weight:700;font-size:14px;color:#0a0a0a;">${name}</div>` +
+        `<div style="font-size:13px;color:#4a4a45;margin-top:2px;">${service}</div>` +
+        `</div>`
+      );
+    })
+    .join('');
 }
 
 function extractResendError(error: IntegrationError): { code: string; message: string } {

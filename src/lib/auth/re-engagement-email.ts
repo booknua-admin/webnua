@@ -16,6 +16,7 @@
 
 import { env } from '@/lib/env';
 import { callExternal } from '@/lib/integrations/_shared/call';
+import { EMAIL_BRAND_FOOTER } from '@/lib/email/footer';
 
 export type ReEngagementEmailInput = {
   recipientEmail: string;
@@ -63,7 +64,7 @@ function buildHtml(input: ReEngagementEmailInput): string {
     </p>
     <p style="font-size:12px;line-height:1.5;color:#6e685c;margin:0;">Reply to this email if anything is in the way — we&rsquo;re here to help.</p>
   </div>
-  <div style="text-align:center;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e685c;margin-top:18px;">&copy; Webnua &middot; Perth</div>
+  ${EMAIL_BRAND_FOOTER}
 </body></html>`;
 }
 

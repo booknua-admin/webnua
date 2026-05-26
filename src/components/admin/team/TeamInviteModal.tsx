@@ -131,7 +131,7 @@ function TeamInviteModal({ open, onOpenChange }: TeamInviteModalProps) {
           title={
             step === 1 ? (
               <>
-                Add <em>someone</em> to Webnua Perth
+                Add <em>someone</em> to Webnua
               </>
             ) : step === 2 ? (
               <>

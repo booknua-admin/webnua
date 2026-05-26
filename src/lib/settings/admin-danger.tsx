@@ -22,7 +22,7 @@ export const adminDangerWorkspace: DangerEntry[] = [
     heading: 'Transfer workspace ownership',
     description: (
       <>
-        Hand Webnua Perth to another team member. <strong>You&apos;ll lose Owner role.</strong>{' '}
+        Hand Webnua to another team member. <strong>You&apos;ll lose Owner role.</strong>{' '}
         Useful if you&apos;re selling the agency or splitting it.
       </>
     ),

@@ -9,7 +9,7 @@
 //
 //   kind: 'team'   — operator invites a Webnua team member. The recipient
 //                    will land on /dashboard after accepting; the email
-//                    frames the workspace ("Webnua Perth") and the role
+//                    frames the workspace ("Webnua") and the role
 //                    they were granted.
 //
 //   kind: 'client' — invite into a client workspace. Used for the operator-
@@ -28,6 +28,7 @@
 
 import { env } from '@/lib/env';
 import { callExternal } from '@/lib/integrations/_shared/call';
+import { EMAIL_BRAND_FOOTER } from '@/lib/email/footer';
 
 export type InviteEmailKind = 'team' | 'client';
 
@@ -41,7 +42,7 @@ export type InviteEmailInput = {
   /** The display name of the operator/client who sent the invite. */
   inviterName: string;
   /** Workspace / business they're being invited into. For `team` invites
-   *  this is the agency name ("Webnua Perth"); for `client` invites this
+   *  this is the agency name ("Webnua"); for `client` invites this
    *  is the client business name. */
   workspaceName: string;
   /** The team role for `team` invites (Owner / Operator / Junior operator).
@@ -128,7 +129,7 @@ function buildHtml(input: InviteEmailInput): string {
     <p style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;line-height:1.45;color:#4a4a45;word-break:break-all;background:#f5f1ea;border:1px solid #c9c0b0;border-radius:6px;padding:10px 12px;margin:0 0 22px 0;">${safeLink}</p>
     <p style="font-size:12px;line-height:1.5;color:#6e685c;margin:0;">Didn&rsquo;t expect this? Ignore the email — the invite expires on its own and no account is created until you accept.</p>
   </div>
-  <div style="text-align:center;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e685c;margin-top:18px;">&copy; Webnua &middot; Perth</div>
+  ${EMAIL_BRAND_FOOTER}
 </body></html>`;
 }
 

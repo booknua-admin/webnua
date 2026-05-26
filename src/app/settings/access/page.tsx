@@ -78,7 +78,7 @@ export default function AdminSettingsAccessPage() {
           breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="Access" />}
         />
         <SettingsShell
-          eyebrow="Workspace · Webnua Perth"
+          eyebrow="Workspace · Webnua"
           title={
             <>
               Access <em>across all clients</em>.
@@ -319,7 +319,7 @@ function AgencyOverview() {
         }
       />
       <SettingsShell
-        eyebrow="Workspace · Webnua Perth"
+        eyebrow="Workspace · Webnua"
         title={
           <>
             Access <em>across all clients</em>.

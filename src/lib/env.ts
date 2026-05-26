@@ -82,6 +82,11 @@ const envSchema = z.object({
   // cannot read these env vars). Both sides must match.
   INTERNAL_JOB_SECRET: optionalStr,
 
+  // Shared secret guarding /api/dev/test-emails. Unset = the route returns
+  // 503 (test-sends disabled). Set this in the deployment env to enable
+  // one-shot QA sends via curl. NOT consumed by anything else.
+  TEST_EMAIL_SECRET: optionalStr,
+
   // --- Vercel: custom-domain provisioning -----------------------------------
   VERCEL_TOKEN: optionalStr,
   VERCEL_PROJECT_ID: optionalStr,
