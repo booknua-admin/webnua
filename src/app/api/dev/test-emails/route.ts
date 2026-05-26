@@ -93,6 +93,22 @@ function isKind(value: unknown): value is Kind {
   return typeof value === 'string' && (ALL_KINDS as readonly string[]).includes(value);
 }
 
+/** Diagnostic GET — returns whether the route is wired and the secret is
+ *  configured WITHOUT revealing the secret value. Hit this from a browser
+ *  to confirm the deployment picked up TEST_EMAIL_SECRET before debugging
+ *  the POST. Never returns the secret itself. */
+export async function GET(): Promise<Response> {
+  return NextResponse.json({
+    route: '/api/dev/test-emails',
+    method: 'POST',
+    secret_configured: Boolean(env.TEST_EMAIL_SECRET),
+    resend_configured: Boolean(env.RESEND_API_KEY),
+    accepted_kinds: ['all', ...ALL_KINDS],
+    usage:
+      'POST with Authorization: Bearer <TEST_EMAIL_SECRET> + body { kind, recipientEmail }',
+  });
+}
+
 export async function POST(request: Request): Promise<Response> {
   const secret = env.TEST_EMAIL_SECRET;
   if (!secret) {

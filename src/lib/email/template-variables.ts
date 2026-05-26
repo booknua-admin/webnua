@@ -39,7 +39,8 @@ export type EmailTemplateVariableId =
   | 'review.link'
   | 'platform.inboxLink'
   | 'digest.count'
-  | 'digest.summary';
+  | 'digest.summary'
+  | 'digest.summaryHtml';
 
 export type EmailTemplateVariable = {
   id: EmailTemplateVariableId;
@@ -103,8 +104,14 @@ export const EMAIL_TEMPLATE_VARIABLES: EmailTemplateVariable[] = [
   {
     id: 'digest.summary',
     group: 'digest',
-    label: 'Digest summary block',
+    label: 'Digest summary (plain text)',
     sample: '• Liam Reilly — outlet replacement\n• Anna Larsen — fortnightly clean\n• Mark T — strata switchboard quote',
+  },
+  {
+    id: 'digest.summaryHtml',
+    group: 'digest',
+    label: 'Digest summary (HTML card list)',
+    sample: '<div>…</div><div>…</div>',
   },
 ];
 
@@ -146,6 +153,7 @@ export const EMAIL_TEMPLATE_VARIABLE_HINTS: Record<
   lead_digest: [
     'digest.count',
     'digest.summary',
+    'digest.summaryHtml',
     'client.businessName',
     'platform.inboxLink',
   ],

@@ -324,6 +324,7 @@ registerJobHandler(BATCH_NOTIFICATION_DIGEST_JOB, async () => {
       continue;
     }
     const summary = formatDigestSummary(leadsForClient);
+    const summaryHtml = formatDigestSummaryHtml(leadsForClient);
     for (const recipient of recipients) {
       batches += 1;
       await enqueueJob(
@@ -335,6 +336,7 @@ registerJobHandler(BATCH_NOTIFICATION_DIGEST_JOB, async () => {
           contextOverrides: {
             'digest.count': String(leadsForClient.length),
             'digest.summary': summary,
+            'digest.summaryHtml': summaryHtml,
           },
         } satisfies SendEmailPayload,
         { provider: 'resend', clientId },
@@ -662,6 +664,33 @@ function formatDigestSummary(leads: PendingLeadRow[]): string {
       return `• ${name} — ${service}`;
     })
     .join('\n');
+}
+
+function escapeHtmlForDigest(value: string): string {
+  return value.replace(
+    /[&<>"]/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string,
+  );
+}
+
+/** Render the lead-digest summary as a stacked card list — one row per lead
+ *  with a rust left-rail (matches the lead_notification single-lead block).
+ *  Sibling of `formatDigestSummary` (the plain-text version). */
+function formatDigestSummaryHtml(leads: PendingLeadRow[]): string {
+  return leads
+    .map((lead) => {
+      const name = escapeHtmlForDigest(lead.customer_name_snapshot || 'New enquiry');
+      const service = escapeHtmlForDigest(
+        serviceFromEvents(lead.lead_events ?? []) || lead.source || 'enquiry',
+      );
+      return (
+        `<div style="margin:0 0 8px 0;padding:10px 14px;background:#f5f1ea;border-left:3px solid #d24317;border-radius:6px;">` +
+        `<div style="font-weight:700;font-size:14px;color:#0a0a0a;">${name}</div>` +
+        `<div style="font-size:13px;color:#4a4a45;margin-top:2px;">${service}</div>` +
+        `</div>`
+      );
+    })
+    .join('');
 }
 
 function extractResendError(error: IntegrationError): { code: string; message: string } {
