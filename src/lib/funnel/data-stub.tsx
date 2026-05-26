@@ -10,6 +10,15 @@
 // (plural) — different concern, same Voltline funnel surface. The shared id
 // (`emergency-call-out`) lets `/funnels/[id]` resolve both stubs from one URL.
 //
+// FIX G — section shape mirrors the live generator. The landing step uses
+// `features` (not the deprecated `services`); the schedule step uses a
+// `form` section with a `Section.form` envelope (not the deprecated
+// `schedulePicker`, which the live generator never emits — see
+// `generate-funnel-live.ts`'s qualification-step plan). The thanks step is
+// unchanged. Adding sections here means picking from the live registry —
+// don't reintroduce deprecated section types (`services` / `schedulePicker`)
+// even via copy-paste.
+//
 // When real backend lands the Funnel + FunnelStep + FunnelVersion data move
 // to Supabase reads against `funnels` / `funnel_steps` / `funnel_versions`
 // tables; the public accessors below keep their shape so call sites don't
@@ -25,20 +34,21 @@ import type {
 import type { Section, SectionType } from '@/lib/website/types';
 
 import { ctaSection } from '@/lib/website/sections/cta';
+import { featuresSection } from '@/lib/website/sections/features';
 import { heroSection } from '@/lib/website/sections/hero';
 import { offerSection } from '@/lib/website/sections/offer';
-import { schedulePickerSection } from '@/lib/website/sections/schedulePicker';
-import { servicesSection } from '@/lib/website/sections/services';
 import { thanksConfirmationSection } from '@/lib/website/sections/thanksConfirmation';
 import { trustSection } from '@/lib/website/sections/trust';
 
 import type { CTAData } from '@/lib/website/sections/cta';
+import type { FeaturesData } from '@/lib/website/sections/features';
 import type { HeroData } from '@/lib/website/sections/hero';
 import type { OfferData } from '@/lib/website/sections/offer';
-import type { SchedulePickerData } from '@/lib/website/sections/schedulePicker';
-import type { ServicesData } from '@/lib/website/sections/services';
 import type { ThanksConfirmationData } from '@/lib/website/sections/thanksConfirmation';
 import type { TrustData } from '@/lib/website/sections/trust';
+
+import type { FormConfig, FormField } from '@/lib/website/form-config';
+import { defaultFormField, makeFieldId } from '@/lib/website/form-config';
 
 // ---- Helpers --------------------------------------------------------------
 
@@ -47,13 +57,16 @@ function mkSection<TData>(
   type: SectionType,
   data: TData,
   enabled = true,
+  form?: FormConfig,
 ): Section {
-  return {
+  const section: Section = {
     id,
     type,
     enabled,
     data: data as Record<string, unknown>,
   };
+  if (form) section.form = form;
+  return section;
 }
 
 function mkStep(args: {
@@ -122,53 +135,54 @@ const voltlineLandingTrust: TrustData = {
   sub: 'Eleven years of licensed electrical work across Perth metro.',
 };
 
-const voltlineLandingServices: ServicesData = {
-  ...servicesSection.defaultData(),
-  title: 'Common jobs · prices on the page',
-  intro:
-    "Fixed prices on the common stuff. Free written quote for everything else — no surprises after we're on site.",
-  services: [
+// Features (FIX G — was `services`, the deprecated section type). Mirrors
+// the live generator's value-stack shape: a value-prop grid with concrete
+// what-you-get items, not a priced service menu.
+const voltlineLandingFeatures: FeaturesData = {
+  ...featuresSection.defaultData(),
+  eyebrow: '// WHAT YOU GET',
+  headline: 'Four things that make a midnight callout actually work.',
+  sub: 'No call centre, no surprise bills, no cowboy gear left on your driveway.',
+  columns: 2,
+  ctaVisible: false,
+  ctaLabel: '',
+  ctaHref: '',
+  items: [
     {
-      id: 'svc-powerpoint',
-      name: 'Powerpoint install',
-      priceFrom: '$85',
-      durationLabel: '~45 min',
-      description: 'Single or double · indoor or weatherproof outdoor.',
+      id: 'feat-phone',
+      icon: 'phone',
+      imageUrl: '',
+      title: '24/7 phone — answered by a human',
+      description: 'Mark or the on-call sparky picks up. No call centre.',
+      linkLabel: '',
+      linkHref: '',
     },
     {
-      id: 'svc-smoke',
-      name: 'Smoke alarm hardwire',
-      priceFrom: '$145',
-      durationLabel: '~30 min',
-      description: 'Compliance-grade hardwired 240V alarm with backup.',
+      id: 'feat-eta',
+      icon: 'clock',
+      imageUrl: '',
+      title: 'On site within 90 minutes',
+      description: 'Anywhere in Perth metro. Vans loaded with the parts most callouts need.',
+      linkLabel: '',
+      linkHref: '',
     },
     {
-      id: 'svc-fan',
-      name: 'Ceiling fan install',
-      priceFrom: '$220',
-      durationLabel: '~60 min',
-      description: 'Bracket + isolator switch + tidy finish.',
+      id: 'feat-quote',
+      icon: 'circle-check',
+      imageUrl: '',
+      title: 'Fixed quote before work starts',
+      description: 'We diagnose first, write the price down, and only start when you sign off.',
+      linkLabel: '',
+      linkHref: '',
     },
     {
-      id: 'svc-switchboard',
-      name: 'Switchboard inspection',
-      priceFrom: '$220',
-      durationLabel: '~90 min',
-      description: 'Full visual inspection with written report.',
-    },
-    {
-      id: 'svc-rcd',
-      name: 'RCD replacement',
-      priceFrom: '$185',
-      durationLabel: '~45 min',
-      description: 'Same-day replacement, compliance-tested before we leave.',
-    },
-    {
-      id: 'svc-hotwater',
-      name: 'Hot water isolator',
-      priceFrom: '$165',
-      durationLabel: '~60 min',
-      description: 'Isolator + safety switch with new wiring run.',
+      id: 'feat-licensed',
+      icon: 'shield-check',
+      imageUrl: '',
+      title: 'Licensed and insured',
+      description: 'EC47829 · $20M public liability · safety paperwork lodged on the day.',
+      linkLabel: '',
+      linkHref: '',
     },
   ],
 };
@@ -182,13 +196,61 @@ const voltlineLandingCTA: CTAData = {
   primaryHref: '#schedule',
 };
 
-const voltlineSchedulePicker: SchedulePickerData = {
-  ...schedulePickerSection.defaultData(),
-  title: 'Pick a time that works for you',
-  intro:
-    "Pick a window and we'll text you back within 5 min to confirm. Most days you'll see a sparky on site the same day.",
-  durationLabel: '60–90 min on site',
-  earliestSlotLabel: 'Next slot: today, 2:30 PM',
+// Qualification form (FIX G — was `schedulePicker`, the deprecated section
+// type). Mirrors the live generator's `buildQualificationFormConfig` shape:
+// phone + service address + preferred date + time-of-day + budget. Attached
+// to a `form` section via the `Section.form` envelope (see `mkSection`).
+function voltlineQualificationForm(): FormConfig {
+  const phone: FormField = defaultFormField('phone');
+  phone.required = true;
+
+  const address: FormField = {
+    id: makeFieldId(),
+    type: 'text',
+    label: 'Service address',
+    required: true,
+    placeholder: 'Where should we come?',
+    leadRole: 'address',
+  };
+
+  const preferredDate: FormField = {
+    id: makeFieldId(),
+    type: 'date',
+    label: 'Preferred date',
+    required: false,
+  };
+
+  const timeOfDay: FormField = {
+    id: makeFieldId(),
+    type: 'select',
+    label: 'Preferred time of day',
+    required: false,
+    placeholder: 'Pick a window',
+    options: ['Morning', 'Afternoon', 'Evening'],
+  };
+
+  const budget: FormField = {
+    id: makeFieldId(),
+    type: 'select',
+    label: 'Budget',
+    required: false,
+    placeholder: 'Ballpark',
+    options: ['Under $500', '$500–$2,000', '$2,000–$10,000', '$10,000+', 'Not sure yet'],
+  };
+
+  return {
+    title: 'Lock in your callout',
+    showTitle: false,
+    submitLabel: 'Confirm my booking',
+    fields: [phone, address, preferredDate, timeOfDay, budget],
+    afterSubmit: { kind: 'nextStep' },
+    colors: {},
+  };
+}
+
+const voltlineQualificationData: Record<string, unknown> = {
+  eyebrow: '// FINAL 30 SECONDS',
+  heading: 'Lock in your callout',
 };
 
 const voltlineThanks: ThanksConfirmationData = {
@@ -215,7 +277,7 @@ const voltlineLandingStep = mkStep({
     mkSection('sec-vf-landing-hero', 'hero', voltlineLandingHero),
     mkSection('sec-vf-landing-offer', 'offer', voltlineLandingOffer),
     mkSection('sec-vf-landing-trust', 'trust', voltlineLandingTrust),
-    mkSection('sec-vf-landing-services', 'services', voltlineLandingServices),
+    mkSection('sec-vf-landing-features', 'features', voltlineLandingFeatures),
     mkSection('sec-vf-landing-cta', 'cta', voltlineLandingCTA),
   ],
   createdAt: VOLTLINE_CREATED_AT,
@@ -226,9 +288,17 @@ const voltlineScheduleStep = mkStep({
   funnelId: VOLTLINE_FUNNEL_ID,
   slug: 'schedule',
   title: 'Schedule',
+  // Type stays `'schedule'` — the type union is the slot, not the picker;
+  // the live generator's qualification step also uses `'schedule'` type.
   type: 'schedule',
   sections: [
-    mkSection('sec-vf-schedule-picker', 'schedulePicker', voltlineSchedulePicker),
+    mkSection(
+      'sec-vf-schedule-qualify',
+      'form',
+      voltlineQualificationData,
+      true,
+      voltlineQualificationForm(),
+    ),
   ],
   createdAt: VOLTLINE_CREATED_AT,
 });

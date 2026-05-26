@@ -653,12 +653,19 @@ export const formMeta: SectionMeta = {
 
 // -- Funnel-only stackable sections ----------------------------------------
 
+// FIX H — Deprecated. The live generator's qualification step uses a `form`
+// section with a `Section.form` envelope instead (see
+// `generate-funnel-live.ts` `buildQualificationFormConfig`). `implemented:
+// false` hides it from `AddSectionDialog`; the section file + DB enum value
+// stay (legacy `funnel_versions.snapshot` rows could still reference it).
+// Plan: remove `schedulePicker.tsx` + its `sections/index.ts` registration
+// once no `funnel_versions` row in production references this type.
 export const schedulePickerMeta: SectionMeta = {
   type: 'schedulePicker',
   label: '// SCHEDULE PICKER',
-  description: 'Calendar-integrated booking picker (mockup — booking system lands later).',
+  description: 'Deprecated — qualification step uses a Form section with the qualification field set.',
   allowedContainers: ['funnelStep'],
-  implemented: true,
+  implemented: false,
   capabilityHints: {
     copyFields: ['eyebrow', 'title', 'intro', 'durationLabel', 'earliestSlotLabel'],
   },

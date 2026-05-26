@@ -17,8 +17,20 @@
 // APPENDS a second `form_submitted` event to that lead rather than creating a
 // new one (closes analytics-audit §2 / the duplicate-lead bug). Cross-tenant
 // guard — the referenced lead must belong to the same `clientId` posted in
-// the body, otherwise the request is rejected. Mirrors the editor-side
-// `submitLead(existingLeadId)` branch in `lib/leads/queries.tsx`.
+// the body. Per-funnel guard — when a funnelId is also supplied AND the lead
+// already carries a `source_funnel_id`, the two must match; a NULL funnel id
+// on the lead is healed forward (set on this submission). Mirrors the
+// editor-side `submitLead(existingLeadId)` branch in `lib/leads/queries.tsx`.
+//
+// Lead-identity propagation on cross-step append (FIX A): step 2 of a funnel
+// captures phone + service address. Without explicit propagation those values
+// would only land in `lead_events.payload` — operators inspecting the lead
+// from the inbox would see no phone. The route reads phone + address from
+// the fields' `leadRole` tags and `COALESCE`-updates `customers.phone` /
+// `customers.address` and `leads.customer_phone_snapshot`. First-non-null
+// wins (an operator-edited customer.phone is never clobbered by a stale form
+// submit). New customer-attribute roles get added to FormFieldLeadRole and
+// extracted here — never detected by regex / field-name heuristic.
 //
 // V1 limitations: image-field uploads are not handled here (the private
 // lead-attachments bucket needs an authenticated upload) — an image field's
@@ -55,7 +67,7 @@ type CleanField = {
   label: string;
   type: string;
   value: string;
-  leadRole?: 'name' | 'email' | 'phone';
+  leadRole?: 'name' | 'email' | 'phone' | 'address';
   imagePath?: string;
 };
 
@@ -69,7 +81,10 @@ function cleanField(raw: IncomingField): CleanField | null {
   if (typeof raw.label !== 'string' || typeof raw.type !== 'string') return null;
   const value = typeof raw.value === 'string' ? raw.value.slice(0, 5000) : '';
   const role =
-    raw.leadRole === 'name' || raw.leadRole === 'email' || raw.leadRole === 'phone'
+    raw.leadRole === 'name' ||
+    raw.leadRole === 'email' ||
+    raw.leadRole === 'phone' ||
+    raw.leadRole === 'address'
       ? raw.leadRole
       : undefined;
   return {
@@ -176,19 +191,76 @@ export async function POST(req: Request) {
 
   // Cross-step path: append to an existing lead. Cross-tenant guard — the
   // lead must belong to the same client (a malicious caller can't update an
-  // unrelated tenant's lead by injecting a guessed UUID). Lead-not-found and
-  // wrong-client both surface as a generic 400 so neither leaks lead existence.
-  // Per-funnel scoping is the strongest check the current schema supports —
-  // `leads` carries no `funnel_id` column today; when it does, tighten here.
+  // unrelated tenant's lead by injecting a guessed UUID). Per-funnel guard
+  // (FIX D) — a lead created from Funnel A cannot be appended to from Funnel B;
+  // a NULL source_funnel_id on the lead is healed forward (set to the current
+  // funnelId). Lead-not-found / wrong-client / wrong-funnel all surface as a
+  // generic 400 so none of them leak lead existence.
   if (cleanExistingLeadId) {
     const { data: existing } = await svc
       .from('leads')
-      .select('id, client_id')
+      .select('id, client_id, customer_id, source_funnel_id, customer_phone_snapshot')
       .eq('id', cleanExistingLeadId)
       .maybeSingle();
     if (!existing || existing.client_id !== clientId) {
       return bad('Unknown lead reference.', 400);
     }
+    // Per-funnel guard. A `cleanFunnelId` was already cross-tenant-checked
+    // above; here we check it matches whatever this lead originally captured
+    // (heal-forward when NULL — per the C3 V1 brief decision).
+    const existingFunnelId =
+      (existing as { source_funnel_id?: string | null }).source_funnel_id ?? null;
+    if (cleanFunnelId && existingFunnelId && existingFunnelId !== cleanFunnelId) {
+      return bad('Unknown lead reference.', 400);
+    }
+    if (cleanFunnelId && !existingFunnelId) {
+      // Heal-forward — one-time write so the funnel attribution survives the
+      // cross-step linking. Only updates when currently NULL; never overwrites
+      // a prior funnel id (the `cleanFunnelId !== existingFunnelId` branch above
+      // already rejected the conflict case).
+      await svc
+        .from('leads')
+        .update({ source_funnel_id: cleanFunnelId } as unknown as never)
+        .eq('id', existing.id);
+    }
+
+    // FIX A — propagate phone + service-address from the qualification form's
+    // tagged fields onto the customer + lead snapshot, COALESCE-style. First
+    // non-null wins so an operator-edited customer value isn't clobbered by a
+    // stale follow-up submission.
+    const fieldRole = (role: 'phone' | 'address') =>
+      cleanFields.find((f) => f.leadRole === role)?.value.trim() || '';
+    const phoneFromForm = fieldRole('phone');
+    const addressFromForm = fieldRole('address');
+    const existingCustomerId =
+      (existing as { customer_id?: string | null }).customer_id ?? null;
+    if (existingCustomerId && (phoneFromForm || addressFromForm)) {
+      const { data: customerRow } = await svc
+        .from('customers')
+        .select('phone, address')
+        .eq('id', existingCustomerId)
+        .maybeSingle();
+      const customerPatch: { phone?: string; address?: string } = {};
+      if (phoneFromForm && !(customerRow?.phone ?? null)) {
+        customerPatch.phone = phoneFromForm;
+      }
+      if (addressFromForm && !(customerRow?.address ?? null)) {
+        customerPatch.address = addressFromForm;
+      }
+      if (Object.keys(customerPatch).length > 0) {
+        await svc.from('customers').update(customerPatch).eq('id', existingCustomerId);
+      }
+    }
+    if (
+      phoneFromForm &&
+      !((existing as { customer_phone_snapshot?: string | null }).customer_phone_snapshot ?? null)
+    ) {
+      await svc
+        .from('leads')
+        .update({ customer_phone_snapshot: phoneFromForm } as unknown as never)
+        .eq('id', existing.id);
+    }
+
     const { error: eventError } = await svc.from('lead_events').insert({
       lead_id: existing.id,
       kind: 'form_submitted',

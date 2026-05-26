@@ -34,8 +34,13 @@ export type FormFieldType =
   | 'date';
 
 /** Maps a field's submitted value onto a lead identity column. One field per
- *  role; a field with no role only lands in the lead_event payload. */
-export type FormFieldLeadRole = 'name' | 'email' | 'phone';
+ *  role; a field with no role only lands in the lead_event payload.
+ *
+ *  `address` is recognised by the route's existing-lead branch (FIX A — funnel
+ *  step 2 captures a service address; without a role tag the value would land
+ *  in `lead_events.payload` only and never reach `customers.address`). New
+ *  identity roles go here, not in heuristic detection at the call site. */
+export type FormFieldLeadRole = 'name' | 'email' | 'phone' | 'address';
 
 export type FormField = {
   /** Stable id — also the element-inspector `selectedElement` id. */
@@ -85,6 +90,12 @@ export type FormTestSubmitContext = {
   /** Categorical surface attribution — written to `leads.source_kind` and
    *  surfaced on the inbox row's Source column. */
   surfaceKind: 'website' | 'funnel';
+  /** Funnel-only — the funnel UUID the test-submit is being run against. Written
+   *  to `leads.source_funnel_id` so test leads attribute to the funnel under
+   *  edit (FIX E). The previous omission meant test leads carried
+   *  `source_kind='funnel'` but `source_funnel_id=NULL`, polluting the funnel
+   *  conversion-attribution count. Omitted on the website editor. */
+  funnelId?: string | null;
   /** Human label of the form's origin, e.g. "Form · Hero". */
   sourceLabel: string;
 };

@@ -78,6 +78,14 @@ export type ResolvedTarget =
       brand: BrandObject;
       faviconUrl: string | null;
       step: FunnelStep;
+      /** Zero-based index of `step` within `stepOrder`. Drives the step
+       *  indicator on every non-first step (FIX F). The landing step is
+       *  index 0; renderer hides the indicator there. */
+      stepIndex: number;
+      /** Total number of steps in the funnel. Combined with `stepIndex` it
+       *  drives "Step N of M". A single-step funnel (`stepCount === 1`) does
+       *  not render the indicator. */
+      stepCount: number;
       /** Path to the next funnel step (for `afterSubmit: nextStep`), or null
        *  on the last step. */
       nextStepHref: string | null;
@@ -465,6 +473,12 @@ export const resolveSite = cache(
           brand,
           faviconUrl: brand.faviconUrl,
           step,
+          // `idx` was computed above for `nextStepHref`; reuse it as the
+          // 0-based step index. A negative value (step not in order — should
+          // not happen) collapses to 0 so the renderer hides the indicator
+          // rather than rendering "Step 0 of N".
+          stepIndex: idx >= 0 ? idx : 0,
+          stepCount: order.length,
           nextStepHref,
           tracking: {
             trackingKey: funnel.tracking_key,

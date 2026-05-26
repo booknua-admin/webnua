@@ -230,6 +230,7 @@ export function FormBlock({
       await createLead.mutateAsync({
         clientId: testSubmitCtx.clientId,
         surfaceKind: testSubmitCtx.surfaceKind,
+        funnelId: testSubmitCtx.funnelId ?? null,
         source: testSubmitCtx.sourceLabel,
         fields: assembled,
       });

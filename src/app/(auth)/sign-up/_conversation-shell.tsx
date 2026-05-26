@@ -68,6 +68,7 @@ import {
 } from '@/lib/onboarding/conversation-types';
 import { deriveBriefFromConversation } from '@/lib/onboarding/derive-brief';
 import { resolveIndustryKnowledge } from '@/lib/onboarding/industry-knowledge';
+import { pollUntilAssetsVisible } from '@/lib/onboarding/visibility-probe';
 import {
   runConversationGeneration,
   type GenerationProgressEvent,
@@ -1616,6 +1617,34 @@ export function ConversationShell() {
       generationStartedRef.current = false;
       return;
     }
+
+    // Visibility probe — runConversationGeneration returns `ok` the moment
+    // wizard-assets POSTs (service-role write succeeds). That confirms the
+    // rows EXIST but not that the customer's RLS-bound /website query can
+    // see them yet. Without this probe, customers who click "View in
+    // editor" the instant 'ready' lights up land on /website's operator-
+    // empty-state for 10-30s while React Query catches up.
+    //
+    // Hold at 'persisting' (the existing "writing to DB" stage) while the
+    // customer-side fetch confirms visibility. The blueprint UI stays put
+    // until both site + funnel are visible OR the probe times out.
+    setGenPhase('persisting');
+    const probe = await pollUntilAssetsVisible(clientSlug, {
+      expectFunnel: true,
+    });
+    if (!probe.ok) {
+      // The DB write succeeded but the customer's read is still racing.
+      // Surface a soft warning so the customer knows a refresh may be
+      // needed, but DON'T block them on /dashboard — the row is real,
+      // and a stale read will resolve on the next refetch.
+      console.warn('[sign-up] visibility probe non-ok', probe);
+      setGenSoftError(
+        'Your site is built — if the editor screen looks empty for a moment, refresh once and it will appear.',
+      );
+    } else {
+      console.info(`[sign-up] visibility probe ok in ${probe.tookMs}ms`);
+    }
+
     setGenPhase('ready');
     if (result.softError) setGenSoftError(result.softError);
 

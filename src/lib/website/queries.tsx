@@ -178,7 +178,10 @@ async function resolveClientId(slug: string): Promise<string> {
 
 // ---- Website reads --------------------------------------------------------
 
-async function fetchWebsiteForClient(slug: string): Promise<Website | null> {
+/** Exported for the conversational signup's visibility probe — same query
+ *  the `/website` hub mounts, used to confirm the customer's RLS-bound
+ *  read sees the post-generation row before the editor CTA enables. */
+export async function fetchWebsiteForClient(slug: string): Promise<Website | null> {
   const clientId = await resolveClientId(slug);
   const { data, error } = await supabase
     .from('websites')

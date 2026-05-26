@@ -17,7 +17,7 @@
 // =============================================================================
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { CapabilityGate } from '@/components/shared/CapabilityGate';
@@ -91,7 +91,14 @@ export default function WebsiteHubPage() {
 
   const website = websiteQuery.data ?? null;
   if (!website) {
-    return <NoWebsiteState reason="no-website-yet" clientId={activeClientId} />;
+    return (
+      <NoWebsiteState
+        reason="no-website-yet"
+        clientId={activeClientId}
+        viewerRole={user.role}
+        refetch={() => void websiteQuery.refetch()}
+      />
+    );
   }
 
   return <WebsiteHub website={website} />;
@@ -409,13 +416,33 @@ function DrillTile({
 function NoWebsiteState({
   reason,
   clientId,
+  viewerRole,
+  refetch,
 }: {
   reason: 'no-website-yet' | 'missing-client-membership';
   clientId?: string;
+  /** Role of the SIGNED-IN viewer. Drives copy + which CTAs appear. The
+   *  operator empty state offers a scaffold action; the client empty state
+   *  reads as "your site is being built" + auto-polls until it appears. */
+  viewerRole?: 'admin' | 'client';
+  /** When set, the client empty state polls the website query so a
+   *  refresh-mid-generation customer self-heals into the real hub without
+   *  manually reloading. */
+  refetch?: () => void;
 }) {
   const workspace = useWorkspace();
   const adminClients = useAdminClients();
   const clientName = clientId ? adminClients.find((c) => c.id === clientId)?.name : undefined;
+
+  // Client-role + no-website-yet → render the "we're building your site"
+  // empty state. The customer just signed up; the wizard-assets POST has
+  // returned but their RLS-bound read may still be catching up. Auto-poll
+  // so they self-heal — no operator-targeting scaffold copy, no "spin one
+  // up below" CTA (the customer should never see operator concierge
+  // actions; the site IS being built for them).
+  if (reason === 'no-website-yet' && viewerRole === 'client') {
+    return <ClientGenerationInProgressState refetch={refetch} />;
+  }
 
   return (
     <>
@@ -444,7 +471,12 @@ function NoWebsiteState({
             )}
           </p>
         </div>
-        {reason === 'no-website-yet' ? (
+        {reason === 'no-website-yet' && viewerRole === 'admin' ? (
+          // Admin-only — Scaffold is an operator concierge action. The
+          // cap gate stays as defence in depth (operators hold editPages
+          // via ADMIN_DEFAULTS); the role gate is the primary guard so a
+          // client with editPages (CLIENT_OWNER_DEFAULTS holds it) never
+          // sees it.
           <div className="flex flex-wrap items-start gap-2">
             <CapabilityGate capability="editPages" mode="hide">
               <ScaffoldWebsiteButton
@@ -457,6 +489,84 @@ function NoWebsiteState({
             </Button>
           </div>
         ) : null}
+      </div>
+    </>
+  );
+}
+
+/** Client-side post-generation loading state. The customer just signed up;
+ *  the wizard-assets POST has returned but their RLS-bound read for the
+ *  websites row is still catching up (or they refreshed mid-generation).
+ *
+ *  Polls the website query every 1.5s for up to 30s; once the row lands
+ *  the parent re-renders into the real hub. After 30s with no row visible
+ *  we surface a "still finishing — refresh in a moment" affordance so
+ *  the customer has a clear out instead of staring at a spinner. */
+function ClientGenerationInProgressState({
+  refetch,
+}: {
+  refetch?: () => void;
+}) {
+  const [elapsedMs, setElapsedMs] = useState(0);
+  useEffect(() => {
+    if (!refetch) return;
+    const startedAt = Date.now();
+    const interval = setInterval(() => {
+      setElapsedMs(Date.now() - startedAt);
+      refetch();
+    }, 1500);
+    return () => clearInterval(interval);
+  }, [refetch]);
+
+  // After 30s the polling stays alive (a slow read is still recoverable),
+  // but we surface a friendlier "this is taking longer than usual"
+  // affordance + a manual refresh button so the customer isn't stuck on
+  // the spinner with no agency.
+  const stalled = elapsedMs > 30_000;
+
+  return (
+    <>
+      <Topbar breadcrumb={<TopbarBreadcrumb current="Website" />} />
+      <div className="flex min-h-[60vh] items-center justify-center px-4 py-10">
+        <div className="w-full max-w-[460px] rounded-2xl border border-rule bg-card px-7 py-8 text-center shadow-card">
+          <p className="mb-3 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-rust">
+            {stalled ? '// STILL FINISHING' : '// BUILDING YOUR SITE'}
+          </p>
+          <h1 className="text-[24px] font-extrabold leading-[1.15] tracking-[-0.01em] text-ink">
+            {stalled ? (
+              <>This is taking longer than usual.</>
+            ) : (
+              <>Your site is being built.</>
+            )}
+          </h1>
+          <p className="mt-3 text-[14px] leading-[1.55] text-ink-mid">
+            {stalled ? (
+              <>
+                Your site is ready in the background — give it a refresh and it
+                will appear. If it still doesn&rsquo;t load, contact your
+                operator.
+              </>
+            ) : (
+              <>
+                Give us a moment — we&rsquo;re finishing the last few sections.
+                This page will refresh on its own when it&rsquo;s ready.
+              </>
+            )}
+          </p>
+          {stalled ? (
+            <div className="mt-5">
+              <Button onClick={() => window.location.reload()}>Refresh now</Button>
+            </div>
+          ) : (
+            <div
+              className="mt-6 flex items-center justify-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-ink-quiet"
+              aria-live="polite"
+            >
+              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-rust" />
+              Polling…
+            </div>
+          )}
+        </div>
       </div>
     </>
   );
