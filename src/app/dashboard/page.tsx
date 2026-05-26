@@ -3,8 +3,10 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
+import { BillingSuspendedScreen } from '@/components/shared/BillingSuspendedScreen';
 import { CancellationBanner } from '@/components/shared/CancellationBanner';
 import { IntegrationOnboarding } from '@/components/shared/onboarding/IntegrationOnboarding';
+import type { BillingGateResponse } from '@/app/api/clients/[id]/billing-gate/route';
 import {
   dashboardIsInPreOnboarding,
   isCancelled,
@@ -95,6 +97,52 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shouldOnboard, user?.clientId, router]);
 
+  // Billing-gate check — fires `/api/clients/[id]/billing-gate` for any
+  // active client past pre-onboarding. When `gated === true` we render
+  // <BillingSuspendedScreen /> in place of the regular dashboard. The
+  // gate IS the consumption layer for `shouldGateClientAccess()` in
+  // `lib/integrations/stripe/billing-status.ts` — without this the
+  // helper exists but does nothing.
+  //
+  // We skip the fetch for cancelled/deleted lifecycle states (already
+  // handled by the lifecycle dispatch above) and for pre-onboarding
+  // (no Stripe customer row yet → gate would return false anyway).
+  const shouldCheckBillingGate =
+    activeClient !== null &&
+    !dashboardIsInPreOnboarding(activeClient.lifecycleStatus) &&
+    !isCancelled(activeClient.lifecycleStatus) &&
+    !isSoftDeleted(activeClient.lifecycleStatus);
+  const [billingGate, setBillingGate] = useState<BillingGateResponse | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!shouldCheckBillingGate || !activeClient) return;
+    let cancelled = false;
+    async function check() {
+      const uuid = getClientUuidBySlug(activeClient!.id);
+      if (!uuid) return; // wait for clients-store hydration
+      const res = await fetch(`/api/clients/${uuid}/billing-gate`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (cancelled) return;
+      if (!res.ok) {
+        // 401/403/5xx — fail-open. A billing-gate API failure must not
+        // lock the customer out of their dashboard; the gate is a
+        // belt-and-braces enforcement of Stripe's source-of-truth.
+        setBillingGate({ gated: false });
+        return;
+      }
+      const body = (await res.json()) as BillingGateResponse;
+      setBillingGate(body);
+    }
+    void check();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldCheckBillingGate, activeClient?.id]);
+
   // Cancellation Stage 2 ('deleted') — the customer should not have reached
   // here (dashboardIsAccessible returns false), but if they did via a stale
   // session, redirect them off and let the auth layer handle the lock-out.
@@ -152,6 +200,28 @@ export default function DashboardPage() {
   // screen. The redirect lands within ~1 round-trip.
   if (activeClient && dashboardIsInPreOnboarding(activeClient.lifecycleStatus)) {
     return null;
+  }
+
+  // Billing gate — Stripe past_due past the 7-day grace OR cancelled-state
+  // we didn't catch via lifecycle (race). We block rendering the dashboard
+  // entirely behind the suspended screen. Operators-in-sub-account see it
+  // too — useful concierge signal that the customer's account is paused.
+  if (
+    shouldCheckBillingGate &&
+    billingGate?.gated &&
+    billingGate.reason &&
+    activeClient
+  ) {
+    const uuid = getClientUuidBySlug(activeClient.id);
+    if (uuid) {
+      return (
+        <BillingSuspendedScreen
+          clientId={uuid}
+          clientName={activeClient.name}
+          reason={billingGate.reason}
+        />
+      );
+    }
   }
 
   if (role === 'admin') {

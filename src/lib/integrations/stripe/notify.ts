@@ -24,8 +24,12 @@ export type OperatorEmailInput = {
   clientId: string;
   recipientEmail: string;
   subject: string;
-  /** HTML body. */
+  /** HTML body — the branded surface a modern mail client renders. */
   html: string;
+  /** Plain-text alt — what a text-only client renders. Strongly recommended;
+   *  Resend will derive one from the HTML if omitted, but a hand-authored
+   *  text alt reads better and avoids HTML tags leaking through. */
+  text?: string;
   /** notifications_outbound.template_name. */
   templateName: string;
 };
@@ -47,13 +51,20 @@ export async function sendOperatorEmail(input: OperatorEmailInput): Promise<Oper
   }
 
   const from = `Webnua Billing <billing@${env.EMAIL_SENDING_DOMAIN}>`;
+  const body: Record<string, unknown> = {
+    from,
+    to: input.recipientEmail,
+    subject: input.subject,
+    html: input.html,
+  };
+  if (input.text) body.text = input.text;
   const result = await callExternal<{ id?: string }>({
     provider: 'resend',
     operation: 'send_email',
     url: 'https://api.resend.com/emails',
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}` },
-    body: { from, to: input.recipientEmail, subject: input.subject, html: input.html },
+    body,
     clientId: input.clientId,
   });
 
