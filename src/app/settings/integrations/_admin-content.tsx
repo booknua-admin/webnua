@@ -10,9 +10,6 @@
 // the business integrations each client connects.
 
 import { SubAccountIntegrationsContent } from './_sub-account-content';
-import { IntegrationMatrix } from '@/components/admin/integrations/IntegrationMatrix';
-import { IntegrationMatrixActionCard } from '@/components/admin/integrations/IntegrationMatrixActionCard';
-import { IntegrationMatrixHero } from '@/components/admin/integrations/IntegrationMatrixHero';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
@@ -21,14 +18,6 @@ import { Switch } from '@/components/ui/switch';
 import { setAgencyPolicy } from '@/lib/agency/agency-policy-stub';
 import { INTEGRATION_PROVIDERS } from '@/lib/agency/integration-providers';
 import { useAgencyPolicy } from '@/lib/agency/use-policy';
-import {
-  adminMatrixAttention,
-  adminMatrixColumns,
-  adminMatrixFilters,
-  adminMatrixGaps,
-  adminMatrixHero,
-  adminMatrixRows,
-} from '@/lib/integrations/admin-matrix';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 export function AdminIntegrationsContent() {
@@ -54,59 +43,19 @@ function AgencyIntegrationsView() {
         eyebrow="Agency · Webnua"
         title={
           <>
-            Client <em>integrations</em>.
+            Connection <em>policy</em>.
           </>
         }
-        subtitle="Every client's connection status in one view — see what's connected, what's broken, and nudge clients to finish setup."
+        subtitle="Set the default per-provider rule across every client — they can be agency-supplied (one shared connection) or per sub-account (each client connects their own keys). Override per client by drilling into a sub-account."
       >
         <div className="flex flex-col gap-7">
-          <IntegrationMatrixHero
-            tag={adminMatrixHero.tag}
-            title={adminMatrixHero.title}
-            subtitle={adminMatrixHero.subtitle}
-            stats={adminMatrixHero.stats}
-          />
-
-          <IntegrationMatrix
-            title={
-              <>
-                Integration <em>matrix</em> · {adminMatrixRows.length} clients ×{' '}
-                {adminMatrixColumns.length} integrations
-              </>
-            }
-            filters={adminMatrixFilters}
-            activeFilter="all"
-            columns={adminMatrixColumns}
-            rows={adminMatrixRows}
-          />
-
-          <div className="grid grid-cols-2 gap-3.5">
-            <IntegrationMatrixActionCard
-              tone="attention"
-              heading="Needs your attention"
-              badge={{ label: String(adminMatrixAttention.length), tone: 'warn' }}
-              description={
-                <>
-                  Token expired or connection broken.{' '}
-                  <strong>Trigger a reauth request to the client</strong> — they&apos;ll get a
-                  notification.
-                </>
-              }
-              items={adminMatrixAttention}
-            />
-            <IntegrationMatrixActionCard
-              heading="Critical gaps"
-              badge={{ label: String(adminMatrixGaps.length), tone: 'info' }}
-              description={
-                <>
-                  Missing integrations that block a service from working.{' '}
-                  <strong>Send a setup nudge</strong> with a one-click connect link.
-                </>
-              }
-              items={adminMatrixGaps}
-            />
-          </div>
-
+          {/* PARKED: the cross-client integrations matrix + nudge cards lived
+           *  here but were rendering hardcoded Voltline / FreshHome / KeyHero
+           *  / Flowline data on a 0-client install. Hidden until the live
+           *  cross-client query lands (clients × integration_providers ×
+           *  integration_connections). The action-card "Send reauth nudge"
+           *  + "Connect this provider" affordances ride that same backend
+           *  pull. See CLAUDE.md PARKED entry for the full design. */}
           <ConnectionPolicySection />
         </div>
       </SettingsShell>

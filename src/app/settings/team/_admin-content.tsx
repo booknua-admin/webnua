@@ -39,6 +39,23 @@ const EMPTY_INVITES: TeamInvite[] = [];
 type RosterSnapshot = ReturnType<typeof getAllRoster>;
 const EMPTY_ROSTER: RosterSnapshot = [];
 
+/** Label + sub-label per operator tier. Pulled from `users.team_role`
+ *  surfaced on `RosterUser.teamRole`. Null falls back to plain "Operator". */
+function describeOperatorTier(
+  teamRole: 'owner' | 'operator' | 'junior' | null,
+): { label: string; sub: string } {
+  switch (teamRole) {
+    case 'owner':
+      return { label: 'Owner', sub: 'Software owner' };
+    case 'junior':
+      return { label: 'Junior operator', sub: 'Limited access' };
+    case 'operator':
+    case null:
+    default:
+      return { label: 'Operator', sub: 'Workspace access' };
+  }
+}
+
 export function AdminSettingsTeamContent() {
   const { activeClient } = useWorkspace();
   if (activeClient) {
@@ -110,20 +127,23 @@ function AgencyTeamContent() {
               </span>
               <InviteTeamButton />
             </div>
-            {operatorMembers.map((member) => (
-              <TeamRow
-                key={member.id}
-                initial={inviteInitials(member.displayName, member.email)}
-                name={member.displayName}
-                isYou={member.id === signedInUser?.id}
-                email={member.email}
-                role="Operator"
-                roleSub="Workspace access"
-                status="active"
-                statusLabel="Active"
-                actions={[]}
-              />
-            ))}
+            {operatorMembers.map((member) => {
+              const { label, sub } = describeOperatorTier(member.teamRole);
+              return (
+                <TeamRow
+                  key={member.id}
+                  initial={inviteInitials(member.displayName, member.email)}
+                  name={member.displayName}
+                  isYou={member.id === signedInUser?.id}
+                  email={member.email}
+                  role={label}
+                  roleSub={sub}
+                  status="active"
+                  statusLabel="Active"
+                  actions={[]}
+                />
+              );
+            })}
             {operatorMembers.length <= 1 && pendingCount === 0 ? (
               <div className="mt-4 flex flex-col items-center gap-2 rounded-lg border border-dashed border-rule bg-paper px-5 py-6 text-center">
                 <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">

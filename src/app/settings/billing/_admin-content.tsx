@@ -1,24 +1,17 @@
 'use client';
 
-// The operator's /settings/billing branch. Dispatches on workspace mode
-// (Cluster 9 · Session 3): agency mode → Webnua's own billing (a stub);
-// sub-account mode → the drilled-in client's plan assignment + resolved policy
-// bundle + invoices.
+// The operator's /settings/billing branch. Dispatches on workspace mode:
+// agency mode → placeholder until the agency plan launches (see below);
+// sub-account mode → the drilled-in client's Stripe subscription (real,
+// Phase 7 Stripe billing).
 
 import Link from 'next/link';
 
-import { BillingPlanCard } from '@/components/shared/settings/BillingPlanCard';
-import { InvoiceList } from '@/components/shared/settings/InvoiceList';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { SettingsShell } from '@/components/shared/settings/SettingsShell';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
-import {
-  adminBillingInvoices,
-  adminBillingMethod,
-  adminBillingPlan,
-} from '@/lib/settings/admin-billing';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 import { SubAccountBillingContent } from './_sub-account-content';
@@ -38,69 +31,52 @@ export function AdminBillingContent() {
   return <AgencyBillingView />;
 }
 
+// Agency-mode billing is a future surface — it's where the agency plan's own
+// catalog + payment method + invoice history would live once Webnua sells to
+// other operators. Today the only operator IS the Software Owner; there's no
+// agency-side billing relationship to render. The previous view rendered
+// hardcoded "$99 Webnua plan" + fake invoices imported from a stub module;
+// that's been replaced with this honest placeholder until the agency plan
+// launches. Sub-account billing (the drilled-in client's Stripe subscription)
+// is real + unaffected.
 function AgencyBillingView() {
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb trail={['Settings']} current="Billing" />} />
       <SettingsShell
-        eyebrow="Workspace · Webnua"
+        eyebrow="Agency · Webnua"
         title={
           <>
-            Settings + <em>integrations</em>.
+            Agency <em>billing</em>.
           </>
         }
         subtitle={
           <>
-            Your plan, payment method, and invoice history.{' '}
-            <strong>Webnua is billed monthly in AUD</strong> — base plan plus usage.
+            <strong>This surface comes online when you launch the agency
+            plan.</strong> When other operators sign up to run Webnua as an
+            agency, their plan, payment method, and invoices live here. For
+            now, drill into a sub-account to see a client&apos;s Stripe
+            subscription, or visit Plans to define what you&apos;ll offer.
           </>
         }
       >
         <SettingsPanel>
-          <SettingsSection>
-            <BillingPlanCard
-              tag={adminBillingPlan.tag}
-              name={adminBillingPlan.name}
-              meta={adminBillingPlan.meta}
-              action={
-                <Button asChild>
-                  <Link href="/settings/plans">Change plan</Link>
-                </Button>
-              }
-            />
-          </SettingsSection>
-
           <SettingsSection
             heading={
               <>
-                Payment <em>method</em>
+                Coming <em>soon</em>
               </>
             }
-            description="Charged on the 1st of each month for the previous month's usage."
+            description="Drill into a client to see their real Stripe subscription, or open Plans to define your agency-tier catalog."
           >
-            <div className="grid grid-cols-[50px_1fr_100px] items-center gap-4 rounded-lg border border-rule bg-paper px-[18px] py-3.5">
-              <div className="flex h-8 w-[50px] items-center justify-center rounded-sm bg-ink font-mono text-[10px] font-extrabold tracking-[0.04em] text-paper">
-                {adminBillingMethod.cardIcon}
-              </div>
-              <div>
-                <div className="text-[14px] font-bold text-ink">{adminBillingMethod.name}</div>
-                <div className="mt-0.5 text-[12px] text-ink-quiet">{adminBillingMethod.meta}</div>
-              </div>
-              <span className="cursor-pointer text-right font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-rust hover:text-rust-deep">
-                Update
-              </span>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button asChild>
+                <Link href="/settings/plans">Open Plans →</Link>
+              </Button>
+              <Button asChild variant="secondary">
+                <Link href="/dashboard">Back to dashboard</Link>
+              </Button>
             </div>
-          </SettingsSection>
-
-          <SettingsSection
-            heading={
-              <>
-                Invoice <em>history</em>
-              </>
-            }
-            description="Last 6 invoices. All amounts AUD inclusive of GST."
-          >
-            <InvoiceList invoices={adminBillingInvoices} />
           </SettingsSection>
         </SettingsPanel>
       </SettingsShell>
