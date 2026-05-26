@@ -184,7 +184,7 @@ function WebsiteHub({ website }: { website: Website }) {
   return (
     <>
       <Topbar breadcrumb={<TopbarBreadcrumb current="Website" />} />
-      <div className="px-10 py-9">
+      <div className="px-4 py-6 md:px-10 md:py-9">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div />
           <WorkspaceContextBanner />

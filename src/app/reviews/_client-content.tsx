@@ -1,6 +1,5 @@
 'use client';
 
-import { NegativeReviewAlertButton } from '@/components/client/reviews/NegativeReviewAlertButton';
 import { GbpConnectPanel } from '@/components/shared/gbp/GbpConnectPanel';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { ReviewCallout } from '@/components/shared/reviews/ReviewCallout';
@@ -13,7 +12,6 @@ import { useClientId } from '@/lib/clients/queries';
 import { normalizeError } from '@/lib/errors';
 import { useClientGbpLocation } from '@/lib/integrations/gbp/use-gbp';
 import { useClientReviews } from '@/lib/reviews/queries';
-import { voltlineNegativeReview } from '@/lib/reviews/client-negative-modal';
 
 function ClientReviewsContent() {
   const { data: page, isLoading, error } = useClientReviews();
@@ -36,17 +34,12 @@ function ClientReviewsContent() {
           </ReviewsNotice>
         ) : (
           <>
-            <div className="flex items-start justify-between gap-6">
-              <PageHeader
-                eyebrow={page.hero.eyebrow}
-                title={page.hero.title}
-                subtitle={page.hero.subtitle}
-                className="mb-0"
-              />
-              {gbpConnected ? (
-                <NegativeReviewAlertButton data={voltlineNegativeReview} />
-              ) : null}
-            </div>
+            <PageHeader
+              eyebrow={page.hero.eyebrow}
+              title={page.hero.title}
+              subtitle={page.hero.subtitle}
+              className="mb-0"
+            />
 
             {!gbpConnected ? (
               // No GBP location yet — show the connect CTA and hide the

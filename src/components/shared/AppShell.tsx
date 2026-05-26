@@ -123,7 +123,9 @@ function AppShell({ sidebar, children, className }: AppShellProps) {
           {sidebar}
         </div>
 
-        <main className="flex min-w-0 flex-col">{children}</main>
+        <main id="main-content" className="flex min-w-0 flex-col">
+          {children}
+        </main>
       </div>
     </MobileNavContext.Provider>
   );

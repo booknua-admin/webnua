@@ -2,7 +2,7 @@
 
 // 'use client' trigger for the integration connect flow — owns the modal open
 // state so IntegrationCard itself stays server-renderable. Same pattern as
-// AddBookingButton / NegativeReviewAlertButton.
+// AddBookingButton.
 
 import { useState } from 'react';
 

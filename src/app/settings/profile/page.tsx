@@ -363,6 +363,24 @@ function ProfileForm({
           <p className="text-[12px] font-semibold text-good">Saved ✓</p>
         ) : null}
         <Button
+          type="button"
+          variant="secondary"
+          onClick={() => {
+            // Revert to last-saved values from the underlying queries.
+            setBusinessName(client.name);
+            setIndustry(client.industry);
+            setServiceArea(client.service_area ?? '');
+            setContactName(client.primary_contact_name ?? '');
+            setContactEmail(client.primary_contact_email ?? '');
+            setContactPhone(client.primary_contact_phone ?? '');
+            setDisplayName(user.display_name);
+            setError(null);
+          }}
+          disabled={!dirty || save.isPending}
+        >
+          Cancel
+        </Button>
+        <Button
           onClick={() => save.mutate()}
           disabled={!dirty || save.isPending}
         >

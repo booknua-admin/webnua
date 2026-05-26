@@ -108,7 +108,7 @@ export function PageGridCard({
           {page.title || PAGE_TYPE_LABEL[page.type]}
         </p>
 
-        <div className="mt-3 grid grid-cols-2 gap-3 rounded-md bg-paper px-3 py-2.5">
+        <div className="mt-3 grid grid-cols-1 gap-3 rounded-md bg-paper px-3 py-2.5 sm:grid-cols-2">
           <StatCell
             label="// VISITS 30D"
             value={hasTraffic ? formatN(totals.visits) : '—'}

@@ -62,10 +62,14 @@ export const adminTicketsHero: {
   ),
 };
 
+// Static tab definitions — every consumer (`_admin-content.tsx`,
+// `_sub-account-content.tsx`) overrides `count` with the live filtered count
+// via `.map((tab) => ({ ...tab, count: pool.filter(...).length }))`, so we
+// don't ship a hardcoded number here.
 export const adminTicketTabs: TicketTab[] = [
-  { id: 'all', label: 'All', count: 10 },
-  { id: 'open', label: 'Open', count: 7 },
-  { id: 'in-progress', label: 'In progress', count: 3 },
-  { id: 'blocked', label: 'Blocked', count: 1 },
-  { id: 'done', label: 'Done', count: 12 },
+  { id: 'all', label: 'All' },
+  { id: 'open', label: 'Open' },
+  { id: 'in-progress', label: 'In progress' },
+  { id: 'blocked', label: 'Blocked' },
+  { id: 'done', label: 'Done' },
 ];

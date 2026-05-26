@@ -85,8 +85,19 @@ function AdminAutomationsContent() {
 
             <div className="flex flex-col gap-3.5">
               {groups.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-rule bg-paper px-10 py-12 text-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
-                  {'// No automations configured'}
+                <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-rule bg-paper px-10 py-12 text-center">
+                  <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+                    {'// No automations configured'}
+                  </p>
+                  <h3 className="text-lg font-semibold text-ink">
+                    No automations running.
+                  </h3>
+                  <p className="max-w-md text-sm text-ink-quiet">
+                    Each client gets a default automation library seeded
+                    when they sign up — lead-acknowledgment SMS, review
+                    request, no-show recovery. Once a client is onboarded,
+                    their automations show here grouped by trigger.
+                  </p>
                 </div>
               ) : (
                 groups.map((group) => (

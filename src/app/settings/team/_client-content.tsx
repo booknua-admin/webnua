@@ -129,6 +129,18 @@ export function ClientSettingsTeamContent() {
                 ]}
               />
             ))}
+            {members.length <= 1 && pendingInvites.length === 0 ? (
+              <div className="mt-4 flex flex-col items-center gap-2 rounded-lg border border-dashed border-rule bg-paper px-5 py-6 text-center">
+                <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+                  {'// Invite a teammate'}
+                </p>
+                <p className="max-w-sm text-sm text-ink-quiet">
+                  Bring on a teammate to see your website, leads, bookings,
+                  and reviews. They&apos;ll get a magic-link email and set
+                  their own password.
+                </p>
+              </div>
+            ) : null}
           </SettingsSection>
 
           <SettingsSection
@@ -143,7 +155,10 @@ export function ClientSettingsTeamContent() {
               {[
                 ['Can', 'See your website, funnels, leads, bookings, and reviews'],
                 ['Cannot', 'Edit pages, publish changes, or manage billing'],
-                ['Need editing access?', `Ask Craig at Webnua to grant it per teammate`],
+                [
+                  'Need editing access?',
+                  `Ask ${process.env.NEXT_PUBLIC_SUPPORT_NAME ?? 'your operator'} at Webnua to grant it per teammate`,
+                ],
               ].map(([label, body]) => (
                 <div
                   key={label}

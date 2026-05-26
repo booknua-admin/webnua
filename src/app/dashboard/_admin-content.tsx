@@ -96,7 +96,23 @@ export function AdminDashboardContent() {
                 <Eyebrow tone="quiet">{'// Click a client to drill in'}</Eyebrow>
               </div>
               {data.clientPerformance.length === 0 ? (
-                <DashboardNotice>{'// No clients yet'}</DashboardNotice>
+                <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-rule bg-paper px-10 py-12 text-center">
+                  <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+                    {'// No clients yet'}
+                  </p>
+                  <h3 className="text-lg font-semibold text-ink">
+                    Set up your first client to see them here.
+                  </h3>
+                  <p className="max-w-md text-sm text-ink-quiet">
+                    Use{' '}
+                    <strong className="font-semibold text-ink">
+                      + Add new client
+                    </strong>{' '}
+                    in the sidebar to spin up a workspace — generate a site
+                    + funnel, wire up integrations, and start tracking
+                    leads.
+                  </p>
+                </div>
               ) : (
                 <div className="-mx-1 flex gap-3.5 overflow-x-auto px-1 pb-2">
                   {data.clientPerformance.map((card) => (
