@@ -3,12 +3,15 @@
 //
 // TWO parallel Claude calls (Opus 4.7), one per non-deterministic step:
 //
-//   Step 1 — Lead capture (7 sections in Suby/Sultanic shape):
-//     hero  →  offer  →  reviews(#1)  →  features  →  trust  →  reviews(#2)  →  form
+//   Step 1 — Lead capture (8 sections in Suby/Sultanic shape):
+//     hero  →  offer  →  reviews(#1)  →  features  →  trust  →  faq  →  reviews(#2)  →  form
 //     The `form` section is restricted to NAME + EMAIL only (minimum friction
 //     to get the lead). The hero ALSO gets the same name+email form attached
 //     via `Section.form` envelope — so the visitor can convert above the fold
-//     OR at the bottom. Both forms create / update the same lead.
+//     OR at the bottom. Both forms create / update the same lead. The FAQ
+//     section between trust and the second reviews block handles the
+//     remaining objections — 4–6 industry-specific Q&As; the prompt reads
+//     `objectionHandlers` from the industry template (FIX C).
 //
 //   Step 2 — Qualification (4 sections — reinforcement + qualify):
 //     hero  →  reviews  →  features  →  form
@@ -107,10 +110,16 @@ const LEAD_CAPTURE_SECTION_PLAN: readonly { type: SectionType; role: string; bri
       'Lead with the risk-reversal copy from the offer. Items = the specific signals that back the guarantee (years in business, licence, insurance, response time, on-time rate, review count). 3–4 items. Use real numbers if the brief carried them; otherwise concrete labels with credible round-number values.',
   },
   {
-    type: 'reviews',
-    role: 'Second social proof — handle the final objection.',
+    type: 'faq',
+    role: 'Objection handling — pre-empt the questions that stall the decision.',
     brief:
-      'Use a DIFFERENT testimonial here than section #3 if a second one is available. Otherwise generate one that names a specific objection-killer (price was honoured, work was tidy, follow-up was good). 1–2 reviews; headline framed as "still on the fence?" — answer the late doubt.',
+      'Each question is a real customer hesitation phrased in their own words ("What if you can\'t fix it the first time?", "Are you actually licensed?", "How fast can you really get here at night?"). Each answer is one or two sentences — concrete, specific, no hedging. 4–6 Q&As. Lean on the Industry context block\'s "Common customer objections and how to handle them in copy" list — those are the proven objections for this trade; paraphrase, never repeat verbatim. Skip generic price/quality questions unless the brief specifically frames the offer that way.',
+  },
+  {
+    type: 'reviews',
+    role: 'Second social proof — handle the final lingering doubt.',
+    brief:
+      'Use a DIFFERENT testimonial here than section #3 if a second one is available. Otherwise generate one that names a specific objection-killer (price was honoured, work was tidy, follow-up was good). 1–2 reviews; headline framed as "still on the fence?" — answer the late doubt the FAQ didn\'t cover.',
   },
   {
     type: 'form',
@@ -264,6 +273,37 @@ A high-quality step-1 lead-capture page for that brief, in the locked Suby/Sulta
       }
     },
     {
+      "type": "faq",
+      "data": {
+        "headerAlign": "center",
+        "headlineSize": "m",
+        "eyebrow": "// QUESTIONS WE GET AT 11PM",
+        "headline": "What you're probably wondering before you book.",
+        "items": [
+          {
+            "id": "faq-1",
+            "question": "What if you can't fix it on the first visit?",
+            "answer": "The callout is on us. We diagnose, write the price down, and if a parts run means a second trip, the original callout fee comes off the second invoice."
+          },
+          {
+            "id": "faq-2",
+            "question": "How fast can you really get here at 2am?",
+            "answer": "Within two hours of your call, anywhere from Fremantle to Scarborough. The vans live close to the coast; the on-call sparkie sleeps with the phone."
+          },
+          {
+            "id": "faq-3",
+            "question": "Are you actually licensed and insured?",
+            "answer": "EC10437. $20M public liability. Master Electricians member. Paperwork lodged with Western Power on the day, certificate emailed the next morning."
+          },
+          {
+            "id": "faq-4",
+            "question": "Will I get a surprise bill after?",
+            "answer": "Never. We diagnose first, write the fixed price down, you sign before any work starts. The number you sign is the number you pay — no \\"while I was there\\" extras."
+          }
+        ]
+      }
+    },
+    {
       "type": "reviews",
       "data": {
         "layout": "spotlight",
@@ -296,10 +336,11 @@ A high-quality step-1 lead-capture page for that brief, in the locked Suby/Sulta
 What this example demonstrates:
 - The hero headline is the offer headline VERBATIM. \`headlineAccent\` is a SECOND LINE in the accent colour, not a fragment of the headline.
 - The same offer copy threads through hero → offer → trust. One offer, one funnel, one ask.
-- Social proof BEFORE the value stack (reviews → features), and a second social-proof block AFTER the value stack handling the price objection — that is the Suby/Sultanic shape.
+- Social proof BEFORE the value stack (reviews → features), and a second social-proof block AFTER the FAQ handling the lingering doubt — that is the Suby/Sultanic shape.
 - Reviews are specific: named author, suburb, concrete job detail (Sunday 11pm, tripped RCD, fixed before midnight). No "Great service!".
 - Features (the value stack) are four concrete components of the offer. Each title is a tangible thing the customer gets; each description is one sentence on why it matters.
 - Trust signals carry real numbers (15 years equivalent represented via "2hr / EC10437 / 98% / 4.9"). No "industry-leading" or "world-class".
+- FAQ questions are real customer hesitations phrased in their own words ("What if you can't fix it the first time?", "How fast can you really get here at 2am?"). Each answer is one or two specific sentences, never hedged. The four FAQs reuse the Industry context's objectionHandlers ("Worried about the price ballooning" → bill-before-work answer; "Worried about cowboy work" → licensed-and-insured answer) — paraphrased, never repeated verbatim.
 - The \`form\` section has only \`eyebrow\` + \`heading\` — NO \`fields\` array. Field UI is wired in code.
 - Icons (phone, clock, circle-check, shield-check, star) all come from the curated set.
 
@@ -316,13 +357,13 @@ Return ONLY a single JSON object — no markdown fences, no commentary, no prose
 }
 
 Rules:
-- Output EXACTLY seven sections, in the order specified above (hero, offer, reviews, features, trust, reviews, form).
+- Output EXACTLY eight sections, in the order specified above (hero, offer, reviews, features, trust, faq, reviews, form).
 - The per-section catalog under "Field keys per section" splits each section's fields into COPY and LAYOUT buckets.
 - Populate every COPY field with real, specific, on-brand text. Never placeholders, never lorem ipsum.
 - Do NOT specify LAYOUT fields unless the brief specifically requires a variation (e.g. brief asks for a centered hero). The renderer applies sensible defaults — emit fewer keys when in doubt.
 - When you DO specify a layout field, the catalog enumerates the allowed values — pick exactly one of those for each variant key.
 - Do NOT output a \`theme\` field on any section. Section themes are applied automatically by the renderer from the brand palette; any \`theme\` you emit will be discarded.
-- Item arrays (offer.inclusions, offer.items, offer.signals, features.items, trust.items, trust.badges, reviews.items) MUST be arrays of objects matching the shape given in the catalog. Every item needs a short unique "id" string (e.g. "feat-1", "rev-2"). Do not emit items as bare strings.
+- Item arrays (offer.inclusions, offer.items, offer.signals, features.items, trust.items, trust.badges, reviews.items, faq.items) MUST be arrays of objects matching the shape given in the catalog. Every item needs a short unique "id" string (e.g. "feat-1", "rev-2", "faq-1"). Do not emit items as bare strings.
 - \`headlineAccent\` / \`titleAccent\` is an OPTIONAL SECOND LINE in the accent colour — never duplicate the headline into it. If no second-line emphasis adds value, leave it empty.
 - Honour the brand voice exactly. Length: headlines <= 72 chars, subheadings <= 140 chars, body copy <= 400 chars unless explicitly a paragraph.
 - The Industry context block above tells you the customer mindset and conversion levers for this trade. Weave the value-proposition and proof-point patterns into copy naturally — paraphrase, never repeat them verbatim, and never claim a certification the brief does not establish (no "Gas Safe" if we don't know the trade does gas).
@@ -544,16 +585,16 @@ type LiveBrief = {
   };
 };
 
-/** Step 1 — generate the 7-section lead-capture landing. */
+/** Step 1 — generate the 8-section lead-capture landing (Suby/Sultanic + FAQ). */
 export async function generateFunnelLandingLive(
   brief: LiveBrief,
   generationId: string = crypto.randomUUID(),
 ): Promise<FunnelStepResult> {
   return runFunnelGeneration(brief, generationId, {
     systemPrompt: LEAD_CAPTURE_SYSTEM_PROMPT,
-    expectedTypes: ['hero', 'offer', 'reviews', 'features', 'trust', 'reviews', 'form'],
+    expectedTypes: ['hero', 'offer', 'reviews', 'features', 'trust', 'faq', 'reviews', 'form'],
     introNote:
-      'Write step 1 — the lead-capture page. Seven sections. The form captures NAME + EMAIL ONLY; the hero ALSO carries the same name+email form via the section envelope.',
+      'Write step 1 — the lead-capture page. Eight sections. The form captures NAME + EMAIL ONLY; the hero ALSO carries the same name+email form via the section envelope.',
     formBuilder: (b) => buildLeadCaptureFormConfig(b.funnel),
     attachHeroFormEnvelope: true,
   });
@@ -974,6 +1015,10 @@ function buildQualificationFormConfig(): FormConfig {
     label: 'Service address',
     required: true,
     placeholder: 'Where should we come?',
+    // Tagged so the route's existing-lead branch persists this onto
+    // customers.address — without the tag the value would only land in
+    // lead_events.payload (FIX A).
+    leadRole: 'address',
   };
 
   const preferredDate: FormField = {

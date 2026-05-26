@@ -183,6 +183,8 @@ export default async function PublishedPage({
         funnelId={target.tracking.surfaceId}
         brand={target.brand}
         step={target.step}
+        stepIndex={target.stepIndex}
+        stepCount={target.stepCount}
         nextStepHref={target.nextStepHref}
         isPreview={target.isPreview}
       />

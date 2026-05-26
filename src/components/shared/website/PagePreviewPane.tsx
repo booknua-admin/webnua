@@ -45,6 +45,10 @@ export type PagePreviewPaneProps = {
    *  `leads.source_kind`. Default 'website' (the editor is opened against a
    *  website page far more often than a funnel step). */
   testSurfaceKind?: 'website' | 'funnel';
+  /** Funnel UUID for any test-submitted lead — propagated to
+   *  `leads.source_funnel_id` so test leads attribute to the funnel under
+   *  edit (FIX E). Omitted on website-page editing. */
+  testFunnelId?: string | null;
   // Section management — when provided, the hover toolbar + add button show.
   onToggleSectionEnabled?: (id: string, enabled: boolean) => void;
   onRemoveSection?: (id: string) => void;
@@ -63,6 +67,7 @@ export function PagePreviewPane({
   onSelectElement,
   testClientId,
   testSurfaceKind = 'website',
+  testFunnelId,
   onToggleSectionEnabled,
   onRemoveSection,
   onMoveSection,
@@ -131,6 +136,10 @@ export function PagePreviewPane({
                               ? {
                                   clientId: testClientId,
                                   surfaceKind: testSurfaceKind,
+                                  funnelId:
+                                    testSurfaceKind === 'funnel'
+                                      ? testFunnelId ?? null
+                                      : null,
                                   sourceLabel: `Form · ${def.label.replace(/^\/\/\s*/, '')}`,
                                 }
                               : undefined,

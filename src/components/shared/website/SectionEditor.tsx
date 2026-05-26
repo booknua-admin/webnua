@@ -501,6 +501,7 @@ export function SectionEditor({ mode }: SectionEditorProps) {
           onSelectElement={setSelectedElementId}
           testClientId={clientUuidQuery.data ?? null}
           testSurfaceKind={mode.kind === 'funnelStep' ? 'funnel' : 'website'}
+          testFunnelId={mode.kind === 'funnelStep' ? mode.funnel.id : null}
           onToggleSectionEnabled={isSingleton ? undefined : handleToggleSectionEnabled}
           onRemoveSection={isSingleton ? undefined : handleRemoveSection}
           onMoveSection={isSingleton ? undefined : handleMoveSection}

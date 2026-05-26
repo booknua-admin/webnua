@@ -1233,6 +1233,10 @@ export type CreateLeadInput = {
   /** Categorical surface attribution — written to `leads.source_kind` and
    *  surfaced on the inbox row's Source column. */
   surfaceKind: 'website' | 'funnel';
+  /** Funnel-only — the funnel UUID the form is being served from. Written to
+   *  `leads.source_funnel_id` so test leads from a funnel editor attribute to
+   *  the funnel under edit (FIX E). Omitted for website test-submits. */
+  funnelId?: string | null;
   /** Human label of the form's origin, e.g. "Form · Hero". */
   source: string;
   fields: SubmittedFormField[];
@@ -1304,9 +1308,10 @@ async function submitLead(input: CreateLeadInput): Promise<{ leadId: string }> {
 
   const { data: lead, error: leadError } = await supabase
     .from('leads')
-    // `source_kind` was added by migration 0043 and won't appear in the
-    // generated DB types until type-gen is re-run; cast through unknown so
-    // the insert accepts the column. Same pattern as the analytics queries.
+    // `source_kind` was added by migration 0043 and `source_funnel_id` by
+    // migration 0044 — neither will appear in the generated DB types until
+    // type-gen is re-run; cast through unknown so the insert accepts the
+    // columns. Same pattern as the analytics queries.
     .insert({
       client_id: input.clientId,
       customer_id: customer.id,
@@ -1316,6 +1321,10 @@ async function submitLead(input: CreateLeadInput): Promise<{ leadId: string }> {
       urgency: 'none',
       source: input.source,
       source_kind: input.surfaceKind,
+      // Editor test-submits from a funnel-step preview attribute the lead
+      // back to the funnel under edit (FIX E). Website submits leave NULL.
+      source_funnel_id:
+        input.surfaceKind === 'funnel' ? input.funnelId ?? null : null,
     } as unknown as never)
     .select('id')
     .single();

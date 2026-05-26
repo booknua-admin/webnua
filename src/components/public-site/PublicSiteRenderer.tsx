@@ -30,6 +30,7 @@ import {
 } from '@/lib/website/sections/_shared/website-nav-slot';
 import type { BrandObject, NavLink, Page, Section } from '@/lib/website/types';
 
+import { FunnelStepIndicator } from './FunnelStepIndicator';
 import { PopupHost } from './PopupHost';
 import { PreviewBanner } from './PreviewBanner';
 
@@ -68,6 +69,11 @@ type Props =
       brand: BrandObject;
       step: FunnelStep;
       nextStepHref: string | null;
+      /** Zero-based step index — resolver-set. Drives the step indicator
+       *  (FIX F); the landing step (0) hides it. */
+      stepIndex: number;
+      /** Total step count — a single-step funnel hides the indicator. */
+      stepCount: number;
       isPreview: boolean;
     };
 
@@ -145,6 +151,14 @@ export function PublicSiteRenderer(props: Props) {
           }}
         >
           <PageTypeProvider value="funnelStep">
+            {/* Step indicator (FIX F) — sits above <main> so it reads as
+                funnel-level chrome, not a section. Component self-gates: a
+                landing step or a single-step funnel renders null. */}
+            <FunnelStepIndicator
+              brand={props.brand}
+              stepIndex={props.stepIndex}
+              stepCount={props.stepCount}
+            />
             <main>
               {props.step.sections.map((section) => (
                 <RenderedSection
