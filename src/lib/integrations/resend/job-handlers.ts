@@ -35,7 +35,11 @@ import {
   DEFAULT_EMAIL_TEMPLATES,
   type EmailTemplateBody,
 } from '@/lib/email/default-templates';
-import { renderEmail, type EmailRenderContext } from '@/lib/email/templates';
+import {
+  appendCustomerFooter,
+  renderEmail,
+  type EmailRenderContext,
+} from '@/lib/email/templates';
 // Phase 8 Session 2: the sms_templates / email_templates tables are gone.
 // Bodies live on the originating automation_action's action_config (or in
 // DEFAULT_EMAIL_TEMPLATES for operator-facing keys). The previous
@@ -122,6 +126,16 @@ registerJobHandler(SEND_EMAIL_JOB, async (rawPayload, ctx: JobContext) => {
     return { sent: false, reason: 'empty-body' };
   }
 
+  // Customer-facing emails (operator → lead) ship plain-text only with the
+  // "Powered by Webnua" footer. Operator-facing emails (Webnua → operator)
+  // keep their branded HTML.
+  let finalText = rendered.text;
+  let finalHtml = rendered.html;
+  if (isCustomerFacingTemplate(templateKey)) {
+    finalText = appendCustomerFooter(rendered.text);
+    finalHtml = '';
+  }
+
   // --- threading ------------------------------------------------------------
   // Only outbound emails to a known lead carry a reply-to thread token —
   // operator notifications and the digest go to operators (who reply to us
@@ -142,8 +156,8 @@ registerJobHandler(SEND_EMAIL_JOB, async (rawPayload, ctx: JobContext) => {
     to: recipientEmail,
     replyTo,
     subject: rendered.subject,
-    text: rendered.text,
-    html: rendered.html,
+    text: finalText,
+    html: finalHtml,
     inReplyTo: payload.inReplyTo ?? undefined,
     attachments: payload.attachments,
     correlationId: ctx.correlationId ?? undefined,
@@ -157,8 +171,8 @@ registerJobHandler(SEND_EMAIL_JOB, async (rawPayload, ctx: JobContext) => {
       recipient_address: recipientEmail,
       reply_to_address: replyTo ?? null,
       subject: rendered.subject,
-      body_text: rendered.text,
-      body_html: rendered.html,
+      body_text: finalText,
+      body_html: finalHtml,
       resend_message_id: result.data.id,
       in_reply_to_message_id: payload.inReplyTo ?? null,
       status: 'sent',
@@ -195,7 +209,7 @@ registerJobHandler(SEND_EMAIL_JOB, async (rawPayload, ctx: JobContext) => {
     payload,
     fromAddress,
     rendered.subject,
-    rendered.text,
+    finalText,
     resendError,
     threadToken,
   );

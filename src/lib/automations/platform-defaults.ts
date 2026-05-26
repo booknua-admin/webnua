@@ -102,15 +102,12 @@ export const PLATFORM_DEFAULT_AUTOMATIONS: readonly AutomationDefault[] = [
     triggerFilters: { requires_email: true },
     actions: [
       {
+        // Customer-facing email — plain text only. The send path
+        // (`resend/job-handlers.ts`) appends the "Powered by Webnua" footer
+        // at send time and forces html to empty.
         actionType: 'send_email_to_lead',
         templateKey: 'lead_followup',
         subject: "Thanks for your enquiry — we'll be in touch shortly",
-        bodyHtml:
-          '<p>Hi {{lead.firstName}},</p>' +
-          '<p>Thanks for getting in touch with {{client.businessName}}. ' +
-          "I've seen your enquiry about {{lead.service}} and I'll reach out within {{client.responseTime}}.</p>" +
-          "<p>If it's urgent, you can reach me directly on {{client.phone}}.</p>" +
-          '<p>— {{client.businessName}}</p>',
         bodyText:
           'Hi {{lead.firstName}},\n\n' +
           'Thanks for getting in touch with {{client.businessName}}. ' +
@@ -205,16 +202,12 @@ export const PLATFORM_DEFAULT_AUTOMATIONS: readonly AutomationDefault[] = [
     },
     actions: [
       {
+        // Customer-facing email — plain text only (same rationale as
+        // `lead_acknowledgment_email` above).
         actionType: 'send_email_to_lead',
         templateKey: 'review_request',
         writesGbpReviewRequestAudit: true,
         subject: 'Quick favour — a Google review for {{client.businessName}}',
-        bodyHtml:
-          '<p>Hi {{lead.firstName}},</p>' +
-          "<p>Thanks for choosing {{client.businessName}} — it's been a pleasure working with you.</p>" +
-          '<p>If you have a minute, a quick Google review would mean the world: ' +
-          '<a href="{{review.link}}">leave a review</a>.</p>' +
-          '<p>Cheers,<br/>{{client.businessName}}</p>',
         bodyText:
           'Hi {{lead.firstName}},\n\n' +
           "Thanks for choosing {{client.businessName}} — it's been a pleasure working with you.\n\n" +

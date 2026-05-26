@@ -71,24 +71,23 @@ function renderOne(
   });
 }
 
-/** Wrap a plain-text-or-HTML body in a minimal styled HTML shell — used when
- *  a caller (e.g. the inbox reply route) hands us a plain text body and we
- *  need an HTML version for Resend to send both.
+/** Plain-text footer appended to every customer-facing outbound email
+ *  (operator → lead). Customer-facing sends are plain-text only — no HTML
+ *  chrome — and carry this subtle attribution. NOT applied to Webnua →
+ *  operator emails (Surface 1), which are branded HTML and don't need it.
  *
- *  This is deliberately minimal — no MJML / no per-client header chrome /
- *  no images. Email clients render this consistently; a richer template
- *  shell can land later without touching every send call. */
-export function wrapPlainAsHtml(plain: string): string {
-  const escaped = plain
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-  // Two newlines → paragraph break; single newline → <br/>.
-  const paragraphs = escaped
-    .split(/\n{2,}/)
-    .map((p) => `<p>${p.replace(/\n/g, '<br/>')}</p>`)
-    .join('');
-  return paragraphs;
+ *  Format follows the RFC 3676 §4.3 signature convention: a line containing
+ *  exactly `-- ` (dash-dash-space) separates the signature from the body.
+ *  Most mail clients render anything below muted.
+ *
+ *  Not a feature flag — every customer-facing send carries it. */
+export const CUSTOMER_FOOTER = '\n\n-- \nPowered by Webnua · https://webnua.com';
+
+/** Append the customer-facing footer to a plain-text body. Idempotent on
+ *  empty input (returns empty — never a footer with no body above it). */
+export function appendCustomerFooter(text: string): string {
+  if (!text || !text.trim()) return text;
+  return text + CUSTOMER_FOOTER;
 }
 
 /** Strip an HTML body down to a plain-text approximation — used when a caller

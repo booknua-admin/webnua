@@ -15,7 +15,7 @@
 
 import { NextResponse } from 'next/server';
 
-import { wrapPlainAsHtml } from '@/lib/email/templates';
+import { appendCustomerFooter, htmlToPlain } from '@/lib/email/templates';
 import { listMessagesForLead } from '@/lib/integrations/resend/messages';
 import { getServiceClient } from '@/lib/supabase/server';
 import {
@@ -158,8 +158,11 @@ export async function POST(
     }
   }
 
-  const finalText = bodyText || stripHtml(bodyHtml);
-  const finalHtml = bodyHtml || wrapPlainAsHtml(bodyText);
+  // Operator → lead replies ship plain-text only with the "Powered by Webnua"
+  // footer — same shape as automation-triggered customer-facing emails. If the
+  // composer passes HTML, we convert it to plain text first.
+  const rawText = bodyText || htmlToPlain(bodyHtml);
+  const finalText = appendCustomerFooter(rawText);
 
   // The send_email job handler will load the template, but a reply does NOT
   // run through a template — the body is the operator's own composition.
@@ -217,7 +220,6 @@ export async function POST(
     replyTo,
     subject: finalSubject,
     text: finalText,
-    html: finalHtml,
     inReplyTo: inReplyTo ?? undefined,
     correlationId: leadId,
   });
@@ -231,7 +233,7 @@ export async function POST(
       reply_to_address: replyTo,
       subject: finalSubject,
       body_text: finalText,
-      body_html: finalHtml,
+      body_html: '',
       status: 'failed',
       related_lead_id: leadId,
       thread_token: threadToken,
@@ -252,7 +254,7 @@ export async function POST(
     reply_to_address: replyTo,
     subject: finalSubject,
     body_text: finalText,
-    body_html: finalHtml,
+    body_html: '',
     resend_message_id: result.data.id,
     in_reply_to_message_id: inReplyTo,
     status: 'sent',
@@ -327,13 +329,3 @@ async function maybeAdvanceToContacted(leadId: string, actorUserId: string): Pro
   }
 }
 
-function stripHtml(html: string): string {
-  if (!html) return '';
-  return html
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(p|div|li|h[1-6])>/gi, '\n\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}

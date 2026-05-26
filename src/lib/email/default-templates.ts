@@ -24,13 +24,15 @@ export type EmailTemplateBody = {
 const NL = '\n';
 
 export const DEFAULT_EMAIL_TEMPLATES: Record<EmailTemplateKey, EmailTemplateBody> = {
+  // ---------------------------------------------------------------------------
+  // Customer-facing (operator → lead) — plain text only. The send path
+  // (`resend/job-handlers.ts`) appends the "Powered by Webnua" footer at send
+  // time and forces html to empty. Keep `body_html` here as an empty string
+  // so the type stays uniform across customer- and operator-facing entries.
+  // ---------------------------------------------------------------------------
   lead_followup: {
     subject: 'Following up on your enquiry — {{client.businessName}}',
-    body_html:
-      `<p>Hi {{lead.firstName}},</p>` +
-      `<p>{{client.shortName}} here, following up on your enquiry about <strong>{{lead.service}}</strong>.</p>` +
-      `<p>We typically respond within {{client.responseTime}} — if you have any extra detail (timing, photos, what you've already tried) please reply to this email and it'll come straight to my inbox.</p>` +
-      `<p>Thanks,<br/>{{client.shortName}}</p>`,
+    body_html: '',
     body_text:
       `Hi {{lead.firstName}},${NL}${NL}` +
       `{{client.shortName}} here, following up on your enquiry about {{lead.service}}.${NL}${NL}` +
@@ -39,11 +41,7 @@ export const DEFAULT_EMAIL_TEMPLATES: Record<EmailTemplateKey, EmailTemplateBody
   },
   review_request: {
     subject: 'Quick favour — would you mind leaving a review?',
-    body_html:
-      `<p>Hi {{lead.firstName}},</p>` +
-      `<p>Hope the work went well. If you have 30 seconds, would you mind leaving a Google review? It genuinely helps a small business like {{client.businessName}}.</p>` +
-      `<p><a href="{{review.link}}">Leave a review →</a></p>` +
-      `<p>Thanks again,<br/>{{client.shortName}}</p>`,
+    body_html: '',
     body_text:
       `Hi {{lead.firstName}},${NL}${NL}` +
       `Hope the work went well. If you have 30 seconds, would you mind leaving a Google review? It genuinely helps a small business like {{client.businessName}}.${NL}${NL}` +
@@ -52,15 +50,17 @@ export const DEFAULT_EMAIL_TEMPLATES: Record<EmailTemplateKey, EmailTemplateBody
   },
   quote_followup: {
     subject: 'Still keen? — your quote from {{client.businessName}}',
-    body_html:
-      `<p>Hi {{lead.firstName}},</p>` +
-      `<p>Just checking in on the quote we sent for {{lead.service}}. No pressure either way — if the timing has shifted, or you have any questions, hit reply and I'll get back to you.</p>` +
-      `<p>Cheers,<br/>{{client.shortName}}</p>`,
+    body_html: '',
     body_text:
       `Hi {{lead.firstName}},${NL}${NL}` +
       `Just checking in on the quote we sent for {{lead.service}}. No pressure either way — if the timing has shifted, or you have any questions, hit reply and I'll get back to you.${NL}${NL}` +
       `Cheers,${NL}{{client.shortName}}`,
   },
+  // ---------------------------------------------------------------------------
+  // Operator-facing (Webnua → operator) — branded HTML. These go through the
+  // send_email job too but the customer-facing footer is NOT applied; the
+  // body keeps its HTML.
+  // ---------------------------------------------------------------------------
   lead_notification: {
     subject:
       'New lead: {{lead.firstName}}{{lead.lastNameSuffix}} — {{lead.service}}',
