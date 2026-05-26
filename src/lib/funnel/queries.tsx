@@ -116,7 +116,10 @@ async function resolveClientId(slug: string): Promise<string> {
   return data.id;
 }
 
-async function fetchFunnelsForClient(slug: string): Promise<Funnel[]> {
+/** Exported for the conversational signup's visibility probe — same query
+ *  the funnel hub mounts, used to confirm the customer's RLS-bound read
+ *  sees the post-generation funnel row before the editor CTA enables. */
+export async function fetchFunnelsForClient(slug: string): Promise<Funnel[]> {
   const clientId = await resolveClientId(slug);
   const { data, error } = await supabase
     .from('funnels')
