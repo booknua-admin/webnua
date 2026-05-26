@@ -3,11 +3,14 @@ import { cn } from '@/lib/utils';
 // =============================================================================
 // Ink-hero styling recipe — CLAUDE.md parked decision, resolved Cluster 6 · 1a.
 //
-// Six ink-bg hero components exist (IntegrationProgressHero, BillingPlanCard,
-// TicketsHero, LeadsHero, IntegrationMatrixHero, FunnelHero). Only three share
-// the canonical `[tag][headline][subtitle] | [side]` structure — the other
-// three diverge (progress bar / plan-meta / back-link + agg card). A unified
-// `InkHero` component would be an optional-slot grab-bag, so the verdict is:
+// Five ink-bg hero components exist (IntegrationProgressHero, BillingPlanCard,
+// TicketsHero, LeadsHero, FunnelHero). The matrix hero was the sixth before
+// the agency-mode integration surface was reduced to a Connection-policy-only
+// view (pre-launch UI polish — the cross-client matrix is parked pending the
+// real backend query). Only three of the surviving five share the canonical
+// `[tag][headline][subtitle] | [side]` structure — the other two diverge
+// (progress bar / plan-meta / back-link + agg card). A unified `InkHero`
+// component would be an optional-slot grab-bag, so the verdict is:
 // consolidate the shared *chrome* as a styling recipe, not a component.
 //
 // New ink heroes compose these helpers; existing ones adopt them opportunis-

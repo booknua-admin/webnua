@@ -28,11 +28,21 @@ const CHANGE_EVENT = 'webnua:roster-change';
 
 // ---- Internal types ---------------------------------------------------------
 
+/** Operator-tier sub-role. Mirrors `lib/team/roles.ts` `TeamRole` but kept as
+ *  a local string union so this module has no upward dep. Surfaced via
+ *  `RosterUser.teamRole` for the operator team page; null for client-role
+ *  users (the column carries no meaningful value there). */
+type TeamRoleValue = 'owner' | 'operator' | 'junior';
+
 type RosterUser = {
   id: string;
   displayName: string;
   email: string;
   role: Role;
+  /** Operator-tier sub-role — distinguishes Owner / Operator / Junior. Null
+   *  for client-role users + for any operator row whose `team_role` column
+   *  is unset (treated as plain "Operator" by consumers). */
+  teamRole: TeamRoleValue | null;
   /** Slug of the client this user belongs to, or null for operators. */
   clientId: string | null;
   capabilities: Set<Capability>;
@@ -69,10 +79,12 @@ function readClientSlug(rel: ClientSlugRel): string | null {
 }
 
 export async function hydrateRoster(): Promise<void> {
-  // Fetch users with their client slug.
+  // Fetch users with their client slug + operator-tier sub-role. `team_role`
+  // is the Owner/Operator/Junior column on `public.users` (constrained by the
+  // privilege-escalation guard added in migration 0045).
   const { data: users, error: usersError } = await supabase
     .from('users')
-    .select('id, display_name, email, role, client:clients!users_client_id_fkey(slug)');
+    .select('id, display_name, email, role, team_role, client:clients!users_client_id_fkey(slug)');
 
   if (usersError) {
     console.error('[roster-store] users hydrate failed:', normalizeError(usersError).message);
@@ -107,6 +119,11 @@ export async function hydrateRoster(): Promise<void> {
   rosterCache = (users ?? []).map((u: Record<string, unknown>) => {
     const userId = u.id as string;
     const role = u.role as Role;
+    const rawTeamRole = u.team_role as string | null | undefined;
+    const teamRole: TeamRoleValue | null =
+      rawTeamRole === 'owner' || rawTeamRole === 'operator' || rawTeamRole === 'junior'
+        ? rawTeamRole
+        : null;
     const clientSlug = readClientSlug(u.client as ClientSlugRel);
     const userGrants = grantsByUser[userId] ?? [];
     const capabilities = resolveCapabilities(role, userGrants);
@@ -119,6 +136,7 @@ export async function hydrateRoster(): Promise<void> {
       displayName: u.display_name as string,
       email: u.email as string,
       role,
+      teamRole,
       clientId: clientSlug,
       capabilities,
       accessibleWebsiteIds,

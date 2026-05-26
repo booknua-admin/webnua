@@ -10,6 +10,11 @@ import type {
   LeadUrgency,
 } from '@/lib/leads/types';
 
+// `lost` and `soon` both render on a paper-2 background — without a leading
+// glyph they're visually indistinguishable to a color-blind viewer (and the
+// two-state semantic — lost = closed-out, soon = urgency tier — is different).
+// The dot prefix gives each a distinct visual signature; the textual label
+// remains the primary signal.
 const STATUS_STYLES: Record<LeadStatus, string> = {
   new: 'border-rust/40 bg-rust/[0.12] text-rust',
   contacted: 'border-info/40 bg-info/[0.12] text-info',
@@ -18,10 +23,24 @@ const STATUS_STYLES: Record<LeadStatus, string> = {
   lost: 'border-rule bg-paper-2 text-ink-quiet',
 };
 
+const STATUS_GLYPH: Record<LeadStatus, string> = {
+  new: '',
+  contacted: '',
+  booked: '',
+  completed: '',
+  lost: '× ',
+};
+
 const URGENCY_STYLES: Record<Exclude<LeadUrgency, 'none'>, string> = {
   asap: 'border-warn/40 bg-warn/[0.12] text-warn',
   today: 'border-warn/40 bg-warn/[0.12] text-warn',
   soon: 'border-ink/15 bg-paper-2 text-ink-quiet',
+};
+
+const URGENCY_GLYPH: Record<Exclude<LeadUrgency, 'none'>, string> = {
+  asap: '! ',
+  today: '! ',
+  soon: '◷ ',
 };
 
 type LeadStatusPillProps = {
@@ -41,6 +60,11 @@ function LeadStatusPill({ status, label, className }: LeadStatusPillProps) {
         className,
       )}
     >
+      {STATUS_GLYPH[status] ? (
+        <span aria-hidden className="opacity-80">
+          {STATUS_GLYPH[status]}
+        </span>
+      ) : null}
       {label ?? LEAD_STATUS_LABEL[status]}
     </span>
   );
@@ -62,6 +86,9 @@ function LeadUrgencyPill({ urgency, className }: LeadUrgencyPillProps) {
         className,
       )}
     >
+      <span aria-hidden className="opacity-80">
+        {URGENCY_GLYPH[urgency]}
+      </span>
       {LEAD_URGENCY_LABEL[urgency]}
     </span>
   );

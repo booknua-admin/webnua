@@ -40,7 +40,10 @@ export default function LoginPage() {
     });
 
     if (signInError) {
-      setError(signInError.message);
+      // Generic message: avoids leaking whether the email exists. Supabase's
+      // raw message ("Invalid login credentials" / "User not found") would
+      // help an attacker enumerate accounts.
+      setError('Email or password is incorrect.');
       setSubmitting(false);
       return;
     }
@@ -86,11 +89,11 @@ export default function LoginPage() {
               <div className="flex items-baseline justify-between">
                 <FieldLabel htmlFor="password">Password</FieldLabel>
                 <Button
-                  type="button"
+                  asChild
                   variant="link"
                   className="h-auto p-0 font-mono text-[10px] font-bold tracking-[0.14em] uppercase text-rust"
                 >
-                  Forgot password?
+                  <Link href="/forgot-password">Forgot password?</Link>
                 </Button>
               </div>
               <Input

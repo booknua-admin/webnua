@@ -592,6 +592,37 @@ function BrandForm({
         ) : savedHint ? (
           <p className="text-[12px] font-semibold text-good">Saved ✓</p>
         ) : null}
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => {
+            // Revert to the last-saved brand row — same set calls as the
+            // re-sync effect above.
+            setTagline(brand.tagline ?? '');
+            setAudienceLine(brand.audience_line ?? '');
+            setIndustryCategory(brand.industry_category ?? '');
+            setAccentColor(brand.accent_color);
+            setBrandColor2(brand.brand_colors[1] ?? '');
+            setBrandColor3(brand.brand_colors[2] ?? '');
+            setHeadingColor(brand.heading_color ?? '');
+            setBodyColor(brand.body_color ?? '');
+            setBackgroundColor(brand.background_color ?? '');
+            setHeadingFont(brand.heading_font ?? DEFAULT_FONT_ID);
+            setBodyFont(brand.body_font ?? DEFAULT_FONT_ID);
+            setLogoUrl(brand.logo_url ?? '');
+            setFormality(brand.voice_formality);
+            setUrgency(brand.voice_urgency);
+            setTechnicality(brand.voice_technicality);
+            setOfferHeadline(brand.offer?.headline ?? '');
+            setOfferPromise(brand.offer?.promise ?? '');
+            setOfferRiskReversal(brand.offer?.risk_reversal ?? '');
+            setOfferCtaText(brand.offer?.cta_text ?? '');
+            setSaveError(null);
+          }}
+          disabled={save.isPending}
+        >
+          Cancel
+        </Button>
         <Button onClick={() => save.mutate()} disabled={save.isPending}>
           {save.isPending ? 'Saving…' : 'Save brand'}
         </Button>

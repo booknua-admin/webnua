@@ -244,7 +244,19 @@ function RegularTicketsList({
       ) : error ? (
         <ListNotice>{`// ${normalizeError(error).message}`}</ListNotice>
       ) : tickets.length === 0 ? (
-        <ListNotice>{'// No tickets in this view'}</ListNotice>
+        <div className="flex flex-col items-center gap-3 px-[18px] py-14 text-center">
+          <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+            {'// Nothing in this tab'}
+          </p>
+          <h3 className="text-lg font-semibold text-ink">
+            No tickets to triage.
+          </h3>
+          <p className="max-w-md text-sm text-ink-quiet">
+            Tickets are how clients raise change requests — page edits,
+            integration issues, billing questions. They show up here from
+            every client you manage.
+          </p>
+        </div>
       ) : (
         tickets.map((ticket) => (
           <TicketRow

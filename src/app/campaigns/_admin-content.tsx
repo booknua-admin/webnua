@@ -118,11 +118,26 @@ function AdminCampaignsContent() {
 
             <div className="flex flex-col gap-2.5">
               {visibleRows.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-rule bg-paper px-10 py-12 text-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
-                  {statusFilter === 'all'
-                    ? '// No campaigns yet'
-                    : `// No ${statusFilter} campaigns`}
-                </div>
+                statusFilter === 'all' ? (
+                  <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-rule bg-paper px-10 py-12 text-center">
+                    <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+                      {'// No campaigns yet'}
+                    </p>
+                    <h3 className="text-lg font-semibold text-ink">
+                      Nothing running across your clients.
+                    </h3>
+                    <p className="max-w-md text-sm text-ink-quiet">
+                      Connect a client&apos;s Meta ad account on their
+                      Integrations tab, then build campaigns directly in Meta
+                      Ads Manager. Webnua pulls them in on the hour and
+                      tracks performance here.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-rule bg-paper px-10 py-12 text-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+                    {`// No ${statusFilter} campaigns`}
+                  </div>
+                )
               ) : (
                 visibleRows.map((row) => (
                   <CampaignClientRow key={row.id} row={row} />

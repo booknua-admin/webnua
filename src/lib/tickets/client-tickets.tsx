@@ -38,9 +38,12 @@ export const clientTicketsHero = {
   ),
 };
 
+// Static tab definitions — `_client-content.tsx` overrides `count` with the
+// live filtered count via `.map((tab) => ({ ...tab, count: pool.filter(...).length }))`,
+// so we don't ship a hardcoded number here.
 export const clientTicketTabs: TicketTab[] = [
-  { id: 'active', label: 'Active', count: 5 },
-  { id: 'needs-reply', label: 'Needs your reply', count: 2 },
-  { id: 'done', label: 'Done', count: 8 },
-  { id: 'all', label: 'All', count: 13 },
+  { id: 'active', label: 'Active' },
+  { id: 'needs-reply', label: 'Needs your reply' },
+  { id: 'done', label: 'Done' },
+  { id: 'all', label: 'All' },
 ];

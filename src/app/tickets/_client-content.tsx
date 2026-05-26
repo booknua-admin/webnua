@@ -86,7 +86,20 @@ function ClientTicketsContent() {
           ) : error ? (
             <InboxNotice>{`// ${normalizeError(error).message}`}</InboxNotice>
           ) : visibleTickets.length === 0 ? (
-            <InboxNotice>{'// No tickets in this view'}</InboxNotice>
+            <div className="flex flex-col items-center gap-3 px-[18px] py-14 text-center">
+              <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+                {'// Nothing in this tab'}
+              </p>
+              <h3 className="text-lg font-semibold text-ink">
+                You&apos;re all caught up.
+              </h3>
+              <p className="max-w-md text-sm text-ink-quiet">
+                Tickets are how you ask your operator for changes — page
+                edits, billing questions, integration help. Hit{' '}
+                <strong className="font-semibold">+ New ticket</strong>{' '}
+                above to start one.
+              </p>
+            </div>
           ) : (
             visibleTickets.map((ticket) => (
               <TicketRow

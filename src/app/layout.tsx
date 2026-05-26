@@ -40,6 +40,15 @@ export default function RootLayout({
       className={`${interTight.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        {/* Skip-to-content link — hidden until keyboard-focused, then jumps
+         *  past the sidebar + topbar nav to the page's main content. Routes
+         *  without a `<main id="main-content">` (e.g. auth) silently no-op. */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-md focus:bg-ink focus:px-4 focus:py-2 focus:font-mono focus:text-[12px] focus:font-bold focus:uppercase focus:tracking-[0.08em] focus:text-paper focus:shadow-md focus:outline-none focus:ring-2 focus:ring-rust"
+        >
+          Skip to main content
+        </a>
         <QueryProvider>
           <UserProvider>
             <DataHydrationProvider>

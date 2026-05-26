@@ -1,3 +1,15 @@
+// The default-automations seed consumed by the agency policy resolver
+// (`lib/agency/agency-policy-stub.ts` → `automationDefaults` policy key).
+// Each entry's `defaultOn` boolean is what flows through; `name` +
+// `description` are docs for the V2 editor surface.
+//
+// The previous `adminDefaultsBranding` + `adminDefaultsPricing` display
+// stubs (hardcoded fonts / accent / "AUD ($)" / "15% buffer") were deleted
+// in the pre-launch UI polish session — the editor surface that rendered
+// them (`/settings/defaults`) is now a "coming online when the agency plan
+// launches" placeholder. The wired `brandDefaults` + `pricingDefaults`
+// policy keys live in `PolicyValueMap` (`lib/agency/types.ts`); the seed
+// for them lives directly in `agency-policy-stub.ts`.
 export const adminDefaultsAutomations = [
   {
     id: 'instant-confirm',
@@ -24,26 +36,5 @@ export const adminDefaultsAutomations = [
     description:
       'Rebooking link after a customer misses a booked job. Off by default — clients enable once they have data on their no-show rate.',
     defaultOn: false,
-  },
-];
-
-export const adminDefaultsBranding = [
-  { label: 'Primary font', value: 'Inter Tight', editable: true },
-  { label: 'Mono font', value: 'JetBrains Mono', editable: true },
-  {
-    label: 'Default accent color',
-    value: '#d24317 (Webnua rust)',
-    swatch: true,
-    editable: true,
-  },
-];
-
-export const adminDefaultsPricing = [
-  { label: 'Plan currency', value: 'AUD ($)', editable: false },
-  {
-    label: 'Flat-rate buffer %',
-    sub: 'Applied to suggested job prices',
-    value: '15%',
-    editable: true,
   },
 ];

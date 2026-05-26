@@ -95,7 +95,7 @@ function ClientFunnelsList({
                 <strong>Webnua manages updates</strong>
                 {isOperator
                   ? '.'
-                  : ' — text Craig to change anything, or open a funnel and use the funnel editor if you have edit access.'}
+                  : ` — message ${process.env.NEXT_PUBLIC_SUPPORT_NAME ?? 'your operator'} to change anything, or open a funnel and use the funnel editor if you have edit access.`}
               </>
             }
           />

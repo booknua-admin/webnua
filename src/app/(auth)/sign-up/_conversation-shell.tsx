@@ -1914,6 +1914,8 @@ export function ConversationShell() {
                   value={emailDraft}
                   onChange={(e) => setEmailDraft(e.target.value)}
                   autoFocus
+                  required
+                  aria-label="Your email address"
                   className="min-h-[44px] text-base sm:text-[14px]"
                 />
                 <button

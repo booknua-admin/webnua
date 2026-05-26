@@ -78,6 +78,7 @@ export function ChatComposer({
             placeholder={placeholder}
             disabled={disabled}
             rows={1}
+            aria-label="Your reply"
             className={cn(
               'min-h-[44px] flex-1 resize-none rounded-md border-2 border-ink/20 bg-paper/40 px-3 py-2.5',
               'text-[14px] leading-[1.45] text-ink placeholder:text-ink-quiet',

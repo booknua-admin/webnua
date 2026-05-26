@@ -114,11 +114,25 @@ function AdminLeadsContent() {
           ) : error ? (
             <InboxNotice>{`// ${normalizeError(error).message}`}</InboxNotice>
           ) : visibleLeads.length === 0 ? (
-            <InboxNotice>
-              {showingColdTab
-                ? '// Nothing to nudge. Every lead is fresh or already handled.'
-                : '// No leads in this view'}
-            </InboxNotice>
+            showingColdTab ? (
+              <InboxNotice>
+                {'// Nothing to nudge. Every lead is fresh or already handled.'}
+              </InboxNotice>
+            ) : (
+              <div className="flex flex-col items-center gap-3 px-[18px] py-14 text-center">
+                <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+                  {'// No leads to show'}
+                </p>
+                <h3 className="text-lg font-semibold text-ink">
+                  Nothing in the queue yet.
+                </h3>
+                <p className="max-w-md text-sm text-ink-quiet">
+                  Leads land here when your clients&apos; funnel forms or
+                  contact blocks are submitted. They appear across every
+                  client you manage; filter by client above.
+                </p>
+              </div>
+            )
           ) : showingColdTab ? (
             visibleLeads.map((lead) => (
               <ColdLeadRow key={lead.id} variant="admin" row={lead} />

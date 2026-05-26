@@ -84,7 +84,7 @@ function AutomationEditorStep({ step, onChange, readOnly = false }: AutomationEd
           value={step.name}
           onChange={(e) => onChange({ name: e.target.value })}
           disabled={readOnly || !step.canEditBody}
-          className="min-w-0 border-none bg-transparent font-sans text-[14px] font-bold text-ink outline-none placeholder:text-ink-quiet disabled:opacity-65"
+          className="min-w-0 rounded-sm border-none bg-transparent font-sans text-[14px] font-bold text-ink outline-none placeholder:text-ink-quiet focus-visible:bg-paper-2 focus-visible:ring-2 focus-visible:ring-rust/30 disabled:opacity-65"
           aria-label="Step name"
         />
         <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-ink-quiet">
@@ -109,7 +109,7 @@ function AutomationEditorStep({ step, onChange, readOnly = false }: AutomationEd
                   placeholder="Subject…"
                   aria-label="Email subject"
                   disabled={readOnly}
-                  className="w-full rounded-md border border-rule bg-paper px-3.5 py-2.5 font-sans text-[13px] font-semibold text-ink outline-none focus:border-rust disabled:opacity-65"
+                  className="w-full rounded-md border border-rule bg-paper px-3.5 py-2.5 font-sans text-[13px] font-semibold text-ink outline-none focus:border-rust focus-visible:ring-2 focus-visible:ring-rust/30 disabled:opacity-65"
                 />
               ) : null}
               {isEmail ? (
@@ -123,7 +123,7 @@ function AutomationEditorStep({ step, onChange, readOnly = false }: AutomationEd
                   disabled={readOnly}
                   spellCheck
                   className={cn(
-                    'block min-h-28 w-full resize-y whitespace-pre-wrap rounded-md border px-4 py-3.5 font-sans text-[14px] leading-[1.55] text-ink outline-none disabled:opacity-65',
+                    'block min-h-28 w-full resize-y whitespace-pre-wrap rounded-md border px-4 py-3.5 font-sans text-[14px] leading-[1.55] text-ink outline-none focus-visible:ring-2 focus-visible:ring-rust/30 disabled:opacity-65',
                     step.isEditing
                       ? 'border-rust bg-card shadow-[0_0_0_3px_rgba(212,67,23,0.12)]'
                       : 'border-rule bg-paper focus:border-rust',
@@ -141,7 +141,7 @@ function AutomationEditorStep({ step, onChange, readOnly = false }: AutomationEd
                   maxLength={MAX_TEMPLATE_LENGTH}
                   spellCheck
                   className={cn(
-                    'block min-h-24 w-full resize-y whitespace-pre-wrap rounded-md border px-4 py-3.5 font-sans text-[14px] leading-[1.55] text-ink outline-none disabled:opacity-65',
+                    'block min-h-24 w-full resize-y whitespace-pre-wrap rounded-md border px-4 py-3.5 font-sans text-[14px] leading-[1.55] text-ink outline-none focus-visible:ring-2 focus-visible:ring-rust/30 disabled:opacity-65',
                     step.isEditing
                       ? 'border-rust bg-card shadow-[0_0_0_3px_rgba(212,67,23,0.12)]'
                       : 'border-rule bg-paper focus:border-rust',
