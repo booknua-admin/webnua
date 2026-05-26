@@ -1,4 +1,4 @@
-import type { LeadFilterChip, LeadTab } from '@/lib/leads/types';
+import type { LeadTab } from '@/lib/leads/types';
 
 export const adminLeadsHero = {
   eyebrow: '// Workspace · all leads',
@@ -16,13 +16,11 @@ export const adminLeadsHero = {
   ),
 };
 
-export const adminLeadsClientFilters: LeadFilterChip[] = [
-  { id: 'all', label: 'All clients', count: 4 },
-  { id: 'freshhome', label: 'FreshHome' },
-  { id: 'keyhero', label: 'KeyHero' },
-  { id: 'neatworks', label: 'NeatWorks' },
-  { id: 'voltline', label: 'Voltline' },
-];
+// `adminLeadsClientFilters` removed: dead code. The admin leads page filters
+// via `ClientMultiSelect`, which self-sources from `useAdminClients()` —
+// every client (including freshly-onboarded ones with no leads yet) is
+// always selectable. The previous hardcoded 4-chip list referenced
+// FreshHome / KeyHero / NeatWorks / Voltline — all removed by migration 0101.
 
 /** Static tab definitions. Phase 8 Session 2 adds the `needs_followup` tab —
  *  the cold-lead surface. Status tabs map 1:1 to `LeadStatus`; the new tab

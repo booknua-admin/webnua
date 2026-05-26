@@ -8,6 +8,7 @@ import { SidebarUser } from '@/components/shared/SidebarUser';
 import { useUser } from '@/lib/auth/user-stub';
 import { useAdminClients } from '@/lib/clients/clients-store';
 import { adminWorkspace, adminWorkspaceNav } from '@/lib/nav/admin-nav';
+import { useAdminNavBadgeCounts } from '@/lib/nav/use-nav-badge-counts';
 
 import { AdminClientPicker } from './AdminClientPicker';
 import { AdminWorkspaceBlock } from './AdminWorkspaceBlock';
@@ -24,6 +25,9 @@ function AdminSidebar() {
   const user = useUser();
   const userName = user?.displayName ?? '…';
   const userInitial = initialFrom(user?.displayName ?? user?.email);
+  // Live workspace-mode-aware counts. SidebarItem auto-hides badges with
+  // text `'0'` so an empty inbox renders without an empty pill.
+  const badgeCounts = useAdminNavBadgeCounts();
 
   return (
     <Sidebar>
@@ -33,9 +37,15 @@ function AdminSidebar() {
       <AdminClientPicker clients={clients} />
 
       <SidebarSectionLabel>{adminWorkspaceNav.label}</SidebarSectionLabel>
-      {adminWorkspaceNav.items.map((item) => (
-        <SidebarItem key={item.href} {...item} />
-      ))}
+      {adminWorkspaceNav.items.map((item) => {
+        const live =
+          item.href === '/leads'
+            ? { ...item, badge: { text: String(badgeCounts.leads) } }
+            : item.href === '/tickets'
+              ? { ...item, badge: { text: String(badgeCounts.tickets) } }
+              : item;
+        return <SidebarItem key={item.href} {...live} />;
+      })}
 
       <AdminWorkspaceBlock
         label={adminWorkspace.label}

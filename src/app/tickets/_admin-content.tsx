@@ -17,6 +17,7 @@ import { normalizeError } from '@/lib/errors';
 import {
   adminTicketsHero,
   adminTicketTabs,
+  type AdminTicketHeroStat,
   type AdminTicketRow,
 } from '@/lib/tickets/admin-tickets';
 import { useAdminTicketsInbox } from '@/lib/tickets/queries';
@@ -25,6 +26,7 @@ import type { FunnelApprovalSubmission } from '@/lib/funnel/approval';
 import { useAllPendingFunnelApprovals } from '@/lib/funnel/queries';
 import type { WebsiteApprovalSubmission } from '@/lib/tickets/website-approval-stub';
 import { useAllPendingApprovals } from '@/lib/website/use-publish-state';
+import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
 const APPROVALS_TAB_ID = 'approvals';
 
@@ -55,6 +57,7 @@ function AdminTicketsContent() {
   const pendingApprovals = useAllPendingApprovals();
   const pendingFunnelApprovals = useAllPendingFunnelApprovals();
   const { data: tickets, isLoading, error } = useAdminTicketsInbox();
+  const { activeClientId, activeClient } = useWorkspace();
 
   const [activeTabId, setActiveTabId] = useState<string>('all');
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
@@ -62,6 +65,50 @@ function AdminTicketsContent() {
   const onApprovalsTab = activeTabId === APPROVALS_TAB_ID;
 
   const allTickets = useMemo(() => tickets ?? [], [tickets]);
+
+  // Hero scope = workspace mode. Agency mode shows every accessible client's
+  // tickets; sub-account mode narrows to the active client. Distinct from the
+  // page-level `selectedClients` chip-filter (which composes on top — the
+  // hero reflects the workspace context, not the operator's local drill).
+  const heroScope = useMemo(
+    () =>
+      activeClientId
+        ? allTickets.filter((t) => t.client.slug === activeClientId)
+        : allTickets,
+    [allTickets, activeClientId],
+  );
+
+  const heroStats = useMemo<AdminTicketHeroStat[]>(() => {
+    const rush = heroScope.filter(
+      (t) => t.urgency === 'rush' && t.status !== 'done',
+    ).length;
+    const open = heroScope.filter((t) => t.status === 'open').length;
+    const inProgress = heroScope.filter(
+      (t) => t.status === 'in_progress',
+    ).length;
+    const done = heroScope.filter((t) => t.status === 'done').length;
+    return [
+      { num: <em>{rush}</em>, label: '// RUSH', tone: 'warn' },
+      { num: String(open), label: '// OPEN' },
+      { num: String(inProgress), label: '// IN PROGRESS' },
+      { num: <em>{done}</em>, label: '// DONE', tone: 'rust' },
+    ];
+  }, [heroScope]);
+
+  const heroTag = useMemo(() => {
+    const open = heroScope.filter((t) => t.status === 'open').length;
+    if (activeClientId) {
+      const name = activeClient?.name ?? 'this client';
+      return open === 0
+        ? `Quiet · no open tickets for ${name}`
+        : `Live · ${open} open for ${name}`;
+    }
+    if (open === 0) return 'Quiet · no open tickets across your clients';
+    const distinctClients = new Set(
+      heroScope.filter((t) => t.status === 'open').map((t) => t.client.slug),
+    ).size;
+    return `Live · ${open} open across ${distinctClients} client${distinctClients === 1 ? '' : 's'}`;
+  }, [heroScope, activeClientId, activeClient]);
 
   // Per-client ticket counts, keyed on client slug — shown in the dropdown.
   const clientCounts = useMemo(() => {
@@ -113,12 +160,12 @@ function AdminTicketsContent() {
       />
       <div className="flex flex-col gap-5 px-4 py-6 md:px-10 md:py-10">
         <TicketsHero
-          tag={adminTicketsHero.tag}
+          tag={heroTag}
           title={adminTicketsHero.title}
           subtitle={adminTicketsHero.subtitle}
           right={
             <>
-              {adminTicketsHero.stats.map((stat) => (
+              {heroStats.map((stat) => (
                 <TicketsHeroStat
                   key={stat.label}
                   num={stat.num}

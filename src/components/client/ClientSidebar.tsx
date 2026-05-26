@@ -21,6 +21,7 @@ import { SidebarUser } from '@/components/shared/SidebarUser';
 import { useUser } from '@/lib/auth/user-stub';
 import { useAdminClients } from '@/lib/clients/clients-store';
 import { clientNav, clientSupportContact } from '@/lib/nav/client-nav';
+import { useClientNavBadgeCounts } from '@/lib/nav/use-nav-badge-counts';
 
 import { ClientSupportCard } from './ClientSupportCard';
 import { ClientWorkspaceCard } from './ClientWorkspaceCard';
@@ -43,6 +44,9 @@ function userRoleLabel(email: string | null | undefined): string {
 function ClientSidebar() {
   const user = useUser();
   const clients = useAdminClients();
+  // Live unread-leads + tickets-awaiting-your-reply counts. SidebarItem
+  // auto-hides badges with text '0' so a quiet inbox renders no pill.
+  const badgeCounts = useClientNavBadgeCounts();
 
   // The signed-in client's workspace. `user.clientId` is the client slug
   // (matches `AdminClient.id`); resolve to the row so we have the live name.
@@ -68,9 +72,15 @@ function ClientSidebar() {
       {clientNav.map((section) => (
         <div key={section.label}>
           <SidebarSectionLabel>{section.label}</SidebarSectionLabel>
-          {section.items.map((item) => (
-            <SidebarItem key={item.href} {...item} />
-          ))}
+          {section.items.map((item) => {
+            const live =
+              item.href === '/leads'
+                ? { ...item, badge: { text: String(badgeCounts.leads) } }
+                : item.href === '/tickets'
+                  ? { ...item, badge: { text: String(badgeCounts.tickets) } }
+                  : item;
+            return <SidebarItem key={item.href} {...live} />;
+          })}
         </div>
       ))}
 

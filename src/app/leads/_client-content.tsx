@@ -50,6 +50,15 @@ function ClientLeadsContent() {
 
   const showingColdTab = activeTab === 'needs_followup';
 
+  // Live eyebrow — "// N leads in your inbox" (singular/plural, hide count
+  // line when the inbox is empty). Replaces the previous hardcoded
+  // "// Voltline · 23 leads total" which leaked another customer's name.
+  const heroEyebrow = useMemo(() => {
+    const total = (leads ?? []).length;
+    if (total === 0) return '// Your lead inbox';
+    return `// ${total} lead${total === 1 ? '' : 's'} in your inbox`;
+  }, [leads]);
+
   return (
     <>
       <Topbar
@@ -57,7 +66,7 @@ function ClientLeadsContent() {
       />
       <div className="flex flex-col gap-5 px-4 py-6 md:px-10 md:py-10">
         <PageHeader
-          eyebrow={clientLeadsHero.eyebrow}
+          eyebrow={heroEyebrow}
           title={clientLeadsHero.title}
           subtitle={clientLeadsHero.subtitle}
         />

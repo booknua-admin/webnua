@@ -40,13 +40,14 @@ export type AdminTicketHeroStat = {
   tone?: 'warn' | 'rust' | 'neutral';
 };
 
+/** Copy-only hero defaults. The `tag` and `stats` array are computed live
+ *  in `_admin-content.tsx` from `useAdminTicketsInbox()` + the workspace
+ *  mode — agency mode counts across all accessible clients, sub-account
+ *  mode counts only the active client. */
 export const adminTicketsHero: {
-  tag: string;
   title: ReactNode;
   subtitle: ReactNode;
-  stats: AdminTicketHeroStat[];
 } = {
-  tag: 'Live · 7 open across 4 clients',
   title: (
     <>
       Your <em>ticket inbox</em>
@@ -59,12 +60,6 @@ export const adminTicketsHero: {
       <strong>Triage in the morning, work through the queue.</strong>
     </>
   ),
-  stats: [
-    { num: <em>2</em>, label: '// RUSH', tone: 'warn' },
-    { num: '7', label: '// OPEN' },
-    { num: '3', label: '// IN PROGRESS' },
-    { num: <em>12</em>, label: '// DONE · 7D', tone: 'rust' },
-  ],
 };
 
 export const adminTicketTabs: TicketTab[] = [

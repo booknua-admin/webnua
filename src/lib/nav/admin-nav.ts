@@ -5,13 +5,11 @@ export const adminWorkspaceNav: NavSection = {
   items: [
     { label: 'Dashboard', href: '/dashboard', icon: '⊞' },
     { label: 'Signups', href: '/signups', icon: '☞' },
-    {
-      label: 'Leads',
-      href: '/leads',
-      icon: '✉',
-      badge: { text: '23' },
-    },
-    { label: 'Tickets', href: '/tickets', icon: '◉', badge: { text: '7' } },
+    // Leads + Tickets badges are injected live in AdminSidebar via
+    // `useAdminNavBadgeCounts()`. Do NOT add hardcoded `badge:` here —
+    // they would render and then be overwritten on hydrate.
+    { label: 'Leads', href: '/leads', icon: '✉' },
+    { label: 'Tickets', href: '/tickets', icon: '◉' },
     { label: 'Websites', href: '/websites', icon: '▦' },
     { label: 'Funnels', href: '/funnels', icon: '⇶' },
     { label: 'Internal automations', href: '/automations', icon: '⤿' },
