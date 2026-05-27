@@ -79,13 +79,20 @@ type AutomationJoinRow = {
   trigger_type: string;
   trigger_config: Record<string, unknown> | null;
   trigger_filters: Record<string, unknown> | null;
+  /** Migration 0104. `client` = shown in the client `/automations` UI.
+   *  `platform_internal` = operator-facing infrastructure (operator_lead_
+   *  notification, payment_failed_notification) — hidden from every UI
+   *  surface (client AND operator) so the visible roster stays focused on
+   *  client-managed automations. The platform_internal ones still fire from
+   *  the engine on the same triggers; they just never appear in a list. */
+  visibility: 'client' | 'platform_internal';
   client: { name: string; slug: string } | null;
   automation_actions: ActionRow[];
 };
 
 const AUTOMATION_SELECT =
   'id, client_id, automation_key, name, description, is_enabled, is_default, ' +
-  'trigger_type, trigger_config, trigger_filters, ' +
+  'trigger_type, trigger_config, trigger_filters, visibility, ' +
   'client:clients(name, slug), ' +
   'automation_actions(id, position, action_type, action_config, pauses_on_human_activity)';
 
@@ -225,9 +232,18 @@ async function fetchAutomations(): Promise<AutomationJoinRow[]> {
   } = await supabase.auth.getUser();
   if (!user) throw AppError.auth();
 
+  // Migration 0104 — every UI surface filters on visibility='client' so
+  // operator-facing platform_internal automations (operator_lead_notification,
+  // payment_failed_notification) do not appear in any roster. The engine
+  // still fires them on the same triggers; they are just hidden chrome.
   const { data, error } = await supabase
     .from('automations')
     .select(AUTOMATION_SELECT)
+    // Migration 0104 added the visibility column — until the generated
+    // Database type is regenerated post-deploy the column name is unknown to
+    // the typed builder. Cast through `as never` matches the recent
+    // precedent (lifecycle_status, conversation_state etc.).
+    .eq('visibility' as never, 'client' as never)
     .order('created_at', { ascending: true });
 
   if (error) throw normalizeError(error);
