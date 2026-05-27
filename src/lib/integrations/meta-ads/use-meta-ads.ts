@@ -330,6 +330,32 @@ export function useRevokeMetaPartnerShare() {
   });
 }
 
+/** In-app User Data Deletion — full revoke + purge of every Meta-sourced
+ *  row for the client. Backs the "Disconnect & delete data" button on
+ *  /settings/integrations. Returns the public confirmation URL so the
+ *  UI can deep-link the customer to the status page. Required for
+ *  Meta App Review compliance. */
+export function useDeleteMetaData(clientId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const response = (await postJson(
+        '/api/integrations/meta_ads/data-deletion-self',
+        { clientId },
+      )) as unknown as { ok: boolean; url: string; confirmation_code: string };
+      return response;
+    },
+    onSuccess: () => {
+      // Every Meta-derived query is now stale — connections, ad account,
+      // campaigns, insights. Invalidate the lot so the UI redraws empty.
+      qc.invalidateQueries({ queryKey: adAccountKey(clientId) });
+      qc.invalidateQueries({ queryKey: campaignsKey(clientId) });
+      qc.invalidateQueries({ queryKey: insightsKey(clientId, 30) });
+      qc.invalidateQueries({ queryKey: ['integration-connections', clientId] });
+    },
+  });
+}
+
 /** Discover campaigns on the connected ad account + upsert
  *  public.campaigns + meta_campaigns rows. Whole-account scope (no
  *  metaCampaignDbId); the per-campaign sync is `useSyncMetaCampaign`

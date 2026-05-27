@@ -24,9 +24,11 @@
 import { useState, useSyncExternalStore } from 'react';
 
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { FacebookConnectButton } from '@/components/shared/settings/FacebookConnectButton';
 import { GbpLocationPickerModal } from '@/components/shared/settings/GbpLocationPickerModal';
 import { IntegrationCallbackPickers } from '@/components/shared/settings/IntegrationCallbackPickers';
 import { MetaAdAccountFooter } from '@/components/shared/settings/MetaAdAccountFooter';
+import { MetaPermissionRationaleModal } from '@/components/shared/settings/MetaPermissionRationaleModal';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { Button } from '@/components/ui/button';
@@ -40,6 +42,7 @@ import {
   useClientGbpLocation,
   useSyncGbpReviews,
 } from '@/lib/integrations/gbp/use-gbp';
+import { useDeleteMetaData } from '@/lib/integrations/meta-ads/use-meta-ads';
 import {
   connectIntegration,
   useClientConnections,
@@ -138,11 +141,16 @@ function ConnectionRow({
 }) {
   const state = connectionState(connection);
   const disconnect = useDisconnectIntegration(clientId ?? '');
+  const deleteMeta = useDeleteMetaData(clientId ?? '');
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [rationaleOpen, setRationaleOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleConnect() {
+  const isMeta = provider.id === 'meta_ads';
+
+  async function startConnect() {
     if (!clientId) return;
     setBusy(true);
     setError(null);
@@ -152,6 +160,17 @@ function ConnectionRow({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start the connection.');
       setBusy(false);
+    }
+  }
+
+  // Meta gets the rationale modal first (Meta App Review wants the user
+  // informed before consent); every other provider goes straight to OAuth.
+  function handleConnect() {
+    if (isMeta) {
+      setError(null);
+      setRationaleOpen(true);
+    } else {
+      void startConnect();
     }
   }
 
@@ -221,16 +240,49 @@ function ConnectionRow({
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 flex-col items-end gap-1.5">
         {state === 'connected' ? (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={disconnect.isPending || !clientId}
-            onClick={() => setConfirmOpen(true)}
-          >
-            {disconnect.isPending ? 'Disconnecting…' : 'Disconnect'}
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={disconnect.isPending || !clientId}
+              onClick={() => setConfirmOpen(true)}
+            >
+              {disconnect.isPending ? 'Disconnecting…' : 'Disconnect'}
+            </Button>
+            {/* Meta-only: a second affordance that BOTH disconnects AND purges
+                every Meta-sourced row + the audit log. Required for Meta App
+                Review compliance (User Data Deletion). */}
+            {isMeta ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={deleteMeta.isPending || !clientId}
+                onClick={() => setDeleteConfirmOpen(true)}
+                className="text-warn hover:bg-warn-soft hover:text-warn"
+              >
+                {deleteMeta.isPending ? 'Deleting…' : 'Disconnect & delete data'}
+              </Button>
+            ) : null}
+          </>
+        ) : isMeta ? (
+          /* The Meta Connect path uses the FB-branded button per Meta's
+             brand guidelines — the canonical Webnua Button is the wrong
+             shape for the OAuth initiation here. The button opens the
+             rationale modal first; the modal's own FB-branded
+             "Continue to Facebook" then triggers the OAuth redirect. */
+          <FacebookConnectButton
+            onClick={handleConnect}
+            disabled={busy || loading || !clientId}
+            label={
+              busy
+                ? 'Starting…'
+                : state === 'attention'
+                  ? 'Reconnect with Facebook'
+                  : 'Continue with Facebook'
+            }
+          />
         ) : (
           <Button
             variant={state === 'attention' ? 'destructive' : 'default'}
@@ -262,6 +314,50 @@ function ConnectionRow({
         tone="destructive"
         onConfirm={() => disconnect.mutate(provider.id)}
       />
+
+      {isMeta ? (
+        <>
+          <MetaPermissionRationaleModal
+            open={rationaleOpen}
+            onOpenChange={setRationaleOpen}
+            busy={busy}
+            onContinue={() => {
+              setRationaleOpen(false);
+              void startConnect();
+            }}
+          />
+          <ConfirmDialog
+            open={deleteConfirmOpen}
+            onOpenChange={setDeleteConfirmOpen}
+            title="Disconnect Meta and delete all data?"
+            description={
+              <>
+                This <strong>permanently removes</strong> every record Webnua
+                has from Meta for this client — ad account assignment, campaign
+                history, performance metrics, lead-form definitions, and the
+                OAuth connection itself. <strong>This cannot be undone.</strong>{' '}
+                Customer leads + bookings are NOT deleted (those are your data,
+                not Meta&apos;s).
+              </>
+            }
+            confirmLabel="Delete Meta data"
+            tone="destructive"
+            onConfirm={() =>
+              deleteMeta.mutate(undefined, {
+                onSuccess: (data) => {
+                  // Open the public status page in a new tab — Meta's
+                  // compliance contract wants the user to verify
+                  // deletion happened, and the operator may want to
+                  // keep the confirmation URL for their records.
+                  if (typeof window !== 'undefined' && data.url) {
+                    window.open(data.url, '_blank', 'noopener,noreferrer');
+                  }
+                },
+              })
+            }
+          />
+        </>
+      ) : null}
     </div>
   );
 }
