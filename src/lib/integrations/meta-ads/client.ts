@@ -447,6 +447,138 @@ async function setObjectStatus(
   );
 }
 
+// --- Business Asset Sharing (migration 0113) --------------------------------
+//
+// After OAuth + ad-account pick, we add Webnua's Business Manager as a
+// partner on the customer's ad account + Page. From that point on,
+// operators logged into Meta with their own personal account see the
+// customer's assets natively in their own Ads Manager — no deep-link,
+// no extra invite. This is the standard agency-onboarding shape Meta
+// has documented for years; the customer keeps ownership at all times
+// and can revoke from their Business Manager. Both endpoints require
+// `business_management` (already requested) and the corresponding
+// ads_management / pages_manage_ads permission (also requested).
+
+/** Tasks Webnua's BM receives on the customer's ad account when shared.
+ *  V1 = full management so operators can build/run/edit campaigns
+ *  end-to-end. The customer keeps ownership; this is partner access,
+ *  not transfer. */
+const AD_ACCOUNT_TASKS = ['MANAGE', 'ADVERTISE', 'ANALYZE', 'MANAGE_LEADS'] as const;
+
+/** Tasks Webnua's BM receives on the customer's Page. V1 = full
+ *  management plus messaging (lead-gen ads frequently funnel into
+ *  Messenger, so MESSAGING + ADVERTISE is the operative set). */
+const PAGE_TASKS = ['MANAGE', 'CREATE_CONTENT', 'ADVERTISE', 'ANALYZE', 'MESSAGING'] as const;
+
+/** Share an ad account with Webnua's Business Manager so operators
+ *  see it in their own Ads Manager. Idempotent on Meta's side — calling
+ *  twice does not error, the second call is a no-op when the share
+ *  already exists. */
+export async function shareAdAccountWithWebnua(
+  clientId: string,
+  adAccountId: string,
+  webnuaBusinessId: string,
+): Promise<IntegrationResult<{ success?: boolean }>> {
+  return callWithToken<{ success?: boolean }>(
+    clientId,
+    'meta_ads',
+    async (accessToken) => {
+      return callExternal<{ success?: boolean }>({
+        provider: 'meta_ads',
+        operation: 'share_ad_account_with_webnua',
+        url: `${GRAPH}/${adAccountId}/agencies`,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        rawBody: jsonForm({
+          access_token: accessToken,
+          business: webnuaBusinessId,
+          permitted_tasks: AD_ACCOUNT_TASKS,
+        }),
+        clientId,
+      });
+    },
+  );
+}
+
+/** Share a Page with Webnua's Business Manager so lead-gen ads attached
+ *  to this Page can be managed from operator Ads Managers. */
+export async function sharePageWithWebnua(
+  clientId: string,
+  pageId: string,
+  webnuaBusinessId: string,
+): Promise<IntegrationResult<{ success?: boolean }>> {
+  return callWithToken<{ success?: boolean }>(
+    clientId,
+    'meta_ads',
+    async (accessToken) => {
+      return callExternal<{ success?: boolean }>({
+        provider: 'meta_ads',
+        operation: 'share_page_with_webnua',
+        url: `${GRAPH}/${pageId}/agencies`,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        rawBody: jsonForm({
+          access_token: accessToken,
+          business: webnuaBusinessId,
+          permitted_tasks: PAGE_TASKS,
+        }),
+        clientId,
+      });
+    },
+  );
+}
+
+/** Revoke Webnua's partner access to an ad account. Called on
+ *  operator-initiated disconnect; the customer can also revoke from
+ *  their own Business Manager. */
+export async function revokeAdAccountFromWebnua(
+  clientId: string,
+  adAccountId: string,
+  webnuaBusinessId: string,
+): Promise<IntegrationResult<{ success?: boolean }>> {
+  return callWithToken<{ success?: boolean }>(
+    clientId,
+    'meta_ads',
+    async (accessToken) => {
+      return callExternal<{ success?: boolean }>({
+        provider: 'meta_ads',
+        operation: 'revoke_ad_account_from_webnua',
+        url: `${GRAPH}/${adAccountId}/agencies?${form({
+          access_token: accessToken,
+          business: webnuaBusinessId,
+        })}`,
+        method: 'DELETE',
+        clientId,
+      });
+    },
+  );
+}
+
+/** Revoke Webnua's partner access to a Page. Sibling of
+ *  revokeAdAccountFromWebnua. */
+export async function revokePageFromWebnua(
+  clientId: string,
+  pageId: string,
+  webnuaBusinessId: string,
+): Promise<IntegrationResult<{ success?: boolean }>> {
+  return callWithToken<{ success?: boolean }>(
+    clientId,
+    'meta_ads',
+    async (accessToken) => {
+      return callExternal<{ success?: boolean }>({
+        provider: 'meta_ads',
+        operation: 'revoke_page_from_webnua',
+        url: `${GRAPH}/${pageId}/agencies?${form({
+          access_token: accessToken,
+          business: webnuaBusinessId,
+        })}`,
+        method: 'DELETE',
+        clientId,
+      });
+    },
+  );
+}
+
 export function pauseCampaign(clientId: string, metaCampaignId: string) {
   return setObjectStatus(clientId, metaCampaignId, 'PAUSED', 'pause_campaign');
 }

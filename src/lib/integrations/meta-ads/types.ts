@@ -144,6 +144,13 @@ export type MetaCampaignCreatedVia =
   | 'webnua_ongoing'
   | 'external';
 
+/** Webnua's Business Manager partnership state on a customer asset
+ *  (ad account or Page). `'active'` means operators see the customer's
+ *  asset natively in their own Ads Manager / Business Manager — no extra
+ *  steps. `'failed'` means the share API call did not succeed; the row's
+ *  `*_error` column carries the reason and the operator can retry. */
+export type MetaPartnerStatus = 'pending' | 'active' | 'failed' | 'revoked';
+
 export type ClientMetaAdAccountRow = {
   id: string;
   client_id: string;
@@ -159,6 +166,19 @@ export type ClientMetaAdAccountRow = {
   customer_agreed_at: string | null;
   customer_agreed_by_email: string | null;
   last_synced_at: string | null;
+  // Page selected at OAuth time. Required for lead-gen ads (every ad
+  // attaches to a Page) and for Page partnership sharing. Nullable for
+  // back-compat with pre-0113 rows.
+  meta_page_id: string | null;
+  meta_page_name: string | null;
+  // Ad-account partnership state (migration 0113).
+  webnua_partner_status: MetaPartnerStatus | null;
+  webnua_partner_granted_at: string | null;
+  webnua_partner_error: string | null;
+  // Page partnership state (independent — can succeed/fail separately).
+  webnua_page_partner_status: MetaPartnerStatus | null;
+  webnua_page_partner_granted_at: string | null;
+  webnua_page_partner_error: string | null;
   created_at: string;
   updated_at: string;
 };
