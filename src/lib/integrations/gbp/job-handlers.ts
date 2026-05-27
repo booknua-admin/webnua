@@ -360,19 +360,17 @@ registerJobHandler(GBP_SEND_REVIEW_REQUEST_JOB, async (rawPayload) => {
  *  automation row is missing. Never reads `is_enabled` — a manual send must
  *  work even when the operator has disabled the automation. */
 async function resolveReviewRequestSmsBody(clientId: string): Promise<string | null> {
-  // PR B.3 consolidation (migration 0105): review_request_sms +
-  // review_request_email collapsed into ONE `review_request` automation
-  // with SMS at position 1 and email at position 2. The lookup key reflects
-  // the new shape.
-  const live = await getAutomationActionConfig(clientId, 'review_request', 1);
+  // PR B.6 (migration 0110): review_request flipped to email-primary —
+  // email at position 1, SMS at position 2. This resolver reads the SMS
+  // body for the operator's manual review-request send affordance.
+  const live = await getAutomationActionConfig(clientId, 'review_request', 2);
   if (live) {
     const body = (live.config as { body?: unknown }).body;
     if (typeof body === 'string' && body.trim().length > 0) return body;
   }
-  // Fallback — should be rare (a half-seeded client). Position 1 is the
-  // SMS action under the new consolidated shape.
+  // Fallback — half-seeded client. Position 2 is the SMS action.
   const def = getPlatformDefault('review_request');
-  const smsAction = def?.actions.find((a) => a.position === 1);
+  const smsAction = def?.actions.find((a) => a.position === 2);
   if (!smsAction) return null;
   const cfg = actionDefaultToConfig(smsAction);
   const body = cfg.body;
@@ -381,12 +379,12 @@ async function resolveReviewRequestSmsBody(clientId: string): Promise<string | n
 
 /** Resolve the email subject + bodies for a manual review-request send.
  *  Reads the client's `review_request` automation action_config at
- *  position 2 (the email action under the consolidated shape — PR B.3 /
- *  migration 0105). Falls back to the platform default. */
+ *  position 1 (the email action under the email-primary shape — PR B.6
+ *  migration 0110). Falls back to the platform default. */
 async function resolveReviewRequestEmailParts(
   clientId: string,
 ): Promise<{ subject: string; bodyHtml: string; bodyText: string } | null> {
-  const live = await getAutomationActionConfig(clientId, 'review_request', 2);
+  const live = await getAutomationActionConfig(clientId, 'review_request', 1);
   if (live) {
     const cfg = live.config as {
       subject?: unknown;
@@ -410,7 +408,7 @@ async function resolveReviewRequestEmailParts(
     }
   }
   const def = getPlatformDefault('review_request');
-  const emailAction = def?.actions.find((a) => a.position === 2);
+  const emailAction = def?.actions.find((a) => a.position === 1);
   if (!emailAction) return null;
   const cfg = actionDefaultToConfig(emailAction) as {
     subject?: string;

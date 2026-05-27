@@ -23,10 +23,18 @@
 // CONSOLIDATION NOTE (PR B.3 — migration 0105): the per-channel automations
 // from the original 0077 seed (lead_acknowledgment_sms +
 // lead_acknowledgment_email, review_request_sms + review_request_email) were
-// collapsed into multi-action automations. The list below tracks the NEW
+// collapsed into multi-action automations. The list below tracks the
 // consolidated shape — each multi-channel automation has two `actions`
-// entries (SMS at position 1, email at position 2) instead of two separate
-// automation entries.
+// entries instead of two separate automation entries.
+//
+// CHANNEL PREFERENCE (PR B.6 — migration 0110): email is the PRIMARY channel
+// at position 1 (requires_email); SMS is the FALLBACK at position 2
+// (requires_phone + requires_no_email). Rationale: Twilio sends cost
+// ~€0.05/segment; Resend is effectively free at our volumes. Defaults
+// favour email; operator/client can edit either action body OR toggle the
+// fallback off entirely. One exception: arrival_notification stays SMS-only
+// because the "we're on the way" moment is time-sensitive enough that SMS
+// open rates outweigh the cost concern.
 // =============================================================================
 
 import type { AutomationActionType } from './engine-types';
@@ -62,7 +70,11 @@ export type AutomationActionDefault = {
   /** Conditional-fire filters: only fire when the predicate holds. */
   requiresPhone?: boolean;
   requiresEmail?: boolean;
+  /** Email-fallback gate (PR B.6 migration 0110): SMS only when no email on
+   *  file. The email primary fires whenever an email is available; this
+   *  guard prevents the SMS from ALSO firing for the same lead. */
   requiresNoPhone?: boolean;
+  requiresNoEmail?: boolean;
   requiresGbpLocation?: boolean;
   /** Delay (in minutes) before this action fires after the trigger. */
   delayMinutes?: number;
@@ -95,24 +107,13 @@ export const PLATFORM_DEFAULT_AUTOMATIONS: readonly AutomationDefault[] = [
     automationKey: 'lead_acknowledgment',
     name: 'Instant lead reply',
     description:
-      'Fires the moment a new lead lands. Sends an SMS to leads with a phone on file and a follow-up email to leads with an email on file.',
+      'Fires the moment a new lead lands. Sends an email when an email is on file; falls back to SMS only when the lead has no email but does have a phone. Email is preferred to keep send costs down.',
     isEnabled: true,
     visibility: 'client',
     triggerType: 'lead_created',
     actions: [
       {
         position: 1,
-        actionType: 'send_sms_to_lead',
-        templateKey: 'lead_acknowledgment',
-        requiresPhone: true,
-        pausesOnHumanActivity: true,
-        body:
-          'Hi {{lead.firstName}}, thanks for the enquiry — {{client.businessName}} here. ' +
-          "I'll be in touch within {{client.responseTime}} to sort out {{lead.service}}. " +
-          'Reply to this message if you need anything urgent.',
-      },
-      {
-        position: 2,
         actionType: 'send_email_to_lead',
         templateKey: 'lead_followup',
         requiresEmail: true,
@@ -124,6 +125,18 @@ export const PLATFORM_DEFAULT_AUTOMATIONS: readonly AutomationDefault[] = [
           "I've seen your enquiry about {{lead.service}} and I'll reach out within {{client.responseTime}}.\n\n" +
           "If it's urgent, you can reach me directly on {{client.phone}}.\n\n" +
           '— {{client.businessName}}',
+      },
+      {
+        position: 2,
+        actionType: 'send_sms_to_lead',
+        templateKey: 'lead_acknowledgment',
+        requiresPhone: true,
+        requiresNoEmail: true,
+        pausesOnHumanActivity: true,
+        body:
+          'Hi {{lead.firstName}}, thanks for the enquiry — {{client.businessName}} here. ' +
+          "I'll be in touch within {{client.responseTime}} to sort out {{lead.service}}. " +
+          'Reply to this message if you need anything urgent.',
       },
     ],
   },
@@ -149,30 +162,16 @@ export const PLATFORM_DEFAULT_AUTOMATIONS: readonly AutomationDefault[] = [
     automationKey: 'review_request',
     name: 'Review request',
     description:
-      'Asks the lead to leave a Google review 2 hours after the job is marked complete. Sends SMS when a phone is on file, with email fallback otherwise. Only fires when a connected GBP location exists.',
+      'Asks the lead to leave a Google review 2 hours after the job is marked complete. Sends email when an email is on file; falls back to SMS only when the lead has no email but does have a phone. Only fires when a connected GBP location exists.',
     isEnabled: true,
     visibility: 'client',
     triggerType: 'job_completed',
     actions: [
       {
         position: 1,
-        actionType: 'send_sms_to_lead',
-        templateKey: 'review_request',
-        requiresPhone: true,
-        requiresGbpLocation: true,
-        writesGbpReviewRequestAudit: true,
-        delayMinutes: 120,
-        pausesOnHumanActivity: true,
-        body:
-          'Hi {{lead.firstName}}, thanks for choosing {{client.businessName}}. ' +
-          "If you've a minute, a quick Google review would mean a lot — {{review.link}}. Cheers!",
-      },
-      {
-        position: 2,
         actionType: 'send_email_to_lead',
         templateKey: 'review_request',
         requiresEmail: true,
-        requiresNoPhone: true,
         requiresGbpLocation: true,
         writesGbpReviewRequestAudit: true,
         delayMinutes: 120,
@@ -184,23 +183,51 @@ export const PLATFORM_DEFAULT_AUTOMATIONS: readonly AutomationDefault[] = [
           'If you have a minute, a quick Google review would mean the world:\n{{review.link}}\n\n' +
           'Cheers,\n{{client.businessName}}',
       },
+      {
+        position: 2,
+        actionType: 'send_sms_to_lead',
+        templateKey: 'review_request',
+        requiresPhone: true,
+        requiresNoEmail: true,
+        requiresGbpLocation: true,
+        writesGbpReviewRequestAudit: true,
+        delayMinutes: 120,
+        pausesOnHumanActivity: true,
+        body:
+          'Hi {{lead.firstName}}, thanks for choosing {{client.businessName}}. ' +
+          "If you've a minute, a quick Google review would mean a lot — {{review.link}}. Cheers!",
+      },
     ],
   },
   {
     automationKey: 'booking_confirmation',
-    name: 'Booking confirmation SMS',
+    name: 'Booking confirmation',
     description:
-      'Sends a booking confirmation SMS when a booking is created. Default off — opt in when you trust the cadence.',
+      'Confirms a new booking. Sends email when an email is on file; falls back to SMS only when no email. Default off — opt in when you trust the cadence.',
     isEnabled: false,
     visibility: 'client',
     triggerType: 'job_scheduled',
-    triggerFilters: { requires_phone: true },
     actions: [
       {
         position: 1,
+        actionType: 'send_email_to_lead',
+        templateKey: 'job_confirmation',
+        requiresEmail: true,
+        pausesOnHumanActivity: true,
+        subject: 'Your booking with {{client.businessName}} is confirmed',
+        body:
+          'Hi {{lead.firstName}},\n\n' +
+          'This is {{client.businessName}} confirming your booking on {{job.date}} at {{job.time}}.\n\n' +
+          "We'll be at {{job.address}}.\n\n" +
+          'If anything changes you can reach us on {{client.phone}}.\n\n' +
+          '— {{client.businessName}}',
+      },
+      {
+        position: 2,
         actionType: 'send_sms_to_lead',
         templateKey: 'job_confirmation',
         requiresPhone: true,
+        requiresNoEmail: true,
         pausesOnHumanActivity: true,
         body:
           'Hi {{lead.firstName}}, this is {{client.businessName}} confirming your booking ' +
@@ -308,6 +335,7 @@ export function actionDefaultToConfig(
   if (def.requiresPhone) cfg.requires_phone = true;
   if (def.requiresEmail) cfg.requires_email = true;
   if (def.requiresNoPhone) cfg.requires_no_phone = true;
+  if (def.requiresNoEmail) cfg.requires_no_email = true;
   if (def.requiresGbpLocation) cfg.requires_gbp_location = true;
   if (def.delayMinutes !== undefined) cfg.delay_minutes = def.delayMinutes;
   return cfg;
