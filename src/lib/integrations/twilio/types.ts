@@ -38,10 +38,26 @@ export type TwilioAlphaSenderResource = {
 
 // --- our row shapes ----------------------------------------------------------
 
-/** client_sms_senders.status — the carrier-registration lifecycle. */
-export type SmsSenderStatus = 'pending_approval' | 'approved' | 'rejected' | 'suspended';
+/** client_sms_senders.status — the carrier-registration lifecycle.
+ *
+ *  Extended by migration 0102 to include:
+ *    - `pending_registration` — auto-assign job enqueued; Twilio not yet
+ *      called. Set by `enqueueSenderRegistration` before the background job
+ *      runs.
+ *    - `failed` — Twilio rejected the registration (auth 20003, malformed
+ *      sender, service unavailable). The operator UI surfaces
+ *      `last_failure_code` / `last_failure_message` so the operator can fix
+ *      the underlying issue (typically credentials) and retry.
+ */
+export type SmsSenderStatus =
+  | 'pending_registration'
+  | 'pending_approval'
+  | 'approved'
+  | 'failed'
+  | 'rejected'
+  | 'suspended';
 
-/** A client_sms_senders row (migration 0050 + 0058). */
+/** A client_sms_senders row (migrations 0050 + 0058 + 0102). */
 export type ClientSmsSenderRow = {
   id: string;
   client_id: string;
@@ -50,6 +66,13 @@ export type ClientSmsSenderRow = {
   status: SmsSenderStatus;
   notes: string | null;
   twilio_registration_sid: string | null;
+  /** Migration 0102 — the active twilio_register_sender_id job, when one is
+   *  in flight. Null on the manual-operator path and once the lifecycle
+   *  reaches a terminal status. */
+  registration_job_id?: string | null;
+  last_registration_attempt_at?: string | null;
+  last_failure_code?: string | null;
+  last_failure_message?: string | null;
 };
 
 /** sms_messages.status — the delivery lifecycle. */

@@ -11,6 +11,28 @@
 /** The job type for an outbound SMS send. */
 export const SEND_SMS_JOB = 'send_sms';
 
+/** The job type for an auto-assigned alphanumeric sender registration.
+ *
+ *  Enqueued by the signup flows (Pattern B conversational, operator concierge
+ *  create-client) the moment a new client's business name is captured. The
+ *  handler derives a sender id from the business name, calls Twilio's
+ *  AlphaSender API, and lands the client_sms_senders row at
+ *  `pending_approval` on success or `failed` on Twilio rejection. */
+export const REGISTER_SENDER_JOB = 'twilio_register_sender_id';
+
+/** Payload for a REGISTER_SENDER_JOB. */
+export type RegisterSenderPayload = {
+  /** The new client's UUID. The handler resolves the business name and any
+   *  collision context off this id (so a retry after a renamed business uses
+   *  the current name). */
+  clientId: string;
+  /** Optional pre-derived sender id. When set, the handler skips its own
+   *  derivation and submits this exact string — used by the operator
+   *  "retry registration" affordance which lets the operator override the
+   *  default derivation. */
+  overrideSenderId?: string;
+};
+
 /** Payload for a SEND_SMS_JOB.
  *
  * Phase 8 Session 2: `body` is now required. Bodies live on the originating

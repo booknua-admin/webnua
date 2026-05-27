@@ -42,7 +42,12 @@ const senderKey = (clientId: string | null) => ['sms-sender', clientId] as const
 async function fetchSender(clientId: string): Promise<ClientSmsSenderRow | null> {
   const { data, error } = await db()
     .from('client_sms_senders')
-    .select('id, client_id, sender_id, registered_at, status, notes, twilio_registration_sid')
+    .select(
+      // Migration 0102 adds registration_job_id + last_registration_attempt_at
+      // + last_failure_code + last_failure_message so the UI can surface a
+      // meaningful diagnostic when auto-assign failed.
+      'id, client_id, sender_id, registered_at, status, notes, twilio_registration_sid, registration_job_id, last_registration_attempt_at, last_failure_code, last_failure_message',
+    )
     .eq('client_id', clientId)
     .maybeSingle();
   if (error) throw normalizeError(error);
@@ -82,6 +87,8 @@ function smsErrorMessage(code: string | undefined, status: number): string {
       return 'No sender id has been registered for this client yet.';
     case 'twilio-register-failed':
       return 'Twilio rejected the sender id. Try a different one, or check the Twilio account.';
+    case 'twilio-auth-failed':
+      return 'Twilio rejected the credentials. Verify TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in the deployment environment.';
     case 'forbidden':
     case 'forbidden-client':
       return 'You do not have access to this client.';
@@ -123,6 +130,20 @@ export function useRefreshSmsSender(clientId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => postJson('/api/integrations/twilio/sender', { clientId, action: 'refresh' }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: senderKey(clientId) });
+    },
+  });
+}
+
+/** Retry a failed / stuck sender registration. Used after the operator has
+ *  fixed an underlying issue (typically TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN
+ *  in the deployment env). Flips the row back to pending_registration and
+ *  enqueues a fresh twilio_register_sender_id job. PR A — auto-assign work. */
+export function useRetrySmsSender(clientId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => postJson('/api/integrations/twilio/sender', { clientId, action: 'retry' }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: senderKey(clientId) });
     },

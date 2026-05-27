@@ -360,51 +360,69 @@ registerJobHandler(GBP_SEND_REVIEW_REQUEST_JOB, async (rawPayload) => {
  *  automation row is missing. Never reads `is_enabled` — a manual send must
  *  work even when the operator has disabled the automation. */
 async function resolveReviewRequestSmsBody(clientId: string): Promise<string | null> {
-  const live = await getAutomationActionConfig(clientId, 'review_request_sms');
+  // PR B.6 (migration 0110): review_request flipped to email-primary —
+  // email at position 1, SMS at position 2. This resolver reads the SMS
+  // body for the operator's manual review-request send affordance.
+  const live = await getAutomationActionConfig(clientId, 'review_request', 2);
   if (live) {
     const body = (live.config as { body?: unknown }).body;
     if (typeof body === 'string' && body.trim().length > 0) return body;
   }
-  // Fallback — should be rare (a half-seeded client).
-  const def = getPlatformDefault('review_request_sms');
-  if (!def) return null;
-  const cfg = actionDefaultToConfig(def.actions[0]);
+  // Fallback — half-seeded client. Position 2 is the SMS action.
+  const def = getPlatformDefault('review_request');
+  const smsAction = def?.actions.find((a) => a.position === 2);
+  if (!smsAction) return null;
+  const cfg = actionDefaultToConfig(smsAction);
   const body = cfg.body;
   return typeof body === 'string' && body.length > 0 ? body : null;
 }
 
 /** Resolve the email subject + bodies for a manual review-request send.
- *  Reads the client's `review_request_email` automation action_config.
- *  Falls back to the platform default. */
+ *  Reads the client's `review_request` automation action_config at
+ *  position 1 (the email action under the email-primary shape — PR B.6
+ *  migration 0110). Falls back to the platform default. */
 async function resolveReviewRequestEmailParts(
   clientId: string,
 ): Promise<{ subject: string; bodyHtml: string; bodyText: string } | null> {
-  const live = await getAutomationActionConfig(clientId, 'review_request_email');
+  const live = await getAutomationActionConfig(clientId, 'review_request', 1);
   if (live) {
     const cfg = live.config as {
       subject?: unknown;
+      body?: unknown;
       body_html?: unknown;
       body_text?: unknown;
     };
     const subject = typeof cfg.subject === 'string' ? cfg.subject : '';
+    // Customer-facing emails ship plain text only (migration 0097); body_html
+    // is empty. Prefer the consolidated `body` field that the new shape
+    // writes (migration 0109), fall back to the legacy body_text key.
+    const bodyText =
+      typeof cfg.body === 'string'
+        ? cfg.body
+        : typeof cfg.body_text === 'string'
+          ? cfg.body_text
+          : '';
     const bodyHtml = typeof cfg.body_html === 'string' ? cfg.body_html : '';
-    const bodyText = typeof cfg.body_text === 'string' ? cfg.body_text : '';
-    if (subject && (bodyHtml || bodyText)) {
+    if (subject && (bodyText || bodyHtml)) {
       return { subject, bodyHtml, bodyText };
     }
   }
-  const def = getPlatformDefault('review_request_email');
-  if (!def) return null;
-  const cfg = actionDefaultToConfig(def.actions[0]) as {
+  const def = getPlatformDefault('review_request');
+  const emailAction = def?.actions.find((a) => a.position === 1);
+  if (!emailAction) return null;
+  const cfg = actionDefaultToConfig(emailAction) as {
     subject?: string;
+    body?: string;
     body_html?: string;
     body_text?: string;
   };
-  if (!cfg.subject || (!cfg.body_html && !cfg.body_text)) return null;
+  const bodyText = cfg.body ?? cfg.body_text ?? '';
+  const bodyHtml = cfg.body_html ?? '';
+  if (!cfg.subject || (!bodyText && !bodyHtml)) return null;
   return {
     subject: cfg.subject,
-    bodyHtml: cfg.body_html ?? '',
-    bodyText: cfg.body_text ?? '',
+    bodyHtml,
+    bodyText,
   };
 }
 

@@ -588,6 +588,14 @@ function checkFilters(
   if (filters.requires_email === true && !ctx.hasEmail) {
     return { ok: false, reason: 'requires_email' };
   }
+  // PR B.6 (migration 0110) — email-fallback gate. The default
+  // automation library prefers email; SMS-fallback actions carry
+  // `requires_no_email: true` so they only fire when there is no email
+  // on file for the lead. Prevents both channels from sending for a
+  // lead that has both.
+  if (filters.requires_no_email === true && ctx.hasEmail) {
+    return { ok: false, reason: 'requires_no_email' };
+  }
   if (filters.requires_gbp_location === true && !ctx.hasGbpLocation) {
     return { ok: false, reason: 'requires_gbp_location' };
   }

@@ -188,6 +188,24 @@ export async function POST(
     }
   }
 
+  // PR A — auto-assign SMS alphanumeric sender id now that the canonical
+  // business name has been captured. Pattern B verify-code seeds clients.name
+  // with an email-derived placeholder; the real sender id should derive from
+  // THIS name. enqueueSenderRegistration is idempotent — calling it for a
+  // client that already has a sender returns the existing row without
+  // re-enqueueing. Fire-and-forget: a Twilio outage must not block the
+  // conversational flow from advancing.
+  void (async () => {
+    try {
+      const { enqueueSenderRegistration } = await import(
+        '@/lib/integrations/twilio/sender-registration'
+      );
+      await enqueueSenderRegistration(clientId);
+    } catch (error) {
+      console.error('[business-identity] sender auto-assign threw', error);
+    }
+  })();
+
   return NextResponse.json({
     ok: true,
     name: raw,

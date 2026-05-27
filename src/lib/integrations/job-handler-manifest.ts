@@ -45,11 +45,19 @@
 // =============================================================================
 
 import '@/lib/integrations/_shared/job-handlers';
+// PR C — Stream A agency notification stream. Registers
+// `send_agency_notification` for the DB-triggered operator alerts on new
+// ticket / new signup / cancellation events from migration 0107.
+import '@/lib/integrations/_shared/agency-notifications';
 import '@/lib/integrations/gbp/job-handlers';
 import '@/lib/integrations/meta-ads/job-handlers';
 import '@/lib/integrations/resend/job-handlers';
 import '@/lib/integrations/stripe/job-handlers';
 import '@/lib/integrations/twilio/job-handlers';
+// PR A — auto-assign sender registration. Registers twilio_register_sender_id,
+// enqueued by the signup flows (Pattern B conversational, operator concierge)
+// for every new client so the SMS sender lifecycle starts automatically.
+import '@/lib/integrations/twilio/sender-registration';
 
 // Phase 8 Session 1 — automation engine. Registers automation_trigger,
 // automation_action, and cold_lead_scan handlers so the integration_jobs

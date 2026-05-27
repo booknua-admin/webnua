@@ -239,11 +239,12 @@ function EditorBody({
       {!isOperator ? (
         <div className="mb-5 rounded-md border border-info/40 bg-info/8 px-4 py-3 font-sans text-[13px] text-ink">
           <span className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-info">
-            {'// View only'}
+            {'// Editable'}
           </span>{' '}
-          Webnua manages this automation&rsquo;s copy. You can pause it from
-          the toggle below; <strong>copy changes go through your operator</strong>
-          .
+          You can <strong>edit the message copy</strong> below and pause the
+          automation from its toggle. The trigger, timing, and channel rules
+          are managed by Webnua — message a ticket if any of those need to
+          change.
         </div>
       ) : null}
       {isOperator ? (

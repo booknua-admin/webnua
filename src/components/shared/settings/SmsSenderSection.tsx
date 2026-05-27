@@ -25,11 +25,18 @@ import {
   useClientSmsSender,
   useRefreshSmsSender,
   useRegisterSmsSender,
+  useRetrySmsSender,
 } from '@/lib/integrations/twilio/use-sms';
 
 const STATUS_DISPLAY: Record<SmsSenderStatus, { label: string; className: string }> = {
+  // Migration 0102 — auto-assign flow inserts at pending_registration before
+  // the background twilio_register_sender_id job runs.
+  pending_registration: { label: 'Registering with Twilio', className: 'bg-info/12 text-info' },
   pending_approval: { label: 'Pending approval', className: 'bg-warn/12 text-warn' },
   approved: { label: 'Approved', className: 'bg-good/12 text-good' },
+  // Twilio rejected the registration (credentials, invalid sender, etc.).
+  // Operator surfaces `last_failure_message` + a Retry affordance.
+  failed: { label: 'Registration failed', className: 'bg-warn/12 text-warn' },
   rejected: { label: 'Rejected', className: 'bg-warn/12 text-warn' },
   suspended: { label: 'Suspended', className: 'bg-ink/[0.06] text-ink-quiet' },
 };
@@ -61,6 +68,7 @@ export function SmsSenderSection({
   const sender = useClientSmsSender(clientId);
   const register = useRegisterSmsSender(clientId);
   const refresh = useRefreshSmsSender(clientId);
+  const retry = useRetrySmsSender(clientId);
 
   const [draft, setDraft] = useState('');
   const problem = senderIdProblem(draft);
@@ -103,11 +111,29 @@ export function SmsSenderSection({
                 ? 'This sender id is approved and in use on outbound SMS.'
                 : row.status === 'pending_approval'
                   ? 'Registered with Twilio. Carrier approval of an alphanumeric sender typically takes 1–3 business days in countries that require registration — refresh to check.'
-                  : row.status === 'rejected'
-                    ? 'The carrier rejected this sender id. Contact Twilio support, or register a different id.'
-                    : 'This sender id is suspended — no SMS will send until it is restored.'}
+                  : row.status === 'pending_registration'
+                    ? 'Auto-assigned at signup — registering with Twilio in the background. Usually finishes within a minute.'
+                    : row.status === 'failed'
+                      ? row.last_failure_message ??
+                        'Twilio rejected the registration. Fix the underlying issue, then click Retry.'
+                      : row.status === 'rejected'
+                        ? 'The carrier rejected this sender id. Contact Twilio support, or register a different id.'
+                        : 'This sender id is suspended — no SMS will send until it is restored.'}
             </p>
-            {row.status !== 'approved' ? (
+            {row.status === 'failed' ? (
+              <div className="mt-3 flex items-center gap-3">
+                <Button
+                  size="sm"
+                  disabled={retry.isPending}
+                  onClick={() => retry.mutate()}
+                >
+                  {retry.isPending ? 'Retrying…' : 'Retry registration'}
+                </Button>
+                <span className="text-[12px] text-ink-quiet">
+                  Re-runs the Twilio call with the same sender id.
+                </span>
+              </div>
+            ) : row.status === 'pending_approval' || row.status === 'pending_registration' ? (
               <div className="mt-3 flex items-center gap-3">
                 <Button
                   variant="outline"
@@ -124,6 +150,9 @@ export function SmsSenderSection({
             ) : null}
             {refresh.isError ? (
               <p className="mt-2 text-[12px] text-warn">{errorText(refresh.error)}</p>
+            ) : null}
+            {retry.isError ? (
+              <p className="mt-2 text-[12px] text-warn">{errorText(retry.error)}</p>
             ) : null}
           </div>
         ) : (

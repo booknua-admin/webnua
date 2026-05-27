@@ -223,6 +223,27 @@ export async function createClientWithGeneration(
   // roster + sidebar picker immediately.
   await hydrateClients();
 
+  // PR A — auto-assign SMS alphanumeric sender id. Fire-and-forget — the
+  // signup flow must not block on a Twilio outage or a credentials problem.
+  // Idempotent (skips when a row already exists), safe to call from every
+  // provisioning path. Browser-context imports break tree-shaking so we
+  // route through a dynamic import that the bundler can leave server-side.
+  void (async () => {
+    try {
+      const { enqueueSenderRegistration } = await import(
+        '@/lib/integrations/twilio/sender-registration'
+      );
+      const result = await enqueueSenderRegistration(client.id);
+      if (result.kind === 'skipped') {
+        console.info(
+          `[create-client] sender auto-assign skipped (${result.reason}) for client ${client.id}`,
+        );
+      }
+    } catch (error) {
+      console.error('[create-client] sender auto-assign threw', error);
+    }
+  })();
+
   return { clientSlug: client.slug, websiteId, funnelId };
 }
 
