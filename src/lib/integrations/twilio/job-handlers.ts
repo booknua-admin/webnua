@@ -138,7 +138,8 @@ export {};
 
 // --- render context ----------------------------------------------------------
 
-/** Build the render context: client + lead facts, then payload overrides. */
+/** Build the render context: client + lead + (optional) booking facts, then
+ *  payload overrides. */
 async function buildRenderContext(
   clientId: string,
   senderId: string,
@@ -147,10 +148,16 @@ async function buildRenderContext(
   const db = getIntegrationDb();
   const { data: clientRow } = await db
     .from('clients')
-    .select('name, primary_contact_phone')
+    .select('name, primary_contact_phone, response_time_promise')
     .eq('id', clientId)
     .maybeSingle();
-  const client = clientRow as { name?: string; primary_contact_phone?: string | null } | null;
+  const client = clientRow as
+    | {
+        name?: string;
+        primary_contact_phone?: string | null;
+        response_time_promise?: string | null;
+      }
+    | null;
 
   // Resolve the GBP review link for this client (when one is connected) so
   // {{review.link}} substitutes to the real Google review deep-link. Falls
@@ -163,9 +170,9 @@ async function buildRenderContext(
     'client.shortName': senderId,
     'client.businessName': client?.name ?? '',
     'client.phone': client?.primary_contact_phone ?? '',
-    // No responseTime column exists — a sensible default. Override per-send
-    // via the job payload's contextOverrides.
-    'client.responseTime': '1 hour',
+    // `response_time_promise` is operator-editable on `/settings/profile`
+    // (added migration 0111). Defaults to '1 hour' when unset.
+    'client.responseTime': client?.response_time_promise?.trim() || '1 hour',
     'lead.firstName': 'there',
     'lead.service': 'your enquiry',
     'job.date': '',
@@ -179,6 +186,14 @@ async function buildRenderContext(
     const lead = await loadLeadFacts(payload.relatedLeadId);
     if (lead.firstName) context['lead.firstName'] = lead.firstName;
     if (lead.service) context['lead.service'] = lead.service;
+  }
+
+  if (payload.relatedBookingId) {
+    const job = await loadBookingFacts(payload.relatedBookingId);
+    if (job.date) context['job.date'] = job.date;
+    if (job.time) context['job.time'] = job.time;
+    if (job.address) context['job.address'] = job.address;
+    if (job.eta) context['job.eta'] = job.eta;
   }
 
   return { ...context, ...(payload.contextOverrides ?? {}) };
@@ -210,6 +225,43 @@ async function loadLeadFacts(
   return {
     firstName: firstNameOf(name ?? ''),
     service: serviceFromFormPayload((eventRow as { payload?: unknown } | null)?.payload),
+  };
+}
+
+/** Resolve `{{job.*}}` facts from a booking row. `eta` is computed at send
+ *  time as "in N minutes" from `starts_at - now()`; absent / past starts
+ *  resolve to empty. `address` falls back to the lead's customer.address
+ *  when the booking has no address of its own. */
+async function loadBookingFacts(bookingId: string): Promise<{
+  date: string | null;
+  time: string | null;
+  address: string | null;
+  eta: string | null;
+}> {
+  const db = getIntegrationDb();
+  const { data } = await db
+    .from('bookings')
+    .select(
+      'starts_at, address, lead_id, customer:customers(address)',
+    )
+    .eq('id', bookingId)
+    .maybeSingle();
+  const row = data as
+    | {
+        starts_at: string;
+        address: string | null;
+        lead_id: string | null;
+        customer: { address: string | null } | null;
+      }
+    | null;
+  if (!row) {
+    return { date: null, time: null, address: null, eta: null };
+  }
+  return {
+    date: formatJobDate(row.starts_at),
+    time: formatJobTime(row.starts_at),
+    address: row.address ?? row.customer?.address ?? null,
+    eta: formatJobEta(row.starts_at),
   };
 }
 
@@ -252,11 +304,28 @@ function firstNameOf(name: string): string | null {
 
 const SERVICE_FIELD_RE = /service|enquir|need|help|job|work|project|interested/i;
 
-/** Best-effort: pull a "service" value out of a form_submitted event payload. */
+/** Best-effort: pull a "service" value out of a form_submitted event payload.
+ *
+ *  Two passes: (1) prefer a field tagged `leadRole === 'service'` — the
+ *  reliable, language-agnostic path; (2) fall back to a label regex match for
+ *  legacy forms where the textarea was never tagged. The route's payload
+ *  carries `leadRole` per field (see `cleanField` in /api/forms/submit) so the
+ *  tag round-trips through `lead_events.payload`. */
 function serviceFromFormPayload(payload: unknown): string | null {
   if (!payload || typeof payload !== 'object') return null;
   const fields = (payload as { fields?: unknown }).fields;
   if (!Array.isArray(fields)) return null;
+
+  // Pass 1 — tagged field wins.
+  for (const field of fields) {
+    if (!field || typeof field !== 'object') continue;
+    const role = (field as { leadRole?: unknown }).leadRole;
+    const value = (field as { value?: unknown }).value;
+    if (role === 'service' && typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  // Pass 2 — legacy label regex.
   for (const field of fields) {
     if (!field || typeof field !== 'object') continue;
     const label = (field as { label?: unknown }).label;
@@ -266,6 +335,46 @@ function serviceFromFormPayload(payload: unknown): string | null {
     }
   }
   return null;
+}
+
+// --- job-context formatters --------------------------------------------------
+
+const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH_SHORT = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+/** "Mon 26 May" — UTC-read so it matches the wall-clock-in-UTC convention the
+ *  calendar uses (lib/bookings/time.ts). */
+function formatJobDate(iso: string): string | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${WEEKDAY_SHORT[d.getUTCDay()]} ${d.getUTCDate()} ${MONTH_SHORT[d.getUTCMonth()]}`;
+}
+
+/** "9:00 AM" — UTC-read, 12-hour clock. */
+function formatJobTime(iso: string): string | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const h24 = d.getUTCHours();
+  const m = d.getUTCMinutes();
+  const period = h24 >= 12 ? 'PM' : 'AM';
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+/** "in N minutes" / "in N hours" — for an arrival/on-the-way SMS sent close
+ *  to the start time. Past starts or invalid dates resolve to null. */
+function formatJobEta(iso: string): string | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const diffMs = d.getTime() - Date.now();
+  if (diffMs <= 0) return null;
+  const mins = Math.round(diffMs / 60_000);
+  if (mins < 60) return `in ${mins} minute${mins === 1 ? '' : 's'}`;
+  const hours = Math.round(mins / 60);
+  return `in ${hours} hour${hours === 1 ? '' : 's'}`;
 }
 
 /** Pull the Twilio error code + message out of an IntegrationError. Twilio's

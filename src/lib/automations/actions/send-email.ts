@@ -102,6 +102,9 @@ export async function runSendEmailToLead(ctx: ActionContext): Promise<ActionOutc
     recipientEmail: email,
     recipientName: name || 'there',
     relatedLeadId: leadId,
+    // Forward bookingId for job_scheduled / job_status_changed / job_completed
+    // triggers — the handler resolves `{{job.*}}` against the booking row.
+    relatedBookingId: typeof event.bookingId === 'string' ? event.bookingId : null,
     subject: cfg.subject,
     bodyHtml: cfg.body_html,
     bodyText: cfg.body_text,

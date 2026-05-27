@@ -18,6 +18,11 @@ export type SendEmailPayload = {
   recipientEmail: string;
   recipientName?: string;
   relatedLeadId?: string | null;
+  /** The booking this email is about, when applicable (booking confirmation
+   *  / arrival notification). The handler loads the booking and substitutes
+   *  `{{job.*}}` into the render context. Absent for non-booking-triggered
+   *  sends — those template variables resolve to empty strings. */
+  relatedBookingId?: string | null;
   /** Phase 8 Session 2: pre-rendered email subject / body, used by automation
    *  action handlers that source the copy from `action_config`. When unset,
    *  the handler falls back to `DEFAULT_EMAIL_TEMPLATES[templateKey]` — the

@@ -102,7 +102,9 @@ function retypeField(field: FormField, type: FormFieldType): FormField {
   }
   if (type === 'email') next.leadRole = 'email';
   else if (type === 'phone') next.leadRole = 'phone';
-  else if (field.leadRole && type === 'text') next.leadRole = field.leadRole;
+  else if (field.leadRole && (type === 'text' || type === 'textarea')) {
+    next.leadRole = field.leadRole;
+  }
   return next;
 }
 
@@ -113,7 +115,7 @@ const PLACEHOLDER_TYPES: readonly FormFieldType[] = [
   'textarea',
   'select',
 ];
-const LEAD_ROLE_TYPES: readonly FormFieldType[] = ['text', 'email', 'phone'];
+const LEAD_ROLE_TYPES: readonly FormFieldType[] = ['text', 'email', 'phone', 'textarea'];
 
 // =============================================================================
 
@@ -714,6 +716,8 @@ function FieldInspector({
             { id: 'name', label: 'Customer name' },
             { id: 'email', label: 'Customer email' },
             { id: 'phone', label: 'Customer phone' },
+            { id: 'address', label: 'Service address' },
+            { id: 'service', label: 'Service description' },
           ]}
           capability="editForms"
           helper={<>Maps this answer onto the lead record.</>}

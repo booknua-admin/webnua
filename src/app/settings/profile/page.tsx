@@ -35,6 +35,7 @@ type ClientProfile = {
   primary_contact_name: string | null;
   primary_contact_email: string | null;
   primary_contact_phone: string | null;
+  response_time_promise: string | null;
 };
 
 type UserProfile = {
@@ -95,13 +96,18 @@ export default function ClientSettingsProfilePage() {
     queryKey: ['settings', 'profile', 'client', user?.clientId ?? null],
     queryFn: async (): Promise<ClientProfile | null> => {
       if (!user?.clientId) return null;
+      // `response_time_promise` was added by migration 0111 and isn't in the
+      // generated Database type yet — cast to bypass until regen.
       const { data, error } = await supabase
         .from('clients')
-        .select('id, name, industry, service_area, primary_contact_name, primary_contact_email, primary_contact_phone')
+        .select(
+          'id, name, industry, service_area, primary_contact_name, ' +
+            'primary_contact_email, primary_contact_phone, response_time_promise',
+        )
         .eq('slug', user.clientId)
         .single();
       if (error) throw normalizeError(error);
-      return data;
+      return data as unknown as ClientProfile;
     },
     enabled: !!user?.clientId,
     staleTime: 30_000,
@@ -187,6 +193,7 @@ function ProfileForm({
   const [contactName, setContactName] = useState(client.primary_contact_name ?? '');
   const [contactEmail, setContactEmail] = useState(client.primary_contact_email ?? '');
   const [contactPhone, setContactPhone] = useState(client.primary_contact_phone ?? '');
+  const [responseTime, setResponseTime] = useState(client.response_time_promise ?? '');
 
   // User form state.
   const [displayName, setDisplayName] = useState(user.display_name);
@@ -205,8 +212,9 @@ function ProfileForm({
     setContactName(client.primary_contact_name ?? '');
     setContactEmail(client.primary_contact_email ?? '');
     setContactPhone(client.primary_contact_phone ?? '');
+    setResponseTime(client.response_time_promise ?? '');
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [client.id, client.name, client.industry, client.service_area, client.primary_contact_name, client.primary_contact_email, client.primary_contact_phone]);
+  }, [client.id, client.name, client.industry, client.service_area, client.primary_contact_name, client.primary_contact_email, client.primary_contact_phone, client.response_time_promise]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -219,7 +227,8 @@ function ProfileForm({
     serviceArea.trim() !== (client.service_area ?? '') ||
     contactName.trim() !== (client.primary_contact_name ?? '') ||
     contactEmail.trim() !== (client.primary_contact_email ?? '') ||
-    contactPhone.trim() !== (client.primary_contact_phone ?? '');
+    contactPhone.trim() !== (client.primary_contact_phone ?? '') ||
+    responseTime.trim() !== (client.response_time_promise ?? '');
   const userDirty = displayName.trim() !== user.display_name;
   const dirty = businessDirty || userDirty;
 
@@ -231,16 +240,20 @@ function ProfileForm({
       if (!displayName.trim()) throw new Error('Display name is required.');
 
       if (businessDirty) {
+        // `response_time_promise` was added by migration 0111 and isn't in
+        // the generated Database type yet — cast to bypass until regen.
+        const patch = {
+          name: businessName.trim(),
+          industry: industry.trim(),
+          service_area: serviceArea.trim() || null,
+          primary_contact_name: contactName.trim() || null,
+          primary_contact_email: contactEmail.trim() || null,
+          primary_contact_phone: contactPhone.trim() || null,
+          response_time_promise: responseTime.trim() || null,
+        } as unknown as never;
         const { error: clientErr } = await supabase
           .from('clients')
-          .update({
-            name: businessName.trim(),
-            industry: industry.trim(),
-            service_area: serviceArea.trim() || null,
-            primary_contact_name: contactName.trim() || null,
-            primary_contact_email: contactEmail.trim() || null,
-            primary_contact_phone: contactPhone.trim() || null,
-          })
+          .update(patch)
           .eq('id', client.id);
         if (clientErr) throw normalizeError(clientErr);
       }
@@ -329,6 +342,13 @@ function ProfileForm({
             onChange={setContactPhone}
             placeholder="+61 411 234 567"
           />
+          <FieldRow
+            label="Response time promise"
+            sub="What your automated messages tell customers — e.g. '1 hour', '30 minutes', 'Same business day'."
+            value={responseTime}
+            onChange={setResponseTime}
+            placeholder="1 hour"
+          />
         </div>
       </SettingsSection>
 
@@ -373,6 +393,7 @@ function ProfileForm({
             setContactName(client.primary_contact_name ?? '');
             setContactEmail(client.primary_contact_email ?? '');
             setContactPhone(client.primary_contact_phone ?? '');
+            setResponseTime(client.response_time_promise ?? '');
             setDisplayName(user.display_name);
             setError(null);
           }}

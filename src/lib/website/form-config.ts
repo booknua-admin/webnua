@@ -39,8 +39,14 @@ export type FormFieldType =
  *  `address` is recognised by the route's existing-lead branch (FIX A — funnel
  *  step 2 captures a service address; without a role tag the value would land
  *  in `lead_events.payload` only and never reach `customers.address`). New
- *  identity roles go here, not in heuristic detection at the call site. */
-export type FormFieldLeadRole = 'name' | 'email' | 'phone' | 'address';
+ *  identity roles go here, not in heuristic detection at the call site.
+ *
+ *  `service` tags the field describing what the lead is asking for — feeds
+ *  `{{lead.service}}` in automation bodies. Replaces the previous label-regex
+ *  fallback (`SERVICE_FIELD_RE`) which only matched English-language labels
+ *  like "service" / "enquiry" / "help". The regex stays as a fallback for
+ *  legacy forms that never tagged the field. */
+export type FormFieldLeadRole = 'name' | 'email' | 'phone' | 'address' | 'service';
 
 export type FormField = {
   /** Stable id — also the element-inspector `selectedElement` id. */
@@ -130,7 +136,7 @@ const FIELD_TYPE_LABEL: Record<FormFieldType, string> = {
   text: 'Name',
   email: 'Email',
   phone: 'Phone',
-  textarea: 'Message',
+  textarea: 'What do you need help with?',
   select: 'Choose an option',
   checkbox: 'I agree',
   image: 'Upload a photo',
@@ -141,7 +147,7 @@ const FIELD_TYPE_PLACEHOLDER: Record<FormFieldType, string> = {
   text: 'Your name',
   email: 'you@example.com',
   phone: '0400 000 000',
-  textarea: 'How can we help?',
+  textarea: 'A few details about the job',
   select: '',
   checkbox: '',
   image: '',
@@ -155,26 +161,43 @@ export function defaultFormField(type: FormFieldType): FormField {
     id: makeFieldId(),
     type,
     label: FIELD_TYPE_LABEL[type],
-    required: type === 'email' || type === 'phone',
+    required: type === 'email',
   };
   const placeholder = FIELD_TYPE_PLACEHOLDER[type];
   if (placeholder) field.placeholder = placeholder;
   if (type === 'select') field.options = ['Option one', 'Option two'];
   if (type === 'email') field.leadRole = 'email';
   if (type === 'phone') field.leadRole = 'phone';
+  // A fresh textarea defaults to the "service description" role — the most
+  // common ask on a default form, and the tag every automation body
+  // resolves `{{lead.service}}` against. The operator can clear the role
+  // via the field inspector if the textarea is for something else.
+  if (type === 'textarea') field.leadRole = 'service';
   return field;
 }
 
-/** A fresh form — a name + email + message, message thank-you after submit. */
+/** A fresh form — name (required) + email (required, the primary channel) +
+ *  phone (optional, the SMS-fallback path) + service description (optional).
+ *  Email is required because every default automation prefers email; phone is
+ *  optional and only unlocks the SMS-fallback when no email is on file. */
 export function defaultFormConfig(): FormConfig {
   const name = defaultFormField('text');
   name.label = 'Your name';
   name.leadRole = 'name';
+
+  const email = defaultFormField('email');
+  email.required = true;
+
+  const phone = defaultFormField('phone');
+  phone.required = false;
+
+  const service = defaultFormField('textarea');
+
   return {
     title: 'Get in touch',
     showTitle: true,
     submitLabel: 'Send',
-    fields: [name, defaultFormField('email'), defaultFormField('textarea')],
+    fields: [name, email, phone, service],
     afterSubmit: {
       kind: 'message',
       heading: 'Thanks!',
