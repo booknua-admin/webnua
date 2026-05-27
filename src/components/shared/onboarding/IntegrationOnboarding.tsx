@@ -176,13 +176,16 @@ function IntegrationOnboarding({
           disabledReason={publishDisabledReason}
         />
 
-        {/* Per-tenant OAuth (GBP + Meta Ads). Reuses the sub-account
-            settings component, with returnTo='/dashboard' so the post-OAuth
-            callback lands back here (not on /settings/integrations). */}
+        {/* Per-tenant OAuth (GBP + Meta Ads). Mounted in 'pre-connection'
+            mode: only providers that aren't connected yet appear here, and
+            once everything is connected this whole panel disappears.
+            Management (disconnect / delete data / reconnect) lives on
+            /settings/integrations — that's the canonical home. */}
         <IntegrationConnectionsSection
           clientSlug={clientSlug}
           clientName={clientName}
           returnTo="/dashboard"
+          mode="pre-connection"
         />
 
         {/* Stripe billing — visible here too so the customer can pre-fill

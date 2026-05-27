@@ -24,9 +24,11 @@
 import { useState, useSyncExternalStore } from 'react';
 
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { FacebookConnectButton } from '@/components/shared/settings/FacebookConnectButton';
 import { GbpLocationPickerModal } from '@/components/shared/settings/GbpLocationPickerModal';
 import { IntegrationCallbackPickers } from '@/components/shared/settings/IntegrationCallbackPickers';
 import { MetaAdAccountFooter } from '@/components/shared/settings/MetaAdAccountFooter';
+import { MetaPermissionRationaleModal } from '@/components/shared/settings/MetaPermissionRationaleModal';
 import { SettingsPanel } from '@/components/shared/settings/SettingsPanel';
 import { SettingsSection } from '@/components/shared/settings/SettingsSection';
 import { Button } from '@/components/ui/button';
@@ -40,6 +42,7 @@ import {
   useClientGbpLocation,
   useSyncGbpReviews,
 } from '@/lib/integrations/gbp/use-gbp';
+import { useDeleteMetaData } from '@/lib/integrations/meta-ads/use-meta-ads';
 import {
   connectIntegration,
   useClientConnections,
@@ -70,6 +73,7 @@ export function IntegrationConnectionsSection({
   clientSlug,
   clientName,
   returnTo,
+  mode = 'manage',
 }: {
   clientSlug: string;
   clientName: string;
@@ -77,6 +81,16 @@ export function IntegrationConnectionsSection({
    *  '/dashboard' when mounted on the onboarding screen). Defaults to the
    *  callback's own default — '/settings/integrations'. */
   returnTo?: string;
+  /** `'manage'` (default) — every provider row renders regardless of
+   *  connection state; the canonical home for connection management
+   *  on /settings/integrations.
+   *
+   *  `'pre-connection'` — filters out already-connected providers and
+   *  renders null when every provider is connected. Use on surfaces
+   *  that exist to nudge the customer to connect (the dashboard's
+   *  IntegrationOnboarding card). The settings home keeps `'manage'`
+   *  so the customer can disconnect / reconnect / delete data. */
+  mode?: 'manage' | 'pre-connection';
 }) {
   const { data: clientId } = useClientId(clientSlug);
   const connections = useClientConnections(clientId ?? null);
@@ -86,25 +100,56 @@ export function IntegrationConnectionsSection({
     byProvider.set(connection.provider, connection);
   }
 
+  // In pre-connection mode, render only providers that are NOT in the
+  // 'connected' state — `attention` (refresh_failed) still surfaces so
+  // the customer can recover, and `disconnected` is the whole point.
+  const visibleProviders = Object.values(OAUTH_PROVIDER_DISPLAY).filter((provider) => {
+    if (mode !== 'pre-connection') return true;
+    return connectionState(byProvider.get(provider.id)) !== 'connected';
+  });
+
+  // The dashboard mount wants the whole panel to disappear once every
+  // provider is connected (the integration nudge has been resolved —
+  // management lives on /settings/integrations). Wait until connections
+  // have loaded so we don't briefly hide a row that's actually present.
+  if (mode === 'pre-connection' && !connections.isLoading && visibleProviders.length === 0) {
+    return null;
+  }
+
   return (
     <SettingsPanel>
       <SettingsSection
         heading={
-          <>
-            Connected <em>accounts</em>
-          </>
+          mode === 'pre-connection' ? (
+            <>
+              Connect your <em>business accounts</em>
+            </>
+          ) : (
+            <>
+              Connected <em>accounts</em>
+            </>
+          )
         }
         description={
-          <>
-            <strong>{clientName}&apos;s own third-party accounts.</strong> The
-            customer grants Webnua access once; tokens are stored encrypted and
-            refreshed automatically.
-          </>
+          mode === 'pre-connection' ? (
+            <>
+              <strong>Wire up {clientName}&apos;s third-party accounts.</strong>{' '}
+              Webnua needs access once; everything below stays managed
+              automatically from then on. You can manage these anytime in{' '}
+              <strong>Settings → Integrations</strong>.
+            </>
+          ) : (
+            <>
+              <strong>{clientName}&apos;s own third-party accounts.</strong> The
+              customer grants Webnua access once; tokens are stored encrypted and
+              refreshed automatically.
+            </>
+          )
         }
       >
         <OAuthResultBanner />
         <div className="flex flex-col gap-4">
-          {Object.values(OAUTH_PROVIDER_DISPLAY).map((provider) => (
+          {visibleProviders.map((provider) => (
             <ConnectionRow
               key={provider.id}
               provider={provider}
@@ -138,11 +183,16 @@ function ConnectionRow({
 }) {
   const state = connectionState(connection);
   const disconnect = useDisconnectIntegration(clientId ?? '');
+  const deleteMeta = useDeleteMetaData(clientId ?? '');
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [rationaleOpen, setRationaleOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleConnect() {
+  const isMeta = provider.id === 'meta_ads';
+
+  async function startConnect() {
     if (!clientId) return;
     setBusy(true);
     setError(null);
@@ -152,6 +202,17 @@ function ConnectionRow({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start the connection.');
       setBusy(false);
+    }
+  }
+
+  // Meta gets the rationale modal first (Meta App Review wants the user
+  // informed before consent); every other provider goes straight to OAuth.
+  function handleConnect() {
+    if (isMeta) {
+      setError(null);
+      setRationaleOpen(true);
+    } else {
+      void startConnect();
     }
   }
 
@@ -221,16 +282,49 @@ function ConnectionRow({
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 flex-col items-end gap-1.5">
         {state === 'connected' ? (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={disconnect.isPending || !clientId}
-            onClick={() => setConfirmOpen(true)}
-          >
-            {disconnect.isPending ? 'Disconnecting…' : 'Disconnect'}
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={disconnect.isPending || !clientId}
+              onClick={() => setConfirmOpen(true)}
+            >
+              {disconnect.isPending ? 'Disconnecting…' : 'Disconnect'}
+            </Button>
+            {/* Meta-only: a second affordance that BOTH disconnects AND purges
+                every Meta-sourced row + the audit log. Required for Meta App
+                Review compliance (User Data Deletion). */}
+            {isMeta ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={deleteMeta.isPending || !clientId}
+                onClick={() => setDeleteConfirmOpen(true)}
+                className="text-warn hover:bg-warn-soft hover:text-warn"
+              >
+                {deleteMeta.isPending ? 'Deleting…' : 'Disconnect & delete data'}
+              </Button>
+            ) : null}
+          </>
+        ) : isMeta ? (
+          /* The Meta Connect path uses the FB-branded button per Meta's
+             brand guidelines — the canonical Webnua Button is the wrong
+             shape for the OAuth initiation here. The button opens the
+             rationale modal first; the modal's own FB-branded
+             "Continue to Facebook" then triggers the OAuth redirect. */
+          <FacebookConnectButton
+            onClick={handleConnect}
+            disabled={busy || loading || !clientId}
+            label={
+              busy
+                ? 'Starting…'
+                : state === 'attention'
+                  ? 'Reconnect with Facebook'
+                  : 'Continue with Facebook'
+            }
+          />
         ) : (
           <Button
             variant={state === 'attention' ? 'destructive' : 'default'}
@@ -262,6 +356,50 @@ function ConnectionRow({
         tone="destructive"
         onConfirm={() => disconnect.mutate(provider.id)}
       />
+
+      {isMeta ? (
+        <>
+          <MetaPermissionRationaleModal
+            open={rationaleOpen}
+            onOpenChange={setRationaleOpen}
+            busy={busy}
+            onContinue={() => {
+              setRationaleOpen(false);
+              void startConnect();
+            }}
+          />
+          <ConfirmDialog
+            open={deleteConfirmOpen}
+            onOpenChange={setDeleteConfirmOpen}
+            title="Disconnect Meta and delete all data?"
+            description={
+              <>
+                This <strong>permanently removes</strong> every record Webnua
+                has from Meta for this client — ad account assignment, campaign
+                history, performance metrics, lead-form definitions, and the
+                OAuth connection itself. <strong>This cannot be undone.</strong>{' '}
+                Customer leads + bookings are NOT deleted (those are your data,
+                not Meta&apos;s).
+              </>
+            }
+            confirmLabel="Delete Meta data"
+            tone="destructive"
+            onConfirm={() =>
+              deleteMeta.mutate(undefined, {
+                onSuccess: (data) => {
+                  // Open the public status page in a new tab — Meta's
+                  // compliance contract wants the user to verify
+                  // deletion happened, and the operator may want to
+                  // keep the confirmation URL for their records.
+                  if (typeof window !== 'undefined' && data.url) {
+                    window.open(data.url, '_blank', 'noopener,noreferrer');
+                  }
+                },
+              })
+            }
+          />
+        </>
+      ) : null}
     </div>
   );
 }
