@@ -45,6 +45,10 @@
 // =============================================================================
 
 import '@/lib/integrations/_shared/job-handlers';
+// PR C — Stream A agency notification stream. Registers
+// `send_agency_notification` for the DB-triggered operator alerts on new
+// ticket / new signup / cancellation events from migration 0107.
+import '@/lib/integrations/_shared/agency-notifications';
 import '@/lib/integrations/gbp/job-handlers';
 import '@/lib/integrations/meta-ads/job-handlers';
 import '@/lib/integrations/resend/job-handlers';

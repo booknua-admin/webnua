@@ -98,6 +98,10 @@ const ALL_KINDS = [
   'stripe-payment-failed',
   'weekly-digest',
   'monthly-digest',
+  // PR C — agency notification stream (Stream A) previews.
+  'agency-new-ticket',
+  'agency-new-signup',
+  'agency-cancellation',
 ] as const;
 
 type Kind = (typeof ALL_KINDS)[number];
@@ -286,7 +290,103 @@ async function trigger(kind: Kind, recipientEmail: string): Promise<string> {
       });
       return outcome;
     }
+    case 'agency-new-ticket': {
+      // Sample preview of the operator's "new ticket" alert (Stream A).
+      // The production path resolves these strings from DB joins; the test
+      // path uses sample data to render the same branded chrome.
+      const html = buildAgencyPreview({
+        eyebrow: '// New ticket',
+        headline: 'Dublin Cleaning Co opened a ticket.',
+        summary: '<strong>Cannot update tile photo on the about page</strong>',
+        quote: 'I tried replacing the kitchen tile photo on /about three times and it keeps reverting to the original. Have a great morning when you get to this.',
+        metaParts: ['From <strong>Aoife (owner)</strong>', 'Category: website'],
+        ctaLabel: 'Open ticket inbox →',
+        ctaHref: `${base}/tickets`,
+      });
+      const text = `Dublin Cleaning Co opened a ticket.\n\nCannot update tile photo on the about page\n\nI tried replacing the kitchen tile photo on /about three times…\n\nFrom: Aoife (owner)\nCategory: website\n\nOpen: ${base}/tickets`;
+      const outcome = await sendOperatorEmail({
+        clientId: '00000000-0000-0000-0000-000000000000',
+        recipientEmail,
+        subject: 'New ticket from Dublin Cleaning Co — Cannot update tile photo on the about page',
+        html,
+        text,
+        templateName: 'agency_new_ticket_TEST',
+      });
+      return outcome;
+    }
+    case 'agency-new-signup': {
+      const html = buildAgencyPreview({
+        eyebrow: '// New signup',
+        headline: 'Dublin Cleaning Co just signed up.',
+        summary: 'A new sub-account verified their email and entered preview.',
+        metaParts: ['Industry: Domestic cleaning', 'Email: <strong>aoife@dublincleaning.ie</strong>'],
+        ctaLabel: 'Open sub-account →',
+        ctaHref: `${base}/clients/dublin-cleaning-co`,
+      });
+      const text = `Dublin Cleaning Co just signed up.\n\nA new sub-account verified their email and entered preview.\n\nIndustry: Domestic cleaning\nEmail: aoife@dublincleaning.ie\n\nOpen: ${base}/clients/dublin-cleaning-co`;
+      const outcome = await sendOperatorEmail({
+        clientId: '00000000-0000-0000-0000-000000000000',
+        recipientEmail,
+        subject: 'New signup — Dublin Cleaning Co',
+        html,
+        text,
+        templateName: 'agency_new_signup_TEST',
+      });
+      return outcome;
+    }
+    case 'agency-cancellation': {
+      const html = buildAgencyPreview({
+        eyebrow: '// Sub-account cancelled',
+        headline: 'Dublin Cleaning Co cancelled their subscription.',
+        summary: 'They have a 30-day grace before deletion. Reach out if you want to save the relationship.',
+        ctaLabel: 'Open sub-account →',
+        ctaHref: `${base}/clients/dublin-cleaning-co`,
+      });
+      const text = `Dublin Cleaning Co cancelled their subscription.\n\nThey have a 30-day grace before deletion. Reach out if you want to save the relationship.\n\nOpen: ${base}/clients/dublin-cleaning-co`;
+      const outcome = await sendOperatorEmail({
+        clientId: '00000000-0000-0000-0000-000000000000',
+        recipientEmail,
+        subject: 'Sub-account cancelled — Dublin Cleaning Co',
+        html,
+        text,
+        templateName: 'agency_cancellation_TEST',
+      });
+      return outcome;
+    }
   }
+}
+
+/** Mirror of `agencyEmailHtml` in lib/integrations/_shared/agency-notifications.ts.
+ *  Kept inline here so the test route can render preview HTML without DB
+ *  lookups. Edits to the chrome must apply to both. */
+function buildAgencyPreview(input: {
+  eyebrow: string;
+  headline: string;
+  summary?: string;
+  quote?: string;
+  metaParts?: Array<string | null>;
+  ctaLabel: string;
+  ctaHref: string;
+}): string {
+  const e = (s: string) =>
+    s.replace(
+      /[&<>"]/g,
+      (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string,
+    );
+  const meta = (input.metaParts ?? [])
+    .filter((p): p is string => p != null && p.length > 0)
+    .join(' · ');
+  return `<!doctype html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif;background:#f5f1ea;margin:0;padding:32px 0;color:#0a0a0a;">
+  <div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:14px;padding:32px 28px;border:1px solid #c9c0b0;">
+    <div style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:#d24317;font-weight:700;margin-bottom:14px;">${e(input.eyebrow)}</div>
+    <h1 style="font-size:22px;line-height:1.25;font-weight:800;letter-spacing:-0.02em;margin:0 0 14px 0;color:#0a0a0a;">${e(input.headline)}</h1>
+    ${input.summary ? `<p style="font-size:14px;line-height:1.55;color:#4a4a45;margin:0 0 18px 0;">${input.summary}</p>` : ''}
+    ${input.quote ? `<div style="margin:0 0 18px 0;padding:14px 16px;background:#f5f1ea;border-left:3px solid #d24317;border-radius:6px;"><p style="font-size:13px;line-height:1.55;color:#0a0a0a;margin:0;font-style:italic;">${e(input.quote)}</p></div>` : ''}
+    ${meta ? `<p style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;letter-spacing:0.06em;color:#6e685c;margin:0 0 22px 0;">${meta}</p>` : ''}
+    <p style="margin:0 0 4px 0;"><a href="${e(input.ctaHref)}" style="display:inline-block;background:#d24317;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:700;font-size:14px;">${e(input.ctaLabel)}</a></p>
+  </div>
+  ${EMAIL_BRAND_FOOTER}
+</body></html>`;
 }
 
 // Suppress unused-imports lint — these are surface-area for future test types.
