@@ -14,9 +14,6 @@ export const FORM_FIELD_TYPE_LABEL: Record<FormFieldType, string> = {
   phone: 'Phone',
   textarea: 'Long text',
   select: 'Dropdown',
-  // The service picker — options resolved at render time from
-  // `brand.services`. The operator never types options manually.
-  'service-select': 'Service picker',
   checkbox: 'Checkbox',
   image: 'Image upload',
   date: 'Date',
@@ -27,7 +24,6 @@ const ORDER: readonly FormFieldType[] = [
   'email',
   'phone',
   'date',
-  'service-select',
   'textarea',
   'select',
   'checkbox',

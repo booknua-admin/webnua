@@ -601,43 +601,43 @@ function FieldInput({
           style={inputStyle}
         />
       ) : field.type === 'select' ? (
+        // Standard dropdown. When `useServicesList` is set the options
+        // come from `brand.services` at render time (NOT from the
+        // per-field `options[]` array — that array is unused on a flagged
+        // field). The submitted value is the literal picked string (a
+        // snapshot, not a foreign key) so a lead stays readable even if
+        // the services list later changes. Empty `brandServices` on a
+        // flagged field renders a placeholder-only state — best-practice
+        // fail-graceful; the textarea below picks up the freeform answer.
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className={inputClass}
           style={inputStyle}
         >
-          <option value="">{field.placeholder || 'Select…'}</option>
-          {(field.options ?? []).map((opt, i) => (
-            <option key={i} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </select>
-      ) : field.type === 'service-select' ? (
-        // Service picker — options come from `brand.services` at render
-        // time, NOT from a per-field options[] array. The submitted value
-        // is the literal option string (a snapshot, not a foreign key) so
-        // a lead stays readable even if the services list later changes.
-        // Empty `brandServices` renders a placeholder-only state — the
-        // form still mounts; the textarea below collects the freeform
-        // answer. Best-practice fail-graceful.
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className={inputClass}
-          style={inputStyle}
-        >
-          <option value="">
-            {brandServices.length === 0
-              ? 'No services listed yet'
-              : field.placeholder || 'Pick a service…'}
-          </option>
-          {brandServices.map((opt, i) => (
-            <option key={i} value={opt}>
-              {opt}
-            </option>
-          ))}
+          {field.useServicesList ? (
+            <>
+              <option value="">
+                {brandServices.length === 0
+                  ? 'No services listed yet'
+                  : field.placeholder || 'Pick a service…'}
+              </option>
+              {brandServices.map((opt, i) => (
+                <option key={i} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </>
+          ) : (
+            <>
+              <option value="">{field.placeholder || 'Select…'}</option>
+              {(field.options ?? []).map((opt, i) => (
+                <option key={i} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </>
+          )}
         </select>
       ) : field.type === 'image' ? (
         <input

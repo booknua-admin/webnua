@@ -29,7 +29,6 @@ export type FormFieldType =
   | 'phone'
   | 'textarea'
   | 'select'
-  | 'service-select'
   | 'checkbox'
   | 'image'
   | 'date';
@@ -56,8 +55,20 @@ export type FormField = {
   label: string;
   placeholder?: string;
   required: boolean;
-  /** `select` only — the dropdown options. */
+  /** `select` only — the dropdown options. Ignored when `useServicesList`
+   *  is set; options are then resolved from the brand's services list at
+   *  render time. */
   options?: string[];
+  /** `select` only — flag the dropdown as "the services picker". When set:
+   *   • options come from `BrandObject.services` (live) at render time;
+   *   • the submitted value is the picked option's string (snapshot, not
+   *     a foreign key — a lead from 3 months ago stays readable when the
+   *     services list later changes);
+   *   • the editor hides the per-field `options[]` editor + forces
+   *     `leadRole = 'service'` so `{{lead.service}}` in automations
+   *     resolves correctly with zero further config.
+   *  This is the "out of the box" path the default form ships. */
+  useServicesList?: boolean;
   leadRole?: FormFieldLeadRole;
 };
 
@@ -139,7 +150,6 @@ const FIELD_TYPE_LABEL: Record<FormFieldType, string> = {
   phone: 'Phone',
   textarea: 'Anything else we should know?',
   select: 'Choose an option',
-  'service-select': 'What service do you need?',
   checkbox: 'I agree',
   image: 'Upload a photo',
   date: 'Preferred date',
@@ -151,7 +161,6 @@ const FIELD_TYPE_PLACEHOLDER: Record<FormFieldType, string> = {
   phone: '0400 000 000',
   textarea: 'A few details about the job',
   select: '',
-  'service-select': 'Pick a service…',
   checkbox: '',
   image: '',
   date: '',
@@ -171,39 +180,49 @@ export function defaultFormField(type: FormFieldType): FormField {
   if (type === 'select') field.options = ['Option one', 'Option two'];
   if (type === 'email') field.leadRole = 'email';
   if (type === 'phone') field.leadRole = 'phone';
-  // A fresh `service-select` is the canonical service picker — options are
-  // resolved at render time from the brand's services list (no per-field
-  // options[] required), and the role tag is baked in so
-  // `{{lead.service}}` substitutes to the picked option.
-  if (type === 'service-select') field.leadRole = 'service';
-  // A fresh textarea defaults to no leadRole — when the canonical
-  // dropdown is in the form, the textarea is the "anything else?" freeform
-  // escape, not a second service field. (Pre-`service-select` forms that
-  // tagged a textarea as `service` still resolve correctly — the route's
-  // first-match-wins lookup keeps that path working.)
+  // A fresh textarea defaults to no leadRole — the default form's
+  // service-picker dropdown (via `useServicesList`) carries the role; the
+  // textarea is the "anything else?" freeform escape.
+  return field;
+}
+
+/** A fresh service-picker `select` — the "use my services list" dropdown.
+ *  Operator-friendly factory so call sites don't have to mutate the field
+ *  after creation. */
+export function defaultServicePickerField(): FormField {
+  const field = defaultFormField('select');
+  field.label = 'What service do you need?';
+  field.placeholder = 'Pick a service…';
+  field.required = true;
+  field.useServicesList = true;
+  field.leadRole = 'service';
+  // The per-field `options` is unused when `useServicesList` is set —
+  // clear it so a stale stub list doesn't ship in the snapshot.
+  field.options = undefined;
   return field;
 }
 
 /** A fresh form — name + email + phone + service picker + details.
  *
  *  Five fields in canonical order:
- *    1. name           (text,           required, leadRole='name')
- *    2. email          (email,          required, leadRole='email') — the
+ *    1. name           (text,    required, leadRole='name')
+ *    2. email          (email,   required, leadRole='email') — the
  *       primary channel; every default automation prefers email.
- *    3. phone          (phone,          optional, leadRole='phone') — gates
+ *    3. phone          (phone,   optional, leadRole='phone') — gates
  *       the SMS-fallback path when no email is on file.
- *    4. service-select (service-select, required, leadRole='service') —
- *       options resolved from `brand.services` at render time, so the
- *       operator never edits dropdown options manually. Submits a snapshot
- *       of the picked option's string (not a foreign key) so historical
- *       leads stay readable when the services list changes.
- *    5. textarea       (textarea,       optional, no leadRole)        — the
+ *    4. service picker (select + useServicesList, required,
+ *       leadRole='service') — a standard dropdown flagged "use my
+ *       services list", options resolved live from `brand.services` at
+ *       render time. The submitted value is the picked option's string
+ *       (a snapshot, not a foreign key — historical leads stay readable
+ *       when the services list later changes).
+ *    5. textarea       (textarea, optional, no leadRole)  — the
  *       "anything else we should know?" freeform escape. Not tagged as
  *       service because the dropdown above is the canonical answer.
  *
  *  Fail-graceful: when `brand.services` is empty (a freshly-onboarded
  *  client mid-wizard or a never-onboarded edge case), `FormBlock` renders
- *  the service-select as a placeholder + the textarea picks up the
+ *  the dropdown as a placeholder-only state + the textarea picks up the
  *  freeform answer. */
 export function defaultFormConfig(): FormConfig {
   const name = defaultFormField('text');
@@ -216,8 +235,7 @@ export function defaultFormConfig(): FormConfig {
   const phone = defaultFormField('phone');
   phone.required = false;
 
-  const servicePick = defaultFormField('service-select');
-  servicePick.required = true;
+  const servicePick = defaultServicePickerField();
 
   const details = defaultFormField('textarea');
   details.label = 'Anything else we should know?';
