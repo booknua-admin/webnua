@@ -73,6 +73,7 @@ export function IntegrationConnectionsSection({
   clientSlug,
   clientName,
   returnTo,
+  mode = 'manage',
 }: {
   clientSlug: string;
   clientName: string;
@@ -80,6 +81,16 @@ export function IntegrationConnectionsSection({
    *  '/dashboard' when mounted on the onboarding screen). Defaults to the
    *  callback's own default — '/settings/integrations'. */
   returnTo?: string;
+  /** `'manage'` (default) — every provider row renders regardless of
+   *  connection state; the canonical home for connection management
+   *  on /settings/integrations.
+   *
+   *  `'pre-connection'` — filters out already-connected providers and
+   *  renders null when every provider is connected. Use on surfaces
+   *  that exist to nudge the customer to connect (the dashboard's
+   *  IntegrationOnboarding card). The settings home keeps `'manage'`
+   *  so the customer can disconnect / reconnect / delete data. */
+  mode?: 'manage' | 'pre-connection';
 }) {
   const { data: clientId } = useClientId(clientSlug);
   const connections = useClientConnections(clientId ?? null);
@@ -89,25 +100,56 @@ export function IntegrationConnectionsSection({
     byProvider.set(connection.provider, connection);
   }
 
+  // In pre-connection mode, render only providers that are NOT in the
+  // 'connected' state — `attention` (refresh_failed) still surfaces so
+  // the customer can recover, and `disconnected` is the whole point.
+  const visibleProviders = Object.values(OAUTH_PROVIDER_DISPLAY).filter((provider) => {
+    if (mode !== 'pre-connection') return true;
+    return connectionState(byProvider.get(provider.id)) !== 'connected';
+  });
+
+  // The dashboard mount wants the whole panel to disappear once every
+  // provider is connected (the integration nudge has been resolved —
+  // management lives on /settings/integrations). Wait until connections
+  // have loaded so we don't briefly hide a row that's actually present.
+  if (mode === 'pre-connection' && !connections.isLoading && visibleProviders.length === 0) {
+    return null;
+  }
+
   return (
     <SettingsPanel>
       <SettingsSection
         heading={
-          <>
-            Connected <em>accounts</em>
-          </>
+          mode === 'pre-connection' ? (
+            <>
+              Connect your <em>business accounts</em>
+            </>
+          ) : (
+            <>
+              Connected <em>accounts</em>
+            </>
+          )
         }
         description={
-          <>
-            <strong>{clientName}&apos;s own third-party accounts.</strong> The
-            customer grants Webnua access once; tokens are stored encrypted and
-            refreshed automatically.
-          </>
+          mode === 'pre-connection' ? (
+            <>
+              <strong>Wire up {clientName}&apos;s third-party accounts.</strong>{' '}
+              Webnua needs access once; everything below stays managed
+              automatically from then on. You can manage these anytime in{' '}
+              <strong>Settings → Integrations</strong>.
+            </>
+          ) : (
+            <>
+              <strong>{clientName}&apos;s own third-party accounts.</strong> The
+              customer grants Webnua access once; tokens are stored encrypted and
+              refreshed automatically.
+            </>
+          )
         }
       >
         <OAuthResultBanner />
         <div className="flex flex-col gap-4">
-          {Object.values(OAUTH_PROVIDER_DISPLAY).map((provider) => (
+          {visibleProviders.map((provider) => (
             <ConnectionRow
               key={provider.id}
               provider={provider}
