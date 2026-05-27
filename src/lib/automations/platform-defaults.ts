@@ -1,35 +1,43 @@
 // =============================================================================
-// Automation platform defaults — Phase 8 Session 2.
+// Automation platform defaults — runtime source of truth for action bodies.
 //
-// Source of truth at runtime for the body / subject every default action
-// ships with. This file is BOTH:
-//   • The reference an operator can compare against when checking what the
-//     platform default for a given automation_key is (the per-client edited
-//     copy on action_config wins; this is what "Revert to default" would
-//     restore to).
-//   • The contract migration 0079's `seed_default_automations()` writes
-//     verbatim. The SQL function carries the bodies inline (it cannot read
-//     TS), so the two must stay in lockstep — same convention CLAUDE.md
-//     already records for SMS/email template seeds vs `DEFAULT_SMS_TEMPLATES`
-//     / `DEFAULT_EMAIL_TEMPLATES` (which this module replaces).
+// This module is the in-code reflection of the bodies the DB seed function
+// writes inline on `automation_actions.action_config.body` (+ `subject` for
+// email actions). The function lives in migration 0109 (most recent —
+// supersedes 0077 and the body-less 0105). The two must stay in lockstep:
+// editing a body here without updating the SQL function (and vice versa)
+// means a new client gets one body and an existing edit reverts to a
+// different one.
 //
 // The runtime engine prefers `automation_actions.action_config.body` /
-// `.subject` (per-client) over these defaults. These come into play only when:
-//   • An action was created before its body was set (legacy / partial seed).
-//   • A future "Reset to default" UI action.
+// `.subject` (per-client edits) over these defaults. These come into play
+// for:
+//   • A future "Reset to default" UI affordance.
+//   • Operator-side preview when comparing edited copy to the original.
+//   • Legacy rows where a backfill missed setting body (migration 0109
+//     handles current rows; this is the in-code fallback).
 //
-// All bodies use the same `{{var}}` placeholders the template renderer
-// resolves at send time (`lib/sms/template-renderer.ts`, `lib/email/templates.ts`).
+// Bodies use the same `{{var}}` placeholders the template renderer resolves
+// at send time (`lib/sms/template-renderer.ts`, `lib/email/templates.ts`).
+//
+// CONSOLIDATION NOTE (PR B.3 — migration 0105): the per-channel automations
+// from the original 0077 seed (lead_acknowledgment_sms +
+// lead_acknowledgment_email, review_request_sms + review_request_email) were
+// collapsed into multi-action automations. The list below tracks the NEW
+// consolidated shape — each multi-channel automation has two `actions`
+// entries (SMS at position 1, email at position 2) instead of two separate
+// automation entries.
 // =============================================================================
 
 import type { AutomationActionType } from './engine-types';
 
 /**
  * Per-action default config. Keyed by automation_key + position (1-indexed).
- * Most defaults have a single action at position 1; if a future default has
- * multiple actions, each position carries its own config.
+ * Multi-action automations (lead_acknowledgment, review_request) carry one
+ * entry per position; single-action automations carry just position 1.
  */
 export type AutomationActionDefault = {
+  position: number;
   actionType: AutomationActionType;
   templateKey?: string;
   /** SMS body OR email plain-text fallback. */
@@ -51,6 +59,15 @@ export type AutomationActionDefault = {
   hint?: string;
   /** GBP review-request flag — surfaces the audit row write. */
   writesGbpReviewRequestAudit?: boolean;
+  /** Conditional-fire filters: only fire when the predicate holds. */
+  requiresPhone?: boolean;
+  requiresEmail?: boolean;
+  requiresNoPhone?: boolean;
+  requiresGbpLocation?: boolean;
+  /** Delay (in minutes) before this action fires after the trigger. */
+  delayMinutes?: number;
+  /** Whether the action pauses if the customer replies. */
+  pausesOnHumanActivity: boolean;
 };
 
 export type AutomationDefault = {
@@ -58,6 +75,7 @@ export type AutomationDefault = {
   name: string;
   description: string;
   isEnabled: boolean;
+  visibility: 'client' | 'platform_internal';
   triggerType:
     | 'lead_created'
     | 'job_completed'
@@ -70,45 +88,37 @@ export type AutomationDefault = {
   actions: AutomationActionDefault[];
 };
 
-// --- the 9 platform defaults ------------------------------------------------
+// --- the 7 platform defaults (5 client + 2 platform-internal) -----------------
 
 export const PLATFORM_DEFAULT_AUTOMATIONS: readonly AutomationDefault[] = [
   {
-    automationKey: 'lead_acknowledgment_sms',
-    name: 'Instant lead confirmation SMS',
+    automationKey: 'lead_acknowledgment',
+    name: 'Instant lead reply',
     description:
-      "Sends the moment a new lead lands. Only fires when a phone is on file.",
+      'Fires the moment a new lead lands. Sends an SMS to leads with a phone on file and a follow-up email to leads with an email on file.',
     isEnabled: true,
+    visibility: 'client',
     triggerType: 'lead_created',
-    triggerFilters: { requires_phone: true },
     actions: [
       {
+        position: 1,
         actionType: 'send_sms_to_lead',
         templateKey: 'lead_acknowledgment',
+        requiresPhone: true,
+        pausesOnHumanActivity: true,
         body:
-          "Hi {{lead.firstName}}, thanks for the enquiry — {{client.businessName}} here. " +
+          'Hi {{lead.firstName}}, thanks for the enquiry — {{client.businessName}} here. ' +
           "I'll be in touch within {{client.responseTime}} to sort out {{lead.service}}. " +
           'Reply to this message if you need anything urgent.',
       },
-    ],
-  },
-  {
-    automationKey: 'lead_acknowledgment_email',
-    name: 'Lead follow-up email',
-    description:
-      "Sends a follow-up email when a new lead lands. Only fires when an email is on file.",
-    isEnabled: true,
-    triggerType: 'lead_created',
-    triggerFilters: { requires_email: true },
-    actions: [
       {
-        // Customer-facing email — plain text only. The send path
-        // (`resend/job-handlers.ts`) appends the "Powered by Webnua" footer
-        // at send time and forces html to empty.
+        position: 2,
         actionType: 'send_email_to_lead',
         templateKey: 'lead_followup',
+        requiresEmail: true,
+        pausesOnHumanActivity: true,
         subject: "Thanks for your enquiry — we'll be in touch shortly",
-        bodyText:
+        body:
           'Hi {{lead.firstName}},\n\n' +
           'Thanks for getting in touch with {{client.businessName}}. ' +
           "I've seen your enquiry about {{lead.service}} and I'll reach out within {{client.responseTime}}.\n\n" +
@@ -118,97 +128,57 @@ export const PLATFORM_DEFAULT_AUTOMATIONS: readonly AutomationDefault[] = [
     ],
   },
   {
-    automationKey: 'operator_lead_notification',
-    name: 'Operator new-lead notification',
+    automationKey: 'cold_lead_nudge',
+    name: 'Cold lead follow-up nudge',
     description:
-      'Sends configured operators a new-lead notification. Honors per-operator throttle + digest frequency on notification_preferences.',
+      'Surfaces a lead with no inbound activity in 4 days as a follow-up task. You write the follow-up yourself.',
     isEnabled: true,
-    triggerType: 'lead_created',
+    visibility: 'client',
+    triggerType: 'lead_inactive',
+    triggerConfig: { days_after_last_outbound: 4, max_nudges: 3 },
     actions: [
       {
-        actionType: 'send_operator_notification',
-        variant: 'new_lead',
+        position: 1,
+        actionType: 'create_followup_task',
+        pausesOnHumanActivity: true,
+        hint: 'Lead has gone quiet — needs a personal nudge.',
       },
     ],
   },
   {
-    automationKey: 'job_scheduled_confirmation_sms',
-    name: 'Booking confirmation SMS',
-    description: 'Sends a booking confirmation SMS when a booking is created.',
-    isEnabled: false,
-    triggerType: 'job_scheduled',
-    triggerFilters: { requires_phone: true },
-    actions: [
-      {
-        actionType: 'send_sms_to_lead',
-        templateKey: 'job_confirmation',
-        body:
-          'Hi {{lead.firstName}}, this is {{client.businessName}} confirming your booking ' +
-          "on {{job.date}} at {{job.time}}. We'll be at {{job.address}}. Reply if anything changes.",
-      },
-    ],
-  },
-  {
-    automationKey: 'job_arrival_notification_sms',
-    name: 'On the way SMS',
+    automationKey: 'review_request',
+    name: 'Review request',
     description:
-      'Sends an arrival notification when a booking is marked on_the_way.',
-    isEnabled: false,
-    triggerType: 'job_status_changed',
-    triggerConfig: { to_status: 'on_the_way' },
-    triggerFilters: { requires_phone: true },
-    actions: [
-      {
-        actionType: 'send_sms_to_lead',
-        templateKey: 'arrival_notification',
-        body:
-          "Hi {{lead.firstName}}, {{client.businessName}} here — we're on the way. " +
-          'ETA {{job.eta}}. See you shortly!',
-      },
-    ],
-  },
-  {
-    automationKey: 'review_request_sms',
-    name: 'Review request SMS (2h after job)',
-    description:
-      'Asks the customer for a Google review 2 hours after the job is marked complete. Only fires when the customer has a phone and the client has a connected GBP location.',
+      'Asks the lead to leave a Google review 2 hours after the job is marked complete. Sends SMS when a phone is on file, with email fallback otherwise. Only fires when a connected GBP location exists.',
     isEnabled: true,
+    visibility: 'client',
     triggerType: 'job_completed',
-    triggerConfig: { delay_minutes: 120 },
-    triggerFilters: { requires_phone: true, requires_gbp_location: true },
     actions: [
       {
+        position: 1,
         actionType: 'send_sms_to_lead',
         templateKey: 'review_request',
+        requiresPhone: true,
+        requiresGbpLocation: true,
         writesGbpReviewRequestAudit: true,
+        delayMinutes: 120,
+        pausesOnHumanActivity: true,
         body:
           'Hi {{lead.firstName}}, thanks for choosing {{client.businessName}}. ' +
           "If you've a minute, a quick Google review would mean a lot — {{review.link}}. Cheers!",
       },
-    ],
-  },
-  {
-    automationKey: 'review_request_email',
-    name: 'Review request email (no-phone fallback)',
-    description:
-      'Asks the customer for a Google review 2 hours after the job is marked complete, via email. Only fires when the customer has no phone but does have an email, and the client has a connected GBP location.',
-    isEnabled: true,
-    triggerType: 'job_completed',
-    triggerConfig: { delay_minutes: 120 },
-    triggerFilters: {
-      requires_no_phone: true,
-      requires_email: true,
-      requires_gbp_location: true,
-    },
-    actions: [
       {
-        // Customer-facing email — plain text only (same rationale as
-        // `lead_acknowledgment_email` above).
+        position: 2,
         actionType: 'send_email_to_lead',
         templateKey: 'review_request',
+        requiresEmail: true,
+        requiresNoPhone: true,
+        requiresGbpLocation: true,
         writesGbpReviewRequestAudit: true,
+        delayMinutes: 120,
+        pausesOnHumanActivity: true,
         subject: 'Quick favour — a Google review for {{client.businessName}}',
-        bodyText:
+        body:
           'Hi {{lead.firstName}},\n\n' +
           "Thanks for choosing {{client.businessName}} — it's been a pleasure working with you.\n\n" +
           'If you have a minute, a quick Google review would mean the world:\n{{review.link}}\n\n' +
@@ -217,31 +187,81 @@ export const PLATFORM_DEFAULT_AUTOMATIONS: readonly AutomationDefault[] = [
     ],
   },
   {
-    automationKey: 'payment_failed_notification',
-    name: 'Payment failed operator alert',
+    automationKey: 'booking_confirmation',
+    name: 'Booking confirmation SMS',
     description:
-      'Emails the operator(s) when a Stripe subscription payment fails.',
-    isEnabled: true,
-    triggerType: 'payment_failed',
+      'Sends a booking confirmation SMS when a booking is created. Default off — opt in when you trust the cadence.',
+    isEnabled: false,
+    visibility: 'client',
+    triggerType: 'job_scheduled',
+    triggerFilters: { requires_phone: true },
     actions: [
       {
-        actionType: 'send_operator_notification',
-        variant: 'payment_failed',
+        position: 1,
+        actionType: 'send_sms_to_lead',
+        templateKey: 'job_confirmation',
+        requiresPhone: true,
+        pausesOnHumanActivity: true,
+        body:
+          'Hi {{lead.firstName}}, this is {{client.businessName}} confirming your booking ' +
+          "on {{job.date}} at {{job.time}}. We'll be at {{job.address}}. Reply if anything changes.",
       },
     ],
   },
   {
-    automationKey: 'cold_lead_nudge',
-    name: 'Cold lead follow-up nudge',
+    automationKey: 'arrival_notification',
+    name: 'On the way SMS',
     description:
-      'Surfaces leads that have gone quiet (no inbound for 4+ days since the last outbound) as a follow-up task. Up to 3 nudges per lead. Never sends a message — the client writes the follow-up themselves.',
-    isEnabled: true,
-    triggerType: 'lead_inactive',
-    triggerConfig: { days_after_last_outbound: 4, max_nudges: 3 },
+      'Sends an arrival or status-change notification when a booking flips to in-progress. Default off — opt in when you trust the cadence.',
+    isEnabled: false,
+    visibility: 'client',
+    triggerType: 'job_status_changed',
+    triggerConfig: { to_status: 'in_progress' },
+    triggerFilters: { requires_phone: true },
     actions: [
       {
-        actionType: 'create_followup_task',
-        hint: 'Lead has gone quiet — needs a personal nudge.',
+        position: 1,
+        actionType: 'send_sms_to_lead',
+        templateKey: 'arrival_notification',
+        requiresPhone: true,
+        pausesOnHumanActivity: true,
+        body:
+          "Hi {{lead.firstName}}, {{client.businessName}} here — we're on the way. " +
+          'ETA {{job.eta}}. See you shortly!',
+      },
+    ],
+  },
+  {
+    automationKey: 'operator_lead_notification',
+    name: 'Operator new-lead notification',
+    description:
+      'Webnua-managed: notifies the recipients configured on /settings/notifications when a new lead arrives. Hidden from the client UI.',
+    isEnabled: true,
+    visibility: 'platform_internal',
+    triggerType: 'lead_created',
+    actions: [
+      {
+        position: 1,
+        actionType: 'send_operator_notification',
+        variant: 'new_lead',
+        pausesOnHumanActivity: false,
+      },
+    ],
+  },
+  {
+    automationKey: 'payment_failed_notification',
+    name: 'Payment failed operator alert',
+    description:
+      'Webnua-managed: emails the operator when a Stripe subscription payment fails. Hidden from the client UI.',
+    isEnabled: true,
+    visibility: 'platform_internal',
+    triggerType: 'payment_failed',
+    actions: [
+      {
+        position: 1,
+        actionType: 'send_operator_notification',
+        variant: 'payment_failed',
+        pausesOnHumanActivity: false,
       },
     ],
   },
@@ -254,6 +274,16 @@ export function getPlatformDefault(
   return PLATFORM_DEFAULT_AUTOMATIONS.find(
     (d) => d.automationKey === automationKey,
   );
+}
+
+/** Lookup one action by (automation_key, position). Returns undefined when
+ *  the key isn't a default OR the position is out of range. Used by the
+ *  "Reset to default" affordance to restore a single action's body. */
+export function getPlatformDefaultAction(
+  automationKey: string,
+  position: number,
+): AutomationActionDefault | undefined {
+  return getPlatformDefault(automationKey)?.actions.find((a) => a.position === position);
 }
 
 /** Convert an `AutomationActionDefault` to the jsonb shape stored on the
@@ -275,6 +305,11 @@ export function actionDefaultToConfig(
   if (def.writesGbpReviewRequestAudit) {
     cfg.writes_gbp_review_request_audit = true;
   }
+  if (def.requiresPhone) cfg.requires_phone = true;
+  if (def.requiresEmail) cfg.requires_email = true;
+  if (def.requiresNoPhone) cfg.requires_no_phone = true;
+  if (def.requiresGbpLocation) cfg.requires_gbp_location = true;
+  if (def.delayMinutes !== undefined) cfg.delay_minutes = def.delayMinutes;
   return cfg;
 }
 

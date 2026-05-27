@@ -26,9 +26,14 @@ export type AutomationActionConfigResult = {
 /** Look up the live action_config for a client's named automation action.
  *
  *  @param clientId      The client whose automation we're reading.
- *  @param automationKey The `automation_key` (e.g. `'review_request_sms'`).
- *  @param position      1-indexed action position; defaults to 1 (most
- *                       defaults are single-action). */
+ *  @param automationKey The `automation_key` (e.g. `'review_request'` —
+ *                       PR B.3 consolidation collapsed `_sms` / `_email`
+ *                       suffixed keys into multi-action automations).
+ *  @param position      1-indexed action position. Multi-action automations
+ *                       (lead_acknowledgment SMS pos1 + email pos2;
+ *                       review_request SMS pos1 + email pos2) use this to
+ *                       distinguish channels; single-action automations
+ *                       default to 1. */
 export async function getAutomationActionConfig(
   clientId: string,
   automationKey: string,
