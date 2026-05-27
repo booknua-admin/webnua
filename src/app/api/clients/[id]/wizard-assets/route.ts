@@ -272,6 +272,11 @@ async function persistWebsite(args: {
       audience_line: brief.brand.audienceLine,
       industry_category: brief.brand.industryCategory,
       top_jobs_to_be_booked: brief.brand.topJobsToBeBooked,
+      // Full services menu (migration 0112) — read by the form-builder
+      // `service-select` field type. Falls back to the highlight subset
+      // when the brief doesn't carry the full list (older callers). Cast
+      // to `never` until the generated Database type is regenerated.
+      services: (brief.brand.services ?? brief.brand.topJobsToBeBooked) as unknown as never,
       design_bundle_id: seedBundle,
       derived_palette: seedPalette as never,
       heading_font: 'inter-tight',

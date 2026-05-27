@@ -138,6 +138,11 @@ export async function createClientWithGeneration(
     audience_line: brief.brand.audienceLine,
     industry_category: brief.brand.industryCategory,
     top_jobs_to_be_booked: brief.brand.topJobsToBeBooked,
+    // Full services menu (migration 0112) — the form builder's
+    // `service-select` field type reads this. Falls back to the highlight
+    // subset for older briefs that don't carry `services`. Cast to `never`
+    // until the generated Database type is regenerated post-0112.
+    services: (brief.brand.services ?? brief.brand.topJobsToBeBooked) as unknown as never,
     design_bundle_id: designBundleId,
     derived_palette: derivedPalette as never,
     // Session C.5 — write the offer to BOTH brand.offer (the new SoT) and
@@ -309,6 +314,7 @@ export async function createWebsiteForClient(
       audience_line: brief.brand.audienceLine,
       industry_category: brief.brand.industryCategory,
       top_jobs_to_be_booked: brief.brand.topJobsToBeBooked,
+      services: (brief.brand.services ?? brief.brand.topJobsToBeBooked) as unknown as never,
       design_bundle_id: scaffoldBundle,
       derived_palette: scaffoldPalette as never,
     });

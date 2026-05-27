@@ -425,6 +425,11 @@ export function FormBlock({
                     error={errors[field.id]}
                     colors={colors}
                     uploadEnabled={!!testSubmitCtx || isPublic}
+                    // The brand's services list (migration 0112) — drives
+                    // the `service-select` field type's dropdown options.
+                    // Falls back to the highlight subset when the canonical
+                    // list isn't on file (older brand rows pre-backfill).
+                    brandServices={brand.services ?? brand.topJobsToBeBooked ?? []}
                     onChange={(v) => setValue(field.id, v)}
                     onFile={(f) => setFile(field.id, f)}
                   />
@@ -532,6 +537,7 @@ function FieldInput({
   error,
   colors,
   uploadEnabled,
+  brandServices,
   onChange,
   onFile,
 }: {
@@ -540,6 +546,11 @@ function FieldInput({
   error?: string;
   colors: ResolvedFormColors;
   uploadEnabled: boolean;
+  /** The brand's services list — populates `service-select` dropdowns at
+   *  render time. Empty when no services are on file yet (mid-onboarding
+   *  edge case); the dropdown then renders a placeholder-only state and
+   *  the textarea below it picks up the freeform answer. */
+  brandServices: string[];
   onChange: (value: string) => void;
   onFile: (file: File | null) => void;
 }) {
@@ -598,6 +609,31 @@ function FieldInput({
         >
           <option value="">{field.placeholder || 'Select…'}</option>
           {(field.options ?? []).map((opt, i) => (
+            <option key={i} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      ) : field.type === 'service-select' ? (
+        // Service picker — options come from `brand.services` at render
+        // time, NOT from a per-field options[] array. The submitted value
+        // is the literal option string (a snapshot, not a foreign key) so
+        // a lead stays readable even if the services list later changes.
+        // Empty `brandServices` renders a placeholder-only state — the
+        // form still mounts; the textarea below collects the freeform
+        // answer. Best-practice fail-graceful.
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={inputClass}
+          style={inputStyle}
+        >
+          <option value="">
+            {brandServices.length === 0
+              ? 'No services listed yet'
+              : field.placeholder || 'Pick a service…'}
+          </option>
+          {brandServices.map((opt, i) => (
             <option key={i} value={opt}>
               {opt}
             </option>

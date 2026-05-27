@@ -157,6 +157,15 @@ export type BrandObject = {
   audienceLine: string;
   industryCategory: string;
   topJobsToBeBooked: string[];
+  /** The full services menu — the canonical list the form builder's
+   *  `service-select` field type renders, and the operator edits on
+   *  /settings/profile. Captured during onboarding (Step 1 services
+   *  picker) and persisted to `brands.services` (migration 0112).
+   *  Distinct from `topJobsToBeBooked`, which is the AI-prompt
+   *  highlight subset. Optional for back-compat — readers fall back to
+   *  `topJobsToBeBooked` when absent so existing brand consumers stay
+   *  correct ahead of the type regen. */
+  services?: string[];
   /** Curated Google Font id (see lib/website/google-fonts.ts) for display
    *  headings. Absent → the platform default (Inter Tight). Optional so the
    *  field can land ahead of the brand-editing surface + a brands-table

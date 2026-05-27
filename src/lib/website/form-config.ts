@@ -29,6 +29,7 @@ export type FormFieldType =
   | 'phone'
   | 'textarea'
   | 'select'
+  | 'service-select'
   | 'checkbox'
   | 'image'
   | 'date';
@@ -136,8 +137,9 @@ const FIELD_TYPE_LABEL: Record<FormFieldType, string> = {
   text: 'Name',
   email: 'Email',
   phone: 'Phone',
-  textarea: 'What do you need help with?',
+  textarea: 'Anything else we should know?',
   select: 'Choose an option',
+  'service-select': 'What service do you need?',
   checkbox: 'I agree',
   image: 'Upload a photo',
   date: 'Preferred date',
@@ -149,6 +151,7 @@ const FIELD_TYPE_PLACEHOLDER: Record<FormFieldType, string> = {
   phone: '0400 000 000',
   textarea: 'A few details about the job',
   select: '',
+  'service-select': 'Pick a service…',
   checkbox: '',
   image: '',
   date: '',
@@ -168,18 +171,40 @@ export function defaultFormField(type: FormFieldType): FormField {
   if (type === 'select') field.options = ['Option one', 'Option two'];
   if (type === 'email') field.leadRole = 'email';
   if (type === 'phone') field.leadRole = 'phone';
-  // A fresh textarea defaults to the "service description" role — the most
-  // common ask on a default form, and the tag every automation body
-  // resolves `{{lead.service}}` against. The operator can clear the role
-  // via the field inspector if the textarea is for something else.
-  if (type === 'textarea') field.leadRole = 'service';
+  // A fresh `service-select` is the canonical service picker — options are
+  // resolved at render time from the brand's services list (no per-field
+  // options[] required), and the role tag is baked in so
+  // `{{lead.service}}` substitutes to the picked option.
+  if (type === 'service-select') field.leadRole = 'service';
+  // A fresh textarea defaults to no leadRole — when the canonical
+  // dropdown is in the form, the textarea is the "anything else?" freeform
+  // escape, not a second service field. (Pre-`service-select` forms that
+  // tagged a textarea as `service` still resolve correctly — the route's
+  // first-match-wins lookup keeps that path working.)
   return field;
 }
 
-/** A fresh form — name (required) + email (required, the primary channel) +
- *  phone (optional, the SMS-fallback path) + service description (optional).
- *  Email is required because every default automation prefers email; phone is
- *  optional and only unlocks the SMS-fallback when no email is on file. */
+/** A fresh form — name + email + phone + service picker + details.
+ *
+ *  Five fields in canonical order:
+ *    1. name           (text,           required, leadRole='name')
+ *    2. email          (email,          required, leadRole='email') — the
+ *       primary channel; every default automation prefers email.
+ *    3. phone          (phone,          optional, leadRole='phone') — gates
+ *       the SMS-fallback path when no email is on file.
+ *    4. service-select (service-select, required, leadRole='service') —
+ *       options resolved from `brand.services` at render time, so the
+ *       operator never edits dropdown options manually. Submits a snapshot
+ *       of the picked option's string (not a foreign key) so historical
+ *       leads stay readable when the services list changes.
+ *    5. textarea       (textarea,       optional, no leadRole)        — the
+ *       "anything else we should know?" freeform escape. Not tagged as
+ *       service because the dropdown above is the canonical answer.
+ *
+ *  Fail-graceful: when `brand.services` is empty (a freshly-onboarded
+ *  client mid-wizard or a never-onboarded edge case), `FormBlock` renders
+ *  the service-select as a placeholder + the textarea picks up the
+ *  freeform answer. */
 export function defaultFormConfig(): FormConfig {
   const name = defaultFormField('text');
   name.label = 'Your name';
@@ -191,13 +216,17 @@ export function defaultFormConfig(): FormConfig {
   const phone = defaultFormField('phone');
   phone.required = false;
 
-  const service = defaultFormField('textarea');
+  const servicePick = defaultFormField('service-select');
+  servicePick.required = true;
+
+  const details = defaultFormField('textarea');
+  details.label = 'Anything else we should know?';
 
   return {
     title: 'Get in touch',
     showTitle: true,
     submitLabel: 'Send',
-    fields: [name, email, phone, service],
+    fields: [name, email, phone, servicePick, details],
     afterSubmit: {
       kind: 'message',
       heading: 'Thanks!',

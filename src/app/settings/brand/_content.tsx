@@ -59,6 +59,7 @@ type BrandRow = {
   audience_line: string;
   industry_category: string;
   top_jobs_to_be_booked: string[];
+  services: string[];
   heading_font: string | null;
   body_font: string | null;
   heading_color: string | null;
@@ -177,6 +178,11 @@ function BrandForm({
   const [tagline, setTagline] = useState(brand.tagline ?? '');
   const [audienceLine, setAudienceLine] = useState(brand.audience_line ?? '');
   const [industryCategory, setIndustryCategory] = useState(brand.industry_category ?? '');
+  // The full services menu (migration 0112) — read by the form-builder
+  // `service-select` field type and used wherever customers pick from
+  // your services.
+  const [services, setServices] = useState<string[]>(brand.services ?? []);
+  const [serviceDraft, setServiceDraft] = useState('');
   const [accentColor, setAccentColor] = useState(brand.accent_color);
   const [brandColor2, setBrandColor2] = useState(brand.brand_colors[1] ?? '');
   const [brandColor3, setBrandColor3] = useState(brand.brand_colors[2] ?? '');
@@ -210,6 +216,8 @@ function BrandForm({
     setTagline(brand.tagline ?? '');
     setAudienceLine(brand.audience_line ?? '');
     setIndustryCategory(brand.industry_category ?? '');
+    setServices(brand.services ?? []);
+    setServiceDraft('');
     setAccentColor(brand.accent_color);
     setBrandColor2(brand.brand_colors[1] ?? '');
     setBrandColor3(brand.brand_colors[2] ?? '');
@@ -307,6 +315,11 @@ function BrandForm({
           tagline: tagline.trim() || null,
           audience_line: audienceLine.trim(),
           industry_category: industryCategory.trim(),
+          // `services` was added by migration 0112 and isn't in the
+          // generated Database type yet — cast to bypass.
+          services: services
+            .map((s) => s.trim())
+            .filter(Boolean) as unknown as never,
           heading_color: headingColor.trim() || null,
           body_color: bodyColor.trim() || null,
           background_color: backgroundColor.trim() || null,
@@ -369,6 +382,64 @@ function BrandForm({
               placeholder="Residential plumbing"
               className="h-9"
             />
+          </Field>
+          <Field
+            label="Services"
+            sub="The list customers pick from when they fill out your lead-capture forms. The form-builder's Service picker reads this list directly — add or rename any time."
+          >
+            <div className="flex flex-col gap-1.5">
+              {services.length === 0 ? (
+                <p className="text-[12px] text-ink-quiet">
+                  No services yet — add a few below.
+                </p>
+              ) : null}
+              {services.map((svc, i) => (
+                <div key={i} className="flex items-center gap-1.5">
+                  <Input
+                    value={svc}
+                    onChange={(e) =>
+                      setServices(services.map((s, idx) => (idx === i ? e.target.value : s)))
+                    }
+                    placeholder="e.g. Emergency callout"
+                    className="h-9"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setServices(services.filter((_, idx) => idx !== i))}
+                    aria-label="Remove service"
+                    className="shrink-0 px-1.5 font-mono text-[12px] font-bold text-rust hover:text-rust-deep"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              <div className="flex items-center gap-1.5">
+                <Input
+                  value={serviceDraft}
+                  onChange={(e) => setServiceDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && serviceDraft.trim()) {
+                      e.preventDefault();
+                      setServices([...services, serviceDraft.trim()]);
+                      setServiceDraft('');
+                    }
+                  }}
+                  placeholder="Add a service and press Enter…"
+                  className="h-9"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!serviceDraft.trim()) return;
+                    setServices([...services, serviceDraft.trim()]);
+                    setServiceDraft('');
+                  }}
+                  className="shrink-0 rounded-md border border-dashed border-rule bg-card px-3 py-1.5 text-[12px] font-bold text-ink-mid transition-colors hover:border-rust hover:text-rust"
+                >
+                  + Add
+                </button>
+              </div>
+            </div>
           </Field>
         </div>
       </SettingsSection>
@@ -601,6 +672,8 @@ function BrandForm({
             setTagline(brand.tagline ?? '');
             setAudienceLine(brand.audience_line ?? '');
             setIndustryCategory(brand.industry_category ?? '');
+            setServices(brand.services ?? []);
+            setServiceDraft('');
             setAccentColor(brand.accent_color);
             setBrandColor2(brand.brand_colors[1] ?? '');
             setBrandColor3(brand.brand_colors[2] ?? '');
