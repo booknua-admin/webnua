@@ -9,7 +9,11 @@
 
 import { getIntegrationDb } from '@/lib/integrations/_shared/db-types';
 
-import type { ClientMetaAdAccountInsert, ClientMetaAdAccountRow } from './types';
+import type {
+  ClientMetaAdAccountInsert,
+  ClientMetaAdAccountRow,
+  MetaPartnerStatus,
+} from './types';
 
 const TABLE = 'client_meta_ad_accounts';
 
@@ -63,6 +67,32 @@ export async function updateAdAccountSyncState(
     .eq('client_id', clientId);
   if (error) {
     throw new Error(`updateAdAccountSyncState failed: ${error.message}`);
+  }
+}
+
+/** Patch the Webnua-BM partner-share status columns. Used by the
+ *  share-assets orchestrator after the Meta API call resolves; the UI
+ *  reads the resulting status to surface "active / pending / failed" +
+ *  the retry affordance. Either or both halves (ad account / Page) may
+ *  be patched in one call. */
+export async function updatePartnerStatus(
+  clientId: string,
+  patch: Partial<{
+    webnua_partner_status: MetaPartnerStatus | null;
+    webnua_partner_granted_at: string | null;
+    webnua_partner_error: string | null;
+    webnua_page_partner_status: MetaPartnerStatus | null;
+    webnua_page_partner_granted_at: string | null;
+    webnua_page_partner_error: string | null;
+  }>,
+): Promise<void> {
+  const db = getIntegrationDb();
+  const { error } = await db
+    .from(TABLE)
+    .update(patch as unknown as never)
+    .eq('client_id', clientId);
+  if (error) {
+    throw new Error(`updatePartnerStatus failed: ${error.message}`);
   }
 }
 

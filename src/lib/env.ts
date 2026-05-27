@@ -154,6 +154,12 @@ const envSchema = z.object({
   META_APP_SECRET: optionalStr,
   META_OAUTH_REDIRECT_URI_BASE: optionalStr,
   META_API_VERSION: optionalStr,
+  // Webnua's own Business Manager id, used as the `business` parameter when
+  // POSTing /act_<id>/agencies + /<page_id>/agencies to share customer
+  // assets with Webnua's BM. Without it, asset-share calls fail loudly
+  // (no silent degrade — the customer needs to know we couldn't grant
+  // partner access). Find under business.facebook.com/settings/info.
+  META_WEBNUA_BUSINESS_ID: optionalStr,
   // HMAC key for signing the OAuth `state` token. Optional — falls back to
   // SUPABASE_SERVICE_ROLE_KEY (always present server-side, high entropy).
   OAUTH_STATE_SECRET: optionalStr,

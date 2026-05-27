@@ -252,7 +252,23 @@ export function useListMetaAdAccounts() {
   });
 }
 
-/** Pick the ad account to wire to this client. Stores the selection. */
+/** Per-asset partner-share outcome returned by the select / share-retry
+ *  routes. The picker confirmation step + the footer's partner-status
+ *  indicator both consume this shape. */
+export type ShareOutcomeDto =
+  | { kind: 'active' }
+  | { kind: 'skipped'; reason: string }
+  | { kind: 'failed'; reason: string };
+
+export type SharePartnerResponse = {
+  adAccount: ShareOutcomeDto;
+  page: ShareOutcomeDto;
+};
+
+/** Pick the ad account + Page to wire to this client. Stores the
+ *  selection AND runs the Webnua-BM asset-share orchestrator inline —
+ *  the route returns the per-asset partner outcome so the picker can
+ *  show success / partial-success without a second round trip. */
 export function useSelectMetaAdAccount() {
   const qc = useQueryClient();
   return useMutation({
@@ -260,10 +276,52 @@ export function useSelectMetaAdAccount() {
       clientId: string;
       adAccountId: string;
       customerAgreementEmail: string;
+      pageId?: string | null;
+      pageName?: string | null;
     }) => {
+      const response = (await postJson(
+        '/api/integrations/meta_ads/ad-accounts',
+        { action: 'select', ...input },
+      )) as unknown as { ok: boolean; partner: SharePartnerResponse };
+      return response;
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: adAccountKey(vars.clientId) });
+    },
+  });
+}
+
+/** Retry the Webnua-BM partner share when it failed on first attempt
+ *  (e.g. META_WEBNUA_BUSINESS_ID was unset, or a transient Meta API
+ *  error). Reads the persisted ad-account + page ids from the row, so
+ *  the operator doesn't have to re-pick. */
+export function useRetryMetaPartnerShare() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { clientId: string }) => {
+      const response = (await postJson(
+        '/api/integrations/meta_ads/ad-accounts',
+        { action: 'share-retry', clientId: input.clientId },
+      )) as unknown as { ok: boolean; partner: SharePartnerResponse };
+      return response;
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: adAccountKey(vars.clientId) });
+    },
+  });
+}
+
+/** Revoke Webnua's partner access without disconnecting the OAuth
+ *  connection. Used when the customer wants Webnua to step back but
+ *  keep their data intact (rare; the more common path is full
+ *  disconnect from /settings/integrations). */
+export function useRevokeMetaPartnerShare() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { clientId: string }) => {
       await postJson('/api/integrations/meta_ads/ad-accounts', {
-        action: 'select',
-        ...input,
+        action: 'share-revoke',
+        clientId: input.clientId,
       });
     },
     onSuccess: (_data, vars) => {

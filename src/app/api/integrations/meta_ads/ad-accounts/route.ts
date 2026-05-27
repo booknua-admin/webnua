@@ -29,10 +29,17 @@ import {
   listAdAccounts,
   listPages,
 } from '@/lib/integrations/meta-ads/client';
-import { upsertAdAccount } from '@/lib/integrations/meta-ads/ad-accounts';
+import {
+  findAdAccountByClientId,
+  upsertAdAccount,
+} from '@/lib/integrations/meta-ads/ad-accounts';
 import {
   describeMetaAccountStatus,
 } from '@/lib/integrations/meta-ads/types';
+import {
+  shareAssetsWithWebnua,
+  revokeAssetsFromWebnua,
+} from '@/lib/integrations/meta-ads/share-assets';
 import {
   META_SYNC_CAMPAIGNS_JOB,
   type MetaSyncCampaignsPayload,
@@ -108,6 +115,8 @@ export async function POST(request: Request): Promise<Response> {
   if (action === 'select') {
     const adAccountId = body.adAccountId;
     const customerAgreementEmail = body.customerAgreementEmail;
+    const pageId = body.pageId;
+    const pageName = body.pageName;
     if (typeof adAccountId !== 'string' || !adAccountId.startsWith('act_')) {
       return NextResponse.json({ error: 'invalid-adAccountId' }, { status: 400 });
     }
@@ -120,6 +129,14 @@ export async function POST(request: Request): Promise<Response> {
         { status: 400 },
       );
     }
+    // pageId is optional in V1 — the customer may have no Page suitable
+    // for lead-gen ads (rare but possible). When provided it must be a
+    // non-empty string; we don't enforce a numeric shape because Meta
+    // ids are large integers stored as strings.
+    const safePageId =
+      typeof pageId === 'string' && pageId.trim().length > 0 ? pageId.trim() : null;
+    const safePageName =
+      typeof pageName === 'string' && pageName.trim().length > 0 ? pageName.trim() : null;
 
     const detail = await getAdAccount(clientId, adAccountId);
     if (!detail.ok) {
@@ -152,6 +169,14 @@ export async function POST(request: Request): Promise<Response> {
         customer_agreed_at: new Date().toISOString(),
         customer_agreed_by_email: customerAgreementEmail,
         last_synced_at: new Date().toISOString(),
+        meta_page_id: safePageId,
+        meta_page_name: safePageName,
+        webnua_partner_status: 'pending',
+        webnua_partner_granted_at: null,
+        webnua_partner_error: null,
+        webnua_page_partner_status: safePageId ? 'pending' : null,
+        webnua_page_partner_granted_at: null,
+        webnua_page_partner_error: null,
       });
     } catch (err) {
       return NextResponse.json(
@@ -162,6 +187,20 @@ export async function POST(request: Request): Promise<Response> {
         { status: 500 },
       );
     }
+
+    // Share the customer's assets with Webnua's Business Manager so
+    // operators see them natively in their own Ads Manager. The
+    // orchestrator writes the partner-status columns and never throws on
+    // a Meta failure — the picker confirmation step shows the per-asset
+    // outcome and the footer's retry affordance handles the recovery
+    // path. Returning the result inline lets the modal show success/
+    // partial-success without a second round trip.
+    const partnerResult = await shareAssetsWithWebnua({
+      clientId,
+      adAccountId: acct.id ?? adAccountId,
+      pageId: safePageId,
+    });
+
     // Kick off campaign discovery so the operator sees their Ads-Manager-
     // launched campaigns appear on /campaigns within seconds. Fire-and-
     // forget — a failed enqueue must not fail the picker save (the hourly
@@ -179,6 +218,40 @@ export async function POST(request: Request): Promise<Response> {
         err instanceof Error ? err.message : err,
       );
     }
+    return NextResponse.json({ ok: true, partner: partnerResult });
+  }
+
+  if (action === 'share-retry') {
+    // Operator retries the partner share when it failed on first
+    // attempt — typically because META_WEBNUA_BUSINESS_ID was unset at
+    // pick time, or a transient Meta API blip. Reads the persisted row
+    // for ad-account + page ids; refuses cleanly if there's no row.
+    const row = await findAdAccountByClientId(clientId);
+    if (!row) {
+      return NextResponse.json({ error: 'no-ad-account-selected' }, { status: 400 });
+    }
+    const partnerResult = await shareAssetsWithWebnua({
+      clientId,
+      adAccountId: row.meta_ad_account_id,
+      pageId: row.meta_page_id,
+    });
+    return NextResponse.json({ ok: true, partner: partnerResult });
+  }
+
+  if (action === 'share-revoke') {
+    // Operator-initiated revoke of Webnua's partner access without
+    // disconnecting the OAuth connection. Useful when the customer asks
+    // Webnua to step back but wants to keep their data intact. Reads
+    // the persisted row; idempotent (Meta-side errors are absorbed).
+    const row = await findAdAccountByClientId(clientId);
+    if (!row) {
+      return NextResponse.json({ error: 'no-ad-account-selected' }, { status: 400 });
+    }
+    await revokeAssetsFromWebnua({
+      clientId,
+      adAccountId: row.meta_ad_account_id,
+      pageId: row.meta_page_id,
+    });
     return NextResponse.json({ ok: true });
   }
 
