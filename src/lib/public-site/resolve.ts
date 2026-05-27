@@ -151,6 +151,7 @@ async function brandForClient(clientId: string): Promise<BrandObject> {
     audience_line: string;
     industry_category: string;
     top_jobs_to_be_booked: string[];
+    services: string[] | null;
   };
   return {
     accentColor: row.accent_color,
@@ -165,6 +166,7 @@ async function brandForClient(clientId: string): Promise<BrandObject> {
     audienceLine: row.audience_line,
     industryCategory: row.industry_category,
     topJobsToBeBooked: row.top_jobs_to_be_booked,
+    services: row.services && row.services.length > 0 ? row.services : undefined,
   };
 }
 

@@ -97,6 +97,9 @@ export async function runSendSmsToLead(ctx: ActionContext): Promise<ActionOutcom
     templateKey: cfg.template_key,
     recipientPhone: phone,
     relatedLeadId: leadId,
+    // Forward bookingId for job_scheduled / job_status_changed / job_completed
+    // triggers — the handler resolves `{{job.*}}` against the booking row.
+    relatedBookingId: typeof event.bookingId === 'string' ? event.bookingId : null,
   };
   await enqueueJobImmediate(SEND_SMS_JOB, payload, {
     provider: 'twilio',

@@ -39,8 +39,14 @@ export type FormFieldType =
  *  `address` is recognised by the route's existing-lead branch (FIX A — funnel
  *  step 2 captures a service address; without a role tag the value would land
  *  in `lead_events.payload` only and never reach `customers.address`). New
- *  identity roles go here, not in heuristic detection at the call site. */
-export type FormFieldLeadRole = 'name' | 'email' | 'phone' | 'address';
+ *  identity roles go here, not in heuristic detection at the call site.
+ *
+ *  `service` tags the field describing what the lead is asking for — feeds
+ *  `{{lead.service}}` in automation bodies. Replaces the previous label-regex
+ *  fallback (`SERVICE_FIELD_RE`) which only matched English-language labels
+ *  like "service" / "enquiry" / "help". The regex stays as a fallback for
+ *  legacy forms that never tagged the field. */
+export type FormFieldLeadRole = 'name' | 'email' | 'phone' | 'address' | 'service';
 
 export type FormField = {
   /** Stable id — also the element-inspector `selectedElement` id. */
@@ -49,8 +55,20 @@ export type FormField = {
   label: string;
   placeholder?: string;
   required: boolean;
-  /** `select` only — the dropdown options. */
+  /** `select` only — the dropdown options. Ignored when `useServicesList`
+   *  is set; options are then resolved from the brand's services list at
+   *  render time. */
   options?: string[];
+  /** `select` only — flag the dropdown as "the services picker". When set:
+   *   • options come from `BrandObject.services` (live) at render time;
+   *   • the submitted value is the picked option's string (snapshot, not
+   *     a foreign key — a lead from 3 months ago stays readable when the
+   *     services list later changes);
+   *   • the editor hides the per-field `options[]` editor + forces
+   *     `leadRole = 'service'` so `{{lead.service}}` in automations
+   *     resolves correctly with zero further config.
+   *  This is the "out of the box" path the default form ships. */
+  useServicesList?: boolean;
   leadRole?: FormFieldLeadRole;
 };
 
@@ -130,7 +148,7 @@ const FIELD_TYPE_LABEL: Record<FormFieldType, string> = {
   text: 'Name',
   email: 'Email',
   phone: 'Phone',
-  textarea: 'Message',
+  textarea: 'Anything else we should know?',
   select: 'Choose an option',
   checkbox: 'I agree',
   image: 'Upload a photo',
@@ -141,7 +159,7 @@ const FIELD_TYPE_PLACEHOLDER: Record<FormFieldType, string> = {
   text: 'Your name',
   email: 'you@example.com',
   phone: '0400 000 000',
-  textarea: 'How can we help?',
+  textarea: 'A few details about the job',
   select: '',
   checkbox: '',
   image: '',
@@ -155,26 +173,78 @@ export function defaultFormField(type: FormFieldType): FormField {
     id: makeFieldId(),
     type,
     label: FIELD_TYPE_LABEL[type],
-    required: type === 'email' || type === 'phone',
+    required: type === 'email',
   };
   const placeholder = FIELD_TYPE_PLACEHOLDER[type];
   if (placeholder) field.placeholder = placeholder;
   if (type === 'select') field.options = ['Option one', 'Option two'];
   if (type === 'email') field.leadRole = 'email';
   if (type === 'phone') field.leadRole = 'phone';
+  // A fresh textarea defaults to no leadRole — the default form's
+  // service-picker dropdown (via `useServicesList`) carries the role; the
+  // textarea is the "anything else?" freeform escape.
   return field;
 }
 
-/** A fresh form — a name + email + message, message thank-you after submit. */
+/** A fresh service-picker `select` — the "use my services list" dropdown.
+ *  Operator-friendly factory so call sites don't have to mutate the field
+ *  after creation. */
+export function defaultServicePickerField(): FormField {
+  const field = defaultFormField('select');
+  field.label = 'What service do you need?';
+  field.placeholder = 'Pick a service…';
+  field.required = true;
+  field.useServicesList = true;
+  field.leadRole = 'service';
+  // The per-field `options` is unused when `useServicesList` is set —
+  // clear it so a stale stub list doesn't ship in the snapshot.
+  field.options = undefined;
+  return field;
+}
+
+/** A fresh form — name + email + phone + service picker + details.
+ *
+ *  Five fields in canonical order:
+ *    1. name           (text,    required, leadRole='name')
+ *    2. email          (email,   required, leadRole='email') — the
+ *       primary channel; every default automation prefers email.
+ *    3. phone          (phone,   optional, leadRole='phone') — gates
+ *       the SMS-fallback path when no email is on file.
+ *    4. service picker (select + useServicesList, required,
+ *       leadRole='service') — a standard dropdown flagged "use my
+ *       services list", options resolved live from `brand.services` at
+ *       render time. The submitted value is the picked option's string
+ *       (a snapshot, not a foreign key — historical leads stay readable
+ *       when the services list later changes).
+ *    5. textarea       (textarea, optional, no leadRole)  — the
+ *       "anything else we should know?" freeform escape. Not tagged as
+ *       service because the dropdown above is the canonical answer.
+ *
+ *  Fail-graceful: when `brand.services` is empty (a freshly-onboarded
+ *  client mid-wizard or a never-onboarded edge case), `FormBlock` renders
+ *  the dropdown as a placeholder-only state + the textarea picks up the
+ *  freeform answer. */
 export function defaultFormConfig(): FormConfig {
   const name = defaultFormField('text');
   name.label = 'Your name';
   name.leadRole = 'name';
+
+  const email = defaultFormField('email');
+  email.required = true;
+
+  const phone = defaultFormField('phone');
+  phone.required = false;
+
+  const servicePick = defaultServicePickerField();
+
+  const details = defaultFormField('textarea');
+  details.label = 'Anything else we should know?';
+
   return {
     title: 'Get in touch',
     showTitle: true,
     submitLabel: 'Send',
-    fields: [name, defaultFormField('email'), defaultFormField('textarea')],
+    fields: [name, email, phone, servicePick, details],
     afterSubmit: {
       kind: 'message',
       heading: 'Thanks!',

@@ -425,6 +425,11 @@ export function FormBlock({
                     error={errors[field.id]}
                     colors={colors}
                     uploadEnabled={!!testSubmitCtx || isPublic}
+                    // The brand's services list (migration 0112) — drives
+                    // the `service-select` field type's dropdown options.
+                    // Falls back to the highlight subset when the canonical
+                    // list isn't on file (older brand rows pre-backfill).
+                    brandServices={brand.services ?? brand.topJobsToBeBooked ?? []}
                     onChange={(v) => setValue(field.id, v)}
                     onFile={(f) => setFile(field.id, f)}
                   />
@@ -532,6 +537,7 @@ function FieldInput({
   error,
   colors,
   uploadEnabled,
+  brandServices,
   onChange,
   onFile,
 }: {
@@ -540,6 +546,11 @@ function FieldInput({
   error?: string;
   colors: ResolvedFormColors;
   uploadEnabled: boolean;
+  /** The brand's services list — populates `service-select` dropdowns at
+   *  render time. Empty when no services are on file yet (mid-onboarding
+   *  edge case); the dropdown then renders a placeholder-only state and
+   *  the textarea below it picks up the freeform answer. */
+  brandServices: string[];
   onChange: (value: string) => void;
   onFile: (file: File | null) => void;
 }) {
@@ -590,18 +601,43 @@ function FieldInput({
           style={inputStyle}
         />
       ) : field.type === 'select' ? (
+        // Standard dropdown. When `useServicesList` is set the options
+        // come from `brand.services` at render time (NOT from the
+        // per-field `options[]` array — that array is unused on a flagged
+        // field). The submitted value is the literal picked string (a
+        // snapshot, not a foreign key) so a lead stays readable even if
+        // the services list later changes. Empty `brandServices` on a
+        // flagged field renders a placeholder-only state — best-practice
+        // fail-graceful; the textarea below picks up the freeform answer.
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className={inputClass}
           style={inputStyle}
         >
-          <option value="">{field.placeholder || 'Select…'}</option>
-          {(field.options ?? []).map((opt, i) => (
-            <option key={i} value={opt}>
-              {opt}
-            </option>
-          ))}
+          {field.useServicesList ? (
+            <>
+              <option value="">
+                {brandServices.length === 0
+                  ? 'No services listed yet'
+                  : field.placeholder || 'Pick a service…'}
+              </option>
+              {brandServices.map((opt, i) => (
+                <option key={i} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </>
+          ) : (
+            <>
+              <option value="">{field.placeholder || 'Select…'}</option>
+              {(field.options ?? []).map((opt, i) => (
+                <option key={i} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </>
+          )}
         </select>
       ) : field.type === 'image' ? (
         <input

@@ -472,11 +472,16 @@ async function buildRenderContext(
   const db = getIntegrationDb();
   const { data: clientRow } = await db
     .from('clients')
-    .select('name, primary_contact_phone, slug')
+    .select('name, primary_contact_phone, slug, response_time_promise')
     .eq('id', clientId)
     .maybeSingle();
   const client = clientRow as
-    | { name?: string; primary_contact_phone?: string | null; slug?: string }
+    | {
+        name?: string;
+        primary_contact_phone?: string | null;
+        slug?: string;
+        response_time_promise?: string | null;
+      }
     | null;
 
   const baseUrl = getAppBaseUrl();
@@ -492,7 +497,8 @@ async function buildRenderContext(
     'client.shortName': sender.display_name || client?.name || 'Webnua',
     'client.businessName': client?.name ?? '',
     'client.phone': client?.primary_contact_phone ?? '',
-    'client.responseTime': '1 hour',
+    // Operator-editable on /settings/profile (added migration 0111).
+    'client.responseTime': client?.response_time_promise?.trim() || '1 hour',
     'lead.firstName': payload.recipientName?.split(/\s+/)[0] ?? 'there',
     'lead.lastNameSuffix': '',
     'lead.fullName': payload.recipientName ?? '',
@@ -500,6 +506,10 @@ async function buildRenderContext(
     'lead.phone': '',
     'lead.service': 'your enquiry',
     'lead.preview': '',
+    'job.date': '',
+    'job.time': '',
+    'job.address': '',
+    'job.eta': '',
     'review.link': reviewLink ?? '',
     'platform.inboxLink': inboxLink,
     'digest.count': '',
@@ -517,7 +527,83 @@ async function buildRenderContext(
     if (lead.preview) ctx['lead.preview'] = lead.preview;
   }
 
+  if (payload.relatedBookingId) {
+    const job = await loadBookingFacts(payload.relatedBookingId);
+    if (job.date) ctx['job.date'] = job.date;
+    if (job.time) ctx['job.time'] = job.time;
+    if (job.address) ctx['job.address'] = job.address;
+    if (job.eta) ctx['job.eta'] = job.eta;
+  }
+
   return { ...ctx, ...(payload.contextOverrides ?? {}) };
+}
+
+/** Resolve `{{job.*}}` facts from a booking row. Mirrors the Twilio handler's
+ *  loadBookingFacts — same fallback to customer.address, same UTC-read time
+ *  formatters. Kept inline rather than extracted because the two handlers
+ *  are the only consumers and a shared module would couple two integration
+ *  surfaces that are otherwise independent. */
+async function loadBookingFacts(bookingId: string): Promise<{
+  date: string | null;
+  time: string | null;
+  address: string | null;
+  eta: string | null;
+}> {
+  const db = getIntegrationDb();
+  const { data } = await db
+    .from('bookings')
+    .select('starts_at, address, customer:customers(address)')
+    .eq('id', bookingId)
+    .maybeSingle();
+  const row = data as
+    | {
+        starts_at: string;
+        address: string | null;
+        customer: { address: string | null } | null;
+      }
+    | null;
+  if (!row) {
+    return { date: null, time: null, address: null, eta: null };
+  }
+  return {
+    date: formatJobDate(row.starts_at),
+    time: formatJobTime(row.starts_at),
+    address: row.address ?? row.customer?.address ?? null,
+    eta: formatJobEta(row.starts_at),
+  };
+}
+
+const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH_SHORT = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+function formatJobDate(iso: string): string | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${WEEKDAY_SHORT[d.getUTCDay()]} ${d.getUTCDate()} ${MONTH_SHORT[d.getUTCMonth()]}`;
+}
+
+function formatJobTime(iso: string): string | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const h24 = d.getUTCHours();
+  const m = d.getUTCMinutes();
+  const period = h24 >= 12 ? 'PM' : 'AM';
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+function formatJobEta(iso: string): string | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const diffMs = d.getTime() - Date.now();
+  if (diffMs <= 0) return null;
+  const mins = Math.round(diffMs / 60_000);
+  if (mins < 60) return `in ${mins} minute${mins === 1 ? '' : 's'}`;
+  const hours = Math.round(mins / 60);
+  return `in ${hours} hour${hours === 1 ? '' : 's'}`;
 }
 
 async function loadLeadFacts(leadId: string): Promise<{
@@ -575,9 +661,26 @@ async function loadLeadFacts(leadId: string): Promise<{
 
 const SERVICE_FIELD_RE = /service|enquir|need|help|job|work|project|interested/i;
 
+/** Resolve a service value from a lead's events. Mirrors the Twilio handler's
+ *  serviceFromFormPayload — prefer the `leadRole === 'service'` tag, fall
+ *  back to a label regex match for legacy forms. */
 function serviceFromEvents(
   events: { kind: string; payload: unknown }[],
 ): string | null {
+  // Pass 1 — tagged field wins.
+  for (const e of events) {
+    if (e.kind !== 'form_submitted') continue;
+    const payload = e.payload as { fields?: unknown } | null;
+    const fields = payload?.fields;
+    if (!Array.isArray(fields)) continue;
+    for (const field of fields) {
+      const f = field as { leadRole?: unknown; value?: unknown };
+      if (f.leadRole === 'service' && typeof f.value === 'string' && f.value.trim()) {
+        return f.value.trim();
+      }
+    }
+  }
+  // Pass 2 — legacy label regex.
   for (const e of events) {
     if (e.kind !== 'form_submitted') continue;
     const payload = e.payload as { fields?: unknown } | null;

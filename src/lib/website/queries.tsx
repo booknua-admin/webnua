@@ -341,6 +341,7 @@ async function fetchBrandForClient(slug: string): Promise<BrandObject | null> {
     design_bundle_id: string | null;
     derived_palette: unknown;
     offer: unknown;
+    services: string[] | null;
   };
   return {
     accentColor: row.accent_color,
@@ -356,6 +357,7 @@ async function fetchBrandForClient(slug: string): Promise<BrandObject | null> {
     audienceLine: row.audience_line,
     industryCategory: row.industry_category,
     topJobsToBeBooked: row.top_jobs_to_be_booked,
+    services: row.services && row.services.length > 0 ? row.services : undefined,
     headingFont: row.heading_font ?? undefined,
     bodyFont: row.body_font ?? undefined,
     headingColor: row.heading_color ?? undefined,

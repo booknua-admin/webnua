@@ -67,7 +67,7 @@ type CleanField = {
   label: string;
   type: string;
   value: string;
-  leadRole?: 'name' | 'email' | 'phone' | 'address';
+  leadRole?: 'name' | 'email' | 'phone' | 'address' | 'service';
   imagePath?: string;
 };
 
@@ -84,7 +84,8 @@ function cleanField(raw: IncomingField): CleanField | null {
     raw.leadRole === 'name' ||
     raw.leadRole === 'email' ||
     raw.leadRole === 'phone' ||
-    raw.leadRole === 'address'
+    raw.leadRole === 'address' ||
+    raw.leadRole === 'service'
       ? raw.leadRole
       : undefined;
   return {
@@ -269,10 +270,13 @@ export async function POST(req: Request) {
       payload: {
         source: sourceLabel,
         submissionId: cleanSubmissionId,
+        // `leadRole` round-trips so the automation render-context resolver
+        // can prefer the tag over a label-regex match (`{{lead.service}}`).
         fields: cleanFields.map((f) => ({
           label: f.label,
           value: f.value,
           type: f.type,
+          ...(f.leadRole ? { leadRole: f.leadRole } : {}),
         })),
         attachments: cleanFields
           .filter((f) => !!f.imagePath)
@@ -332,10 +336,13 @@ export async function POST(req: Request) {
     actor_user_id: null,
     payload: {
       source: sourceLabel,
+      // `leadRole` round-trips so the automation render-context resolver can
+      // prefer the tag over a label-regex match (`{{lead.service}}`).
       fields: cleanFields.map((f) => ({
         label: f.label,
         value: f.value,
         type: f.type,
+        ...(f.leadRole ? { leadRole: f.leadRole } : {}),
       })),
       attachments: cleanFields
         .filter((f) => !!f.imagePath)

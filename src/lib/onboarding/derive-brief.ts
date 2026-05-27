@@ -117,6 +117,10 @@ export function deriveBriefFromWizard(input: DeriveBriefInput): ClientBrief {
     audienceLine: step3?.targetCustomer?.trim() || '',
     industryCategory: industry,
     topJobsToBeBooked: services.slice(0, 3),
+    // Full services list — persisted to `brands.services` (migration
+    // 0112). Distinct from `topJobsToBeBooked` (the AI-prompt highlight
+    // subset). Used by the form-builder `service-select` field type.
+    services,
   };
 
   // Funnel brief — derived per the locked plan. service = first listed
@@ -265,6 +269,8 @@ export function deriveBriefFromConversation(
     audienceLine: facts.extraction?.specialty?.trim() || '',
     industryCategory: industryDisplay,
     topJobsToBeBooked: services.slice(0, 3),
+    // Full services list — persisted to `brands.services` (migration 0112).
+    services,
   };
 
   // Funnel brief — derive from extraction + industry template, same shape

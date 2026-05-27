@@ -100,9 +100,17 @@ function retypeField(field: FormField, type: FormFieldType): FormField {
   if (type === 'select') {
     next.options = field.options ?? ['Option one', 'Option two'];
   }
+  // Re-typing AWAY from `select` clears the services-list flag (it's
+  // type-specific) — re-typing TO `select` preserves it if the prior
+  // field already had it set.
+  if (type === 'select' && field.useServicesList) {
+    next.useServicesList = true;
+  }
   if (type === 'email') next.leadRole = 'email';
   else if (type === 'phone') next.leadRole = 'phone';
-  else if (field.leadRole && type === 'text') next.leadRole = field.leadRole;
+  else if (field.leadRole && (type === 'text' || type === 'textarea' || type === 'select')) {
+    next.leadRole = field.leadRole;
+  }
   return next;
 }
 
@@ -113,7 +121,7 @@ const PLACEHOLDER_TYPES: readonly FormFieldType[] = [
   'textarea',
   'select',
 ];
-const LEAD_ROLE_TYPES: readonly FormFieldType[] = ['text', 'email', 'phone'];
+const LEAD_ROLE_TYPES: readonly FormFieldType[] = ['text', 'email', 'phone', 'textarea'];
 
 // =============================================================================
 
@@ -714,6 +722,8 @@ function FieldInspector({
             { id: 'name', label: 'Customer name' },
             { id: 'email', label: 'Customer email' },
             { id: 'phone', label: 'Customer phone' },
+            { id: 'address', label: 'Service address' },
+            { id: 'service', label: 'Service description' },
           ]}
           capability="editForms"
           helper={<>Maps this answer onto the lead record.</>}
@@ -722,11 +732,64 @@ function FieldInspector({
       ) : null}
 
       {field.type === 'select' ? (
-        <OptionsEditor
-          options={field.options ?? []}
-          canEdit={canEdit}
-          onChange={(options) => update({ options })}
-        />
+        <>
+          <ToggleField
+            label="Use my services list"
+            helper={
+              <>
+                Pull options from the services you captured during onboarding.
+                Tags this as the service field so automations pick the right
+                value for <code>{'{{lead.service}}'}</code>.
+              </>
+            }
+            value={!!field.useServicesList}
+            capability="editForms"
+            onChange={(v) =>
+              // When ON: drop the per-field options[] (live from brand) +
+              // force leadRole='service' so {{lead.service}} resolves.
+              // When OFF: restore an editable options[] stub if the field
+              // had none, and clear the auto-set service role (the
+              // operator can pick a different role from the picker
+              // above).
+              update(
+                v
+                  ? {
+                      useServicesList: true,
+                      leadRole: 'service',
+                      options: undefined,
+                    }
+                  : {
+                      useServicesList: false,
+                      leadRole:
+                        field.leadRole === 'service' ? undefined : field.leadRole,
+                      options:
+                        field.options && field.options.length > 0
+                          ? field.options
+                          : ['Option one', 'Option two'],
+                    },
+              )
+            }
+          />
+          {field.useServicesList ? (
+            <div className="mb-3.5 rounded-md border border-rule bg-paper-2 px-3 py-2.5 text-[12px] leading-[1.5] text-ink-mid">
+              <p className="mb-1 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
+                {'// Options'}
+              </p>
+              <p>
+                Options come from <strong>your services list</strong> (captured
+                during onboarding). The submitted value is the picked
+                option&rsquo;s name (a snapshot), so a lead stays readable even
+                if you later remove a service.
+              </p>
+            </div>
+          ) : (
+            <OptionsEditor
+              options={field.options ?? []}
+              canEdit={canEdit}
+              onChange={(options) => update({ options })}
+            />
+          )}
+        </>
       ) : null}
 
       {canEdit ? (

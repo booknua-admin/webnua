@@ -56,6 +56,13 @@ export type SendSmsPayload = {
   recipientPhone: string;
   /** The lead this SMS is about, when applicable (lead acknowledgment). */
   relatedLeadId?: string | null;
+  /** The booking this SMS is about, when applicable (booking confirmation /
+   *  arrival notification). The handler loads the booking and substitutes
+   *  `{{job.*}}` into the render context (date, time, address, eta). Absent
+   *  for non-booking-triggered sends — those template variables resolve to
+   *  empty strings, which is correct for a lead-acknowledgment SMS that has
+   *  no job context yet. */
+  relatedBookingId?: string | null;
   /** Variable overrides merged over the handler-built render context. */
   contextOverrides?: Record<string, string>;
 };
