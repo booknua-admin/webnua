@@ -460,10 +460,14 @@ async function setObjectStatus(
 // ads_management / pages_manage_ads permission (also requested).
 
 /** Tasks Webnua's BM receives on the customer's ad account when shared.
- *  V1 = full management so operators can build/run/edit campaigns
- *  end-to-end. The customer keeps ownership; this is partner access,
- *  not transfer. */
-const AD_ACCOUNT_TASKS = ['MANAGE', 'ADVERTISE', 'ANALYZE', 'MANAGE_LEADS'] as const;
+ *  Meta's closed set for ad-account agencies is
+ *  {MANAGE, ADVERTISE, ANALYZE, DRAFT, AA_ANALYZE}. V1 picks the trio
+ *  that covers full operator workflow without the niche extras —
+ *  MANAGE for governance, ADVERTISE for campaign builds, ANALYZE for
+ *  reporting. Lead retrieval is granted separately (the user-level
+ *  `leads_retrieval` permission + Page leadgen access, NOT an ad-account
+ *  agency task — `MANAGE_LEADS` does not exist in this enum). */
+const AD_ACCOUNT_TASKS = ['MANAGE', 'ADVERTISE', 'ANALYZE'] as const;
 
 /** Tasks Webnua's BM receives on the customer's Page. V1 = full
  *  management plus messaging (lead-gen ads frequently funnel into
@@ -500,8 +504,48 @@ export async function shareAdAccountWithWebnua(
   );
 }
 
+/** Fetch a Page-scoped access token using the user access token. The
+ *  user must be a Page admin (always true in our flow — the customer
+ *  picked the Page from their own list). Required by every Page-level
+ *  write endpoint, including /{page_id}/agencies. */
+async function fetchPageAccessToken(
+  clientId: string,
+  pageId: string,
+  userAccessToken: string,
+): Promise<IntegrationResult<string>> {
+  const result = await callExternal<{ access_token?: string }>({
+    provider: 'meta_ads',
+    operation: 'get_page_access_token',
+    url: `${GRAPH}/${pageId}?${form({
+      access_token: userAccessToken,
+      fields: 'access_token',
+    })}`,
+    method: 'GET',
+    clientId,
+  });
+  if (!result.ok) return result;
+  const pageToken = result.data.access_token;
+  if (!pageToken) {
+    return {
+      ok: false,
+      error: {
+        class: 'non_retryable',
+        message:
+          'Page access token not returned — the connected user may not be a Page admin.',
+        provider: 'meta_ads',
+        operation: 'get_page_access_token',
+        status: result.status,
+      },
+    };
+  }
+  return { ok: true, data: pageToken, status: result.status };
+}
+
 /** Share a Page with Webnua's Business Manager so lead-gen ads attached
- *  to this Page can be managed from operator Ads Managers. */
+ *  to this Page can be managed from operator Ads Managers. Two-step:
+ *  swap the user token for a Page Access Token (Meta requires it on
+ *  /{page_id}/agencies — error #190 without it), then call the share
+ *  endpoint with the page-scoped token. */
 export async function sharePageWithWebnua(
   clientId: string,
   pageId: string,
@@ -511,6 +555,8 @@ export async function sharePageWithWebnua(
     clientId,
     'meta_ads',
     async (accessToken) => {
+      const tokenSwap = await fetchPageAccessToken(clientId, pageId, accessToken);
+      if (!tokenSwap.ok) return tokenSwap;
       return callExternal<{ success?: boolean }>({
         provider: 'meta_ads',
         operation: 'share_page_with_webnua',
@@ -518,7 +564,7 @@ export async function sharePageWithWebnua(
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         rawBody: jsonForm({
-          access_token: accessToken,
+          access_token: tokenSwap.data,
           business: webnuaBusinessId,
           permitted_tasks: PAGE_TASKS,
         }),
@@ -555,7 +601,9 @@ export async function revokeAdAccountFromWebnua(
 }
 
 /** Revoke Webnua's partner access to a Page. Sibling of
- *  revokeAdAccountFromWebnua. */
+ *  revokeAdAccountFromWebnua — same token-swap shape as
+ *  sharePageWithWebnua (the DELETE half of /{page_id}/agencies also
+ *  requires a Page Access Token). */
 export async function revokePageFromWebnua(
   clientId: string,
   pageId: string,
@@ -565,11 +613,13 @@ export async function revokePageFromWebnua(
     clientId,
     'meta_ads',
     async (accessToken) => {
+      const tokenSwap = await fetchPageAccessToken(clientId, pageId, accessToken);
+      if (!tokenSwap.ok) return tokenSwap;
       return callExternal<{ success?: boolean }>({
         provider: 'meta_ads',
         operation: 'revoke_page_from_webnua',
         url: `${GRAPH}/${pageId}/agencies?${form({
-          access_token: accessToken,
+          access_token: tokenSwap.data,
           business: webnuaBusinessId,
         })}`,
         method: 'DELETE',
