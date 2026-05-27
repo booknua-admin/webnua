@@ -32,6 +32,16 @@ import { sendWelcomeEmail } from '@/lib/auth/welcome-email';
 import { sendCancellationWarningEmail } from '@/lib/billing/cancellation-warning-email';
 import { sendInviteEmail } from '@/lib/invites/invite-email';
 import {
+  buildMonthlyDigestHtml,
+  buildMonthlyDigestSubject,
+  buildMonthlyDigestText,
+  buildWeeklyDigestHtml,
+  buildWeeklyDigestSubject,
+  buildWeeklyDigestText,
+  SAMPLE_MONTHLY_CONTEXT,
+  SAMPLE_WEEKLY_CONTEXT,
+} from '@/lib/email/digest-templates';
+import {
   enqueueJob,
   type JobContext,
   registerJobHandler,
@@ -86,6 +96,8 @@ const ALL_KINDS = [
   'invite-client',
   'cancellation-warning',
   'stripe-payment-failed',
+  'weekly-digest',
+  'monthly-digest',
 ] as const;
 
 type Kind = (typeof ALL_KINDS)[number];
@@ -244,6 +256,33 @@ async function trigger(kind: Kind, recipientEmail: string): Promise<string> {
         html: buildStripePaymentFailedTestHtml('Voltline Electrical (test)', billingLink),
         text: buildStripePaymentFailedTestText('Voltline Electrical (test)', billingLink),
         templateName: 'stripe_payment_failed_TEST',
+      });
+      return outcome;
+    }
+    case 'weekly-digest': {
+      // Stream B: platform → sub-account owner. Sample context (Dublin
+      // Cleaning Co, May 2026) lives in lib/email/digest-templates.ts so the
+      // PROD send path can reuse the same render helpers with REAL context.
+      const ctx = { ...SAMPLE_WEEKLY_CONTEXT, dashboardLink: `${base}/dashboard` };
+      const outcome = await sendOperatorEmail({
+        clientId: '00000000-0000-0000-0000-000000000000',
+        recipientEmail,
+        subject: buildWeeklyDigestSubject(ctx),
+        html: buildWeeklyDigestHtml(ctx),
+        text: buildWeeklyDigestText(ctx),
+        templateName: 'weekly_performance_digest_TEST',
+      });
+      return outcome;
+    }
+    case 'monthly-digest': {
+      const ctx = { ...SAMPLE_MONTHLY_CONTEXT, dashboardLink: `${base}/dashboard` };
+      const outcome = await sendOperatorEmail({
+        clientId: '00000000-0000-0000-0000-000000000000',
+        recipientEmail,
+        subject: buildMonthlyDigestSubject(ctx),
+        html: buildMonthlyDigestHtml(ctx),
+        text: buildMonthlyDigestText(ctx),
+        templateName: 'monthly_performance_digest_TEST',
       });
       return outcome;
     }
