@@ -551,7 +551,15 @@ function toEditorStep(action: ActionRow): AutomationEditorStep {
   if (kind === 'send_email_to_lead') {
     base.subject = typeof cfg.subject === 'string' ? (cfg.subject as string) : '';
     base.bodyHtml = typeof cfg.body_html === 'string' ? (cfg.body_html as string) : '';
-    base.bodyText = typeof cfg.body_text === 'string' ? (cfg.body_text as string) : '';
+    // PR B.7 — unified on `body` (single key, same as SMS). Fall back to the
+    // legacy `body_text` / `body_html` keys for rows seeded before 0110.
+    const unifiedBody =
+      typeof cfg.body === 'string'
+        ? (cfg.body as string)
+        : typeof cfg.body_text === 'string'
+          ? (cfg.body_text as string)
+          : '';
+    base.bodyText = unifiedBody;
   }
 
   if (!isComm) {
@@ -573,12 +581,17 @@ function actionToEditorAction(a: ActionRow): AutomationEditorAction {
   if (a.action_type === 'send_sms_to_lead') {
     body = typeof cfg.body === 'string' ? cfg.body : '';
   } else if (a.action_type === 'send_email_to_lead') {
+    // PR B.7 — unified on `body` (single key, same as SMS). Fall back to
+    // the legacy `body_text` / `body_html` keys for rows seeded before
+    // 0110 (migration 0110+ writes `body` only).
     body =
-      typeof cfg.body_text === 'string'
-        ? cfg.body_text
-        : typeof cfg.body_html === 'string'
-          ? cfg.body_html
-          : '';
+      typeof cfg.body === 'string'
+        ? cfg.body
+        : typeof cfg.body_text === 'string'
+          ? cfg.body_text
+          : typeof cfg.body_html === 'string'
+            ? cfg.body_html
+            : '';
     subject = typeof cfg.subject === 'string' ? cfg.subject : '';
   }
   const actionType = a.action_type as AutomationEditorActionType;
@@ -1411,11 +1424,21 @@ async function updateActionBody(input: {
   if (a.action_type === 'send_sms_to_lead') {
     nextConfig = { ...baseConfig, body: input.body };
   } else if (a.action_type === 'send_email_to_lead') {
-    nextConfig = {
-      ...baseConfig,
-      body_text: input.body,
-      body_html: textToHtml(input.body),
-    };
+    // PR B.7 — emails use a single `body` key, same as SMS. Customer-facing
+    // emails ship plain-text-only at send time (migration 0097), so we don't
+    // store a separate `body_html` field; the send path generates HTML from
+    // the plain text. This matches the editor's column-level RLS trigger
+    // (migration 0106) which only allows `body` + `subject` for client edits.
+    //
+    // Strip any legacy `body_text`/`body_html` keys so a re-save by an
+    // operator cleans up the schema for that row. Without this strip the
+    // 0106 trigger would reject a client edit (because `body_text` would
+    // appear unchanged in NEW while removed from OLD by the spread, or
+    // visa-versa).
+    const { body_text: _bt, body_html: _bh, ...rest } = baseConfig;
+    void _bt;
+    void _bh;
+    nextConfig = { ...rest, body: input.body };
     if (typeof input.subject === 'string') {
       nextConfig.subject = input.subject;
     }
@@ -1432,6 +1455,9 @@ async function updateActionBody(input: {
   if (error) throw normalizeError(error);
 }
 
+// textToHtml retained for back-compat callers that still need a quick HTML
+// version — currently unused by the editor save path (PR B.7) since the
+// Resend send wrapper generates HTML from the plain-text body at send time.
 function textToHtml(text: string): string {
   const escaped = text
     .replace(/&/g, '&amp;')
@@ -1442,6 +1468,7 @@ function textToHtml(text: string): string {
     .map((para) => `<p>${para.replace(/\n/g, '<br/>')}</p>`)
     .join('');
 }
+void textToHtml;
 
 /** Hook — update the body (+ subject for email) of one comm action. */
 export function useUpdateActionBody() {

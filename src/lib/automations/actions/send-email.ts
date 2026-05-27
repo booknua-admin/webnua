@@ -24,20 +24,33 @@ import type { ActionContext, ActionOutcome } from './dispatch';
 type SendEmailActionConfig = {
   template_key?: string;
   subject?: string;
-  body_html?: string;
+  /** PR B.7 — unified body key (same as SMS). Customer-facing emails ship
+   *  plain-text-only at send time (migration 0097); the Resend wrapper
+   *  generates HTML from this. */
+  body?: string;
+  /** Legacy plain-text body — kept for rows seeded before migration 0110.
+   *  Read as fallback when `body` is empty. */
   body_text?: string;
+  /** Legacy HTML body — kept for rows seeded before migration 0110. */
+  body_html?: string;
   writes_gbp_review_request_audit?: boolean;
 };
 
 export async function runSendEmailToLead(ctx: ActionContext): Promise<ActionOutcome> {
   const cfg = ctx.action.action_config as SendEmailActionConfig;
 
-  // An email needs a subject + at least one body variant. Skip honestly if
-  // either is missing rather than send half a message.
-  const hasBody =
-    (typeof cfg.body_html === 'string' && cfg.body_html.trim().length > 0) ||
-    (typeof cfg.body_text === 'string' && cfg.body_text.trim().length > 0);
-  if (!cfg.subject || !hasBody) {
+  // Resolve the body — prefer the unified `body` key (PR B.7), fall back
+  // to legacy `body_text` / `body_html` for pre-0110 rows.
+  const resolvedBody =
+    typeof cfg.body === 'string' && cfg.body.trim().length > 0
+      ? cfg.body
+      : typeof cfg.body_text === 'string' && cfg.body_text.trim().length > 0
+        ? cfg.body_text
+        : typeof cfg.body_html === 'string' && cfg.body_html.trim().length > 0
+          ? cfg.body_html
+          : '';
+
+  if (!cfg.subject || !resolvedBody) {
     return { kind: 'skipped', reason: 'missing_subject_or_body' };
   }
 
@@ -103,8 +116,12 @@ export async function runSendEmailToLead(ctx: ActionContext): Promise<ActionOutc
     recipientName: name || 'there',
     relatedLeadId: leadId,
     subject: cfg.subject,
-    bodyHtml: cfg.body_html,
-    bodyText: cfg.body_text,
+    // Pass the resolved plain-text body. The Resend wrapper accepts either
+    // bodyHtml or bodyText (or both); customer-facing emails ship plain-text
+    // only per migration 0097, so we send just bodyText and let the wrapper
+    // generate the multipart from it.
+    bodyText: resolvedBody,
+    bodyHtml: typeof cfg.body_html === 'string' ? cfg.body_html : undefined,
   };
 
   await enqueueJobImmediate(SEND_EMAIL_JOB, payload, {
