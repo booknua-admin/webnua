@@ -140,8 +140,20 @@ export function normalizeError(value: unknown): AppError {
       switch (e.code) {
         case 'PGRST116': // .single() matched no rows — absent or RLS-hidden
           return AppError.notFound(message);
-        case '42501': // insufficient_privilege — an RLS policy rejected the write
+        case '42501': {
+          // insufficient_privilege — an RLS policy or trigger rejected the
+          // write. The 0106 client-self-manage triggers raise this with a
+          // verbose message ("clients may only edit body and subject on
+          // their own automation actions (attempted change to
+          // action_config.X)"). Surface the friendlier rewrite — the raw
+          // text is operator-debug noise to a client.
+          if (typeof message === 'string' && /clients may only/i.test(message)) {
+            return AppError.forbidden(
+              "You can only edit the message body and subject. Other settings are managed by your operator — open a ticket if you'd like one changed.",
+            );
+          }
           return AppError.forbidden(message);
+        }
       }
     }
   }
