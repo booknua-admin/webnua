@@ -63,9 +63,8 @@ export async function saveBriefAnswer(
 }
 
 /** Pure — converts a BriefAnswerInput into the partial `brands` row
- *  patch that `saveBriefAnswer` writes. Exported so the chat UI can
- *  preview what's about to be saved if a future iteration wants to. */
-export function buildPatch(answer: BriefAnswerInput): Record<string, unknown> {
+ *  patch that `saveBriefAnswer` writes. */
+function buildPatch(answer: BriefAnswerInput): Record<string, unknown> {
   switch (answer.field) {
     case 'offer': {
       const text = answer.text.trim();
@@ -106,12 +105,10 @@ export function buildPatch(answer: BriefAnswerInput): Record<string, unknown> {
   }
 }
 
-/** The set of fields the chat actually asks about — `BriefField` minus
- *  any future additions that aren't chat-flow-friendly. Today these are
- *  the same set, but isolating it keeps `BriefField` open to expansion
- *  for completeness checks without forcing every new field into the
- *  chat flow. */
-export const CHAT_FIELDS: readonly BriefField[] = [
+/** The set of fields the chat asks about, in the canonical chat order.
+ *  Isolated from `BriefField` so completeness checks can grow without
+ *  forcing every new field into the chat flow. */
+const CHAT_FIELDS: readonly BriefField[] = [
   'offer',
   'services',
   'audience_line',

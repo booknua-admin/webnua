@@ -3,7 +3,7 @@
 // =============================================================================
 // CampaignEditModal — campaign-root knobs (name + daily ad spend + country).
 //
-// Phase 7.5 · Session 2.3 (v2). Opens when the operator clicks the
+// Phase 7.5 · Session 2.3. Opens when the operator clicks the
 // campaign root card on CampaignBlueprint. The other launch-payload
 // fields (objective, run-until-stopped, age range, in-Meta lead form)
 // stay at Webnua defaults — operators who need finer control pick

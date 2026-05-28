@@ -2,9 +2,9 @@
 
 // =============================================================================
 // CampaignBlueprint — high-fidelity visual hierarchy of the campaign about
-// to ship to Meta. Replaces CampaignTree.
+// to ship to Meta.
 //
-// Phase 7.5 · Session 2.3 (v2). The wireframe operator approved:
+// Phase 7.5 · Session 2.3. The wireframe operator approved:
 //
 //                  ┌──────────────┐
 //                  │   Campaign   │   ← rust-bordered root card

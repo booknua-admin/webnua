@@ -4,10 +4,8 @@
 // CampaignChat — single conversational surface owning gap-fill →
 // "what's your idea?" → angle drafting → angle picking.
 //
-// Phase 7.5 · Session 2.3 (v2). Replaces BriefGapFillReview + the
-// standalone angle picker (AnglePickerCards as a standalone phase). The
-// operator never sees a separate picker page — angles appear in the
-// chat as a tickable bubble after the brand context is settled.
+// Phase 7.5 · Session 2.3. Angles appear in the chat as a tickable
+// bubble after the brand context is settled — no separate picker page.
 //
 // Internal step machine:
 //

@@ -1,8 +1,7 @@
 // =============================================================================
 // POST /api/integrations/meta_ads/propose-brief-fills
 //
-// Phase 7.5 · Session 2.2 polish. Replaces the multi-turn chat. The
-// generate-ads surface calls this when the brief has soft-block gaps; the
+// Phase 7.5 · Session 2.2. Called when the brief has soft-block gaps; the
 // route does ONE Webnua AI call that drafts a proposed value for every
 // missing field plus a one-line rationale, and the UI renders the
 // proposals as editable cards the operator confirms (or edits) in a

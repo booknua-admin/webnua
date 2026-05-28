@@ -3,7 +3,7 @@
 // =============================================================================
 // AdSetEditModal — per-ad-set TARGETING editor.
 //
-// Phase 7.5 · Session 2.3 (v3). Each ad set holds the audience the
+// Phase 7.5 · Session 2.3. Each ad set holds the audience the
 // operator is testing the angle against. Inside a set, the IMAGE
 // varies; between sets, the COPY varies. Audience is the third axis
 // the operator can independently tune per set.

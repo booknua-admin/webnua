@@ -3,7 +3,7 @@
 // =============================================================================
 // AdEditModal — per-ad image editor + shared-copy editor for the parent set.
 //
-// Phase 7.5 · Session 2.3 (v3). Each ad is an IMAGE variant within its
+// Phase 7.5 · Session 2.3. Each ad is an IMAGE variant within its
 // ad set; the set's COPY is shared across every ad. To keep the
 // experiment design honest (within a set, only image varies), the
 // modal exposes BOTH:

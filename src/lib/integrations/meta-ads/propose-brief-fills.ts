@@ -1,7 +1,7 @@
 // =============================================================================
 // Browser-side caller for /api/integrations/meta_ads/propose-brief-fills.
 //
-// Phase 7.5 · Session 2.2 polish. The Generate surface calls this when
+// Phase 7.5 · Session 2.2. The Generate surface calls this when
 // the brief has soft-block gaps; the route returns proposed values for
 // each missing field + a rationale. The UI renders the proposals as
 // editable cards the operator confirms in one pass.
