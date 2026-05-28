@@ -1,22 +1,24 @@
 'use client';
 
 // =============================================================================
-// /campaigns/launch — operator-only in-app Meta lead-form campaign builder.
+// /campaigns/launch — operator-only Meta campaign-launch surface.
 //
-// Phase 7.5 · Session 1.2. Promoted from a Dialog to a full page because
-// the 5-step builder cramps a modal — the operator needs the canvas for
-// the variant cards, the image upload, and the live Meta-feed-ad
-// preview side-by-side. Lives at /campaigns/launch (NOT in the sidebar
-// nav — reached via "+ New campaign" on /campaigns sub-account mode).
+// Phase 7.5 · Session 2.1. Reshaped from "wizard root" to "Generate root
+// with classic wizard as escape hatch". The default surface is the
+// single-screen GenerateAdsView (button → 3 angles → pick → launch); the
+// existing five-step LaunchCampaignWizard remains reachable via
+// `?mode=classic` for power users who need full control of targeting,
+// budget, creative, or carousel format.
 //
-// Guards (page-level, defence in depth — the button hides itself when
-// these aren't met but a direct URL visit needs the same protection):
-//   • role === 'admin'                    — campaign creation is operator
-//                                           governance; client redirects
-//                                           to /campaigns
-//   • activeClientId set (sub-account)    — agency mode → pick-a-client
-//                                           empty state
-//   • clientMetaAdAccount wired           — no row → wire-Meta-first CTA
+// Page guards (defence in depth — the button hides itself when these
+// aren't met but a direct URL visit needs the same protection):
+//   • role === 'admin' — campaign creation is operator governance;
+//     client redirects to /campaigns
+//   • activeClientId set (sub-account) — agency mode → pick-a-client
+//     empty state
+//   • clientMetaAdAccount wired — no row → wire-Meta-first CTA (the
+//     Generate surface also handles this via its hardBlock state; the
+//     classic wizard ALSO checks; this is the outermost gate)
 //
 // On Cancel → /campaigns. On successful launch → /campaigns + invalidate
 // campaign query keys so the new campaign appears in the roster
@@ -25,9 +27,10 @@
 
 import { useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 
+import { GenerateAdsView } from '@/components/admin/campaigns/GenerateAdsView';
 import { LaunchCampaignWizard } from '@/components/admin/campaigns/LaunchCampaignWizard';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Button } from '@/components/ui/button';
@@ -39,11 +42,17 @@ import { useActiveClient, useWorkspace } from '@/lib/workspace/workspace-stub';
 export default function LaunchCampaignPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
   const { role, hydrated } = useRole();
   const { activeClientId } = useWorkspace();
   const activeClient = useActiveClient();
   const { data: clientId } = useClientId(activeClientId);
   const adAccount = useClientMetaAdAccount(clientId ?? null);
+
+  // `?mode=classic` drops the operator into the original five-step
+  // wizard (Phase 7.5 Sessions 1.x). Anything else (no param, anything
+  // unrecognised) renders the new Generate surface.
+  const mode = searchParams.get('mode') === 'classic' ? 'classic' : 'generate';
 
   // Role guard — client-role users have no business on this page;
   // bounce them to /campaigns where their own view lives.
@@ -65,8 +74,8 @@ export default function LaunchCampaignPage() {
 
   function handleLaunched() {
     // Invalidate every campaign query key so the new campaign appears
-    // in the roster on landing. The wizard's mutation hook already
-    // invalidates meta-campaigns; this picks up the cross-page keys.
+    // in the roster on landing. The mutation hook already invalidates
+    // meta-campaigns; this picks up the cross-page keys.
     void queryClient.invalidateQueries({ queryKey: ['campaigns', 'admin'] });
     void queryClient.invalidateQueries({ queryKey: ['campaigns', 'sub-account'] });
     void queryClient.invalidateQueries({ queryKey: ['meta-campaigns'] });
@@ -75,7 +84,9 @@ export default function LaunchCampaignPage() {
 
   // Empty states — render the page chrome (Topbar) so navigation feels
   // continuous, with an inline empty-state card explaining what's
-  // missing.
+  // missing. The Generate surface ALSO handles ad-account-missing
+  // (via the brief-completeness hardBlock), but agency mode is a page-
+  // level concern — the surface needs a client id before it mounts.
   if (!activeClientId) {
     return (
       <EmptyState
@@ -118,11 +129,21 @@ export default function LaunchCampaignPage() {
           />
         }
       />
-      <LaunchCampaignWizard
-        clientId={clientId}
-        onCancel={handleCancel}
-        onLaunched={handleLaunched}
-      />
+      {mode === 'classic' ? (
+        <LaunchCampaignWizard
+          clientId={clientId}
+          onCancel={handleCancel}
+          onLaunched={handleLaunched}
+        />
+      ) : (
+        <GenerateAdsView
+          clientId={clientId}
+          clientName={clientName}
+          classicBuilderHref="/campaigns/launch?mode=classic"
+          onCancel={handleCancel}
+          onLaunched={handleLaunched}
+        />
+      )}
     </>
   );
 }
