@@ -50,11 +50,12 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { AnglePickerCards } from './AnglePickerCards';
 import { BriefGapFillReview } from './BriefGapFillReview';
 import {
-  CampaignTree,
-  type AdSetDraft,
+  CampaignBlueprint,
+  type AdSetNode,
+  type BlueprintBrief,
   type CtaType,
   type LaunchSettings,
-} from './CampaignTree';
+} from './CampaignBlueprint';
 import { MetaAdPreview } from './MetaAdPreview';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/lib/auth/user-stub';
@@ -98,12 +99,12 @@ type Phase =
   | { kind: 'chat'; missing: readonly BriefField[] }
   | { kind: 'generating' }
   | { kind: 'picker'; angles: GeneratedAngle[] }
-  | { kind: 'tree'; angles: GeneratedAngle[]; settings: LaunchSettings; adSets: AdSetDraft[] }
+  | { kind: 'tree'; angles: GeneratedAngle[]; settings: LaunchSettings; adSets: AdSetNode[] }
   | {
       kind: 'launching';
       angles: GeneratedAngle[];
       settings: LaunchSettings;
-      adSets: AdSetDraft[];
+      adSets: AdSetNode[];
     };
 
 type GenerateError = {
@@ -212,7 +213,7 @@ export function GenerateAdsView({
   }
 
   /** Picker → tree. Seed launch settings from the industry template
-   *  defaults + build one AdSetDraft per PICKED angle (the operator's
+   *  defaults + build one AdSetNode per PICKED angle (the operator's
    *  selection on the picker is honoured — unselected angles never
    *  enter the tree at all; re-tick on the picker to bring them in).
    *  Country is heuristic-seeded from the customer's service-area
@@ -227,16 +228,24 @@ export function GenerateAdsView({
       country: inferCountryFromServiceArea(brief.data.serviceArea),
     };
     const pickedAngles = phase.angles.filter((a) => selectedAngles.has(a.id));
-    const adSets: AdSetDraft[] = pickedAngles.map((a) => ({
+    // Each picked angle is one ad set on the blueprint. The angle's
+    // copy variants become the ads inside that set; every ad inherits
+    // the angle's shared image (the hero stock photo for the industry)
+    // until the operator overrides it via AdEditModal.
+    const industryTemplate = resolveIndustryTemplate(brief.data.industry);
+    const sharedImage = industryTemplate.stockImages.hero;
+    const adSets: AdSetNode[] = pickedAngles.map((a) => ({
       angleId: a.id,
       label: a.label,
       rationale: a.rationale,
-      variants: a.variants.map((v, idx) => ({
+      sharedImageUrl: sharedImage,
+      ads: a.variants.map((v, idx) => ({
         id: `${a.id}-${idx}`,
         headline: v.headline,
         primaryText: v.primaryText,
         description: v.description,
         ctaType: v.ctaType as CtaType,
+        imageUrl: null,
         selected: true,
       })),
     }));
@@ -260,9 +269,9 @@ export function GenerateAdsView({
   }
 
   /** Replace one ad-set draft (variant edit / selection toggle). The
-   *  CampaignTree component emits the whole new AdSetDraft; we splice
+   *  CampaignTree component emits the whole new AdSetNode; we splice
    *  by angleId so a future reorder doesn't break the mapping. */
-  function handleAdSetChange(next: AdSetDraft) {
+  function handleAdSetChange(next: AdSetNode) {
     if (phase.kind !== 'tree') return;
     setPhase({
       kind: 'tree',
@@ -285,39 +294,44 @@ export function GenerateAdsView({
     const settings = phase.settings;
     const adSets = phase.adSets;
 
-    // Flatten every SELECTED variant across every ad-set draft. The
-    // operator's per-variant unticks (CampaignTree) drop variants
-    // here; an ad set with zero selected variants contributes nothing.
-    // Cap at 5 total — Meta's learning algorithm dilutes past that;
-    // the orchestrator caps at 10 for safety.
-    const allVariants = adSets
-      .flatMap((a) =>
-        a.variants
-          .filter((v) => v.selected)
-          .map((v) => ({
-            headline: v.headline,
-            primaryText: v.primaryText,
-            description:
-              v.description && v.description.length > 0 ? v.description : null,
-            ctaType: v.ctaType,
+    // Flatten every SELECTED ad across every ad-set draft. The
+    // operator's per-ad unticks (AdEditModal) drop ads here; an ad
+    // set with zero selected ads contributes nothing. Cap at 5 total
+    // (Meta's learning algorithm dilutes past that; the orchestrator
+    // caps at 10 for safety).
+    const selectedAds = adSets
+      .flatMap((adSet) =>
+        adSet.ads
+          .filter((ad) => ad.selected)
+          .map((ad) => ({
+            ad,
+            // Per-ad image override → fall back to the ad-set's
+            // shared image when null. V1 uses ONE image per ad.
+            imageUrl: ad.imageUrl || adSet.sharedImageUrl,
           })),
       )
       .slice(0, 5);
-    if (allVariants.length === 0) return;
+    if (selectedAds.length === 0) return;
+
+    const allVariants = selectedAds.map(({ ad }) => ({
+      headline: ad.headline,
+      primaryText: ad.primaryText,
+      description:
+        ad.description && ad.description.length > 0 ? ad.description : null,
+      ctaType: ad.ctaType,
+    }));
+    // Distinct image URLs across the selected ads — Meta's orchestrator
+    // dedupes hashes per ad account, so duplicates are cheap. We feed
+    // every image so the M × N matrix in Session 1.4a (M variants ×
+    // N images) lights up each (copy, image) cell.
+    const distinctImages = Array.from(
+      new Set(selectedAds.map((s) => s.imageUrl).filter(Boolean)),
+    );
 
     setLaunchError(null);
     setPhase({ kind: 'launching', angles: phase.angles, settings, adSets });
 
     const template = templateForIndustry(brief.data.industry);
-    const industry = resolveIndustryTemplate(brief.data.industry);
-    const stockImages = industry.stockImages;
-    // V1 image set — hero + first 2 gallery photos. The orchestrator
-    // posts each one to Meta's /adimages; image_hash dedupe makes the
-    // call idempotent if the operator re-launches with the same URLs.
-    // Width/height are unknown for stock URLs (no probe), so null —
-    // the launch payload type accepts null and Meta infers from the
-    // image itself.
-    const imageUrls = [stockImages.hero, ...stockImages.gallery.slice(0, 2)];
 
     const linkUrl = `https://${brief.data.primaryDomain}`;
     const privacyPolicyUrl = `https://${brief.data.primaryDomain}/privacy`;
@@ -345,7 +359,7 @@ export function GenerateAdsView({
       endTimeIso: null,
       creative: {
         adFormat: 'single_image',
-        images: imageUrls.map((imageUrl) => ({
+        images: distinctImages.map((imageUrl) => ({
           imageUrl,
           imageWidth: null,
           imageHeight: null,
@@ -442,22 +456,13 @@ export function GenerateAdsView({
       )}
 
       {phase.kind === 'tree' && (
-        <CampaignTree
+        <CampaignBlueprint
           settings={phase.settings}
           adSets={phase.adSets}
-          brief={
-            brief.data
-              ? {
-                  businessName: brief.data.businessName,
-                  industry: brief.data.industry,
-                  primaryDomain: brief.data.primaryDomain,
-                }
-              : null
-          }
+          brief={buildBlueprintBrief(brief.data, clientId)}
           onSettingsChange={handleSettingsChange}
           onAdSetChange={handleAdSetChange}
-          onBack={handleBackToPicker}
-          onCancel={onCancel}
+          onCancel={handleBackToPicker}
           onLaunch={handleLaunch}
           launchPending={launchMutation.isPending}
           launchError={launchError}
@@ -863,6 +868,9 @@ type BriefContext = {
   serviceArea: string;
   audienceLine: string;
   primaryDomain: string | null;
+  /** Brand accent colour — falls back to Webnua rust when blank.
+   *  Drives the CTA button colour on MetaAdPreview. */
+  accentColor: string;
 };
 
 function useBriefContext(clientId: string) {
@@ -882,7 +890,7 @@ function useBriefContextQuery(clientId: string) {
       const [brandRes, clientRes, websiteRes] = await Promise.all([
         db()
           .from('brands')
-          .select('audience_line, industry_category')
+          .select('audience_line, industry_category, accent_color')
           .eq('client_id', clientId)
           .maybeSingle(),
         db()
@@ -899,6 +907,7 @@ function useBriefContextQuery(clientId: string) {
       const brand = (brandRes.data ?? null) as {
         audience_line?: string | null;
         industry_category?: string | null;
+        accent_color?: string | null;
       } | null;
       const client = (clientRes.data ?? null) as {
         name?: string | null;
@@ -914,6 +923,7 @@ function useBriefContextQuery(clientId: string) {
         serviceArea: client?.service_area ?? '',
         audienceLine: brand?.audience_line ?? '',
         primaryDomain: website?.domain_primary ?? null,
+        accentColor: brand?.accent_color?.trim() || '#d24317',
       };
     },
     enabled: clientId.length > 0,
@@ -921,6 +931,20 @@ function useBriefContextQuery(clientId: string) {
 }
 
 // --- helpers ---------------------------------------------------------------
+
+function buildBlueprintBrief(
+  brief: BriefContext | undefined,
+  clientId: string,
+): BlueprintBrief | null {
+  if (!brief) return null;
+  return {
+    clientId,
+    businessName: brief.businessName,
+    industry: brief.industry,
+    primaryDomain: brief.primaryDomain,
+    accentColor: brief.accentColor,
+  };
+}
 
 function defaultCampaignName(clientName: string, template: MetaAdTemplate): string {
   const ts = new Date().toISOString().slice(0, 10);
