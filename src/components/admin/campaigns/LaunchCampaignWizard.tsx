@@ -29,6 +29,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { CreativeTemplatePicker } from '@/components/admin/campaigns/CreativeTemplatePicker';
 import { MetaAdPreview } from '@/components/admin/campaigns/MetaAdPreview';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,10 +51,21 @@ import {
   type AdCreativeVariant,
 } from '@/lib/integrations/meta-ads/creative-draft';
 import {
+  coerceOverlayTo,
+  composeToBlob,
+  composeToDataUrl,
+  defaultOverlayFor,
+  validateOverlay,
+  type CreativeBrandContext,
+  type CreativeTemplateId,
+  type CreativeTemplateOverlay,
+} from '@/lib/integrations/meta-ads/creative-templates';
+import {
   listTemplates,
   templateForIndustry,
   type MetaAdTemplate,
 } from '@/lib/integrations/meta-ads/templates';
+import { uploadCompositeBlob } from '@/lib/integrations/meta-ads/upload-composite';
 import { supabase } from '@/lib/supabase/client';
 
 // --- props -------------------------------------------------------------------
@@ -126,12 +138,36 @@ type WizardState = {
   /** Index of the variant currently shown in the live preview. */
   selectedVariantIdx: number | null;
   /** V1.4 — N image variants (Supabase Storage urls). Each becomes an
-   *  ad inside every ad set; matrix size = variants × images. */
+   *  ad inside every ad set; matrix size = variants × images. V1.4b:
+   *  each carries a creative-template overlay + an optional secondary
+   *  base image (Quote Drop inset / Split second base) + a browser-
+   *  rendered preview data URL. At launch time the composite is
+   *  re-rendered to a Blob and uploaded; the resulting compositeUrl
+   *  replaces `url` in the launch payload. */
   images: Array<{
+    /** Raw uploaded base image URL (the operator's photo). */
     url: string;
     width: number | null;
     height: number | null;
     selected: boolean;
+    /** V1.4b — creative template applied on top of the base. Default
+     *  'plain' (no overlay). */
+    templateId: CreativeTemplateId;
+    /** V1.4b — the per-template overlay data. Discriminated by
+     *  `overlay.kind` (matches templateId). */
+    overlay: CreativeTemplateOverlay;
+    /** V1.4b — optional secondary base image URL (Quote Drop inset
+     *  photo, Split second base). */
+    secondaryUrl: string | null;
+    secondaryWidth: number | null;
+    secondaryHeight: number | null;
+    /** V1.4b — canvas-rendered preview as a data URL. Null while a
+     *  render is in flight or before the first render. The MetaAdPreview
+     *  falls back to `url` when this is null. */
+    previewUrl: string | null;
+    /** V1.4b — Storage URL of the composite uploaded at launch time.
+     *  Null until the operator presses Launch. */
+    compositeUrl: string | null;
   }>;
   /** Index of the image currently shown in the live preview. */
   selectedImageIdx: number | null;
@@ -224,6 +260,86 @@ export function LaunchCampaignWizard({
   function pickTemplate(slug: string) {
     setState((s) => ({ ...s, templateSlug: slug }));
   }
+
+  // --- live composite preview ------------------------------------------------
+  //
+  // Whenever an image's templateId / overlay / secondaryUrl / base url
+  // changes, re-render its composite to a data URL so the MetaAdPreview
+  // shows the live result. Debounced 250ms to absorb typing bursts.
+  // Renders one image at a time (the currently-previewed one wins) so
+  // we don't burn CPU re-rendering every image on every keystroke.
+  const renderTokenRef = useRef(0);
+  useEffect(() => {
+    if (state.step !== 4) return;
+    if (state.images.length === 0) return;
+    const targetIdx = state.selectedImageIdx ?? 0;
+    const target = state.images[targetIdx];
+    if (!target) return;
+    if (target.previewUrl) return; // already rendered for the current overlay
+    const brand: CreativeBrandContext = {
+      accentColor: state.brand?.accent_color ?? '#d24317',
+      brandName: state.client?.name ?? undefined,
+    };
+    const token = ++renderTokenRef.current;
+    const handle = setTimeout(async () => {
+      try {
+        // Plain template: skip the canvas — the raw URL IS the preview.
+        if (target.templateId === 'plain') {
+          if (renderTokenRef.current !== token) return;
+          setState((s) => ({
+            ...s,
+            images: s.images.map((img, i) =>
+              i === targetIdx ? { ...img, previewUrl: img.url } : img,
+            ),
+          }));
+          return;
+        }
+        // Skip the canvas when the overlay is unusable — fall back to
+        // showing the raw image so the operator sees what they have.
+        const validationError = validateOverlay(
+          target.templateId,
+          target.overlay,
+          target.secondaryUrl,
+        );
+        if (validationError) {
+          if (renderTokenRef.current !== token) return;
+          setState((s) => ({
+            ...s,
+            images: s.images.map((img, i) =>
+              i === targetIdx ? { ...img, previewUrl: img.url } : img,
+            ),
+          }));
+          return;
+        }
+        const dataUrl = await composeToDataUrl({
+          templateId: target.templateId,
+          overlay: target.overlay,
+          baseUrl: target.url,
+          secondaryUrl: target.secondaryUrl,
+          brand,
+        });
+        if (renderTokenRef.current !== token) return;
+        setState((s) => ({
+          ...s,
+          images: s.images.map((img, i) =>
+            i === targetIdx ? { ...img, previewUrl: dataUrl } : img,
+          ),
+        }));
+      } catch {
+        // Render failure → fall back to raw image. Surfaces the
+        // underlying issue (CORS, bad URL, etc.) silently so the
+        // wizard stays usable.
+        if (renderTokenRef.current !== token) return;
+        setState((s) => ({
+          ...s,
+          images: s.images.map((img, i) =>
+            i === targetIdx ? { ...img, previewUrl: img.url } : img,
+          ),
+        }));
+      }
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [state.step, state.images, state.selectedImageIdx, state.brand, state.client]);
 
   // Auto-fire variant draft on step 4 entry. Tracked in a ref (not
   // state) so the effect doesn't have to setState — keeps the lint
@@ -344,7 +460,9 @@ export function LaunchCampaignWizard({
   }
 
   /** Append an image to the matrix. Operator uploads N images
-   *  (1-5); each becomes its own ad inside every ad set. */
+   *  (1-5); each becomes its own ad inside every ad set. V1.4b: each
+   *  image carries a creative-template overlay (default Plain) and
+   *  the optional secondary-image axis Quote Drop + Split consume. */
   async function handleImagePick(file: File) {
     try {
       const uploaded = await uploadMutation.mutateAsync({ clientId, file });
@@ -356,6 +474,13 @@ export function LaunchCampaignWizard({
             width: uploaded.width,
             height: uploaded.height,
             selected: true,
+            templateId: 'plain' as CreativeTemplateId,
+            overlay: defaultOverlayFor('plain'),
+            secondaryUrl: null,
+            secondaryWidth: null,
+            secondaryHeight: null,
+            previewUrl: null,
+            compositeUrl: null,
           },
         ];
         return {
@@ -368,6 +493,89 @@ export function LaunchCampaignWizard({
     } catch {
       // uploadMutation.error surfaces in UI
     }
+  }
+
+  /** Operator picked a template for the currently-previewed image.
+   *  Coerces the existing overlay onto the new shape (so a banner→quote
+   *  switch preserves the text) and clears the previewUrl so the
+   *  live-render effect re-renders against the new overlay. */
+  function handlePickTemplate(imageIdx: number, templateId: CreativeTemplateId) {
+    setState((s) => ({
+      ...s,
+      images: s.images.map((img, i) => {
+        if (i !== imageIdx) return img;
+        const overlay = coerceOverlayTo(templateId, img.overlay);
+        return {
+          ...img,
+          templateId,
+          overlay,
+          previewUrl: null,
+          compositeUrl: null,
+        };
+      }),
+    }));
+  }
+
+  /** Operator edited the overlay of the currently-previewed image.
+   *  Clears `previewUrl` so the live-render effect re-renders with
+   *  the new overlay; clears `compositeUrl` so a stale Storage upload
+   *  doesn't slip into the launch payload. */
+  function handleChangeOverlay(
+    imageIdx: number,
+    next: CreativeTemplateOverlay,
+  ) {
+    setState((s) => ({
+      ...s,
+      images: s.images.map((img, i) =>
+        i === imageIdx
+          ? { ...img, overlay: next, previewUrl: null, compositeUrl: null }
+          : img,
+      ),
+    }));
+  }
+
+  /** Operator picked a secondary base image (Quote Drop inset, Split
+   *  second base). Uploads via the shared uploadMutation and stores the
+   *  URL on the target image's secondaryUrl. */
+  async function handlePickSecondary(imageIdx: number, file: File) {
+    try {
+      const uploaded = await uploadMutation.mutateAsync({ clientId, file });
+      setState((s) => ({
+        ...s,
+        images: s.images.map((img, i) =>
+          i === imageIdx
+            ? {
+                ...img,
+                secondaryUrl: uploaded.url,
+                secondaryWidth: uploaded.width,
+                secondaryHeight: uploaded.height,
+                previewUrl: null,
+                compositeUrl: null,
+              }
+            : img,
+        ),
+      }));
+    } catch {
+      // surfaces via uploadMutation.error
+    }
+  }
+
+  function handleClearSecondary(imageIdx: number) {
+    setState((s) => ({
+      ...s,
+      images: s.images.map((img, i) =>
+        i === imageIdx
+          ? {
+              ...img,
+              secondaryUrl: null,
+              secondaryWidth: null,
+              secondaryHeight: null,
+              previewUrl: null,
+              compositeUrl: null,
+            }
+          : img,
+      ),
+    }));
   }
 
   function handleRemoveImage(idx: number) {
@@ -400,11 +608,89 @@ export function LaunchCampaignWizard({
 
   // --- Launch ----------------------------------------------------------------
 
+  // Track which image indices we're currently compositing so the launch
+  // CTA can show "Compositing 2 of 3…" while the canvas + Storage work
+  // runs in the background.
+  const [compositingProgress, setCompositingProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
+  const [compositeError, setCompositeError] = useState<string | null>(null);
+
   async function handleLaunch() {
     if (!state.client) return;
     const selectedImages = state.images.filter((img) => img.selected);
     if (selectedImages.length === 0) return;
     if (!state.primaryDomain) return;
+    // Defence-in-depth: refuse to launch when any selected image's
+    // overlay is invalid (Split with no secondary, Quote Drop with
+    // empty quote, etc.). Step-4 validation already catches this, but
+    // an operator could click Launch with a stale state.
+    for (const img of selectedImages) {
+      const overlayErr = validateOverlay(
+        img.templateId,
+        img.overlay,
+        img.secondaryUrl,
+      );
+      if (overlayErr) {
+        setCompositeError(overlayErr);
+        return;
+      }
+    }
+    setCompositeError(null);
+    // Compose + upload any composites that don't have a composite URL
+    // yet. Plain images skip the canvas entirely — their raw URL IS
+    // the image Meta sees.
+    setCompositingProgress({ done: 0, total: selectedImages.length });
+    const brand: CreativeBrandContext = {
+      accentColor: state.brand?.accent_color ?? '#d24317',
+      brandName: state.client?.name ?? undefined,
+    };
+    // Walk state.images in order so the per-index payload mapping below
+    // stays stable. We mutate the in-flight state with composite URLs
+    // so a retry doesn't re-render every composite.
+    const updatedImages = [...state.images];
+    for (let i = 0; i < updatedImages.length; i += 1) {
+      const img = updatedImages[i];
+      if (!img.selected) continue;
+      if (img.templateId === 'plain') {
+        updatedImages[i] = { ...img, compositeUrl: img.url };
+        continue;
+      }
+      if (img.compositeUrl) continue; // already composited
+      try {
+        const blob = await composeToBlob({
+          templateId: img.templateId,
+          overlay: img.overlay,
+          baseUrl: img.url,
+          secondaryUrl: img.secondaryUrl,
+          brand,
+        });
+        const uploaded = await uploadCompositeBlob(clientId, blob);
+        if (!uploaded.ok) {
+          setCompositeError(
+            uploaded.error.message ??
+              'Could not upload composite — try again.',
+          );
+          setCompositingProgress(null);
+          return;
+        }
+        updatedImages[i] = { ...img, compositeUrl: uploaded.data.url };
+        setCompositingProgress((p) =>
+          p ? { ...p, done: p.done + 1 } : null,
+        );
+      } catch (e) {
+        setCompositeError(
+          e instanceof Error ? e.message : 'Could not render composite.',
+        );
+        setCompositingProgress(null);
+        return;
+      }
+    }
+    setState((s) => ({ ...s, images: updatedImages }));
+    setCompositingProgress(null);
+
+    const selectedComposed = updatedImages.filter((img) => img.selected);
     const linkUrl = `https://${state.primaryDomain}`;
     const privacyPolicyUrl = `https://${state.primaryDomain}/privacy`;
     const now = new Date();
@@ -446,8 +732,12 @@ export function LaunchCampaignWizard({
       startTimeIso,
       endTimeIso,
       creative: {
-        images: selectedImages.map((img) => ({
-          imageUrl: img.url,
+        // V1.4b: send the composited image URL (compositeUrl) instead of
+        // the raw upload. For Plain templates the compositeUrl was set
+        // to the raw URL above so this collapses to the same payload
+        // shape Session 1.4a sent.
+        images: selectedComposed.map((img) => ({
+          imageUrl: img.compositeUrl ?? img.url,
           imageWidth: img.width,
           imageHeight: img.height,
         })),
@@ -569,6 +859,10 @@ export function LaunchCampaignWizard({
               onToggleImageSelected={handleToggleImageSelected}
               onPreviewImage={handlePreviewImage}
               onSetAllImagesSelected={handleSetAllImagesSelected}
+              onPickTemplate={handlePickTemplate}
+              onChangeOverlay={handleChangeOverlay}
+              onPickSecondary={handlePickSecondary}
+              onClearSecondary={handleClearSecondary}
               setOfferText={(offerText) =>
                 setState((s) => ({
                   ...s,
@@ -599,6 +893,8 @@ export function LaunchCampaignWizard({
         canContinue={canContinue}
         launchPending={launchMutation.isPending}
         launchBlocked={launchBlocked}
+        compositingProgress={compositingProgress}
+        compositeError={compositeError}
         onCancel={onCancel}
         onBack={goBack}
         onContinue={goNext}
@@ -650,6 +946,8 @@ function WizardFooter({
   canContinue,
   launchPending,
   launchBlocked,
+  compositingProgress,
+  compositeError,
   onCancel,
   onBack,
   onContinue,
@@ -659,38 +957,57 @@ function WizardFooter({
   canContinue: boolean;
   launchPending: boolean;
   launchBlocked: boolean;
+  compositingProgress: { done: number; total: number } | null;
+  compositeError: string | null;
   onCancel: () => void;
   onBack: () => void;
   onContinue: () => void;
   onLaunch: () => void;
 }) {
+  // V1.4b: the launch button doubles as the compositing-progress label.
+  // While `compositingProgress` is set the canvas + Storage work is
+  // mid-flight (one composite per non-Plain image).
+  const launching = launchPending || compositingProgress != null;
+  let launchLabel = 'Launch campaign →';
+  if (compositingProgress != null) {
+    launchLabel = `Rendering composite ${compositingProgress.done + 1} of ${compositingProgress.total}…`;
+  } else if (launchPending) {
+    launchLabel = 'Launching…';
+  }
   return (
     <div
       data-slot="wizard-footer"
-      className="sticky bottom-0 z-10 flex items-center justify-between gap-3 border-t border-paper-2 bg-paper px-4 py-3.5 shadow-[0_-2px_8px_rgba(0,0,0,0.04)] md:px-10"
+      className="sticky bottom-0 z-10 flex flex-col gap-2 border-t border-paper-2 bg-paper px-4 py-3.5 shadow-[0_-2px_8px_rgba(0,0,0,0.04)] md:px-10"
     >
-      <Button type="button" variant="ghost" onClick={onCancel}>
-        Cancel
-      </Button>
-      <div className="flex items-center gap-2">
-        {step > 1 ? (
-          <Button type="button" variant="secondary" onClick={onBack}>
-            Back
-          </Button>
-        ) : null}
-        {step < 5 ? (
-          <Button type="button" onClick={onContinue} disabled={!canContinue}>
-            Continue →
-          </Button>
-        ) : (
-          <Button
-            type="button"
-            onClick={onLaunch}
-            disabled={launchBlocked || launchPending}
-          >
-            {launchPending ? 'Launching…' : 'Launch campaign →'}
-          </Button>
-        )}
+      {compositeError && step === 5 ? (
+        <div className="rounded-md bg-warn-soft px-3 py-2 text-[11px] text-warn">
+          {compositeError}
+        </div>
+      ) : null}
+      <div className="flex items-center justify-between gap-3">
+        <Button type="button" variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+        <div className="flex items-center gap-2">
+          {step > 1 ? (
+            <Button type="button" variant="secondary" onClick={onBack}>
+              Back
+            </Button>
+          ) : null}
+          {step < 5 ? (
+            <Button type="button" onClick={onContinue} disabled={!canContinue}>
+              Continue →
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              onClick={onLaunch}
+              disabled={launchBlocked || launching}
+            >
+              {launchLabel}
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1509,6 +1826,10 @@ function Step4Creative({
   onToggleImageSelected,
   onPreviewImage,
   onSetAllImagesSelected,
+  onPickTemplate,
+  onChangeOverlay,
+  onPickSecondary,
+  onClearSecondary,
   setOfferText,
 }: {
   state: WizardState;
@@ -1526,6 +1847,10 @@ function Step4Creative({
   onToggleImageSelected: (idx: number, selected: boolean) => void;
   onPreviewImage: (idx: number) => void;
   onSetAllImagesSelected: (selected: boolean) => void;
+  onPickTemplate: (imageIdx: number, templateId: CreativeTemplateId) => void;
+  onChangeOverlay: (imageIdx: number, overlay: CreativeTemplateOverlay) => void;
+  onPickSecondary: (imageIdx: number, file: File) => void;
+  onClearSecondary: (imageIdx: number) => void;
   setOfferText: (v: string) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1708,6 +2033,41 @@ function Step4Creative({
             </div>
           ) : null}
         </div>
+
+        {/* --- creative template + overlay editor for the picked image --- */}
+        {state.images.length > 0 && state.selectedImageIdx != null ? (
+          <CreativeTemplatePicker
+            templateId={
+              state.images[state.selectedImageIdx]?.templateId ?? 'plain'
+            }
+            overlay={
+              state.images[state.selectedImageIdx]?.overlay ?? {
+                kind: 'plain',
+              }
+            }
+            secondaryUrl={
+              state.images[state.selectedImageIdx]?.secondaryUrl ?? null
+            }
+            onPickTemplate={(id) =>
+              state.selectedImageIdx != null &&
+              onPickTemplate(state.selectedImageIdx, id)
+            }
+            onChangeOverlay={(next) =>
+              state.selectedImageIdx != null &&
+              onChangeOverlay(state.selectedImageIdx, next)
+            }
+            onPickSecondary={(file) =>
+              state.selectedImageIdx != null &&
+              onPickSecondary(state.selectedImageIdx, file)
+            }
+            onClearSecondary={() =>
+              state.selectedImageIdx != null &&
+              onClearSecondary(state.selectedImageIdx)
+            }
+            secondaryUploadPending={uploadPending}
+            secondaryUploadError={uploadError}
+          />
+        ) : null}
       </div>
 
       {/* --- right: live preview --- */}
@@ -1724,7 +2084,13 @@ function Step4Creative({
           headline={previewVariant?.headline ?? ''}
           description={previewVariant?.description ?? ''}
           ctaType={previewVariant?.ctaType ?? 'LEARN_MORE'}
-          imageUrl={state.images[state.selectedImageIdx ?? 0]?.url ?? null}
+          imageUrl={
+            // V1.4b: prefer the canvas-rendered composite preview; falls
+            // back to the raw upload until the first render completes.
+            state.images[state.selectedImageIdx ?? 0]?.previewUrl ??
+            state.images[state.selectedImageIdx ?? 0]?.url ??
+            null
+          }
           accentColor={state.brand?.accent_color ?? '#d24317'}
           linkHost={state.primaryDomain ?? undefined}
         />
@@ -1963,15 +2329,21 @@ function Step5Review({
                   Images ({selectedReviewImages.length} ad
                   {selectedReviewImages.length === 1 ? '' : 's'} per ad set)
                 </div>
-                <div className="flex gap-1.5">
+                <div className="flex flex-wrap gap-1.5">
                   {selectedReviewImages.map((img, i) => (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      key={i}
-                      src={img.url}
-                      alt=""
-                      className="h-16 w-16 rounded-md object-cover"
-                    />
+                    <div key={i} className="flex flex-col items-start gap-1">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={img.previewUrl ?? img.url}
+                        alt=""
+                        className="h-16 w-[122px] rounded-md object-cover"
+                      />
+                      <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-ink-quiet">
+                        {img.templateId === 'plain'
+                          ? 'Plain'
+                          : `${img.templateId.replace('_', ' ')}`}
+                      </span>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -2057,7 +2429,10 @@ function Step5Review({
           description={previewVariant?.description ?? ''}
           ctaType={previewVariant?.ctaType ?? 'LEARN_MORE'}
           imageUrl={
+            // V1.4b: prefer the canvas-rendered composite preview.
+            state.images.find((img) => img.selected)?.previewUrl ??
             state.images.find((img) => img.selected)?.url ??
+            state.images[0]?.previewUrl ??
             state.images[0]?.url ??
             null
           }
@@ -2142,12 +2517,25 @@ function isStepValid(s: WizardState): boolean {
       //   • at least one image is selected (becomes the "ad" axis)
       //   • at least one variant is selected (becomes the "ad set" axis)
       //   • every selected variant carries headline + primaryText
+      //   • V1.4b: every selected image's creative-template overlay is
+      //     launch-valid (Split has a secondary, Quote Drop has a quote,
+      //     Banner has text, Offer Card has a headline or subline).
       const selectedImages = s.images.filter((img) => img.selected);
       if (selectedImages.length === 0) return false;
       const selectedVariants = (s.variants ?? []).filter((v) => v.selected);
       if (selectedVariants.length === 0) return false;
-      return selectedVariants.every(
-        (v) => v.headline.trim().length > 0 && v.primaryText.trim().length > 0,
+      if (
+        !selectedVariants.every(
+          (v) =>
+            v.headline.trim().length > 0 && v.primaryText.trim().length > 0,
+        )
+      ) {
+        return false;
+      }
+      return selectedImages.every(
+        (img) =>
+          validateOverlay(img.templateId, img.overlay, img.secondaryUrl) ===
+          null,
       );
     }
     case 5:
