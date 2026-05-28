@@ -93,29 +93,34 @@ export type AdSetNode = {
   ads: AdNode[];
 };
 
-/** Per-ad-set audience definition. V1 fields are the common-case
- *  knobs the operator can articulate without a Meta Ads Manager deep-
- *  dive. The classic builder's full targeting spec (placements, custom
- *  audiences, lookalikes, etc.) stays the V1.1 path. */
+/** Per-ad-set audience definition. V1 fields are ONLY the ones that
+ *  flow to Meta's targeting spec at launch:
+ *    • ageMin / ageMax → spec.age_min / age_max
+ *    • description     → operator note, captured on the launch snapshot
+ *                        for audit but not sent to Meta (no spec field
+ *                        for a freeform string)
+ *  Country is set at the campaign root (not per ad set) and applies
+ *  to every set via spec.geo_locations.countries[].
+ *
+ *  Removed from V1 (operator should use the classic builder for these):
+ *    • Geo radius      — needs a lat/lng centre Webnua doesn't have
+ *                        without geocoding the customer's address
+ *    • Interest keywords — Meta needs numeric interest IDs, not
+ *                        free-text. The classic builder runs Meta's
+ *                        autocomplete to resolve them.
+ *  Adding these is V1.1 when the geo + interest-search routes ship. */
 export type AudienceSpec = {
   /** Free-form description, e.g. "Cottesloe homeowners renovating
-   *  their kitchens." Seeded from brands.audience_line. */
+   *  their kitchens." Operator note + snapshot only. */
   description: string;
   ageMin: number;
   ageMax: number;
-  /** Meta's radius in km around the customer's primary city. */
-  radiusKm: number;
-  /** Comma-separated interest keywords. Meta's autocomplete-resolved
-   *  ids are V1.1 — V1 captures strings for the snapshot + ops audit. */
-  interestKeywords: string;
 };
 
 export const DEFAULT_AUDIENCE: AudienceSpec = {
   description: '',
   ageMin: 25,
   ageMax: 65,
-  radiusKm: 25,
-  interestKeywords: '',
 };
 
 // --- budget-tier helpers ---------------------------------------------------
@@ -486,22 +491,31 @@ function AdPreviewCard({
         dim ? 'opacity-50' : ''
       }`}
     >
-      <div
-        className="pointer-events-none w-full origin-top-left"
-        style={{ transform: 'scale(0.6)', width: '166.67%', marginBottom: '-40%' }}
-      >
-        <MetaAdPreview
-          pageName={brief?.businessName ?? 'Your business'}
-          pageLogoUrl={null}
-          // Copy is shared at the ad-set level; image varies per ad.
-          primaryText={adSet.primaryText}
-          headline={adSet.headline}
-          description={adSet.description}
-          ctaType={adSet.ctaType}
-          imageUrl={ad.imageUrl}
-          accentColor={brief?.accentColor}
-          linkHost={brief?.primaryDomain ?? undefined}
-        />
+      {/* Scaled preview — fixed-height frame, scaled child positioned
+          absolutely inside it. CSS transforms don't reduce the layout
+          box, so the parent must own the height explicitly and clip
+          overflow. The 320px height is sized to fit the image + link
+          card + headline + description at scale(0.6); the bottom
+          reactions row clips cleanly. Click anywhere → AdEditModal
+          opens with the full-size preview. */}
+      <div className="relative w-full overflow-hidden" style={{ height: 320 }}>
+        <div
+          className="pointer-events-none absolute left-0 top-0 origin-top-left"
+          style={{ transform: 'scale(0.6)', width: '166.67%' }}
+        >
+          <MetaAdPreview
+            pageName={brief?.businessName ?? 'Your business'}
+            pageLogoUrl={null}
+            // Copy is shared at the ad-set level; image varies per ad.
+            primaryText={adSet.primaryText}
+            headline={adSet.headline}
+            description={adSet.description}
+            ctaType={adSet.ctaType}
+            imageUrl={ad.imageUrl}
+            accentColor={brief?.accentColor}
+            linkHost={brief?.primaryDomain ?? undefined}
+          />
+        </div>
       </div>
       <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-paper-2/95 px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-ink-quiet shadow-sm">
         {ad.selected ? (

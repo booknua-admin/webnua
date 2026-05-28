@@ -81,7 +81,10 @@ export function CampaignEditModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => (!o ? onClose() : undefined)}>
-      <DialogContent size="default">
+      <DialogContent
+        size="default"
+        className="max-h-[calc(100vh-2rem)] overflow-y-auto"
+      >
         <DialogHeader>
           <DialogTitle>Edit campaign</DialogTitle>
           <DialogDescription>

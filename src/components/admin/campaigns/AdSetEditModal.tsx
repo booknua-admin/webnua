@@ -8,19 +8,24 @@
 // varies; between sets, the COPY varies. Audience is the third axis
 // the operator can independently tune per set.
 //
-// V1 fields:
-//   • Audience description (free-form)
-//   • Age min / max
-//   • Geo radius (km from the customer's primary city — Meta's
-//     custom_locations radius)
-//   • Interest keywords (comma-separated text; Meta autocomplete-
-//     resolved ids are V1.1)
+// V1 fields (only the ones that flow to Meta's targeting spec):
+//   • Audience description (operator note + snapshot — Meta has no
+//     freeform-string field, so this is for audit + ops, not delivery)
+//   • Age min / max → spec.age_min / spec.age_max
 //
-// V1 caveat surfaced inline in the modal: the launch orchestrator
-// currently applies ONE targeting spec to the whole campaign — per-
-// set targeting is captured here for the snapshot + ops audit, and
-// V1.1 will thread it through the orchestrator so each ad set really
-// gets its own audience on Meta.
+// Country is set at the campaign root and applies to every ad set
+// via spec.geo_locations.countries[].
+//
+// What's NOT in V1 (use the classic builder):
+//   • Geo radius — needs a lat/lng centre we don't have without
+//     geocoding the customer's address
+//   • Interest IDs — needs Meta's targetingsearch autocomplete to
+//     resolve free text → numeric ids
+//
+// V1 caveat: the launch orchestrator currently applies ONE targeting
+// spec to the whole campaign — V1 uses the FIRST ad set's audience.
+// Per-set audience splits land in V1.1 when the orchestrator accepts
+// different specs per ad set.
 //
 // Copy editing for the ad set lives on AdEditModal (the "Copy (shared
 // across this set)" panel) — the angle copy is the constant across
@@ -38,7 +43,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 
 import type { AudienceSpec } from './CampaignBlueprint';
@@ -59,7 +63,6 @@ export type AdSetEditModalProps = {
 };
 
 const AGE_OPTIONS = [18, 21, 25, 30, 35, 40, 45, 50, 55, 60, 65];
-const RADIUS_OPTIONS = [10, 15, 20, 25, 30, 40, 50, 80];
 
 export function AdSetEditModal({
   open,
@@ -87,7 +90,10 @@ export function AdSetEditModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => (!o ? onClose() : undefined)}>
-      <DialogContent size="lg">
+      <DialogContent
+        size="lg"
+        className="max-h-[calc(100vh-2rem)] overflow-y-auto"
+      >
         <DialogHeader>
           <DialogTitle>Targeting — {draft.label}</DialogTitle>
           <DialogDescription>
@@ -110,8 +116,8 @@ export function AdSetEditModal({
             />
           </FieldRow>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <FieldRow label="Age min" sub="Lower bound.">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <FieldRow label="Age min" sub="Lower bound — flows to Meta as spec.age_min.">
               <select
                 value={draft.audience.ageMin}
                 onChange={(e) =>
@@ -127,7 +133,7 @@ export function AdSetEditModal({
               </select>
             </FieldRow>
 
-            <FieldRow label="Age max" sub="Upper bound.">
+            <FieldRow label="Age max" sub="Upper bound — flows to Meta as spec.age_max.">
               <select
                 value={draft.audience.ageMax}
                 onChange={(e) =>
@@ -142,22 +148,6 @@ export function AdSetEditModal({
                 ))}
               </select>
             </FieldRow>
-
-            <FieldRow label="Radius (km)" sub="From the customer's primary city.">
-              <select
-                value={draft.audience.radiusKm}
-                onChange={(e) =>
-                  patchAudience({ radiusKm: Number(e.target.value) })
-                }
-                className="w-full rounded-md border border-rule bg-paper/40 px-3 py-2 text-[14px] text-ink outline-none focus:border-rust focus:ring-1 focus:ring-rust"
-              >
-                {RADIUS_OPTIONS.map((r) => (
-                  <option key={r} value={r}>
-                    {r} km
-                  </option>
-                ))}
-              </select>
-            </FieldRow>
           </div>
 
           {ageInvalid ? (
@@ -166,26 +156,13 @@ export function AdSetEditModal({
             </p>
           ) : null}
 
-          <FieldRow
-            label="Interest keywords"
-            sub="Comma-separated. e.g. 'home renovation, kitchen design'. We&rsquo;ll resolve these to Meta interest ids at launch."
-          >
-            <Input
-              type="text"
-              value={draft.audience.interestKeywords}
-              onChange={(e) =>
-                patchAudience({ interestKeywords: e.target.value })
-              }
-              placeholder="home renovation, kitchen design, home improvement"
-            />
-          </FieldRow>
-
           <div className="rounded-md border border-rule bg-paper/40 px-3 py-2 text-[11px] leading-snug text-ink-quiet">
-            <strong className="font-semibold text-ink">Heads up:</strong>{' '}
-            Per-ad-set targeting is captured here. V1 applies these to the
-            whole campaign at launch — V1.1 will publish each set with its
-            own audience to Meta. The classic builder lets you tune
-            placements and custom audiences if you need them now.
+            <strong className="font-semibold text-ink">Country</strong> is
+            set on the campaign root and applies to every ad set. V1
+            launches use the FIRST ad set&rsquo;s age to the whole campaign;
+            per-set age splits land in V1.1 alongside geo radius and
+            interest IDs. For city-radius targeting + Meta interest
+            picking now, use the classic builder.
           </div>
         </div>
 

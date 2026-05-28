@@ -190,8 +190,6 @@ export function GenerateAdsView({
       description: brief.data?.audienceLine ?? '',
       ageMin: template.defaultAgeMin,
       ageMax: template.defaultAgeMax,
-      radiusKm: template.defaultRadiusKm,
-      interestKeywords: template.interestTokens.join(', '),
     });
 
     const adSets: AdSetNode[] = pickedAngles.map((a) => {
@@ -307,19 +305,19 @@ export function GenerateAdsView({
     const linkUrl = `https://${brief.data.primaryDomain}`;
     const privacyPolicyUrl = `https://${brief.data.primaryDomain}/privacy`;
 
-    // V1 caveat (documented in AdSetEditModal): the orchestrator
-    // accepts one targeting spec per launch, so we apply the FIRST
-    // ad set's audience to the whole campaign. Per-set targeting is
-    // V1.1 — needs orchestrator changes to accept different specs
-    // per ad set.
+    // V1 targeting mapping → Meta spec:
+    //   • settings.country  → spec.geo_locations.countries[]
+    //   • audience.ageMin   → spec.age_min
+    //   • audience.ageMax   → spec.age_max
+    // The orchestrator currently accepts one spec per launch, so we
+    // apply the FIRST ad set's age to the whole campaign. Per-set
+    // age splits are V1.1.
+    //
+    // NOT sent to Meta (use the classic builder for these):
+    //   • Geo radius        — needs lat/lng we don't have
+    //   • Interest IDs      — needs Meta targetingsearch resolution
+    // interestTokens stays on the snapshot for training/audit only.
     const primaryAudience = activeAdSets[0].audience;
-    const interestTokens = primaryAudience.interestKeywords
-      .split(/[,;\n]/)
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0)
-      .slice(0, 12);
-    const fallbackInterestTokens =
-      interestTokens.length > 0 ? interestTokens : [...template.interestTokens];
 
     const payload: LaunchCampaignPayload = {
       clientId,
@@ -329,12 +327,14 @@ export function GenerateAdsView({
       pixelId: null,
       targeting: {
         geoCenter: null,
-        radiusKm: primaryAudience.radiusKm,
+        radiusKm: null,
         cities: [],
         interests: [],
         ageMin: primaryAudience.ageMin,
         ageMax: primaryAudience.ageMax,
-        interestTokens: fallbackInterestTokens,
+        // Snapshot-only — orchestrator stores on the launch row but
+        // does NOT pass to Meta's targeting spec.
+        interestTokens: [...template.interestTokens],
         countries: [settings.country],
       },
       dailyBudgetCents: settings.dailyBudgetCents,

@@ -116,7 +116,15 @@ export function AdEditModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => (!o ? onClose() : undefined)}>
-      <DialogContent size="lg">
+      {/* Viewport-safe sizing — the lg dialog default has no max-h
+          so the side-by-side image+copy+preview layout overflows on
+          standard laptop viewports. max-h:calc + overflow-y:auto on
+          the content + an inner flex column lets the body scroll
+          while header + footer pin to the dialog edges. */}
+      <DialogContent
+        size="lg"
+        className="max-h-[calc(100vh-2rem)] overflow-y-auto"
+      >
         <DialogHeader>
           <DialogTitle>
             {draft.adSetLabel} · {draft.label}
