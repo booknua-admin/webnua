@@ -70,6 +70,13 @@ export type ResolvedTarget =
        *  visible but cannot capture real leads. The data is the same
        *  published snapshot; this flag is the visual + behavioural diff. */
       isPreview: boolean;
+      /** Phase 7.5 · Session 1.2 — operator-selected Meta Pixel id from
+       *  `client_meta_ad_accounts.meta_pixel_id`. When set, the
+       *  PublicSiteRenderer injects the fbq(init, ...) snippet so Meta
+       *  attribution + the Lead event fired by FormBlock route through
+       *  the right pixel. Null when no Meta Pixel is wired for this
+       *  client. */
+      metaPixelId: string | null;
     }
   | {
       status: 'funnel';
@@ -92,6 +99,9 @@ export type ResolvedTarget =
       tracking: TrackingConfig;
       /** Same semantics as the website case above. */
       isPreview: boolean;
+      /** Same semantics as the website case above — sourced from
+       *  `client_meta_ad_accounts.meta_pixel_id`. */
+      metaPixelId: string | null;
     }
   | { status: 'unpublished'; name: string }
   | { status: 'not_found' };
@@ -280,6 +290,29 @@ async function clientLifecycle(clientId: string): Promise<string | null> {
 }
 
 /** The client's visitor-tracking consent posture. Defaults to `banner`. */
+/** Resolve the operator-selected Meta Pixel for a client. Returns null
+ *  when no Meta ad account is wired OR the pixel hasn't been chosen
+ *  via the launch wizard. The PublicSiteRenderer reads this to decide
+ *  whether to inject the fbq(init) snippet. */
+async function metaPixelIdForClient(clientId: string): Promise<string | null> {
+  const svc = getServiceClient();
+  const untyped = svc as unknown as {
+    from: (t: string) => {
+      select: (s: string) => {
+        eq: (k: string, v: unknown) => {
+          maybeSingle: () => Promise<{ data: { meta_pixel_id?: string | null } | null }>;
+        };
+      };
+    };
+  };
+  const { data } = await untyped
+    .from('client_meta_ad_accounts')
+    .select('meta_pixel_id')
+    .eq('client_id', clientId)
+    .maybeSingle();
+  return data?.meta_pixel_id ?? null;
+}
+
 async function consentModeForClient(
   clientId: string,
 ): Promise<'banner' | 'implied'> {
@@ -417,6 +450,7 @@ export const resolveSite = cache(
       if (page) {
         const brand = await brandForClient(clientId);
         const consentMode = await consentModeForClient(clientId);
+        const metaPixelId = await metaPixelIdForClient(clientId);
         return {
           status: 'website',
           clientId,
@@ -436,6 +470,7 @@ export const resolveSite = cache(
             consentMode,
           },
           isPreview,
+          metaPixelId,
         };
       }
     }
@@ -490,6 +525,7 @@ export const resolveSite = cache(
             consentMode,
           },
           isPreview,
+          metaPixelId: await metaPixelIdForClient(clientId),
         };
       }
     }

@@ -171,6 +171,9 @@ export type ClientMetaAdAccountRow = {
   // back-compat with pre-0113 rows.
   meta_page_id: string | null;
   meta_page_name: string | null;
+  // Operator-selected Meta Pixel id (migration 0116). NULL until the
+  // launch wizard's landing-page objective path resolves a pixel.
+  meta_pixel_id: string | null;
   // Ad-account partnership state (migration 0113).
   webnua_partner_status: MetaPartnerStatus | null;
   webnua_partner_granted_at: string | null;
@@ -249,6 +252,97 @@ export type MetaLeadFormRow = {
 export type MetaLeadFormInsert = Omit<
   MetaLeadFormRow,
   'id' | 'created_at' | 'updated_at'
+>;
+
+// --- Campaign launch + creative versioning (migration 0115) ------------------
+//
+// Two tables capture (a) the launch-time snapshot and (b) every creative
+// version that ran on a campaign. Both are operator + own-client SELECT,
+// service-role write. Powers Session 4's refresh comparison + the
+// deferred cross-tenant training pipeline.
+
+/** Closed set of objective flavours the in-app launch wizard supports.
+ *  V1.2 lands two; future objectives (traffic / engagement / conversions)
+ *  extend this union + the orchestrator's branching, NOT the prompt or
+ *  the template catalogue. */
+export type CampaignObjective = 'lead_form_meta' | 'lead_form_landing';
+
+export type MetaCampaignLaunchRow = {
+  id: string;
+  meta_campaign_id: string;
+  client_id: string;
+  template_slug: string;
+  template_variant: string | null;
+  campaign_objective: CampaignObjective;
+  targeting_geo_center: { lat: number; lng: number } | null;
+  targeting_radius_km: number | null;
+  targeting_age_min: number;
+  targeting_age_max: number;
+  targeting_interest_tokens: string[];
+  targeting_countries: string[];
+  targeting_full_spec: Record<string, unknown>;
+  /** Brand row + key clients fields frozen at launch — no PII. */
+  brief_snapshot: {
+    brand: {
+      industry_category: string;
+      services: string[];
+      top_jobs_to_be_booked: string[];
+      voice_formality: number;
+      voice_urgency: number;
+      voice_technicality: number;
+      audience_line: string;
+      accent_color: string;
+      offer: unknown;
+      tagline: string | null;
+    } | null;
+    client: {
+      industry: string;
+      service_area: string | null;
+      name: string;
+    };
+  };
+  launched_by_user_id: string | null;
+  launched_at: string;
+  is_first_launch: boolean;
+  created_at: string;
+};
+
+export type MetaCampaignLaunchInsert = Omit<
+  MetaCampaignLaunchRow,
+  'id' | 'created_at'
+>;
+
+export type MetaAdCreativeRow = {
+  id: string;
+  meta_campaign_id: string;
+  client_id: string;
+  started_at: string;
+  ended_at: string | null;
+  meta_ad_id: string | null;
+  /** Session 1.4 matrix testing: the ad set this creative is attached
+   *  to. Each ad set carries one copy variant; multiple creatives (one
+   *  per image) share the same ad set. Nullable for pre-1.4 rows. */
+  meta_ad_set_id: string | null;
+  meta_creative_id: string | null;
+  meta_image_hash: string | null;
+  image_url: string;
+  image_width: number | null;
+  image_height: number | null;
+  headline: string;
+  primary_text: string;
+  description: string | null;
+  cta_type: string;
+  /** 0-based copy variant index — the ad-set axis of the M × N matrix. */
+  copy_variant_index: number;
+  /** 0-based image variant index — the ad axis (within an ad set). */
+  image_variant_index: number;
+  created_by_user_id: string | null;
+  created_at: string;
+};
+
+export type MetaAdCreativeInsert = Omit<
+  MetaAdCreativeRow,
+  'id' | 'created_at'
 >;
 
 // --- Status mapping ----------------------------------------------------------

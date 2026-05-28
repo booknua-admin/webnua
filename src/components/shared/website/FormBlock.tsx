@@ -313,6 +313,23 @@ export function FormBlock({
       const createdLeadId =
         typeof responseBody?.leadId === 'string' ? responseBody.leadId : null;
 
+      // Phase 7.5 · Session 1.2 — fire Meta Pixel `Lead` event when the
+      // customer has a pixel wired (PublicSiteRenderer injected the
+      // fbq init; the global is present at this point). The conversion
+      // event Meta optimises against for the landing-page objective.
+      // Best-effort — wrapped in try/catch so any pixel-side error
+      // never trumps a successful lead capture.
+      try {
+        const w = window as unknown as {
+          fbq?: (cmd: string, event: string, params?: Record<string, unknown>) => void;
+        };
+        if (typeof w.fbq === 'function') {
+          w.fbq('track', 'Lead', { content_name: 'Form submission' });
+        }
+      } catch {
+        // ignore — pixel failures must not block the lead
+      }
+
       if (form.afterSubmit.kind === 'url') {
         window.location.href = form.afterSubmit.url || '/';
         return;

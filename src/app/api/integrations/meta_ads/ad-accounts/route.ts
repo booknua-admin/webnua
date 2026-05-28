@@ -177,6 +177,9 @@ export async function POST(request: Request): Promise<Response> {
         webnua_page_partner_status: safePageId ? 'pending' : null,
         webnua_page_partner_granted_at: null,
         webnua_page_partner_error: null,
+        // Phase 7.5 · Session 1.2 — pixel selection deferred to the
+        // launch wizard's landing-page objective path.
+        meta_pixel_id: null,
       });
     } catch (err) {
       return NextResponse.json(

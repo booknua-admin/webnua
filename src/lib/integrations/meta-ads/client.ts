@@ -226,8 +226,12 @@ export type CreateAdSetParams = {
   adAccountId: string;
   campaignId: string;
   name: string;
-  /** Daily budget in minor units. */
-  dailyBudgetCents: number;
+  /** Daily budget in minor units. Omit when the parent campaign has
+   *  CBO enabled — Meta rejects per-ad-set budgets in that case (the
+   *  campaign's daily_budget is distributed across ad sets
+   *  automatically). Session 1.4 matrix launches always use CBO so
+   *  this stays undefined; pre-matrix launches still pass it. */
+  dailyBudgetCents?: number;
   /** Targeting spec — country, geo radius, age, interests, demographics.
    *  Passed verbatim to Meta as JSON. The campaign-template files compose
    *  this shape. */
@@ -241,6 +245,13 @@ export type CreateAdSetParams = {
   startTime?: string;
   endTime?: string;
   promotedObjectPageId?: string;
+  /** Phase 7.5 · Session 1.2 — for the landing-page objective, the
+   *  customer's Meta Pixel id + 'LEAD' custom event get attached to
+   *  promoted_object so Meta bids against the Lead conversion fired
+   *  on the customer's website. NULL/undefined for the in-Meta lead
+   *  form path (Meta optimises against the on-platform lead form
+   *  natively when no pixel is set). */
+  promotedObjectPixelId?: string | null;
 };
 
 export async function createAdSet(
@@ -255,16 +266,33 @@ export async function createAdSet(
         access_token: accessToken,
         name: params.name,
         campaign_id: params.campaignId,
-        daily_budget: params.dailyBudgetCents,
         optimization_goal: params.optimizationGoal ?? 'LEAD_GENERATION',
         billing_event: params.billingEvent ?? 'IMPRESSIONS',
         bid_strategy: params.bidStrategy ?? 'LOWEST_COST_WITHOUT_CAP',
         status: params.status ?? 'PAUSED',
         targeting: params.targeting,
       };
+      if (params.dailyBudgetCents != null) {
+        body.daily_budget = params.dailyBudgetCents;
+      }
       if (params.startTime) body.start_time = params.startTime;
       if (params.endTime) body.end_time = params.endTime;
-      if (params.promotedObjectPageId) {
+      // promoted_object shape depends on the optimisation target:
+      //   • Pixel-tracked (landing page) → { pixel_id, custom_event_type }
+      //     + the Page id (Meta needs both: pixel for conversion target,
+      //     page for ad attribution).
+      //   • Lead form on Meta (default) → just the Page id; Meta routes
+      //     optimisation against the on-platform lead form.
+      if (params.promotedObjectPixelId) {
+        const promoted: Record<string, unknown> = {
+          pixel_id: params.promotedObjectPixelId,
+          custom_event_type: 'LEAD',
+        };
+        if (params.promotedObjectPageId) {
+          promoted.page_id = params.promotedObjectPageId;
+        }
+        body.promoted_object = promoted;
+      } else if (params.promotedObjectPageId) {
         body.promoted_object = { page_id: params.promotedObjectPageId };
       }
       return callExternal<MetaAdSetCreateResponse>({
@@ -330,8 +358,10 @@ export type CreateAdCreativeParams = {
   adAccountId: string;
   name: string;
   pageId: string;
-  /** The lead form id — wired into the creative's call-to-action. */
-  leadFormId: string;
+  /** The lead form id — wired into the creative's call-to-action. Set
+   *  for the in-Meta lead form objective; omit for the landing-page
+   *  objective (Meta routes the click to `linkUrl` instead). */
+  leadFormId?: string | null;
   /** Headline / primary copy / description. */
   headline: string;
   primaryText: string;
@@ -341,7 +371,8 @@ export type CreateAdCreativeParams = {
    *  imagery and capture the returned hash. */
   imageHash?: string;
   /** Destination URL — irrelevant for lead-form ads but Meta still
-   *  requires SOMETHING; defaults to the customer's website. */
+   *  requires SOMETHING; defaults to the customer's website. For the
+   *  landing-page objective this is the ad's actual destination. */
   linkUrl: string;
   ctaType?: string;
 };
@@ -354,13 +385,21 @@ export async function createAdCreative(
     clientId,
     'meta_ads',
     async (accessToken) => {
+      // call_to_action.value shape depends on the objective:
+      //   • Lead form on Meta  → { lead_gen_form_id, link }
+      //   • Landing page       → { link } (Meta routes the click to
+      //                           the URL; Meta Pixel `Lead` event on
+      //                           the customer's page is what closes
+      //                           the loop for optimisation).
+      const ctaValue: Record<string, unknown> = { link: params.linkUrl };
+      if (params.leadFormId) ctaValue.lead_gen_form_id = params.leadFormId;
       const linkData: Record<string, unknown> = {
         message: params.primaryText,
         link: params.linkUrl,
         name: params.headline,
         call_to_action: {
           type: params.ctaType ?? 'LEARN_MORE',
-          value: { lead_gen_form_id: params.leadFormId, link: params.linkUrl },
+          value: ctaValue,
         },
       };
       if (params.description) linkData.description = params.description;
@@ -418,6 +457,236 @@ export async function createAd(
         rawBody: jsonForm(body),
         clientId,
       });
+    },
+  );
+}
+
+// --- image upload (Phase 7.5 launch wizard) ---------------------------------
+//
+// Meta's /act_{id}/adimages endpoint accepts EITHER raw bytes or a public
+// URL Meta's servers fetch. We pass the URL — the operator-uploaded image
+// already lives in Supabase Storage (uploadAdImage browser helper writes
+// it there, see upload-ad-image.ts), so Meta just pulls from there. The
+// returned `image_hash` is what createAdCreative needs.
+//
+// Meta's response shape: `{ images: { '<url-or-name>': { hash, url } } }`
+// — the key is the URL we passed (or a name we provided). We extract the
+// single hash and return it.
+
+export type UploadImageResult = { imageHash: string };
+
+/** Upload an image to a Meta ad account by URL. Returns the resulting
+ *  image_hash (used as creative.link_data.image_hash on createAdCreative).
+ *  Meta dedupes hashes within an ad account — uploading the same URL
+ *  twice returns the same hash, so this is idempotent. */
+export async function uploadImageToMeta(
+  clientId: string,
+  adAccountId: string,
+  imageUrl: string,
+): Promise<IntegrationResult<UploadImageResult>> {
+  return callWithToken<UploadImageResult>(
+    clientId,
+    'meta_ads',
+    async (accessToken) => {
+      const result = await callExternal<{
+        images?: Record<string, { hash?: string; url?: string }>;
+      }>({
+        provider: 'meta_ads',
+        operation: 'upload_ad_image',
+        url: `${GRAPH}/${adAccountId}/adimages`,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        rawBody: form({ access_token: accessToken, url: imageUrl }),
+        clientId,
+      });
+      if (!result.ok) return result;
+      // Meta's response keys the images map by the URL we sent. Just
+      // grab the first entry's hash — there's only ever one.
+      const images = result.data.images ?? {};
+      const firstKey = Object.keys(images)[0];
+      const hash = firstKey ? images[firstKey]?.hash : undefined;
+      if (!hash) {
+        return {
+          ok: false,
+          error: {
+            class: 'non_retryable',
+            message: 'Meta returned no image_hash on adimages response.',
+            provider: 'meta_ads',
+            operation: 'upload_ad_image',
+            status: result.status,
+          },
+        };
+      }
+      return { ok: true, data: { imageHash: hash }, status: result.status };
+    },
+  );
+}
+
+/** Resolve the Page Access Token for a Page the connected user manages.
+ *  Public wrapper around the internal fetchPageAccessToken helper — the
+ *  launch orchestrator needs this for createLeadForm (Page-level CRUD
+ *  requires a Page token, not the user token). */
+export async function getPageAccessToken(
+  clientId: string,
+  pageId: string,
+): Promise<IntegrationResult<string>> {
+  return callWithToken<string>(
+    clientId,
+    'meta_ads',
+    async (accessToken) => fetchPageAccessToken(clientId, pageId, accessToken),
+  );
+}
+
+// --- targeting autocomplete (Phase 7.5 Session 1.1) -------------------------
+//
+// Meta's `/search` endpoint resolves free-text strings to the structured
+// targeting ids Meta's API expects. Three modes used by Webnua's launch
+// wizard:
+//   • type=adgeolocation  — city + region lookup; returns `key` strings
+//     that geo_locations.cities[] accepts
+//   • type=adinterest     — interest lookup; returns `id` + `name` that
+//     flexible_spec.interests[] accepts
+//
+// The wizard's step 2 calls these via a debounced autocomplete; no
+// queries fire until the operator types ≥ 2 chars.
+
+export interface MetaAdGeoLocation {
+  key?: string;             // Meta's geo id (e.g. '2270676' for Perth)
+  name?: string;
+  type?: string;            // 'city' | 'region' | 'country' | 'subcity' | …
+  country_code?: string;
+  country_name?: string;
+  region?: string;
+  region_id?: string;
+  supports_region?: boolean;
+  supports_city?: boolean;
+}
+
+export interface MetaAdInterest {
+  id?: string;              // Meta's numeric interest id (string-encoded)
+  name?: string;
+  audience_size_lower_bound?: number;
+  audience_size_upper_bound?: number;
+  path?: string[];          // Meta's taxonomy path, useful for disambiguation
+  description?: string;
+  topic?: string;
+}
+
+/** City / region autocomplete. Operator types "Perth" → returns the
+ *  matching geo locations from Meta. The wizard filters to type='city'
+ *  by default; the route exposes both shapes. `countryCode` narrows the
+ *  search to one country (recommended — otherwise "London" returns 30+
+ *  Londons across the world). */
+export async function searchAdGeoLocations(
+  clientId: string,
+  query: string,
+  options?: { countryCode?: string; limit?: number; locationTypes?: string[] },
+): Promise<IntegrationResult<MetaAdGeoLocation[]>> {
+  const limit = options?.limit ?? 12;
+  const locationTypes = options?.locationTypes ?? ['city', 'region'];
+  return callWithToken<MetaAdGeoLocation[]>(
+    clientId,
+    'meta_ads',
+    async (accessToken) => {
+      const url = `${GRAPH}/search?${form({
+        access_token: accessToken,
+        type: 'adgeolocation',
+        q: query,
+        limit,
+        location_types: JSON.stringify(locationTypes),
+        country_code: options?.countryCode ?? null,
+      })}`;
+      const result = await callExternal<{ data?: MetaAdGeoLocation[] }>({
+        provider: 'meta_ads',
+        operation: 'search_ad_geolocation',
+        url,
+        method: 'GET',
+        clientId,
+      });
+      if (!result.ok) return result;
+      return { ok: true, data: result.data.data ?? [], status: result.status };
+    },
+  );
+}
+
+// --- pixel discovery (Phase 7.5 · Session 1.2) -------------------------------
+//
+// The landing-page objective routes ad clicks to the customer's own
+// website; Meta needs a Pixel id on the ad set's promoted_object so it
+// can optimise against the customer's Lead conversion event. This
+// endpoint lists every pixel the connected user can see on a given ad
+// account; the wizard's pixel picker consumes the shaped output.
+
+export interface MetaPixel {
+  id?: string;
+  name?: string;
+  code?: string;             // the fbq init string (rarely used by Webnua)
+  is_unavailable?: boolean;
+  last_fired_time?: string;
+  data_use_setting?: string;
+}
+
+/** List every Meta Pixel reachable from the customer's ad account. The
+ *  /adspixels endpoint returns the pixels the connected user has
+ *  permission to read — for a properly-shared ad account this is the
+ *  set the wizard's picker offers. Excludes is_unavailable rows at the
+ *  route layer (not here). */
+export async function listAdsPixels(
+  clientId: string,
+  adAccountId: string,
+): Promise<IntegrationResult<MetaPixel[]>> {
+  return callWithToken<MetaPixel[]>(
+    clientId,
+    'meta_ads',
+    async (accessToken) => {
+      const url = `${GRAPH}/${adAccountId}/adspixels?${form({
+        access_token: accessToken,
+        fields: 'id,name,code,is_unavailable,last_fired_time,data_use_setting',
+        limit: 50,
+      })}`;
+      const result = await callExternal<{ data?: MetaPixel[] }>({
+        provider: 'meta_ads',
+        operation: 'list_ads_pixels',
+        url,
+        method: 'GET',
+        clientId,
+      });
+      if (!result.ok) return result;
+      return { ok: true, data: result.data.data ?? [], status: result.status };
+    },
+  );
+}
+
+/** Interest autocomplete. Operator types "plumbing" → returns matching
+ *  interest entries with their numeric id, name, audience size estimate,
+ *  and taxonomy path. The launch orchestrator passes the resolved ids
+ *  into the ad set's `flexible_spec.interests[]` so Meta knows what
+ *  audience to target. */
+export async function searchAdInterests(
+  clientId: string,
+  query: string,
+  options?: { limit?: number },
+): Promise<IntegrationResult<MetaAdInterest[]>> {
+  const limit = options?.limit ?? 12;
+  return callWithToken<MetaAdInterest[]>(
+    clientId,
+    'meta_ads',
+    async (accessToken) => {
+      const url = `${GRAPH}/search?${form({
+        access_token: accessToken,
+        type: 'adinterest',
+        q: query,
+        limit,
+      })}`;
+      const result = await callExternal<{ data?: MetaAdInterest[] }>({
+        provider: 'meta_ads',
+        operation: 'search_ad_interest',
+        url,
+        method: 'GET',
+        clientId,
+      });
+      if (!result.ok) return result;
+      return { ok: true, data: result.data.data ?? [], status: result.status };
     },
   );
 }
@@ -640,6 +909,12 @@ export function pauseAd(clientId: string, metaAdId: string) {
 }
 export function activateAd(clientId: string, metaAdId: string) {
   return setObjectStatus(clientId, metaAdId, 'ACTIVE', 'activate_ad');
+}
+export function pauseAdSet(clientId: string, metaAdSetId: string) {
+  return setObjectStatus(clientId, metaAdSetId, 'PAUSED', 'pause_ad_set');
+}
+export function activateAdSet(clientId: string, metaAdSetId: string) {
+  return setObjectStatus(clientId, metaAdSetId, 'ACTIVE', 'activate_ad_set');
 }
 
 // --- read ops ----------------------------------------------------------------

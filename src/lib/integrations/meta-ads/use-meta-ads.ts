@@ -375,6 +375,228 @@ export function useSyncMetaAccountCampaigns() {
   });
 }
 
+// --- Phase 7.5 launch wizard -------------------------------------------------
+
+/** Generate N ad creative variants from the operator's offer input via
+ *  Sonnet. The wizard's step 4 calls this on "✦ Generate variants" +
+ *  auto-fires on step entry. The wizard threads the customer's brand
+ *  voice axes + website hero copy + services list into the draft so
+ *  Sonnet draws from the customer's actual positioning, not just the
+ *  one offer field. */
+export function useDraftMetaAdVariants() {
+  return useMutation({
+    mutationFn: async (input: {
+      clientId: string;
+      offer: string;
+      templateSlug: string;
+      businessName: string;
+      serviceArea: string;
+      count?: number;
+      /** Brand voice axes (1-5 each). When omitted the route falls
+       *  back to neutral 3/3/3. */
+      voiceFormality?: number;
+      voiceUrgency?: number;
+      voiceTechnicality?: number;
+      /** Audience description from `brands.audience_line`. */
+      audienceLine?: string;
+      /** Services the business offers (from `brands.services` or
+       *  `top_jobs_to_be_booked`). */
+      services?: string[];
+      /** Website hero copy excerpts (eyebrow + headline + sub) when
+       *  the customer has a published site. Drawn from the home page's
+       *  hero section. */
+      websiteHeroCopy?: string;
+      /** Existing tagline (from `brands.tagline` or `brands.offer`). */
+      brandTagline?: string;
+    }) => {
+      const { draftMetaAdVariants } = await import('./creative-draft');
+      return draftMetaAdVariants(input);
+    },
+  });
+}
+
+// --- Phase 7.5 · Session 1.2 — pixel discovery + selection ------------------
+
+export type MetaPixelOption = {
+  id: string;
+  name: string;
+  lastFiredAt: string | null;
+};
+
+/** List the Meta Pixels reachable from this client's connected ad
+ *  account — the wizard's landing-page objective path consumes this to
+ *  populate the pixel picker. */
+export function useListMetaPixels() {
+  return useMutation({
+    mutationFn: async (input: { clientId: string }): Promise<MetaPixelOption[]> => {
+      const response = (await postJson(
+        '/api/integrations/meta_ads/pixels',
+        { ...input, action: 'list' },
+      )) as unknown as { pixels: MetaPixelOption[] };
+      return response.pixels ?? [];
+    },
+  });
+}
+
+/** Persist the operator-confirmed pixel id on client_meta_ad_accounts.
+ *  Idempotent — re-running overwrites. */
+export function useSelectMetaPixel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { clientId: string; pixelId: string }) => {
+      await postJson(
+        '/api/integrations/meta_ads/pixels',
+        { ...input, action: 'select' },
+      );
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: adAccountKey(vars.clientId) });
+    },
+  });
+}
+
+/** Operator-side targeting autocomplete proxy. Wraps the
+ *  /targeting-search route — debounced in the consumer (the wizard
+ *  uses 300ms). */
+export type TargetingSearchResult = {
+  id: string;
+  label: string;
+  sublabel?: string;
+  audienceSize?: { lower: number; upper: number };
+};
+
+export function useSearchMetaTargeting() {
+  return useMutation({
+    mutationFn: async (input: {
+      clientId: string;
+      type: 'cities' | 'interests';
+      query: string;
+      countryCode?: string;
+    }): Promise<TargetingSearchResult[]> => {
+      if (input.query.trim().length < 2) return [];
+      try {
+        const response = (await postJson(
+          '/api/integrations/meta_ads/targeting-search',
+          input,
+        )) as unknown as { results: TargetingSearchResult[] };
+        return response.results ?? [];
+      } catch (error) {
+        // Treat as empty so the autocomplete just shows "no matches"
+        // rather than blocking the operator with an error panel; the
+        // error is still on the mutation object for debug.
+        if (error instanceof MetaRouteError && error.code === 'query-too-short') {
+          return [];
+        }
+        throw error;
+      }
+    },
+  });
+}
+
+/** Browser-side upload of the operator's ad image to Supabase Storage.
+ *  Returns the public URL + dimensions; the wizard then passes the URL
+ *  to the launch route, which posts it to Meta's /adimages endpoint
+ *  server-side. */
+export function useUploadAdImage() {
+  return useMutation({
+    mutationFn: async (input: { clientId: string; file: File }) => {
+      const { uploadAdImage } = await import('./upload-ad-image');
+      const result = await uploadAdImage(input.clientId, input.file);
+      if (!result.ok) throw result.error;
+      return result.data;
+    },
+  });
+}
+
+/** Launch a Meta lead-form campaign. POSTs the wizard's full payload
+ *  through to the launch route, which drives the orchestrator. */
+export type LaunchCampaignPayload = {
+  clientId: string;
+  templateSlug: string;
+  campaignName: string;
+  /** Phase 7.5 · Session 1.2 — closed-set objective flavour.
+   *  'lead_form_meta' is the default (Meta's native instant lead form);
+   *  'lead_form_landing' routes the ad to the customer's website + uses
+   *  Meta Pixel for optimisation against the Lead event. */
+  campaignObjective: 'lead_form_meta' | 'lead_form_landing';
+  /** Required when `campaignObjective === 'lead_form_landing'`. The
+   *  operator-confirmed Meta Pixel id for this client. */
+  pixelId: string | null;
+  targeting: {
+    /** Cities resolved via Meta autocomplete (preferred over geoCenter
+     *  — Meta optimises better on named cities). Each carries Meta's
+     *  `key` + display label + per-city radius. */
+    cities: Array<{ key: string; label: string; radiusKm: number }>;
+    /** Interest ids resolved via Meta autocomplete — passed as
+     *  flexible_spec.interests[] in the ad set spec. */
+    interests: Array<{ id: string; name: string }>;
+    /** Fallback: free-typed lat/lng + radius. Used when no cities
+     *  resolve via autocomplete. */
+    geoCenter?: { lat: number; lng: number } | null;
+    radiusKm?: number | null;
+    ageMin: number;
+    ageMax: number;
+    /** Free-form keyword tokens (training snapshot only — not passed
+     *  to Meta when interests[] is populated). */
+    interestTokens: string[];
+    countries: string[];
+  };
+  dailyBudgetCents: number;
+  startTimeIso: string;
+  /** null = "run until manually stopped" — Meta receives no end time
+   *  so winning ads keep delivering past an arbitrary duration. */
+  endTimeIso: string | null;
+  creative: {
+    /** V1.4 matrix: 1-5 images. Each image becomes one ad in every
+     *  ad set. Server caps at 5. */
+    images: Array<{
+      imageUrl: string;
+      imageWidth?: number | null;
+      imageHeight?: number | null;
+    }>;
+    /** V1.4 matrix: 1-5 copy variants. Each variant becomes its own
+     *  ad set (CBO at the campaign level distributes spend). Server
+     *  caps at 5. */
+    variants: Array<{
+      headline: string;
+      primaryText: string;
+      description?: string | null;
+      ctaType: string;
+    }>;
+    linkUrl: string;
+    privacyPolicyUrl: string;
+  };
+  isFirstLaunch: boolean;
+  goLive: boolean;
+};
+
+export type LaunchCampaignResult = {
+  ok: true;
+  campaignId: string;
+  metaCampaignId: string;
+  metaCampaignDbId: string;
+  paused: boolean;
+};
+
+export function useLaunchMetaCampaign() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: LaunchCampaignPayload): Promise<LaunchCampaignResult> => {
+      const response = (await postJson(
+        '/api/integrations/meta_ads/launch',
+        payload,
+      )) as unknown as LaunchCampaignResult;
+      return response;
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: campaignsKey(vars.clientId) });
+      qc.invalidateQueries({ queryKey: ['campaigns', 'admin'] });
+      qc.invalidateQueries({ queryKey: ['campaigns', 'client'] });
+      qc.invalidateQueries({ queryKey: ['campaigns', 'sub-account'] });
+    },
+  });
+}
+
 /** Manual on-demand sync — enqueues the same jobs the cron does. */
 export function useSyncMetaCampaign() {
   const qc = useQueryClient();
