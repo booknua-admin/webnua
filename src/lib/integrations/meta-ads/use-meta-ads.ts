@@ -547,13 +547,16 @@ export type LaunchCampaignPayload = {
    *  so winning ads keep delivering past an arbitrary duration. */
   endTimeIso: string | null;
   creative: {
-    imageUrl: string;
-    imageWidth?: number | null;
-    imageHeight?: number | null;
-    /** V1.3 multi-variant: one creative + one ad per variant inside
-     *  the same ad set. All share the imageUrl above (per-variant
-     *  imagery is V1.4 with the template overlays). Capped at 10
-     *  server-side. */
+    /** V1.4 matrix: 1-5 images. Each image becomes one ad in every
+     *  ad set. Server caps at 5. */
+    images: Array<{
+      imageUrl: string;
+      imageWidth?: number | null;
+      imageHeight?: number | null;
+    }>;
+    /** V1.4 matrix: 1-5 copy variants. Each variant becomes its own
+     *  ad set (CBO at the campaign level distributes spend). Server
+     *  caps at 5. */
     variants: Array<{
       headline: string;
       primaryText: string;

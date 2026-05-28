@@ -117,16 +117,24 @@ type WizardState = {
    *  duration. */
   runUntilStopped: boolean;
 
-  // step 4 — multi-variant launch (Session 1.3). Each variant carries
-  // a `selected` flag; the launch sends ONE ad per selected variant
-  // inside the same ad set. Meta auto-allocates spend by performance.
+  // step 4 — matrix launch (Session 1.4). M copy variants × N images:
+  // each variant becomes its own ad set; each image becomes an ad
+  // inside every ad set. CBO at the campaign level distributes spend
+  // across the M ad sets, so Meta finds the winning copy automatically.
   offerText: string;
   variants: Array<AdCreativeVariant & { selected: boolean }> | null;
   /** Index of the variant currently shown in the live preview. */
   selectedVariantIdx: number | null;
-  imageUrl: string | null;
-  imageWidth: number | null;
-  imageHeight: number | null;
+  /** V1.4 — N image variants (Supabase Storage urls). Each becomes an
+   *  ad inside every ad set; matrix size = variants × images. */
+  images: Array<{
+    url: string;
+    width: number | null;
+    height: number | null;
+    selected: boolean;
+  }>;
+  /** Index of the image currently shown in the live preview. */
+  selectedImageIdx: number | null;
 
   // step 5
   isFirstLaunch: boolean;
@@ -335,24 +343,67 @@ export function LaunchCampaignWizard({
     });
   }
 
+  /** Append an image to the matrix. Operator uploads N images
+   *  (1-5); each becomes its own ad inside every ad set. */
   async function handleImagePick(file: File) {
     try {
       const uploaded = await uploadMutation.mutateAsync({ clientId, file });
-      setState((s) => ({
-        ...s,
-        imageUrl: uploaded.url,
-        imageWidth: uploaded.width,
-        imageHeight: uploaded.height,
-      }));
+      setState((s) => {
+        const next = [
+          ...s.images,
+          {
+            url: uploaded.url,
+            width: uploaded.width,
+            height: uploaded.height,
+            selected: true,
+          },
+        ];
+        return {
+          ...s,
+          images: next,
+          // First-upload auto-previews this image.
+          selectedImageIdx: s.selectedImageIdx ?? next.length - 1,
+        };
+      });
     } catch {
       // uploadMutation.error surfaces in UI
     }
   }
 
+  function handleRemoveImage(idx: number) {
+    setState((s) => {
+      const next = s.images.filter((_, i) => i !== idx);
+      let preview = s.selectedImageIdx;
+      if (preview != null && preview >= next.length) preview = next.length - 1;
+      if (next.length === 0) preview = null;
+      return { ...s, images: next, selectedImageIdx: preview };
+    });
+  }
+
+  function handleToggleImageSelected(idx: number, selected: boolean) {
+    setState((s) => ({
+      ...s,
+      images: s.images.map((img, i) => (i === idx ? { ...img, selected } : img)),
+    }));
+  }
+
+  function handlePreviewImage(idx: number) {
+    setState((s) => ({ ...s, selectedImageIdx: idx }));
+  }
+
+  function handleSetAllImagesSelected(selected: boolean) {
+    setState((s) => ({
+      ...s,
+      images: s.images.map((img) => ({ ...img, selected })),
+    }));
+  }
+
   // --- Launch ----------------------------------------------------------------
 
   async function handleLaunch() {
-    if (!state.imageUrl || !state.client) return;
+    if (!state.client) return;
+    const selectedImages = state.images.filter((img) => img.selected);
+    if (selectedImages.length === 0) return;
     if (!state.primaryDomain) return;
     const linkUrl = `https://${state.primaryDomain}`;
     const privacyPolicyUrl = `https://${state.primaryDomain}/privacy`;
@@ -395,9 +446,11 @@ export function LaunchCampaignWizard({
       startTimeIso,
       endTimeIso,
       creative: {
-        imageUrl: state.imageUrl,
-        imageWidth: state.imageWidth,
-        imageHeight: state.imageHeight,
+        images: selectedImages.map((img) => ({
+          imageUrl: img.url,
+          imageWidth: img.width,
+          imageHeight: img.height,
+        })),
         variants: selectedVariants.map((v) => ({
           headline: v.headline,
           primaryText: v.primaryText,
@@ -428,8 +481,9 @@ export function LaunchCampaignWizard({
   const operatorId = user?.id ?? null;
   // Block launching if we have no operator id (defensive — the modal
   // should only mount for signed-in operators).
+  const selectedImageCount = state.images.filter((img) => img.selected).length;
   const launchBlocked =
-    !state.imageUrl ||
+    selectedImageCount === 0 ||
     !state.client ||
     !state.primaryDomain ||
     !operatorId ||
@@ -511,6 +565,10 @@ export function LaunchCampaignWizard({
               onToggleVariantSelected={handleToggleVariantSelected}
               onSetAllSelected={handleSetAllSelected}
               onImagePick={handleImagePick}
+              onRemoveImage={handleRemoveImage}
+              onToggleImageSelected={handleToggleImageSelected}
+              onPreviewImage={handlePreviewImage}
+              onSetAllImagesSelected={handleSetAllImagesSelected}
               setOfferText={(offerText) =>
                 setState((s) => ({
                   ...s,
@@ -1447,6 +1505,10 @@ function Step4Creative({
   onToggleVariantSelected,
   onSetAllSelected,
   onImagePick,
+  onRemoveImage,
+  onToggleImageSelected,
+  onPreviewImage,
+  onSetAllImagesSelected,
   setOfferText,
 }: {
   state: WizardState;
@@ -1460,6 +1522,10 @@ function Step4Creative({
   onToggleVariantSelected: (idx: number, selected: boolean) => void;
   onSetAllSelected: (selected: boolean) => void;
   onImagePick: (file: File) => void;
+  onRemoveImage: (idx: number) => void;
+  onToggleImageSelected: (idx: number, selected: boolean) => void;
+  onPreviewImage: (idx: number) => void;
+  onSetAllImagesSelected: (selected: boolean) => void;
   setOfferText: (v: string) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1468,6 +1534,9 @@ function Step4Creative({
   const allSelected = variants.length > 0 && selectedCount === variants.length;
   const previewIdx = state.selectedVariantIdx ?? 0;
   const previewVariant = variants[previewIdx];
+  const selectedImageCount = state.images.filter((img) => img.selected).length;
+  const allImagesSelected =
+    state.images.length > 0 && selectedImageCount === state.images.length;
 
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_360px]">
@@ -1555,33 +1624,72 @@ function Step4Creative({
           </div>
         ) : null}
 
-        <div className="flex flex-col gap-2">
-          <label className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
-            {'// Image (shared across all variants)'}
-          </label>
+        <div className="flex flex-col gap-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <label className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
+              {`// IMAGES · ${selectedImageCount}/${state.images.length} testing`}
+            </label>
+            {state.images.length > 0 ? (
+              <button
+                type="button"
+                className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-rust transition-colors hover:underline"
+                onClick={() => onSetAllImagesSelected(!allImagesSelected)}
+              >
+                {allImagesSelected ? 'Untick all' : 'Test all'}
+              </button>
+            ) : null}
+          </div>
+          <p className="text-[11px] text-ink-quiet">
+            Upload 1-5 images. Each becomes an ad inside every selected
+            ad set — the matrix is{' '}
+            <strong className="font-semibold text-ink">
+              {selectedCount} copy × {selectedImageCount} image ={' '}
+              {selectedCount * selectedImageCount} ads
+            </strong>{' '}
+            launching together.
+            {selectedCount * selectedImageCount > 9 ? (
+              <span className="text-warn">
+                {' '}
+                Meta optimises best with ≤9 cells — consider trimming.
+              </span>
+            ) : null}
+          </p>
+
+          {state.images.length > 0 ? (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {state.images.map((img, idx) => (
+                <ImageCard
+                  key={idx}
+                  image={img}
+                  idx={idx}
+                  isPreviewed={state.selectedImageIdx === idx}
+                  onToggle={(sel) => onToggleImageSelected(idx, sel)}
+                  onPreview={() => onPreviewImage(idx)}
+                  onRemove={() => onRemoveImage(idx)}
+                />
+              ))}
+            </div>
+          ) : null}
+
           <div className="flex items-center gap-3">
             <Button
               type="button"
               variant="secondary"
               className="h-9"
               onClick={() => fileInputRef.current?.click()}
-              disabled={uploadPending}
+              disabled={uploadPending || state.images.length >= 5}
             >
               {uploadPending
                 ? 'Uploading…'
-                : state.imageUrl
-                  ? 'Replace image'
-                  : 'Upload image'}
+                : state.images.length >= 5
+                  ? 'Max 5 images'
+                  : state.images.length === 0
+                    ? '+ Upload image'
+                    : '+ Add another image'}
             </Button>
-            {state.imageUrl ? (
-              <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-good">
-                ✓ {state.imageWidth}×{state.imageHeight}
-              </span>
-            ) : (
-              <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-quiet">
-                JPG/PNG · 4 MB max · 1.91:1 recommended
-              </span>
-            )}
+            <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-quiet">
+              JPG/PNG · 4 MB each · 1.91:1 recommended
+            </span>
             <input
               ref={fileInputRef}
               type="file"
@@ -1606,8 +1714,8 @@ function Step4Creative({
       <div className="lg:sticky lg:top-0">
         <MetaAdPreview
           caption={
-            variants.length > 0
-              ? `// PREVIEW · VARIANT ${previewIdx + 1} OF ${variants.length}`
+            variants.length > 0 || state.images.length > 0
+              ? `// PREVIEW · COPY ${previewIdx + 1}${variants.length > 1 ? `/${variants.length}` : ''} × IMAGE ${(state.selectedImageIdx ?? 0) + 1}${state.images.length > 1 ? `/${state.images.length}` : ''}`
               : '// LIVE PREVIEW'
           }
           pageName={state.client?.name ?? 'Your Business'}
@@ -1616,10 +1724,75 @@ function Step4Creative({
           headline={previewVariant?.headline ?? ''}
           description={previewVariant?.description ?? ''}
           ctaType={previewVariant?.ctaType ?? 'LEARN_MORE'}
-          imageUrl={state.imageUrl}
+          imageUrl={state.images[state.selectedImageIdx ?? 0]?.url ?? null}
           accentColor={state.brand?.accent_color ?? '#d24317'}
           linkHost={state.primaryDomain ?? undefined}
         />
+      </div>
+    </div>
+  );
+}
+
+function ImageCard({
+  image,
+  idx,
+  isPreviewed,
+  onToggle,
+  onPreview,
+  onRemove,
+}: {
+  image: { url: string; width: number | null; height: number | null; selected: boolean };
+  idx: number;
+  isPreviewed: boolean;
+  onToggle: (selected: boolean) => void;
+  onPreview: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div
+      data-selected={image.selected ? 'true' : undefined}
+      data-previewed={isPreviewed ? 'true' : undefined}
+      className="group relative flex flex-col gap-1.5 rounded-lg border border-rule bg-card p-1.5 transition-colors data-[selected=true]:border-rust data-[previewed=true]:ring-2 data-[previewed=true]:ring-rust/30"
+    >
+      <button
+        type="button"
+        onClick={onPreview}
+        className="relative aspect-[1.91/1] overflow-hidden rounded-md bg-paper-2"
+        aria-label={`Preview image ${idx + 1}`}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={image.url}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        {!image.selected ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-paper/60 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+            Not testing
+          </div>
+        ) : null}
+      </button>
+      <div className="flex items-center justify-between gap-2 px-1">
+        <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-ink">
+          <input
+            type="checkbox"
+            checked={image.selected}
+            onChange={(e) => onToggle(e.target.checked)}
+            className="h-3.5 w-3.5 cursor-pointer"
+            aria-label={`Test image ${idx + 1}`}
+          />
+          <span className="font-mono uppercase tracking-[0.08em] text-ink-quiet">
+            {`Img ${idx + 1}`}
+          </span>
+        </label>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="rounded-md px-1.5 py-0.5 text-[14px] leading-none text-ink-quiet transition-colors hover:bg-paper-2 hover:text-warn"
+          aria-label={`Remove image ${idx + 1}`}
+        >
+          ×
+        </button>
       </div>
     </div>
   );
@@ -1702,6 +1875,8 @@ function Step5Review({
   const totalDollars = ((state.dailyBudgetCents / 100) * state.durationDays).toFixed(2);
   const template = templateForIndustry(state.templateSlug);
   const selectedReviewVariants = (state.variants ?? []).filter((v) => v.selected);
+  const selectedReviewImages = state.images.filter((img) => img.selected);
+  const matrixSize = selectedReviewVariants.length * selectedReviewImages.length;
   const previewVariant =
     selectedReviewVariants[0] ??
     (state.variants?.[state.selectedVariantIdx ?? 0] ?? null);
@@ -1754,32 +1929,60 @@ function Step5Review({
           </div>
         </SummaryCard>
         <SummaryCard
-          label={`// CREATIVE · ${selectedReviewVariants.length} VARIANT${selectedReviewVariants.length === 1 ? '' : 'S'} TESTING`}
+          label={`// MATRIX · ${selectedReviewVariants.length} COPY × ${selectedReviewImages.length} IMAGE = ${matrixSize} AD${matrixSize === 1 ? '' : 'S'}`}
         >
-          {selectedReviewVariants.length === 0 ? (
+          {matrixSize === 0 ? (
             <div className="text-[12px] text-warn">
-              No variants selected — go back and pick at least one.
+              {selectedReviewVariants.length === 0
+                ? 'No copy variants selected — go back and pick at least one.'
+                : 'No images selected — go back and pick at least one.'}
             </div>
           ) : (
-            <div className="flex flex-col gap-1.5">
-              {selectedReviewVariants.map((v, i) => (
-                <div key={i} className="flex flex-col gap-0.5 rounded-md bg-paper-2 px-2.5 py-1.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[13px] font-semibold text-ink">
-                      {v.headline}
-                    </span>
-                    <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-quiet">
-                      {v.ctaType}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-ink-soft">{v.primaryText}</div>
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-1.5">
+                <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-ink-quiet">
+                  Copy variants ({selectedReviewVariants.length} ad set
+                  {selectedReviewVariants.length === 1 ? '' : 's'})
                 </div>
-              ))}
-              {selectedReviewVariants.length > 1 ? (
+                {selectedReviewVariants.map((v, i) => (
+                  <div key={i} className="flex flex-col gap-0.5 rounded-md bg-paper-2 px-2.5 py-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[13px] font-semibold text-ink">
+                        {v.headline}
+                      </span>
+                      <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-quiet">
+                        {v.ctaType}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-ink-soft">{v.primaryText}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-ink-quiet">
+                  Images ({selectedReviewImages.length} ad
+                  {selectedReviewImages.length === 1 ? '' : 's'} per ad set)
+                </div>
+                <div className="flex gap-1.5">
+                  {selectedReviewImages.map((img, i) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      key={i}
+                      src={img.url}
+                      alt=""
+                      className="h-16 w-16 rounded-md object-cover"
+                    />
+                  ))}
+                </div>
+              </div>
+              {matrixSize > 1 ? (
                 <div className="text-[11px] text-ink-quiet">
-                  Meta will A/B-test the {selectedReviewVariants.length}{' '}
-                  variants inside one ad set and auto-allocate spend to the
-                  best performer.
+                  Meta will A/B-test all {matrixSize} cells across{' '}
+                  {selectedReviewVariants.length} ad set
+                  {selectedReviewVariants.length === 1 ? '' : 's'}. CBO at
+                  the campaign level distributes ${(state.dailyBudgetCents / 100).toFixed(0)}/day
+                  across the ad sets — Meta auto-allocates spend to the
+                  winning cell.
                 </div>
               ) : null}
             </div>
@@ -1853,7 +2056,11 @@ function Step5Review({
           headline={previewVariant?.headline ?? ''}
           description={previewVariant?.description ?? ''}
           ctaType={previewVariant?.ctaType ?? 'LEARN_MORE'}
-          imageUrl={state.imageUrl}
+          imageUrl={
+            state.images.find((img) => img.selected)?.url ??
+            state.images[0]?.url ??
+            null
+          }
           accentColor={state.brand?.accent_color ?? '#d24317'}
           linkHost={state.primaryDomain ?? undefined}
         />
@@ -1905,9 +2112,8 @@ function freshState(): WizardState {
     offerText: '',
     variants: null,
     selectedVariantIdx: null,
-    imageUrl: null,
-    imageWidth: null,
-    imageHeight: null,
+    images: [],
+    selectedImageIdx: null,
     isFirstLaunch: false,
     goLive: true,
   };
@@ -1932,20 +2138,23 @@ function isStepValid(s: WizardState): boolean {
         (s.runUntilStopped || s.durationDays >= 1)
       );
     case 4: {
-      // V1.3 multi-variant — step is valid when:
-      //   • the image is uploaded
-      //   • at least one variant is selected for testing
-      //   • every selected variant carries headline + primaryText (Sonnet
-      //     drafts always do; this is defence in depth)
-      if (s.imageUrl == null) return false;
-      const selected = (s.variants ?? []).filter((v) => v.selected);
-      if (selected.length === 0) return false;
-      return selected.every(
+      // V1.4 matrix — step is valid when:
+      //   • at least one image is selected (becomes the "ad" axis)
+      //   • at least one variant is selected (becomes the "ad set" axis)
+      //   • every selected variant carries headline + primaryText
+      const selectedImages = s.images.filter((img) => img.selected);
+      if (selectedImages.length === 0) return false;
+      const selectedVariants = (s.variants ?? []).filter((v) => v.selected);
+      if (selectedVariants.length === 0) return false;
+      return selectedVariants.every(
         (v) => v.headline.trim().length > 0 && v.primaryText.trim().length > 0,
       );
     }
     case 5:
-      return s.primaryDomain != null && s.imageUrl != null;
+      return (
+        s.primaryDomain != null &&
+        s.images.some((img) => img.selected)
+      );
     default:
       return false;
   }

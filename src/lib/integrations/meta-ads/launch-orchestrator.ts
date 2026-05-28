@@ -131,15 +131,17 @@ export type LaunchCampaignInput = {
   startTimeIso: string;
   endTimeIso: string | null;
 
-  /** Creative — the shared image (all variants reuse this one upload,
-   *  V1.3; per-variant image upload is V1.4 with the template overlays). */
-  imageUrl: string;
-  imageWidth: number | null;
-  imageHeight: number | null;
-  /** One ad per variant inside the same ad set — Meta's standard A/B
-   *  testing shape. Meta auto-allocates spend by performance. Each
-   *  variant's copy lands in its own ad creative. Order matters: the
-   *  first variant becomes the "primary" stored on meta_campaigns. */
+  /** Session 1.4 matrix: N image variants. Each becomes its own ad
+   *  inside every ad set. Capped at 5 (Meta's learning algorithm
+   *  dilutes past that). */
+  images: Array<{
+    imageUrl: string;
+    imageWidth: number | null;
+    imageHeight: number | null;
+  }>;
+  /** Session 1.4 matrix: M copy variants. Each becomes its own ad set
+   *  (with CBO at the campaign level, Meta distributes spend across
+   *  them). Capped at 5. */
   variants: Array<{
     headline: string;
     primaryText: string;
@@ -191,13 +193,14 @@ export type LaunchFailure = {
   message: string;
   detail?: string;
   /** Meta-side ids that DID land before the failure — surfaced so the
-   *  operator can clean up in Ads Manager if needed. */
+   *  operator can clean up in Ads Manager if needed. Arrays for the
+   *  matrix-shape (each ad set + every ad created so far). */
   partial?: {
     metaCampaignId?: string;
-    metaAdSetId?: string;
+    metaAdSetIds?: string[];
     metaLeadFormId?: string;
-    metaCreativeId?: string;
-    metaAdId?: string;
+    metaCreativeIds?: string[];
+    metaAdIds?: string[];
   };
 };
 
@@ -260,25 +263,52 @@ export async function launchMetaCampaign(input: LaunchCampaignInput): Promise<La
   }
   const pageAccessToken = pageTokenResult.data;
 
-  // 3. Upload image → image_hash.
-  const imageResult = await uploadImageToMeta(input.clientId, adAccountId, input.imageUrl);
-  if (!imageResult.ok) {
+  // Defence-in-depth validation — the wizard's step-4 gate also
+  // checks these, but a direct route caller might skip them.
+  if (input.variants.length === 0) {
+    return {
+      ok: false,
+      step: 'create_creative',
+      message: 'At least one copy variant is required to launch.',
+    };
+  }
+  if (input.images.length === 0) {
     return {
       ok: false,
       step: 'upload_image',
-      message: 'Meta rejected the image upload.',
-      detail: imageResult.error.message,
+      message: 'At least one image is required to launch.',
     };
   }
-  const imageHash = imageResult.data.imageHash;
 
-  // 4. Create campaign (PAUSED initially — see goLive flag).
+  // 3. Upload every image → array of image_hashes. Meta dedupes hashes
+  //    per ad account so re-uploading the same URL is idempotent.
+  const imageHashes: string[] = [];
+  for (let i = 0; i < input.images.length; i += 1) {
+    const img = input.images[i];
+    const r = await uploadImageToMeta(input.clientId, adAccountId, img.imageUrl);
+    if (!r.ok) {
+      return {
+        ok: false,
+        step: 'upload_image',
+        message: `Meta rejected image ${i + 1} of ${input.images.length}.`,
+        detail: r.error.message,
+      };
+    }
+    imageHashes.push(r.data.imageHash);
+  }
+
+  // 4. Create campaign (PAUSED initially — see goLive flag). CBO is
+  //    on at the campaign level — Meta distributes spend across the M
+  //    ad sets created in step 6, finding the winning copy variant
+  //    automatically. Without CBO, each ad set would need its own
+  //    daily_budget; matrix testing makes that a foot-gun.
   const campaignResult = await createCampaign(input.clientId, {
     adAccountId,
     name: input.campaignName,
     objective: 'OUTCOME_LEADS',
     status: 'PAUSED',
     specialAdCategories: [],
+    dailyBudgetCents: input.dailyBudgetCents,
   });
   if (!campaignResult.ok || !campaignResult.data.id) {
     return {
@@ -290,46 +320,10 @@ export async function launchMetaCampaign(input: LaunchCampaignInput): Promise<La
   }
   const metaCampaignId = campaignResult.data.id;
 
-  // 5. Create ad set with targeting + budget + schedule.
-  //   • endTime is omitted when the operator opted for "run until
-  //     manually stopped" — Meta accepts no end time as "indefinite",
-  //     which is what we want for ads that should keep delivering past
-  //     an arbitrary duration.
-  //   • For the landing-page objective the ad set's promoted_object
-  //     carries the customer's Meta Pixel id + 'LEAD' custom event so
-  //     Meta optimises bidding against the Lead conversion fired on
-  //     form submit (PublicSiteRenderer / FormBlock embed the pixel).
-  const targetingSpec = buildTargetingSpec(input);
-  const adSetResult = await createAdSet(input.clientId, {
-    adAccountId,
-    campaignId: metaCampaignId,
-    name: `${input.campaignName} · Ad set`,
-    dailyBudgetCents: input.dailyBudgetCents,
-    targeting: targetingSpec,
-    optimizationGoal: 'LEAD_GENERATION',
-    billingEvent: 'IMPRESSIONS',
-    bidStrategy: 'LOWEST_COST_WITHOUT_CAP',
-    status: 'PAUSED',
-    startTime: input.startTimeIso,
-    endTime: input.endTimeIso ?? undefined,
-    promotedObjectPageId: pageId,
-    promotedObjectPixelId:
-      input.campaignObjective === 'lead_form_landing' ? input.pixelId : null,
-  });
-  if (!adSetResult.ok || !adSetResult.data.id) {
-    return {
-      ok: false,
-      step: 'create_ad_set',
-      message: 'Meta rejected the ad-set create.',
-      detail: adSetResult.ok ? 'No ad-set id returned.' : adSetResult.error.message,
-      partial: { metaCampaignId },
-    };
-  }
-  const metaAdSetId = adSetResult.data.id;
-
-  // 6. Create lead form on the Page — ONLY for the in-Meta objective.
-  //    The landing-page objective routes the click to the customer's
-  //    website, so there's no on-Meta form to attach.
+  // 5. Create lead form on the Page — ONLY for the in-Meta objective.
+  //    ONE form shared across every ad set + every ad. The landing-page
+  //    objective routes the click to the customer's website, so there's
+  //    no on-Meta form to attach.
   const template = templateForIndustry(input.templateSlug);
   let metaLeadFormId: string | null = null;
   if (input.campaignObjective === 'lead_form_meta') {
@@ -352,106 +346,157 @@ export async function launchMetaCampaign(input: LaunchCampaignInput): Promise<La
         detail: leadFormResult.ok
           ? 'No lead-form id returned.'
           : leadFormResult.error.message,
-        partial: { metaCampaignId, metaAdSetId },
+        partial: { metaCampaignId },
       };
     }
     metaLeadFormId = leadFormResult.data.id;
   }
 
-  // 7 + 8. For each variant create one ad creative + one ad inside
-  // the same ad set. Meta's standard A/B testing shape — N ads in one
-  // ad set, Meta auto-allocates spend by performance. All variants
-  // share the same image_hash + lead form (when objective is in-Meta).
-  // The orchestrator bails on the first variant's failure with partial
-  // state intact (Meta has no rollback; the operator can clean up in
-  // Ads Manager via the surfaced ids).
+  // 6 + 7. For each copy variant, create one ad set; inside each ad
+  // set, create one creative + one ad per image. The matrix is
+  // M variants × N images = M ad sets × N ads each.
   //
-  // The first launched variant's ids become the "primary" stored on
-  // meta_campaigns.meta_ad_id / meta_creative_id — those columns are
-  // legacy / informational; `meta_ad_creatives` is the source of truth
-  // for the full per-variant set.
-  if (input.variants.length === 0) {
-    return {
-      ok: false,
-      step: 'create_creative',
-      message: 'At least one variant is required to launch.',
-      partial: { metaCampaignId, metaAdSetId, metaLeadFormId: metaLeadFormId ?? undefined },
-    };
-  }
+  // Ad sets carry NO daily_budget (CBO at the campaign level
+  // distributes spend); targeting, schedule, and promoted_object are
+  // identical across all ad sets — the only thing that changes between
+  // ad sets is the COPY in their attached creatives. Inside each ad
+  // set the IMAGE varies between ads. Meta finds the winning
+  // (copy, image) cell.
+  //
+  // Order matters: launched[0] = (variant 0, image 0) — the
+  // "representative" used for the legacy meta_campaigns.meta_ad_id /
+  // meta_creative_id fields. The full matrix lives on
+  // meta_ad_creatives.
+  const targetingSpec = buildTargetingSpec(input);
+  const launchedAdSets: string[] = [];
   const launchedAds: Array<{
+    metaAdSetId: string;
     metaAdId: string;
     metaCreativeId: string;
+    imageHash: string;
+    imageInfo: LaunchCampaignInput['images'][number];
     variant: LaunchCampaignInput['variants'][number];
+    copyVariantIndex: number;
+    imageVariantIndex: number;
   }> = [];
-  for (let i = 0; i < input.variants.length; i += 1) {
-    const variant = input.variants[i];
-    const creativeResult = await createAdCreative(input.clientId, {
+  const allCreativeIds: string[] = [];
+  const allAdIds: string[] = [];
+
+  for (let v = 0; v < input.variants.length; v += 1) {
+    const variant = input.variants[v];
+    const adSetResult = await createAdSet(input.clientId, {
       adAccountId,
-      name: `${input.campaignName} · Variant ${i + 1} · Creative`,
-      pageId,
-      leadFormId: metaLeadFormId,
-      headline: variant.headline,
-      primaryText: variant.primaryText,
-      description: variant.description ?? undefined,
-      imageHash,
-      linkUrl: input.linkUrl,
-      ctaType: variant.ctaType,
-    });
-    if (!creativeResult.ok || !creativeResult.data.id) {
-      return {
-        ok: false,
-        step: 'create_creative',
-        message: `Meta rejected the ad-creative create for variant ${i + 1}.`,
-        detail: creativeResult.ok
-          ? 'No creative id returned.'
-          : creativeResult.error.message,
-        partial: {
-          metaCampaignId,
-          metaAdSetId,
-          metaLeadFormId: metaLeadFormId ?? undefined,
-        },
-      };
-    }
-    const variantCreativeId = creativeResult.data.id;
-    const adResult = await createAd(input.clientId, {
-      adAccountId,
-      adSetId: metaAdSetId,
-      creativeId: variantCreativeId,
-      name: `${input.campaignName} · Variant ${i + 1}`,
+      campaignId: metaCampaignId,
+      name: `${input.campaignName} · Copy ${v + 1}`,
+      // No dailyBudgetCents — CBO at the campaign level.
+      targeting: targetingSpec,
+      optimizationGoal: 'LEAD_GENERATION',
+      billingEvent: 'IMPRESSIONS',
+      bidStrategy: 'LOWEST_COST_WITHOUT_CAP',
       status: 'PAUSED',
+      startTime: input.startTimeIso,
+      endTime: input.endTimeIso ?? undefined,
+      promotedObjectPageId: pageId,
+      promotedObjectPixelId:
+        input.campaignObjective === 'lead_form_landing' ? input.pixelId : null,
     });
-    if (!adResult.ok || !adResult.data.id) {
+    if (!adSetResult.ok || !adSetResult.data.id) {
       return {
         ok: false,
-        step: 'create_ad',
-        message: `Meta rejected the ad create for variant ${i + 1}.`,
-        detail: adResult.ok ? 'No ad id returned.' : adResult.error.message,
+        step: 'create_ad_set',
+        message: `Meta rejected the ad-set create for copy variant ${v + 1}.`,
+        detail: adSetResult.ok
+          ? 'No ad-set id returned.'
+          : adSetResult.error.message,
         partial: {
           metaCampaignId,
-          metaAdSetId,
+          metaAdSetIds: launchedAdSets,
           metaLeadFormId: metaLeadFormId ?? undefined,
-          metaCreativeId: variantCreativeId,
         },
       };
     }
-    launchedAds.push({
-      metaAdId: adResult.data.id,
-      metaCreativeId: variantCreativeId,
-      variant,
-    });
+    const adSetId = adSetResult.data.id;
+    launchedAdSets.push(adSetId);
+
+    for (let i = 0; i < input.images.length; i += 1) {
+      const imgInfo = input.images[i];
+      const imageHash = imageHashes[i];
+      const creativeResult = await createAdCreative(input.clientId, {
+        adAccountId,
+        name: `${input.campaignName} · Copy ${v + 1} · Image ${i + 1} · Creative`,
+        pageId,
+        leadFormId: metaLeadFormId,
+        headline: variant.headline,
+        primaryText: variant.primaryText,
+        description: variant.description ?? undefined,
+        imageHash,
+        linkUrl: input.linkUrl,
+        ctaType: variant.ctaType,
+      });
+      if (!creativeResult.ok || !creativeResult.data.id) {
+        return {
+          ok: false,
+          step: 'create_creative',
+          message: `Meta rejected the creative for copy ${v + 1}, image ${i + 1}.`,
+          detail: creativeResult.ok
+            ? 'No creative id returned.'
+            : creativeResult.error.message,
+          partial: {
+            metaCampaignId,
+            metaAdSetIds: launchedAdSets,
+            metaLeadFormId: metaLeadFormId ?? undefined,
+            metaCreativeIds: allCreativeIds,
+            metaAdIds: allAdIds,
+          },
+        };
+      }
+      const variantCreativeId = creativeResult.data.id;
+      allCreativeIds.push(variantCreativeId);
+      const adResult = await createAd(input.clientId, {
+        adAccountId,
+        adSetId,
+        creativeId: variantCreativeId,
+        name: `${input.campaignName} · Copy ${v + 1} · Image ${i + 1}`,
+        status: 'PAUSED',
+      });
+      if (!adResult.ok || !adResult.data.id) {
+        return {
+          ok: false,
+          step: 'create_ad',
+          message: `Meta rejected the ad create for copy ${v + 1}, image ${i + 1}.`,
+          detail: adResult.ok ? 'No ad id returned.' : adResult.error.message,
+          partial: {
+            metaCampaignId,
+            metaAdSetIds: launchedAdSets,
+            metaLeadFormId: metaLeadFormId ?? undefined,
+            metaCreativeIds: allCreativeIds,
+            metaAdIds: allAdIds,
+          },
+        };
+      }
+      allAdIds.push(adResult.data.id);
+      launchedAds.push({
+        metaAdSetId: adSetId,
+        metaAdId: adResult.data.id,
+        metaCreativeId: variantCreativeId,
+        imageHash,
+        imageInfo: imgInfo,
+        variant,
+        copyVariantIndex: v,
+        imageVariantIndex: i,
+      });
+    }
   }
-  // Primary ad/creative — the first launched variant. Stored on
-  // meta_campaigns; `meta_ad_creatives` is the per-variant SoT.
+
+  // Representative ids stored on meta_campaigns — the first launched
+  // cell (variant 0, image 0). meta_ad_creatives is the matrix SoT.
+  const metaAdSetId = launchedAds[0].metaAdSetId;
   const metaCreativeId = launchedAds[0].metaCreativeId;
   const metaAdId = launchedAds[0].metaAdId;
 
-  // 9. Optionally activate if operator chose "go live now".
-  // Activation failures DO NOT fail the whole launch — the campaign is
-  // built; the operator can flip it ACTIVE from Webnua's /campaigns
-  // pause/activate path without leaving the app. Activation order:
-  // campaign first, then ad set, then every ad (Meta requires the
-  // campaign be ACTIVE before an ad set under it can activate; ad sets
-  // must be ACTIVE before ads).
+  // 8. Optionally activate. Activation order: campaign → every ad set
+  // → every ad. Failures are non-fatal (operator can flip status from
+  // /campaigns without re-running the chain).
   if (input.goLive) {
     const campaignActivation = await activateCampaign(input.clientId, metaCampaignId);
     if (!campaignActivation.ok) {
@@ -460,12 +505,17 @@ export async function launchMetaCampaign(input: LaunchCampaignInput): Promise<La
         campaignActivation.error.message,
       );
     }
-    const adSetActivation = await activateAdSet(input.clientId, metaAdSetId);
-    if (!adSetActivation.ok) {
-      console.warn(
-        '[meta-ads/launch] ad set activation failed (non-fatal):',
-        adSetActivation.error.message,
-      );
+    const adSetActivations = await Promise.all(
+      launchedAdSets.map((id) => activateAdSet(input.clientId, id)),
+    );
+    for (let i = 0; i < adSetActivations.length; i += 1) {
+      const r = adSetActivations[i];
+      if (!r.ok) {
+        console.warn(
+          `[meta-ads/launch] ad set ${i + 1} activation failed (non-fatal):`,
+          r.error.message,
+        );
+      }
     }
     const adActivations = await Promise.all(
       launchedAds.map((a) => activateAd(input.clientId, a.metaAdId)),
@@ -494,10 +544,10 @@ export async function launchMetaCampaign(input: LaunchCampaignInput): Promise<La
       detail: refreshed.error.message,
       partial: {
         metaCampaignId,
-        metaAdSetId,
+        metaAdSetIds: launchedAdSets,
         metaLeadFormId: metaLeadFormId ?? undefined,
-        metaCreativeId,
-        metaAdId,
+        metaCreativeIds: allCreativeIds,
+        metaAdIds: allAdIds,
       },
     };
   }
@@ -516,10 +566,10 @@ export async function launchMetaCampaign(input: LaunchCampaignInput): Promise<La
       detail: (error as Error).message,
       partial: {
         metaCampaignId,
-        metaAdSetId,
+        metaAdSetIds: launchedAdSets,
         metaLeadFormId: metaLeadFormId ?? undefined,
-        metaCreativeId,
-        metaAdId,
+        metaCreativeIds: allCreativeIds,
+        metaAdIds: allAdIds,
       },
     };
   }
@@ -567,13 +617,14 @@ export async function launchMetaCampaign(input: LaunchCampaignInput): Promise<La
     );
   }
 
-  // 12. Insert one meta_ad_creatives row per launched variant.
-  //     Session 1.3 — the partial unique index "one active row per
-  //     campaign" was dropped in migration 0117 because multi-variant
-  //     launches have N active creatives concurrently. Per-creative
-  //     outcomes derive from joining meta_ads_insights on date_recorded
-  //     BETWEEN started_at AND ended_at — see migration 0115 + 0117
-  //     comments.
+  // 12. Insert one meta_ad_creatives row per launched matrix cell.
+  //     Session 1.4 — each row carries meta_ad_set_id + the matrix
+  //     indices so per-cell outcome attribution is queryable. The
+  //     partial unique index "one active row per campaign" was dropped
+  //     in migration 0117; per-creative outcomes still derive from
+  //     joining meta_ads_insights on date_recorded BETWEEN started_at
+  //     AND ended_at. With per-ad-set insights (V1.5+), the join
+  //     gains a meta_ad_set_id axis for finer granularity.
   const launchedAt = new Date().toISOString();
   for (const a of launchedAds) {
     try {
@@ -583,15 +634,18 @@ export async function launchMetaCampaign(input: LaunchCampaignInput): Promise<La
         started_at: launchedAt,
         ended_at: null,
         meta_ad_id: a.metaAdId,
+        meta_ad_set_id: a.metaAdSetId,
         meta_creative_id: a.metaCreativeId,
-        meta_image_hash: imageHash,
-        image_url: input.imageUrl,
-        image_width: input.imageWidth,
-        image_height: input.imageHeight,
+        meta_image_hash: a.imageHash,
+        image_url: a.imageInfo.imageUrl,
+        image_width: a.imageInfo.imageWidth,
+        image_height: a.imageInfo.imageHeight,
         headline: a.variant.headline,
         primary_text: a.variant.primaryText,
         description: a.variant.description,
         cta_type: a.variant.ctaType,
+        copy_variant_index: a.copyVariantIndex,
+        image_variant_index: a.imageVariantIndex,
         created_by_user_id: input.launchedByUserId,
       });
     } catch (error) {

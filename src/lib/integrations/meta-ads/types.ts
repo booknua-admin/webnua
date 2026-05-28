@@ -319,6 +319,10 @@ export type MetaAdCreativeRow = {
   started_at: string;
   ended_at: string | null;
   meta_ad_id: string | null;
+  /** Session 1.4 matrix testing: the ad set this creative is attached
+   *  to. Each ad set carries one copy variant; multiple creatives (one
+   *  per image) share the same ad set. Nullable for pre-1.4 rows. */
+  meta_ad_set_id: string | null;
   meta_creative_id: string | null;
   meta_image_hash: string | null;
   image_url: string;
@@ -328,6 +332,10 @@ export type MetaAdCreativeRow = {
   primary_text: string;
   description: string | null;
   cta_type: string;
+  /** 0-based copy variant index — the ad-set axis of the M × N matrix. */
+  copy_variant_index: number;
+  /** 0-based image variant index — the ad axis (within an ad set). */
+  image_variant_index: number;
   created_by_user_id: string | null;
   created_at: string;
 };

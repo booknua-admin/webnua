@@ -218,9 +218,29 @@ function parseLaunchInput(
   if (!creative || typeof creative !== 'object') {
     return { error: 'missing-creative' };
   }
-  const imageUrl = creative.imageUrl;
-  if (typeof imageUrl !== 'string' || imageUrl.length === 0) {
-    return { error: 'missing-creative.imageUrl' };
+  // V1.4 matrix: images[] (1-5 entries). Each becomes its own ad
+  // inside every ad set. The launch builds an M × N matrix
+  // (variants × images).
+  const imagesRaw = Array.isArray(creative.images) ? creative.images : [];
+  const images: Array<{
+    imageUrl: string;
+    imageWidth: number | null;
+    imageHeight: number | null;
+  }> = [];
+  for (let i = 0; i < imagesRaw.length && images.length < 5; i += 1) {
+    const item = imagesRaw[i];
+    if (!item || typeof item !== 'object') continue;
+    const o = item as Record<string, unknown>;
+    const url = typeof o.imageUrl === 'string' ? o.imageUrl : '';
+    if (url.length === 0) continue;
+    images.push({
+      imageUrl: url,
+      imageWidth: typeof o.imageWidth === 'number' ? Math.round(o.imageWidth) : null,
+      imageHeight: typeof o.imageHeight === 'number' ? Math.round(o.imageHeight) : null,
+    });
+  }
+  if (images.length === 0) {
+    return { error: 'missing-creative.images' };
   }
   // V1.3 multi-variant: the body carries `variants[]` (one creative
   // per launched variant inside the same ad set). Capped at 10 — Meta
@@ -264,10 +284,6 @@ function parseLaunchInput(
   if (typeof privacyPolicyUrl !== 'string' || privacyPolicyUrl.length === 0) {
     return { error: 'missing-creative.privacyPolicyUrl' };
   }
-  const imageWidth =
-    typeof creative.imageWidth === 'number' ? Math.round(creative.imageWidth) : null;
-  const imageHeight =
-    typeof creative.imageHeight === 'number' ? Math.round(creative.imageHeight) : null;
 
   return {
     clientId,
@@ -287,9 +303,7 @@ function parseLaunchInput(
     dailyBudgetCents,
     startTimeIso,
     endTimeIso,
-    imageUrl,
-    imageWidth,
-    imageHeight,
+    images,
     variants,
     linkUrl,
     privacyPolicyUrl,

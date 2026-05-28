@@ -226,8 +226,12 @@ export type CreateAdSetParams = {
   adAccountId: string;
   campaignId: string;
   name: string;
-  /** Daily budget in minor units. */
-  dailyBudgetCents: number;
+  /** Daily budget in minor units. Omit when the parent campaign has
+   *  CBO enabled — Meta rejects per-ad-set budgets in that case (the
+   *  campaign's daily_budget is distributed across ad sets
+   *  automatically). Session 1.4 matrix launches always use CBO so
+   *  this stays undefined; pre-matrix launches still pass it. */
+  dailyBudgetCents?: number;
   /** Targeting spec — country, geo radius, age, interests, demographics.
    *  Passed verbatim to Meta as JSON. The campaign-template files compose
    *  this shape. */
@@ -262,13 +266,15 @@ export async function createAdSet(
         access_token: accessToken,
         name: params.name,
         campaign_id: params.campaignId,
-        daily_budget: params.dailyBudgetCents,
         optimization_goal: params.optimizationGoal ?? 'LEAD_GENERATION',
         billing_event: params.billingEvent ?? 'IMPRESSIONS',
         bid_strategy: params.bidStrategy ?? 'LOWEST_COST_WITHOUT_CAP',
         status: params.status ?? 'PAUSED',
         targeting: params.targeting,
       };
+      if (params.dailyBudgetCents != null) {
+        body.daily_budget = params.dailyBudgetCents;
+      }
       if (params.startTime) body.start_time = params.startTime;
       if (params.endTime) body.end_time = params.endTime;
       // promoted_object shape depends on the optimisation target:
