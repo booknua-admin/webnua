@@ -368,13 +368,31 @@ export type CreateAdCreativeParams = {
   description?: string;
   /** Image hash (uploaded separately) or video id. For V1 the template
    *  provides ready-made image hashes; later we'll upload customer
-   *  imagery and capture the returned hash. */
+   *  imagery and capture the returned hash. Ignored when
+   *  `childAttachments` is set (carousel format). */
   imageHash?: string;
   /** Destination URL — irrelevant for lead-form ads but Meta still
    *  requires SOMETHING; defaults to the customer's website. For the
    *  landing-page objective this is the ad's actual destination. */
   linkUrl: string;
   ctaType?: string;
+  /** V1.4c — when set, the creative is a CAROUSEL ad with N image
+   *  cards. The top-level `imageHash` is ignored; instead each card
+   *  carries its own `imageHash` + optional per-card copy. Meta
+   *  requires 2-10 cards. The shared post body (primaryText) still
+   *  sits above the carousel. */
+  childAttachments?: Array<{
+    imageHash: string;
+    /** Per-card headline. Falls back to the creative's top-level
+     *  `headline` when omitted. */
+    headline?: string;
+    /** Per-card subtitle. Falls back to top-level `description` when
+     *  omitted. */
+    description?: string;
+    /** Per-card click destination. Falls back to the creative's
+     *  `linkUrl` when omitted. */
+    linkUrl?: string;
+  }>;
 };
 
 export async function createAdCreative(
@@ -396,14 +414,45 @@ export async function createAdCreative(
       const linkData: Record<string, unknown> = {
         message: params.primaryText,
         link: params.linkUrl,
-        name: params.headline,
         call_to_action: {
           type: params.ctaType ?? 'LEARN_MORE',
           value: ctaValue,
         },
       };
-      if (params.description) linkData.description = params.description;
-      if (params.imageHash) linkData.image_hash = params.imageHash;
+      if (params.childAttachments && params.childAttachments.length > 0) {
+        // Carousel: omit top-level image_hash / name / description.
+        // Each child carries its own copy + image + per-card CTA. We
+        // copy the top-level CTA shape onto each card so the lead-form
+        // id (when set) is per-card valid — clicking any card opens
+        // the same form for lead_form_meta, or routes to the per-card
+        // link for lead_form_landing.
+        linkData.child_attachments = params.childAttachments.map((card) => {
+          const cardLink = card.linkUrl ?? params.linkUrl;
+          const cardCtaValue: Record<string, unknown> = { link: cardLink };
+          if (params.leadFormId) cardCtaValue.lead_gen_form_id = params.leadFormId;
+          const out: Record<string, unknown> = {
+            link: cardLink,
+            image_hash: card.imageHash,
+            call_to_action: {
+              type: params.ctaType ?? 'LEARN_MORE',
+              value: cardCtaValue,
+            },
+          };
+          const cardName = card.headline ?? params.headline;
+          if (cardName) out.name = cardName;
+          const cardDesc = card.description ?? params.description;
+          if (cardDesc) out.description = cardDesc;
+          return out;
+        });
+        // Optimised reorder by Meta — surfaces the winning card first
+        // on subsequent impressions.
+        linkData.multi_share_optimized = true;
+      } else {
+        // Single-image: top-level image_hash + name + description.
+        linkData.name = params.headline;
+        if (params.description) linkData.description = params.description;
+        if (params.imageHash) linkData.image_hash = params.imageHash;
+      }
       const body: Record<string, unknown> = {
         access_token: accessToken,
         name: params.name,

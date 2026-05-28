@@ -156,6 +156,15 @@ export type LaunchCampaignInput = {
    *  published site. */
   privacyPolicyUrl: string;
 
+  /** V1.4c — ad format. 'single_image' (default) keeps the M × N
+   *  matrix from Session 1.4a: M ad sets × N ads each, one image per
+   *  ad. 'carousel' collapses the per-image axis into ONE multi-card
+   *  carousel ad per ad set — operator gets M ads total, each a
+   *  swipeable carousel with 2-10 cards. Meta surfaces the
+   *  winning-card-first on subsequent impressions via
+   *  multi_share_optimized. */
+  adFormat: 'single_image' | 'carousel';
+
   /** Operator-flagged first launch. Drives created_via on
    *  meta_campaigns + is_first_launch on meta_campaign_launches. The
    *  label is operator-facing audit only — no marketing claim. */
@@ -418,26 +427,31 @@ export async function launchMetaCampaign(input: LaunchCampaignInput): Promise<La
     const adSetId = adSetResult.data.id;
     launchedAdSets.push(adSetId);
 
-    for (let i = 0; i < input.images.length; i += 1) {
-      const imgInfo = input.images[i];
-      const imageHash = imageHashes[i];
+    if (input.adFormat === 'carousel') {
+      // Carousel: ONE creative + ONE ad per ad set, with all N images
+      // bundled as child_attachments. Cards share the variant's
+      // post-body copy (primaryText) + headline + description;
+      // operator can launch multiple copy variants to A/B-test
+      // different card-headline sets.
       const creativeResult = await createAdCreative(input.clientId, {
         adAccountId,
-        name: `${input.campaignName} · Copy ${v + 1} · Image ${i + 1} · Creative`,
+        name: `${input.campaignName} · Copy ${v + 1} · Carousel · Creative`,
         pageId,
         leadFormId: metaLeadFormId,
         headline: variant.headline,
         primaryText: variant.primaryText,
         description: variant.description ?? undefined,
-        imageHash,
         linkUrl: input.linkUrl,
         ctaType: variant.ctaType,
+        childAttachments: input.images.map((_, i) => ({
+          imageHash: imageHashes[i],
+        })),
       });
       if (!creativeResult.ok || !creativeResult.data.id) {
         return {
           ok: false,
           step: 'create_creative',
-          message: `Meta rejected the creative for copy ${v + 1}, image ${i + 1}.`,
+          message: `Meta rejected the carousel creative for copy ${v + 1}.`,
           detail: creativeResult.ok
             ? 'No creative id returned.'
             : creativeResult.error.message,
@@ -456,14 +470,14 @@ export async function launchMetaCampaign(input: LaunchCampaignInput): Promise<La
         adAccountId,
         adSetId,
         creativeId: variantCreativeId,
-        name: `${input.campaignName} · Copy ${v + 1} · Image ${i + 1}`,
+        name: `${input.campaignName} · Copy ${v + 1} · Carousel`,
         status: 'PAUSED',
       });
       if (!adResult.ok || !adResult.data.id) {
         return {
           ok: false,
           step: 'create_ad',
-          message: `Meta rejected the ad create for copy ${v + 1}, image ${i + 1}.`,
+          message: `Meta rejected the carousel ad create for copy ${v + 1}.`,
           detail: adResult.ok ? 'No ad id returned.' : adResult.error.message,
           partial: {
             metaCampaignId,
@@ -475,16 +489,90 @@ export async function launchMetaCampaign(input: LaunchCampaignInput): Promise<La
         };
       }
       allAdIds.push(adResult.data.id);
+      // Carousel: persist ONE meta_ad_creatives row per ad set, using
+      // the first card as the "representative" image. The other cards
+      // aren't decomposed in V1 — future sessions can add per-card
+      // tracking with a card_index column if outcome attribution needs
+      // per-card granularity.
       launchedAds.push({
         metaAdSetId: adSetId,
         metaAdId: adResult.data.id,
         metaCreativeId: variantCreativeId,
-        imageHash,
-        imageInfo: imgInfo,
+        imageHash: imageHashes[0],
+        imageInfo: input.images[0],
         variant,
         copyVariantIndex: v,
-        imageVariantIndex: i,
+        imageVariantIndex: 0,
       });
+    } else {
+      for (let i = 0; i < input.images.length; i += 1) {
+        const imgInfo = input.images[i];
+        const imageHash = imageHashes[i];
+        const creativeResult = await createAdCreative(input.clientId, {
+          adAccountId,
+          name: `${input.campaignName} · Copy ${v + 1} · Image ${i + 1} · Creative`,
+          pageId,
+          leadFormId: metaLeadFormId,
+          headline: variant.headline,
+          primaryText: variant.primaryText,
+          description: variant.description ?? undefined,
+          imageHash,
+          linkUrl: input.linkUrl,
+          ctaType: variant.ctaType,
+        });
+        if (!creativeResult.ok || !creativeResult.data.id) {
+          return {
+            ok: false,
+            step: 'create_creative',
+            message: `Meta rejected the creative for copy ${v + 1}, image ${i + 1}.`,
+            detail: creativeResult.ok
+              ? 'No creative id returned.'
+              : creativeResult.error.message,
+            partial: {
+              metaCampaignId,
+              metaAdSetIds: launchedAdSets,
+              metaLeadFormId: metaLeadFormId ?? undefined,
+              metaCreativeIds: allCreativeIds,
+              metaAdIds: allAdIds,
+            },
+          };
+        }
+        const variantCreativeId = creativeResult.data.id;
+        allCreativeIds.push(variantCreativeId);
+        const adResult = await createAd(input.clientId, {
+          adAccountId,
+          adSetId,
+          creativeId: variantCreativeId,
+          name: `${input.campaignName} · Copy ${v + 1} · Image ${i + 1}`,
+          status: 'PAUSED',
+        });
+        if (!adResult.ok || !adResult.data.id) {
+          return {
+            ok: false,
+            step: 'create_ad',
+            message: `Meta rejected the ad create for copy ${v + 1}, image ${i + 1}.`,
+            detail: adResult.ok ? 'No ad id returned.' : adResult.error.message,
+            partial: {
+              metaCampaignId,
+              metaAdSetIds: launchedAdSets,
+              metaLeadFormId: metaLeadFormId ?? undefined,
+              metaCreativeIds: allCreativeIds,
+              metaAdIds: allAdIds,
+            },
+          };
+        }
+        allAdIds.push(adResult.data.id);
+        launchedAds.push({
+          metaAdSetId: adSetId,
+          metaAdId: adResult.data.id,
+          metaCreativeId: variantCreativeId,
+          imageHash,
+          imageInfo: imgInfo,
+          variant,
+          copyVariantIndex: v,
+          imageVariantIndex: i,
+        });
+      }
     }
   }
 
