@@ -135,6 +135,12 @@ type WizardState = {
   }>;
   /** Index of the image currently shown in the live preview. */
   selectedImageIdx: number | null;
+  /** V1.4c — ad format. 'single_image' (default) keeps the M × N
+   *  matrix: each selected image becomes its own ad inside every ad
+   *  set. 'carousel' bundles every selected image into ONE carousel
+   *  ad per ad set, with each image rendered as a swipeable card.
+   *  Carousel needs 2-10 selected images. */
+  adFormat: 'single_image' | 'carousel';
 
   // step 5
   isFirstLaunch: boolean;
@@ -343,30 +349,50 @@ export function LaunchCampaignWizard({
     });
   }
 
-  /** Append an image to the matrix. Operator uploads N images
-   *  (1-5); each becomes its own ad inside every ad set. */
-  async function handleImagePick(file: File) {
-    try {
-      const uploaded = await uploadMutation.mutateAsync({ clientId, file });
-      setState((s) => {
-        const next = [
-          ...s.images,
-          {
-            url: uploaded.url,
-            width: uploaded.width,
-            height: uploaded.height,
-            selected: true,
-          },
-        ];
-        return {
-          ...s,
-          images: next,
-          // First-upload auto-previews this image.
-          selectedImageIdx: s.selectedImageIdx ?? next.length - 1,
-        };
-      });
-    } catch {
-      // uploadMutation.error surfaces in UI
+  /** Append an image (or N images) to the matrix. The wizard's file
+   *  input is `multiple` so the operator can pick a batch in one go;
+   *  this handler walks the list sequentially so each upload's row
+   *  lands in order, and tracks the running count locally so the cap
+   *  is honoured even though setState is async. Cap is 10 (Meta's
+   *  carousel max; single-image mode warns past 5 separately). */
+  async function handleImagesPick(files: FileList | File[]) {
+    const list = Array.from(files);
+    if (list.length === 0) return;
+    // Snapshot the count at the start; bump locally per successful
+    // upload. We can't read state.images.length inside the loop because
+    // setState is async — multiple uploads in a single batch would all
+    // see the same starting count.
+    let runningCount = state.images.length;
+    for (const file of list) {
+      if (runningCount >= 10) break;
+      try {
+        const uploaded = await uploadMutation.mutateAsync({
+          clientId,
+          file,
+        });
+        setState((s) => {
+          const next = [
+            ...s.images,
+            {
+              url: uploaded.url,
+              width: uploaded.width,
+              height: uploaded.height,
+              selected: true,
+            },
+          ];
+          return {
+            ...s,
+            images: next,
+            // First-upload auto-previews this image.
+            selectedImageIdx: s.selectedImageIdx ?? next.length - 1,
+          };
+        });
+        runningCount += 1;
+      } catch {
+        // uploadMutation.error surfaces in UI; continue with the rest
+        // of the batch so a single bad file doesn't drop the others.
+        continue;
+      }
     }
   }
 
@@ -446,6 +472,7 @@ export function LaunchCampaignWizard({
       startTimeIso,
       endTimeIso,
       creative: {
+        adFormat: state.adFormat,
         images: selectedImages.map((img) => ({
           imageUrl: img.url,
           imageWidth: img.width,
@@ -564,11 +591,14 @@ export function LaunchCampaignWizard({
               onPreviewVariant={handlePreviewVariant}
               onToggleVariantSelected={handleToggleVariantSelected}
               onSetAllSelected={handleSetAllSelected}
-              onImagePick={handleImagePick}
+              onImagesPick={handleImagesPick}
               onRemoveImage={handleRemoveImage}
               onToggleImageSelected={handleToggleImageSelected}
               onPreviewImage={handlePreviewImage}
               onSetAllImagesSelected={handleSetAllImagesSelected}
+              onChangeAdFormat={(adFormat) =>
+                setState((s) => ({ ...s, adFormat }))
+              }
               setOfferText={(offerText) =>
                 setState((s) => ({
                   ...s,
@@ -1504,11 +1534,12 @@ function Step4Creative({
   onPreviewVariant,
   onToggleVariantSelected,
   onSetAllSelected,
-  onImagePick,
+  onImagesPick,
   onRemoveImage,
   onToggleImageSelected,
   onPreviewImage,
   onSetAllImagesSelected,
+  onChangeAdFormat,
   setOfferText,
 }: {
   state: WizardState;
@@ -1521,11 +1552,12 @@ function Step4Creative({
   onPreviewVariant: (idx: number) => void;
   onToggleVariantSelected: (idx: number, selected: boolean) => void;
   onSetAllSelected: (selected: boolean) => void;
-  onImagePick: (file: File) => void;
+  onImagesPick: (files: FileList | File[]) => void;
   onRemoveImage: (idx: number) => void;
   onToggleImageSelected: (idx: number, selected: boolean) => void;
   onPreviewImage: (idx: number) => void;
   onSetAllImagesSelected: (selected: boolean) => void;
+  onChangeAdFormat: (next: 'single_image' | 'carousel') => void;
   setOfferText: (v: string) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1639,21 +1671,59 @@ function Step4Creative({
               </button>
             ) : null}
           </div>
-          <p className="text-[11px] text-ink-quiet">
-            Upload 1-5 images. Each becomes an ad inside every selected
-            ad set — the matrix is{' '}
-            <strong className="font-semibold text-ink">
-              {selectedCount} copy × {selectedImageCount} image ={' '}
-              {selectedCount * selectedImageCount} ads
-            </strong>{' '}
-            launching together.
-            {selectedCount * selectedImageCount > 9 ? (
-              <span className="text-warn">
-                {' '}
-                Meta optimises best with ≤9 cells — consider trimming.
-              </span>
-            ) : null}
-          </p>
+
+          {/* V1.4c — ad-format toggle. Single-image keeps the M × N
+              matrix (each selected image becomes its own ad). Carousel
+              bundles every selected image into ONE swipeable carousel
+              ad per ad set — operator gets M ads total, each showing
+              N cards. */}
+          <AdFormatToggle
+            value={state.adFormat}
+            onChange={onChangeAdFormat}
+            disabled={state.images.length === 0}
+            selectedImageCount={selectedImageCount}
+          />
+
+          {state.adFormat === 'carousel' ? (
+            <p className="text-[11px] text-ink-quiet">
+              Upload 2-10 images. They&apos;ll launch as{' '}
+              <strong className="font-semibold text-ink">
+                {selectedCount} carousel ad
+                {selectedCount === 1 ? '' : 's'} (one per ad set, each with{' '}
+                {selectedImageCount} card{selectedImageCount === 1 ? '' : 's'})
+              </strong>
+              . The viewer swipes between cards; Meta surfaces the
+              winning card first on subsequent impressions.
+              {selectedImageCount > 0 && selectedImageCount < 2 ? (
+                <span className="text-warn">
+                  {' '}
+                  Carousel needs at least 2 selected images.
+                </span>
+              ) : null}
+              {selectedImageCount > 6 ? (
+                <span className="text-warn">
+                  {' '}
+                  Cards past ~6 see poor swipe-through — consider trimming.
+                </span>
+              ) : null}
+            </p>
+          ) : (
+            <p className="text-[11px] text-ink-quiet">
+              Upload 1-5 images. Each becomes an ad inside every selected
+              ad set — the matrix is{' '}
+              <strong className="font-semibold text-ink">
+                {selectedCount} copy × {selectedImageCount} image ={' '}
+                {selectedCount * selectedImageCount} ads
+              </strong>{' '}
+              launching together.
+              {selectedCount * selectedImageCount > 9 ? (
+                <span className="text-warn">
+                  {' '}
+                  Meta optimises best with ≤9 cells — consider trimming.
+                </span>
+              ) : null}
+            </p>
+          )}
 
           {state.images.length > 0 ? (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -1677,27 +1747,28 @@ function Step4Creative({
               variant="secondary"
               className="h-9"
               onClick={() => fileInputRef.current?.click()}
-              disabled={uploadPending || state.images.length >= 5}
+              disabled={uploadPending || state.images.length >= 10}
             >
               {uploadPending
                 ? 'Uploading…'
-                : state.images.length >= 5
-                  ? 'Max 5 images'
+                : state.images.length >= 10
+                  ? 'Max 10 images'
                   : state.images.length === 0
-                    ? '+ Upload image'
-                    : '+ Add another image'}
+                    ? '+ Upload images'
+                    : '+ Add more images'}
             </Button>
             <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-quiet">
-              JPG/PNG · 4 MB each · 1.91:1 recommended
+              JPG/PNG · 4 MB each · 1.91:1 recommended · pick multiple at once
             </span>
             <input
               ref={fileInputRef}
               type="file"
               accept="image/*"
+              multiple
               className="hidden"
               onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) onImagePick(file);
+                const files = e.target.files;
+                if (files && files.length > 0) onImagesPick(files);
                 e.target.value = '';
               }}
             />
@@ -1729,6 +1800,71 @@ function Step4Creative({
           linkHost={state.primaryDomain ?? undefined}
         />
       </div>
+    </div>
+  );
+}
+
+// V1.4c — ad-format toggle. Two side-by-side cards: single-image vs
+// carousel. The carousel card is muted when fewer than 2 images are
+// selected (Meta's hard minimum) so the operator sees why they can't
+// switch. The card-style picker matches the Step 1 objective picker.
+function AdFormatToggle({
+  value,
+  onChange,
+  disabled,
+  selectedImageCount,
+}: {
+  value: 'single_image' | 'carousel';
+  onChange: (next: 'single_image' | 'carousel') => void;
+  disabled: boolean;
+  selectedImageCount: number;
+}) {
+  const carouselBlocked = selectedImageCount < 2;
+  return (
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      {(
+        [
+          {
+            id: 'single_image',
+            title: 'Single image · A/B',
+            blurb:
+              "Each image becomes its own ad inside every ad set. Meta finds the winning copy + image combo.",
+            disabled: false,
+            blockedNote: '',
+          },
+          {
+            id: 'carousel',
+            title: 'Carousel · multi-card',
+            blurb:
+              "All N images bundle into ONE swipeable carousel ad per ad set. Viewer swipes between cards; Meta surfaces the best-performing card first.",
+            disabled: carouselBlocked,
+            blockedNote: carouselBlocked
+              ? 'Pick at least 2 images to enable carousel.'
+              : '',
+          },
+        ] as const
+      ).map((opt) => {
+        const selected = opt.id === value;
+        const cardDisabled = disabled || opt.disabled;
+        return (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => !cardDisabled && onChange(opt.id)}
+            disabled={cardDisabled}
+            data-selected={selected ? 'true' : undefined}
+            className="group flex flex-col gap-1.5 rounded-lg border border-rule bg-card px-3.5 py-2.5 text-left transition-colors hover:border-rust disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:border-rule data-[selected=true]:border-rust data-[selected=true]:bg-rust-soft"
+          >
+            <div className="text-[13px] font-semibold text-ink">{opt.title}</div>
+            <div className="text-[11px] leading-snug text-ink-soft">{opt.blurb}</div>
+            {opt.blockedNote ? (
+              <div className="font-mono text-[10px] uppercase tracking-[0.08em] text-warn">
+                {opt.blockedNote}
+              </div>
+            ) : null}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -1876,6 +2012,12 @@ function Step5Review({
   const template = templateForIndustry(state.templateSlug);
   const selectedReviewVariants = (state.variants ?? []).filter((v) => v.selected);
   const selectedReviewImages = state.images.filter((img) => img.selected);
+  // V1.4c — ad count differs by format. Single-image: M × N ads.
+  // Carousel: M ads (one per ad set, each with N cards).
+  const adCount =
+    state.adFormat === 'carousel'
+      ? selectedReviewVariants.length
+      : selectedReviewVariants.length * selectedReviewImages.length;
   const matrixSize = selectedReviewVariants.length * selectedReviewImages.length;
   const previewVariant =
     selectedReviewVariants[0] ??
@@ -1929,7 +2071,11 @@ function Step5Review({
           </div>
         </SummaryCard>
         <SummaryCard
-          label={`// MATRIX · ${selectedReviewVariants.length} COPY × ${selectedReviewImages.length} IMAGE = ${matrixSize} AD${matrixSize === 1 ? '' : 'S'}`}
+          label={
+            state.adFormat === 'carousel'
+              ? `// CAROUSEL · ${selectedReviewVariants.length} COPY × ${selectedReviewImages.length} CARDS = ${adCount} AD${adCount === 1 ? '' : 'S'}`
+              : `// MATRIX · ${selectedReviewVariants.length} COPY × ${selectedReviewImages.length} IMAGE = ${adCount} AD${adCount === 1 ? '' : 'S'}`
+          }
         >
           {matrixSize === 0 ? (
             <div className="text-[12px] text-warn">
@@ -1960,10 +2106,11 @@ function Step5Review({
               </div>
               <div className="flex flex-col gap-1.5">
                 <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-ink-quiet">
-                  Images ({selectedReviewImages.length} ad
-                  {selectedReviewImages.length === 1 ? '' : 's'} per ad set)
+                  {state.adFormat === 'carousel'
+                    ? `Cards (${selectedReviewImages.length} cards inside each carousel ad)`
+                    : `Images (${selectedReviewImages.length} ad${selectedReviewImages.length === 1 ? '' : 's'} per ad set)`}
                 </div>
-                <div className="flex gap-1.5">
+                <div className="flex flex-wrap gap-1.5">
                   {selectedReviewImages.map((img, i) => (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -1975,7 +2122,15 @@ function Step5Review({
                   ))}
                 </div>
               </div>
-              {matrixSize > 1 ? (
+              {state.adFormat === 'carousel' ? (
+                <div className="text-[11px] text-ink-quiet">
+                  Meta will A/B-test {adCount} carousel ad
+                  {adCount === 1 ? '' : 's'} (one per copy variant) and
+                  surface the winning card first on subsequent
+                  impressions. CBO at the campaign level distributes ${(state.dailyBudgetCents / 100).toFixed(0)}/day
+                  across the ad sets.
+                </div>
+              ) : matrixSize > 1 ? (
                 <div className="text-[11px] text-ink-quiet">
                   Meta will A/B-test all {matrixSize} cells across{' '}
                   {selectedReviewVariants.length} ad set
@@ -2114,6 +2269,7 @@ function freshState(): WizardState {
     selectedVariantIdx: null,
     images: [],
     selectedImageIdx: null,
+    adFormat: 'single_image',
     isFirstLaunch: false,
     goLive: true,
   };
@@ -2142,8 +2298,11 @@ function isStepValid(s: WizardState): boolean {
       //   • at least one image is selected (becomes the "ad" axis)
       //   • at least one variant is selected (becomes the "ad set" axis)
       //   • every selected variant carries headline + primaryText
+      //   • V1.4c: carousel format requires ≥ 2 selected images
+      //     (Meta's hard minimum for the carousel format)
       const selectedImages = s.images.filter((img) => img.selected);
       if (selectedImages.length === 0) return false;
+      if (s.adFormat === 'carousel' && selectedImages.length < 2) return false;
       const selectedVariants = (s.variants ?? []).filter((v) => v.selected);
       if (selectedVariants.length === 0) return false;
       return selectedVariants.every(

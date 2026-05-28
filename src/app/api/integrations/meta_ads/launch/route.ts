@@ -218,16 +218,23 @@ function parseLaunchInput(
   if (!creative || typeof creative !== 'object') {
     return { error: 'missing-creative' };
   }
-  // V1.4 matrix: images[] (1-5 entries). Each becomes its own ad
-  // inside every ad set. The launch builds an M × N matrix
-  // (variants × images).
+  // V1.4c adFormat: 'single_image' (default) keeps the M × N matrix
+  // from Session 1.4a. 'carousel' collapses the per-image axis into
+  // one multi-card carousel ad per ad set.
+  const adFormatRaw = creative.adFormat;
+  const adFormat: 'single_image' | 'carousel' =
+    adFormatRaw === 'carousel' ? 'carousel' : 'single_image';
+  // V1.4 matrix: images[] entries. Single-image caps at 5 (Meta's
+  // optimisation dilutes past that for the ad axis); carousel caps at
+  // 10 (Meta's hard max for card count).
+  const imageCap = adFormat === 'carousel' ? 10 : 5;
   const imagesRaw = Array.isArray(creative.images) ? creative.images : [];
   const images: Array<{
     imageUrl: string;
     imageWidth: number | null;
     imageHeight: number | null;
   }> = [];
-  for (let i = 0; i < imagesRaw.length && images.length < 5; i += 1) {
+  for (let i = 0; i < imagesRaw.length && images.length < imageCap; i += 1) {
     const item = imagesRaw[i];
     if (!item || typeof item !== 'object') continue;
     const o = item as Record<string, unknown>;
@@ -241,6 +248,9 @@ function parseLaunchInput(
   }
   if (images.length === 0) {
     return { error: 'missing-creative.images' };
+  }
+  if (adFormat === 'carousel' && images.length < 2) {
+    return { error: 'carousel-needs-2-images' };
   }
   // V1.3 multi-variant: the body carries `variants[]` (one creative
   // per launched variant inside the same ad set). Capped at 10 — Meta
@@ -307,6 +317,7 @@ function parseLaunchInput(
     variants,
     linkUrl,
     privacyPolicyUrl,
+    adFormat,
     isFirstLaunch: Boolean(body.isFirstLaunch),
     goLive: Boolean(body.goLive),
   };

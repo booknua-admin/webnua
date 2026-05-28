@@ -547,16 +547,20 @@ export type LaunchCampaignPayload = {
    *  so winning ads keep delivering past an arbitrary duration. */
   endTimeIso: string | null;
   creative: {
-    /** V1.4 matrix: 1-5 images. Each image becomes one ad in every
-     *  ad set. Server caps at 5. */
+    /** V1.4c — ad format. 'single_image' (default) keeps the M × N
+     *  matrix from Session 1.4a (M ad sets × N ads). 'carousel'
+     *  collapses the image axis into one carousel ad per ad set with
+     *  N image cards (Meta requires 2-10). */
+    adFormat?: 'single_image' | 'carousel';
+    /** V1.4 matrix: images. Single-image caps at 5; carousel caps at
+     *  10 (Meta's hard max for card count). Carousel requires ≥ 2. */
     images: Array<{
       imageUrl: string;
       imageWidth?: number | null;
       imageHeight?: number | null;
     }>;
-    /** V1.4 matrix: 1-5 copy variants. Each variant becomes its own
-     *  ad set (CBO at the campaign level distributes spend). Server
-     *  caps at 5. */
+    /** V1.4 matrix: 1-10 copy variants. Each variant becomes its own
+     *  ad set (CBO at the campaign level distributes spend). */
     variants: Array<{
       headline: string;
       primaryText: string;
