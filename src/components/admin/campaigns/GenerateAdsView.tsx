@@ -19,13 +19,13 @@
 //   • picker    — three AnglePickerCards + a summary band at the bottom.
 //                 Auto-selects all three; operator unticks any they don't
 //                 want. CTA reads "Continue to review →".
-//   • review    — editable launch settings (daily ad spend, campaign
-//                 name, country) seeded from the industry template
-//                 defaults. The Launch button lives HERE — Meta is only
-//                 called after the operator confirms the spend. Run-
-//                 until-stopped, in-Meta lead-form objective, and the
-//                 age range stay at template defaults (operators who
-//                 need finer control use the classic builder).
+//   • tree      — pre-launch visual tree (Session 2.3). Campaign root
+//                 card (editable name / daily ad spend / country) over
+//                 N ad-set nodes, each expandable for per-variant edits
+//                 (headline / primaryText / description / CTA) + a
+//                 selection checkbox to drop variants from the launch.
+//                 The Launch button lives HERE — Meta is only called
+//                 after the operator confirms the tree.
 //   • launching — rust spinner + "Setting up your campaign on Meta…" while
 //                 the orchestrator runs (8-step Meta chain — can take
 //                 30-60s).
@@ -49,6 +49,12 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { AnglePickerCards } from './AnglePickerCards';
 import { BriefCompletionChat } from './BriefCompletionChat';
+import {
+  CampaignTree,
+  type AdSetDraft,
+  type CtaType,
+  type LaunchSettings,
+} from './CampaignTree';
 import { MetaAdPreview } from './MetaAdPreview';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/lib/auth/user-stub';
@@ -92,42 +98,18 @@ type Phase =
   | { kind: 'chat'; missing: readonly BriefField[] }
   | { kind: 'generating' }
   | { kind: 'picker'; angles: GeneratedAngle[] }
-  | { kind: 'review'; angles: GeneratedAngle[]; settings: LaunchSettings }
-  | { kind: 'launching'; angles: GeneratedAngle[]; settings: LaunchSettings };
+  | { kind: 'tree'; angles: GeneratedAngle[]; settings: LaunchSettings; adSets: AdSetDraft[] }
+  | {
+      kind: 'launching';
+      angles: GeneratedAngle[];
+      settings: LaunchSettings;
+      adSets: AdSetDraft[];
+    };
 
 type GenerateError = {
   message: string;
   detail?: string;
 };
-
-/** Editable knobs the operator confirms on the review screen. The other
- *  launch-payload fields (lead-form objective, run-until-stopped, age
- *  range, in-Meta lead form) stay at template defaults — operators who
- *  need finer control pick "Open classic builder →". */
-type LaunchSettings = {
-  campaignName: string;
-  /** Daily budget in MINOR units (cents / pence). Meta's
-   *  `/{ad_account}/campaigns` endpoint takes this in minor units; we
-   *  edit in major units in the form + convert on submit. */
-  dailyBudgetCents: number;
-  /** ISO country code Meta uses for `geo_locations.countries[]`. */
-  country: string;
-};
-
-/** Countries Webnua actively services. Same set the classic wizard
- *  exposes (LaunchCampaignWizard.tsx · COUNTRY_OPTIONS). */
-const COUNTRY_OPTIONS: ReadonlyArray<{ code: string; label: string; currency: string }> = [
-  { code: 'AU', label: 'Australia', currency: 'AUD' },
-  { code: 'IE', label: 'Ireland', currency: 'EUR' },
-  { code: 'GB', label: 'United Kingdom', currency: 'GBP' },
-  { code: 'US', label: 'United States', currency: 'USD' },
-  { code: 'NZ', label: 'New Zealand', currency: 'NZD' },
-  { code: 'CA', label: 'Canada', currency: 'CAD' },
-];
-
-function currencyForCountry(country: string): string {
-  return COUNTRY_OPTIONS.find((c) => c.code === country)?.currency ?? '';
-}
 
 // --- main component --------------------------------------------------------
 
@@ -229,11 +211,13 @@ export function GenerateAdsView({
     setPhase({ kind: 'idle' });
   }
 
-  /** Picker → review. Seed editable launch settings from the industry
-   *  template defaults; the operator can edit + confirm before Meta is
-   *  called. Country is heuristic-seeded from the customer's
-   *  service-area string. */
-  function handleContinueToReview() {
+  /** Picker → tree. Seed launch settings from the industry template
+   *  defaults + build one AdSetDraft per PICKED angle (the operator's
+   *  selection on the picker is honoured — unselected angles never
+   *  enter the tree at all; re-tick on the picker to bring them in).
+   *  Country is heuristic-seeded from the customer's service-area
+   *  string. */
+  function handleContinueToTree() {
     if (phase.kind !== 'picker') return;
     if (!brief.data) return;
     const template = templateForIndustry(brief.data.industry);
@@ -242,36 +226,87 @@ export function GenerateAdsView({
       dailyBudgetCents: template.defaultDailyBudgetCents,
       country: inferCountryFromServiceArea(brief.data.serviceArea),
     };
+    const pickedAngles = phase.angles.filter((a) => selectedAngles.has(a.id));
+    const adSets: AdSetDraft[] = pickedAngles.map((a) => ({
+      angleId: a.id,
+      label: a.label,
+      rationale: a.rationale,
+      variants: a.variants.map((v, idx) => ({
+        id: `${a.id}-${idx}`,
+        headline: v.headline,
+        primaryText: v.primaryText,
+        description: v.description,
+        ctaType: v.ctaType as CtaType,
+        selected: true,
+      })),
+    }));
     setLaunchError(null);
-    setPhase({ kind: 'review', angles: phase.angles, settings });
+    setPhase({ kind: 'tree', angles: phase.angles, settings, adSets });
   }
 
   function handleBackToPicker() {
-    if (phase.kind !== 'review') return;
+    if (phase.kind !== 'tree') return;
     setPhase({ kind: 'picker', angles: phase.angles });
   }
 
   function handleSettingsChange(next: LaunchSettings) {
-    if (phase.kind !== 'review') return;
-    setPhase({ kind: 'review', angles: phase.angles, settings: next });
+    if (phase.kind !== 'tree') return;
+    setPhase({
+      kind: 'tree',
+      angles: phase.angles,
+      settings: next,
+      adSets: phase.adSets,
+    });
   }
+
+  /** Replace one ad-set draft (variant edit / selection toggle). The
+   *  CampaignTree component emits the whole new AdSetDraft; we splice
+   *  by angleId so a future reorder doesn't break the mapping. */
+  function handleAdSetChange(next: AdSetDraft) {
+    if (phase.kind !== 'tree') return;
+    setPhase({
+      kind: 'tree',
+      angles: phase.angles,
+      settings: phase.settings,
+      adSets: phase.adSets.map((a) => (a.angleId === next.angleId ? next : a)),
+    });
+  }
+
 
   // --- Launch handler ------------------------------------------------------
 
   async function handleLaunch() {
-    if (phase.kind !== 'review') return;
+    if (phase.kind !== 'tree') return;
     if (!brief.data) return;
     if (!adAccount.data) return;
     if (!user) return;
-
-    const pickedAngles = phase.angles.filter((a) => selectedAngles.has(a.id));
-    if (pickedAngles.length === 0) return;
     if (!brief.data.primaryDomain) return;
 
     const settings = phase.settings;
+    const adSets = phase.adSets;
+
+    // Flatten every SELECTED variant across every ad-set draft. The
+    // operator's per-variant unticks (CampaignTree) drop variants
+    // here; an ad set with zero selected variants contributes nothing.
+    // Cap at 5 total — Meta's learning algorithm dilutes past that;
+    // the orchestrator caps at 10 for safety.
+    const allVariants = adSets
+      .flatMap((a) =>
+        a.variants
+          .filter((v) => v.selected)
+          .map((v) => ({
+            headline: v.headline,
+            primaryText: v.primaryText,
+            description:
+              v.description && v.description.length > 0 ? v.description : null,
+            ctaType: v.ctaType,
+          })),
+      )
+      .slice(0, 5);
+    if (allVariants.length === 0) return;
 
     setLaunchError(null);
-    setPhase({ kind: 'launching', angles: phase.angles, settings });
+    setPhase({ kind: 'launching', angles: phase.angles, settings, adSets });
 
     const template = templateForIndustry(brief.data.industry);
     const industry = resolveIndustryTemplate(brief.data.industry);
@@ -283,22 +318,6 @@ export function GenerateAdsView({
     // the launch payload type accepts null and Meta infers from the
     // image itself.
     const imageUrls = [stockImages.hero, ...stockImages.gallery.slice(0, 2)];
-
-    // Each angle contributes ALL of its variants. Per Session 1.4a's
-    // matrix architecture this means each variant becomes its own ad
-    // set (CBO at the campaign level distributes spend) — angle is the
-    // copy axis. Cap at 5 variants total (Meta's optimisation algorithm
-    // dilutes past that; the orchestrator caps at 10 for safety).
-    const allVariants = pickedAngles
-      .flatMap((a) => a.variants)
-      .slice(0, 5)
-      .map((v) => ({
-        headline: v.headline,
-        primaryText: v.primaryText,
-        description:
-          v.description && v.description.length > 0 ? v.description : null,
-        ctaType: v.ctaType,
-      }));
 
     const linkUrl = `https://${brief.data.primaryDomain}`;
     const privacyPolicyUrl = `https://${brief.data.primaryDomain}/privacy`;
@@ -352,9 +371,9 @@ export function GenerateAdsView({
             ? error.message
             : 'Launch failed — Meta rejected the campaign or the network blipped.',
       });
-      // Surface the error on the review screen so the operator can
-      // adjust budget / name and retry without re-picking angles.
-      setPhase({ kind: 'review', angles: phase.angles, settings });
+      // Surface the error on the tree screen so the operator can
+      // adjust budget / variants and retry without re-picking angles.
+      setPhase({ kind: 'tree', angles: phase.angles, settings, adSets });
     }
   }
 
@@ -414,7 +433,7 @@ export function GenerateAdsView({
         <PickerState
           angles={phase.angles}
           selected={selectedAngles}
-          onContinue={handleContinueToReview}
+          onContinue={handleContinueToTree}
           onToggle={handleToggleAngle}
           onRegenerate={handleRegenerate}
           onCancel={onCancel}
@@ -423,18 +442,26 @@ export function GenerateAdsView({
         />
       )}
 
-      {phase.kind === 'review' && (
-        <ReviewState
-          angles={phase.angles}
-          selectedAngles={selectedAngles}
+      {phase.kind === 'tree' && (
+        <CampaignTree
           settings={phase.settings}
+          adSets={phase.adSets}
+          brief={
+            brief.data
+              ? {
+                  businessName: brief.data.businessName,
+                  industry: brief.data.industry,
+                  primaryDomain: brief.data.primaryDomain,
+                }
+              : null
+          }
           onSettingsChange={handleSettingsChange}
+          onAdSetChange={handleAdSetChange}
           onBack={handleBackToPicker}
           onCancel={onCancel}
           onLaunch={handleLaunch}
           launchPending={launchMutation.isPending}
           launchError={launchError}
-          brief={brief.data ?? null}
           classicBuilderHref={classicBuilderHref}
         />
       )}
@@ -724,348 +751,6 @@ function PickerSummaryBand({
   );
 }
 
-// --- review phase -----------------------------------------------------------
-
-function ReviewState({
-  angles,
-  selectedAngles,
-  settings,
-  onSettingsChange,
-  onBack,
-  onCancel,
-  onLaunch,
-  launchPending,
-  launchError,
-  brief,
-  classicBuilderHref,
-}: {
-  angles: GeneratedAngle[];
-  selectedAngles: Set<string>;
-  settings: LaunchSettings;
-  onSettingsChange: (next: LaunchSettings) => void;
-  onBack: () => void;
-  onCancel: () => void;
-  onLaunch: () => void;
-  launchPending: boolean;
-  launchError: GenerateError | null;
-  brief: BriefContext | null;
-  classicBuilderHref: string;
-}) {
-  const pickedAngles = angles.filter((a) => selectedAngles.has(a.id));
-  const totalAds = pickedAngles.reduce((sum, a) => sum + a.variants.length, 0);
-  const currency = currencyForCountry(settings.country);
-  const previewVariant = pickedAngles[0]?.variants[0] ?? null;
-  const previewAngle = pickedAngles[0] ?? null;
-  const industry = brief ? resolveIndustryTemplate(brief.industry) : null;
-  const previewImage = industry?.stockImages.hero ?? null;
-
-  const dailyBudgetMajor = settings.dailyBudgetCents / 100;
-  const budgetTooLow = settings.dailyBudgetCents < 500; // 5.00 floor
-  const launchDisabled = launchPending || budgetTooLow;
-
-  // Cost-of-test framing — pickedAngles × first 14 days. Helps the
-  // operator see what they're committing to before clicking Launch.
-  // Meta charges per-impression but the budget cap is a hard daily limit
-  // so the "× 14" upper bound is honest.
-  const fourteenDayCap = Math.round(dailyBudgetMajor * 14);
-
-  return (
-    <section className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-[20px] font-semibold tracking-tight text-ink">
-          Review &amp; launch
-        </h2>
-        <p className="text-[13px] leading-snug text-ink-soft">
-          One last check. Confirm your daily ad spend below — Meta will start
-          spending the moment you click Launch.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <ReviewSummaryCard
-          pickedAngles={pickedAngles}
-          totalAds={totalAds}
-        />
-
-        <ReviewSettingsCard
-          settings={settings}
-          onChange={onSettingsChange}
-          currency={currency}
-          budgetTooLow={budgetTooLow}
-          fourteenDayCap={fourteenDayCap}
-        />
-      </div>
-
-      {previewVariant && previewImage ? (
-        <div className="flex flex-col gap-3">
-          <div className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
-            {'// WHAT MOST PEOPLE WILL SEE · '}
-            <span className="text-rust">{previewAngle?.label}</span>
-          </div>
-          <div className="max-w-[420px]">
-            <MetaAdPreview
-              pageName={brief?.businessName ?? 'Your business'}
-              pageLogoUrl={null}
-              primaryText={previewVariant.primaryText}
-              headline={previewVariant.headline}
-              description={previewVariant.description}
-              ctaType={previewVariant.ctaType}
-              imageUrl={previewImage}
-              linkHost={brief?.primaryDomain ?? undefined}
-            />
-          </div>
-          <p className="text-[12px] leading-snug text-ink-quiet">
-            Meta auto-rotates between every variant for the picked angles. This
-            is one example of what your audience will see first.
-          </p>
-        </div>
-      ) : null}
-
-      {launchError ? <ErrorPanel error={launchError} /> : null}
-
-      <ReviewActionBand
-        currency={currency}
-        dailyBudgetMajor={dailyBudgetMajor}
-        launchDisabled={launchDisabled}
-        launchPending={launchPending}
-        onBack={onBack}
-        onCancel={onCancel}
-        onLaunch={onLaunch}
-        classicBuilderHref={classicBuilderHref}
-      />
-    </section>
-  );
-}
-
-function ReviewSummaryCard({
-  pickedAngles,
-  totalAds,
-}: {
-  pickedAngles: GeneratedAngle[];
-  totalAds: number;
-}) {
-  return (
-    <div className="rounded-xl border border-rule bg-card px-5 py-5">
-      <div className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust">
-        {'// WHAT YOU\'RE LAUNCHING'}
-      </div>
-      <div className="mb-3 flex items-baseline gap-2">
-        <span className="text-[28px] font-semibold tracking-tight text-ink">
-          {totalAds}
-        </span>
-        <span className="text-[13px] text-ink-soft">
-          ad{totalAds === 1 ? '' : 's'} across{' '}
-          <strong className="font-semibold text-ink">
-            {pickedAngles.length} angle{pickedAngles.length === 1 ? '' : 's'}
-          </strong>
-        </span>
-      </div>
-      <ul className="flex flex-col gap-1.5">
-        {pickedAngles.map((a) => (
-          <li key={a.id} className="flex items-center gap-2 text-[13px]">
-            <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust">
-              {a.label}
-            </span>
-            <span className="text-ink-quiet">·</span>
-            <span className="text-ink">
-              {a.variants.length} variant{a.variants.length === 1 ? '' : 's'}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function ReviewSettingsCard({
-  settings,
-  onChange,
-  currency,
-  budgetTooLow,
-  fourteenDayCap,
-}: {
-  settings: LaunchSettings;
-  onChange: (next: LaunchSettings) => void;
-  currency: string;
-  budgetTooLow: boolean;
-  fourteenDayCap: number;
-}) {
-  const dailyBudgetMajor = settings.dailyBudgetCents / 100;
-
-  function handleBudgetChange(major: number) {
-    if (!Number.isFinite(major)) return;
-    const cents = Math.max(0, Math.round(major * 100));
-    onChange({ ...settings, dailyBudgetCents: cents });
-  }
-
-  return (
-    <div className="rounded-xl border border-rule bg-card px-5 py-5">
-      <div className="mb-3 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust">
-        {'// EDIT BEFORE LAUNCH'}
-      </div>
-
-      <div className="flex flex-col gap-4">
-        <FieldRow label="Daily ad spend" sub={`Meta caps each day at this amount${currency ? ` (${currency})` : ''}.`}>
-          <div className="flex items-stretch overflow-hidden rounded-md border border-rule bg-paper/40 focus-within:border-rust focus-within:ring-1 focus-within:ring-rust">
-            <span className="flex items-center justify-center bg-paper-2 px-3 font-mono text-[12px] font-semibold text-ink-quiet">
-              {currency || '$'}
-            </span>
-            <input
-              type="number"
-              min="0"
-              step="1"
-              value={Number.isFinite(dailyBudgetMajor) ? dailyBudgetMajor : ''}
-              onChange={(e) => handleBudgetChange(Number(e.target.value))}
-              className="w-full bg-transparent px-3 py-2 text-[14px] text-ink outline-none placeholder:text-ink-quiet"
-              aria-label="Daily ad spend"
-            />
-            <span className="flex items-center bg-paper-2 px-3 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
-              / day
-            </span>
-          </div>
-          {budgetTooLow ? (
-            <p className="mt-1 text-[12px] leading-snug text-warn">
-              Meta needs at least {currency || '$'}5/day to deliver any
-              meaningful number of impressions.
-            </p>
-          ) : (
-            <p className="mt-1 text-[12px] leading-snug text-ink-quiet">
-              First 14 days cap at roughly{' '}
-              <strong className="font-semibold text-ink">
-                {currency || '$'}
-                {fourteenDayCap.toLocaleString()}
-              </strong>
-              .
-            </p>
-          )}
-        </FieldRow>
-
-        <FieldRow label="Country" sub="Drives Meta's geo targeting + your billing currency.">
-          <select
-            value={settings.country}
-            onChange={(e) => onChange({ ...settings, country: e.target.value })}
-            className="w-full rounded-md border border-rule bg-paper/40 px-3 py-2 text-[14px] text-ink outline-none focus:border-rust focus:ring-1 focus:ring-rust"
-            aria-label="Country"
-          >
-            {COUNTRY_OPTIONS.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.label} ({c.currency})
-              </option>
-            ))}
-          </select>
-        </FieldRow>
-
-        <FieldRow label="Campaign name" sub="What you'll see in Meta Ads Manager.">
-          <input
-            type="text"
-            value={settings.campaignName}
-            onChange={(e) => onChange({ ...settings, campaignName: e.target.value })}
-            className="w-full rounded-md border border-rule bg-paper/40 px-3 py-2 text-[14px] text-ink outline-none focus:border-rust focus:ring-1 focus:ring-rust"
-            aria-label="Campaign name"
-          />
-        </FieldRow>
-      </div>
-
-      <p className="mt-4 border-t border-paper-2 pt-3 text-[11px] leading-snug text-ink-quiet">
-        Other settings (in-Meta lead form, run-until-stopped, age range,
-        targeting) use Webnua defaults. Need more control? Use the{' '}
-        <strong className="font-semibold text-ink">classic builder</strong>{' '}
-        link below.
-      </p>
-    </div>
-  );
-}
-
-function FieldRow({
-  label,
-  sub,
-  children,
-}: {
-  label: string;
-  sub?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label className="flex flex-col gap-0.5">
-        <span className="text-[13px] font-semibold text-ink">{label}</span>
-        {sub ? (
-          <span className="text-[11px] leading-snug text-ink-quiet">{sub}</span>
-        ) : null}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-function ReviewActionBand({
-  currency,
-  dailyBudgetMajor,
-  launchDisabled,
-  launchPending,
-  onBack,
-  onCancel,
-  onLaunch,
-  classicBuilderHref,
-}: {
-  currency: string;
-  dailyBudgetMajor: number;
-  launchDisabled: boolean;
-  launchPending: boolean;
-  onBack: () => void;
-  onCancel: () => void;
-  onLaunch: () => void;
-  classicBuilderHref: string;
-}) {
-  return (
-    <div className="sticky bottom-0 z-10 flex flex-col gap-3 rounded-2xl border border-rule bg-ink px-5 py-4 text-paper shadow-card md:flex-row md:items-center md:gap-5 md:px-6 md:py-5">
-      <div className="flex flex-col gap-1">
-        <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust-light">
-          {'// CONFIRM SPEND TO LAUNCH'}
-        </span>
-        <span className="text-[15px] font-medium leading-snug">
-          {currency || '$'}
-          {Number.isFinite(dailyBudgetMajor) ? dailyBudgetMajor.toLocaleString() : '0'}
-          <span className="text-paper/70"> per day · runs until you stop it</span>
-        </span>
-      </div>
-      <div className="flex flex-wrap items-center gap-2 md:ml-auto">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onBack}
-          disabled={launchPending}
-          className="text-paper hover:bg-paper/10 hover:text-paper"
-        >
-          ← Back to angles
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onCancel}
-          disabled={launchPending}
-          className="text-paper hover:bg-paper/10 hover:text-paper"
-        >
-          Cancel
-        </Button>
-        <Button
-          type="button"
-          onClick={onLaunch}
-          disabled={launchDisabled}
-          className="h-11 px-6 text-[14px] font-semibold"
-        >
-          {launchPending ? 'Launching…' : 'Launch on Meta →'}
-        </Button>
-        <Link
-          href={classicBuilderHref}
-          className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-paper/70 underline-offset-4 hover:text-paper hover:underline"
-        >
-          Classic builder →
-        </Link>
-      </div>
-    </div>
-  );
-}
 
 function SplashState({ label, sub }: { label: string; sub: string }) {
   return (
