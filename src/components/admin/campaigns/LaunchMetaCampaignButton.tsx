@@ -1,29 +1,28 @@
 'use client';
 
 // =============================================================================
-// LaunchMetaCampaignButton — operator trigger that hands off to Meta Ads
-// Manager for the connected ad account.
+// LaunchMetaCampaignButton — operator-only campaign actions strip.
 //
-// Phase 7 Meta Ads · V1 model: Webnua doesn't build campaigns in-app. The
-// customer's OAuth grant gives Webnua business-manager access to their ad
-// account, and the operator manages campaigns directly in Meta's own UI.
-// This button is the entry point — it opens Ads Manager scoped to the
-// customer's ad account in a new tab.
+// Phase 7.5 Session 1 rewrite. Was previously a deep-link to Ads Manager
+// only (V1 model: build campaigns in Meta's UI). Now hosts THREE actions:
 //
-// States:
-//   • Agency mode (no client picked)   → disabled, "Pick a client".
-//   • Sub-account + no ad account      → disabled, "Wire Meta first".
-//   • Sub-account + ad account wired   → opens Ads Manager + a sibling
-//     "Sync campaigns" button refreshes the in-app roster from Meta.
+//   • + New campaign (primary)   — opens LaunchCampaignWizard (the
+//                                  in-app Meta lead-form campaign builder)
+//   • ↻ Sync campaigns           — fires the existing meta_sync_campaigns
+//                                  ingest job for the active client
+//   • Open Meta Ads Manager ↗   — keeps the deep-link as the secondary
+//                                  "advanced" path for campaigns the
+//                                  operator wants to manage outside
+//                                  Webnua's templated flow
 //
-// Campaigns built in Meta Ads Manager flow into Webnua via the
-// `meta_sync_campaigns` ingest job (auto-fires after a fresh ad-account
-// pick, hourly by cron thereafter). The "Sync campaigns" button here
-// re-runs that job immediately for the active client.
+// Disabled states:
+//   • Agency mode (no client picked)   → "Pick a client" tooltip
+//   • Sub-account + no ad account      → "Wire Meta first" tooltip
 // =============================================================================
 
 import { useState } from 'react';
 
+import { LaunchCampaignWizard } from '@/components/admin/campaigns/LaunchCampaignWizard';
 import { Button } from '@/components/ui/button';
 import { useClientId } from '@/lib/clients/queries';
 import {
@@ -32,12 +31,6 @@ import {
 } from '@/lib/integrations/meta-ads/use-meta-ads';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 
-/** Build the Ads Manager deep-link for an ad account. `meta_ad_account_id`
- *  is stored with the `act_` prefix (Meta's canonical form on the API);
- *  the `?act=` URL param wants the bare numeric id. business.facebook.com
- *  scopes the session to the customer's Business Manager when a
- *  `meta_business_id` is available — falls back to a non-scoped URL
- *  otherwise. */
 function adsManagerUrl(
   adAccountId: string,
   businessId: string | null | undefined,
@@ -52,6 +45,7 @@ export function LaunchMetaCampaignButton() {
   const { activeClientId } = useWorkspace();
   const { data: clientId } = useClientId(activeClientId);
   const adAccount = useClientMetaAdAccount(clientId ?? null);
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   if (!activeClientId) {
     return (
@@ -62,13 +56,13 @@ export function LaunchMetaCampaignButton() {
         disabled
         title="Pick a client from the sidebar to manage their Meta campaigns"
       >
-        Open Meta Ads Manager →
+        + New campaign
       </Button>
     );
   }
 
   const row = adAccount.data ?? null;
-  if (!row) {
+  if (!row || !clientId) {
     return (
       <Button
         type="button"
@@ -77,7 +71,7 @@ export function LaunchMetaCampaignButton() {
         disabled
         title="Wire Meta + pick an ad account on /settings/integrations first"
       >
-        Open Meta Ads Manager →
+        + New campaign
       </Button>
     );
   }
@@ -85,20 +79,34 @@ export function LaunchMetaCampaignButton() {
   const href = adsManagerUrl(row.meta_ad_account_id, row.meta_business_id);
   return (
     <div className="flex items-center gap-2">
-      <SyncCampaignsButton clientId={clientId!} />
-      <Button asChild type="button" className="h-9">
-        <a href={href} target="_blank" rel="noopener noreferrer">
-          Open Meta Ads Manager →
+      <Button
+        type="button"
+        className="h-9"
+        onClick={() => setWizardOpen(true)}
+      >
+        + New campaign
+      </Button>
+      <SyncCampaignsButton clientId={clientId} />
+      <Button asChild type="button" variant="outline" className="h-9">
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Manage existing campaigns directly in Meta Ads Manager"
+        >
+          Ads Manager ↗
         </a>
       </Button>
+
+      <LaunchCampaignWizard
+        open={wizardOpen}
+        onOpenChange={setWizardOpen}
+        clientId={clientId}
+      />
     </div>
   );
 }
 
-/** "Sync campaigns" button — fires `meta_sync_campaigns` for the active
- *  client. Settles into a "Queued" confirmation for a few seconds so the
- *  operator sees something happened (the actual roster refresh happens
- *  on the next render via the invalidation in `useSyncMetaAccountCampaigns`). */
 function SyncCampaignsButton({ clientId }: { clientId: string }) {
   const sync = useSyncMetaAccountCampaigns();
   const [justQueued, setJustQueued] = useState(false);
@@ -109,8 +117,7 @@ function SyncCampaignsButton({ clientId }: { clientId: string }) {
       setJustQueued(true);
       window.setTimeout(() => setJustQueued(false), 3000);
     } catch {
-      // The mutation already exposes `sync.error` for the failure
-      // message; the button just shows the catch-all state.
+      // sync.error is exposed
     }
   }
   return (
@@ -122,7 +129,7 @@ function SyncCampaignsButton({ clientId }: { clientId: string }) {
       onClick={handleClick}
       title="Pull the latest campaigns from Meta into /campaigns"
     >
-      {sync.isPending ? 'Syncing…' : justQueued ? 'Queued ✓' : '↻ Sync campaigns'}
+      {sync.isPending ? 'Syncing…' : justQueued ? 'Queued ✓' : '↻ Sync'}
     </Button>
   );
 }

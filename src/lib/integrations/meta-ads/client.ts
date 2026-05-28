@@ -422,6 +422,82 @@ export async function createAd(
   );
 }
 
+// --- image upload (Phase 7.5 launch wizard) ---------------------------------
+//
+// Meta's /act_{id}/adimages endpoint accepts EITHER raw bytes or a public
+// URL Meta's servers fetch. We pass the URL — the operator-uploaded image
+// already lives in Supabase Storage (uploadAdImage browser helper writes
+// it there, see upload-ad-image.ts), so Meta just pulls from there. The
+// returned `image_hash` is what createAdCreative needs.
+//
+// Meta's response shape: `{ images: { '<url-or-name>': { hash, url } } }`
+// — the key is the URL we passed (or a name we provided). We extract the
+// single hash and return it.
+
+export type UploadImageResult = { imageHash: string };
+
+/** Upload an image to a Meta ad account by URL. Returns the resulting
+ *  image_hash (used as creative.link_data.image_hash on createAdCreative).
+ *  Meta dedupes hashes within an ad account — uploading the same URL
+ *  twice returns the same hash, so this is idempotent. */
+export async function uploadImageToMeta(
+  clientId: string,
+  adAccountId: string,
+  imageUrl: string,
+): Promise<IntegrationResult<UploadImageResult>> {
+  return callWithToken<UploadImageResult>(
+    clientId,
+    'meta_ads',
+    async (accessToken) => {
+      const result = await callExternal<{
+        images?: Record<string, { hash?: string; url?: string }>;
+      }>({
+        provider: 'meta_ads',
+        operation: 'upload_ad_image',
+        url: `${GRAPH}/${adAccountId}/adimages`,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        rawBody: form({ access_token: accessToken, url: imageUrl }),
+        clientId,
+      });
+      if (!result.ok) return result;
+      // Meta's response keys the images map by the URL we sent. Just
+      // grab the first entry's hash — there's only ever one.
+      const images = result.data.images ?? {};
+      const firstKey = Object.keys(images)[0];
+      const hash = firstKey ? images[firstKey]?.hash : undefined;
+      if (!hash) {
+        return {
+          ok: false,
+          error: {
+            class: 'non_retryable',
+            message: 'Meta returned no image_hash on adimages response.',
+            provider: 'meta_ads',
+            operation: 'upload_ad_image',
+            status: result.status,
+          },
+        };
+      }
+      return { ok: true, data: { imageHash: hash }, status: result.status };
+    },
+  );
+}
+
+/** Resolve the Page Access Token for a Page the connected user manages.
+ *  Public wrapper around the internal fetchPageAccessToken helper — the
+ *  launch orchestrator needs this for createLeadForm (Page-level CRUD
+ *  requires a Page token, not the user token). */
+export async function getPageAccessToken(
+  clientId: string,
+  pageId: string,
+): Promise<IntegrationResult<string>> {
+  return callWithToken<string>(
+    clientId,
+    'meta_ads',
+    async (accessToken) => fetchPageAccessToken(clientId, pageId, accessToken),
+  );
+}
+
 // --- status flips ------------------------------------------------------------
 
 async function setObjectStatus(
@@ -640,6 +716,12 @@ export function pauseAd(clientId: string, metaAdId: string) {
 }
 export function activateAd(clientId: string, metaAdId: string) {
   return setObjectStatus(clientId, metaAdId, 'ACTIVE', 'activate_ad');
+}
+export function pauseAdSet(clientId: string, metaAdSetId: string) {
+  return setObjectStatus(clientId, metaAdSetId, 'PAUSED', 'pause_ad_set');
+}
+export function activateAdSet(clientId: string, metaAdSetId: string) {
+  return setObjectStatus(clientId, metaAdSetId, 'ACTIVE', 'activate_ad_set');
 }
 
 // --- read ops ----------------------------------------------------------------

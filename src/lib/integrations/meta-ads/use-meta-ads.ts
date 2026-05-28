@@ -375,6 +375,100 @@ export function useSyncMetaAccountCampaigns() {
   });
 }
 
+// --- Phase 7.5 launch wizard -------------------------------------------------
+
+/** Generate N ad creative variants from the operator's offer input via
+ *  Sonnet. The wizard's step 4 calls this on "✦ Generate variants". */
+export function useDraftMetaAdVariants() {
+  return useMutation({
+    mutationFn: async (input: {
+      clientId: string;
+      offer: string;
+      templateSlug: string;
+      businessName: string;
+      serviceArea: string;
+      count?: number;
+    }) => {
+      const { draftMetaAdVariants } = await import('./creative-draft');
+      return draftMetaAdVariants(input);
+    },
+  });
+}
+
+/** Browser-side upload of the operator's ad image to Supabase Storage.
+ *  Returns the public URL + dimensions; the wizard then passes the URL
+ *  to the launch route, which posts it to Meta's /adimages endpoint
+ *  server-side. */
+export function useUploadAdImage() {
+  return useMutation({
+    mutationFn: async (input: { clientId: string; file: File }) => {
+      const { uploadAdImage } = await import('./upload-ad-image');
+      const result = await uploadAdImage(input.clientId, input.file);
+      if (!result.ok) throw result.error;
+      return result.data;
+    },
+  });
+}
+
+/** Launch a Meta lead-form campaign. POSTs the wizard's full payload
+ *  through to the launch route, which drives the orchestrator. */
+export type LaunchCampaignPayload = {
+  clientId: string;
+  templateSlug: string;
+  campaignName: string;
+  targeting: {
+    geoCenter?: { lat: number; lng: number } | null;
+    radiusKm?: number | null;
+    ageMin: number;
+    ageMax: number;
+    interestTokens: string[];
+    countries: string[];
+  };
+  dailyBudgetCents: number;
+  startTimeIso: string;
+  endTimeIso: string;
+  creative: {
+    imageUrl: string;
+    imageWidth?: number | null;
+    imageHeight?: number | null;
+    headline: string;
+    primaryText: string;
+    description?: string | null;
+    ctaType: string;
+    linkUrl: string;
+    privacyPolicyUrl: string;
+  };
+  isFirstLaunch: boolean;
+  goLive: boolean;
+};
+
+export type LaunchCampaignResult = {
+  ok: true;
+  campaignId: string;
+  metaCampaignId: string;
+  metaCampaignDbId: string;
+  paused: boolean;
+};
+
+export function useLaunchMetaCampaign() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: LaunchCampaignPayload): Promise<LaunchCampaignResult> => {
+      const response = (await postJson(
+        '/api/integrations/meta_ads/launch',
+        payload,
+      )) as unknown as LaunchCampaignResult;
+      return response;
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: campaignsKey(vars.clientId) });
+      qc.invalidateQueries({ queryKey: ['campaigns', 'admin'] });
+      qc.invalidateQueries({ queryKey: ['campaigns', 'client'] });
+      qc.invalidateQueries({ queryKey: ['campaigns', 'sub-account'] });
+    },
+  });
+}
+
 /** Manual on-demand sync — enqueues the same jobs the cron does. */
 export function useSyncMetaCampaign() {
   const qc = useQueryClient();
