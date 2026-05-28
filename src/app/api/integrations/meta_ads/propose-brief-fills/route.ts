@@ -44,9 +44,14 @@ import { getServiceClient } from '@/lib/supabase/server';
 import { INDUSTRY_PRIMARY_COLORS } from '@/lib/onboarding/industry-colors';
 import { mapIndustry } from '@/lib/website/industry-templates';
 
-export const maxDuration = 60;
+// Haiku 4.5 settles in ~1s; 15s ceiling covers network blips.
+export const maxDuration = 15;
 
-const MODEL = 'claude-sonnet-4-6';
+// Model: Haiku 4.5 — short structured output (4 strings + 4 rationales),
+// no nuance needed. ~1s vs Sonnet's ~10s with thinking. Falls back to
+// the deterministic fallbackProposal if Haiku returns blank fields,
+// which is the same shape Sonnet's error path already used.
+const MODEL = 'claude-haiku-4-5-20251001';
 
 type BriefField = 'offer' | 'audience_line' | 'services' | 'accent_color';
 
@@ -406,10 +411,11 @@ ${missingBlock}
 
 Return the JSON-only shape from the system prompt. Order proposals in the same order as the missing list.`;
 
+  // No thinking — Haiku doesn't need it for short structured output and
+  // we want the speed (~1s end-to-end).
   return anthropic.messages.create({
     model: MODEL,
-    max_tokens: 4000,
-    thinking: { type: 'enabled', budget_tokens: 2000 },
+    max_tokens: 1500,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: userMessage }],
   });

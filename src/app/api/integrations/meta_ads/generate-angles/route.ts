@@ -25,12 +25,11 @@
 //   503 → { error: 'anthropic-not-configured' }
 //   500 → { error: 'angle-generation-failed', name, status?, detail? }
 //
-// Model: Webnua AI runs via the Anthropic SDK. The model-id string below
-// is the SDK API contract — internal only, never surfaced to operators.
-// Same choice as creative-draft.ts — short structured copy. Anthropic
-// constraint: thinking.enabled + budget_tokens with max_tokens >
-// budget_tokens; we use budget=3000, max=6000 (three-angle output is
-// ~2-3x the variant-drafter output).
+// Model: Webnua AI runs via the Anthropic SDK. Sonnet 4.6 without
+// thinking — quality is plenty for ad-copy variants (banned-word +
+// length-cap prompt discipline keeps the output tight) and dropping
+// the thinking budget cuts ~10s of latency off every call. The model-
+// id string is the SDK API contract — never surfaced to operators.
 //
 // Rate limit: ai_angles_gen — 3/client/24h. Same shape as ai_site_gen /
 // ai_funnel_gen. Manual regenerate is the same call so the cap applies.
@@ -54,7 +53,9 @@ import { checkAndRecord } from '@/lib/rate-limit';
 import { getServiceClient } from '@/lib/supabase/server';
 import { templateForIndustry } from '@/lib/integrations/meta-ads/templates';
 
-export const maxDuration = 120;
+// No-thinking Sonnet calls settle in ~3-5s; give a 30s ceiling for
+// network blips + JSON-parse overhead.
+export const maxDuration = 30;
 
 const MODEL = 'claude-sonnet-4-6';
 
@@ -471,10 +472,13 @@ Return exactly three angles in the locked JSON shape from the system prompt, in 
 
 JSON only.`;
 
+  // No thinking — Sonnet 4.6 produces the three-angle output cleanly
+  // without it, and we want the speed. The system prompt's banned-word
+  // list + length caps + worked examples are doing the quality work
+  // that thinking would otherwise contribute.
   return anthropic.messages.create({
     model: MODEL,
-    max_tokens: 6000,
-    thinking: { type: 'enabled', budget_tokens: 3000 },
+    max_tokens: 4000,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: userMessage }],
   });
