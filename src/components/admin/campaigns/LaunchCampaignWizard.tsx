@@ -3,12 +3,15 @@
 // =============================================================================
 // LaunchCampaignWizard — operator-only in-app Meta lead-form campaign builder.
 //
-// Phase 7.5 Session 1. Five steps, mounted as a Dialog (size lg):
+// Phase 7.5 · Session 1.2. Originally mounted as a Dialog; promoted to a
+// full page in Session 1.2 — the modal cramped the campaign-builder shape
+// (5 steps × N inputs × live preview). Now lives at /campaigns/launch and
+// renders inside the operator sidebar shell.
 //
+// Five steps:
 //   1. Template     — industry-auto-selected from clients.industry
-//   2. Geo          — country + optional lat/long + radius (operator
-//                     can leave geo center null for country-level targeting)
-//   3. Budget       — daily budget + duration in days
+//   2. Geo          — country + Meta-resolved cities + interests + age
+//   3. Budget       — daily budget + duration in days + run-until-stopped
 //   4. Offer + creative — operator types the offer, ✦ Generate 3 variants
 //                     via Sonnet, picks one (per-field editable), uploads
 //                     image, sees live Meta-feed-ad preview
@@ -17,18 +20,17 @@
 // The launch route runs the orchestrator: 8-step Meta chain + 2 Webnua
 // inserts (meta_campaigns + public.campaigns via upsert, then the
 // per-launch meta_campaign_launches + meta_ad_creatives capture). On
-// success the modal closes + routes to /campaigns with a green toast
-// (TBD — for V1 the parent invalidates queries + closes; the new
-// campaign appears in the roster immediately).
+// success the page routes back to /campaigns (the parent's onLaunched
+// callback handles navigation + cache invalidation).
 //
-// Mounted by LaunchCampaignButton — opened with { open, onOpenChange, clientId }.
+// Mounted by app/campaigns/launch/page.tsx — props: { clientId, onCancel,
+// onLaunched? }. No internal routing logic — the page owns nav.
 // =============================================================================
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { MetaAdPreview } from '@/components/admin/campaigns/MetaAdPreview';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useUser } from '@/lib/auth/user-stub';
@@ -55,12 +57,14 @@ import { supabase } from '@/lib/supabase/client';
 // --- props -------------------------------------------------------------------
 
 export type LaunchCampaignWizardProps = {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   /** Client UUID — the wizard fetches brand + customer + website rows
    *  for substitution / privacy URL resolution. */
   clientId: string;
-  /** Optional callback fired on successful launch. */
+  /** Called when operator hits Cancel. The page handles routing back
+   *  to /campaigns. */
+  onCancel: () => void;
+  /** Called on successful launch. The page handles routing + cache
+   *  invalidation. */
   onLaunched?: (result: { metaCampaignDbId: string; campaignId: string }) => void;
 };
 
@@ -154,9 +158,8 @@ const COUNTRY_OPTIONS = [
 // ---------------------------------------------------------------------------
 
 export function LaunchCampaignWizard({
-  open,
-  onOpenChange,
   clientId,
+  onCancel,
   onLaunched,
 }: LaunchCampaignWizardProps) {
   const user = useUser();
@@ -168,22 +171,10 @@ export function LaunchCampaignWizard({
 
   const [state, setState] = useState<WizardState>(() => freshState());
 
-  // Reset state when the dialog opens fresh.
-  const lastOpenRef = useRef(false);
+  // Resolve client context once on mount. The page is always "fresh" —
+  // no open-state to track because the wizard IS the page now.
   useEffect(() => {
-    if (open && !lastOpenRef.current) {
-      setState(freshState());
-      // Reset any in-flight mutation state too.
-      draftMutation.reset();
-      uploadMutation.reset();
-      launchMutation.reset();
-    }
-    lastOpenRef.current = open;
-  }, [open, draftMutation, uploadMutation, launchMutation]);
-
-  // Resolve client context once the dialog opens.
-  useEffect(() => {
-    if (!open || !clientId) return;
+    if (!clientId) return;
     void resolveClientContext(clientId).then(
       ({ brand, client, primaryDomain, websiteHeroCopy, brandTagline }) => {
         setState((s) => {
@@ -218,7 +209,7 @@ export function LaunchCampaignWizard({
         });
       },
     );
-  }, [open, clientId]);
+  }, [clientId]);
 
   // Template-pick handler — also re-seeds the copy fields from the new
   // template (preserves any operator edits that already have content).
@@ -260,13 +251,9 @@ export function LaunchCampaignWizard({
   // Auto-fire variant draft on step 4 entry. Tracked in a ref (not
   // state) so the effect doesn't have to setState — keeps the lint
   // rule "no setState in effect" happy and avoids a re-render cycle.
+  // No reset needed — the page-mount lifetime IS the wizard lifetime.
   const autoVariantsFiredRef = useRef(false);
   useEffect(() => {
-    if (!open) {
-      // Reset on close so the next wizard session re-fires.
-      autoVariantsFiredRef.current = false;
-      return;
-    }
     if (state.step !== 4) return;
     if (autoVariantsFiredRef.current) return;
     if (state.offerText.trim().length < 5) return;
@@ -274,7 +261,7 @@ export function LaunchCampaignWizard({
     autoVariantsFiredRef.current = true;
     void handleGenerateVariants();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, state.step, state.offerText]);
+  }, [state.step, state.offerText]);
 
   const stepValid = useMemo(() => isStepValid(state), [state]);
   const canContinue = stepValid;
@@ -417,7 +404,6 @@ export function LaunchCampaignWizard({
         metaCampaignDbId: result.metaCampaignDbId,
         campaignId: result.campaignId,
       });
-      onOpenChange(false);
     } catch {
       // surfaces via launchMutation.error
     }
@@ -437,18 +423,10 @@ export function LaunchCampaignWizard({
     adAccount.data == null;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        size="lg"
-        className="flex max-h-[calc(100vh-4rem)] flex-col gap-0 overflow-hidden p-0"
-      >
-        <DialogTitle className="sr-only">Launch Meta campaign</DialogTitle>
-        <WizardHeader step={state.step} />
-        {/* min-h-0 is mandatory — without it the flex child defaults to
-            min-height:auto (= content size), which makes overflow-y-auto
-            a no-op and the modal renders un-scrollable. */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-          {state.step === 1 ? (
+    <>
+      <WizardHeader step={state.step} />
+      <div className="px-4 py-6 pb-28 md:px-10 md:py-8 md:pb-32">
+        {state.step === 1 ? (
             <Step1Template
               value={state.templateSlug}
               onChange={pickTemplate}
@@ -532,18 +510,17 @@ export function LaunchCampaignWizard({
             />
           ) : null}
         </div>
-        <WizardFooter
-          step={state.step}
-          canContinue={canContinue}
-          launchPending={launchMutation.isPending}
-          launchBlocked={launchBlocked}
-          onCancel={() => onOpenChange(false)}
-          onBack={goBack}
-          onContinue={goNext}
-          onLaunch={handleLaunch}
-        />
-      </DialogContent>
-    </Dialog>
+      <WizardFooter
+        step={state.step}
+        canContinue={canContinue}
+        launchPending={launchMutation.isPending}
+        launchBlocked={launchBlocked}
+        onCancel={onCancel}
+        onBack={goBack}
+        onContinue={goNext}
+        onLaunch={handleLaunch}
+      />
+    </>
   );
 }
 
@@ -559,22 +536,22 @@ const STEP_LABELS: Record<Step, string> = {
 
 function WizardHeader({ step }: { step: Step }) {
   return (
-    <div className="border-b border-paper-2 bg-paper-2 px-6 pb-3.5 pt-4">
+    <div className="border-b border-paper-2 bg-paper px-4 pb-5 pt-6 md:px-10 md:pt-8">
       <div className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust">
         {`// NEW META CAMPAIGN · STEP ${step} OF 5`}
       </div>
-      <div className="mt-1 flex items-center justify-between gap-3">
-        <h2 className="text-[20px] font-semibold tracking-tight text-ink">
+      <div className="mt-2 flex items-end justify-between gap-3">
+        <h1 className="text-[28px] font-semibold tracking-tight text-ink md:text-[32px]">
           {STEP_LABELS[step]}
-        </h2>
+        </h1>
         <div className="flex items-center gap-1">
           {[1, 2, 3, 4, 5].map((i) => (
             <span
               key={i}
               className={
                 i <= step
-                  ? 'h-1.5 w-7 rounded-full bg-rust'
-                  : 'h-1.5 w-7 rounded-full bg-rule'
+                  ? 'h-1.5 w-8 rounded-full bg-rust'
+                  : 'h-1.5 w-8 rounded-full bg-rule'
               }
             />
           ))}
@@ -604,7 +581,10 @@ function WizardFooter({
   onLaunch: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-t border-paper-2 bg-paper px-6 py-3.5">
+    <div
+      data-slot="wizard-footer"
+      className="sticky bottom-0 z-10 flex items-center justify-between gap-3 border-t border-paper-2 bg-paper px-4 py-3.5 shadow-[0_-2px_8px_rgba(0,0,0,0.04)] md:px-10"
+    >
       <Button type="button" variant="ghost" onClick={onCancel}>
         Cancel
       </Button>
@@ -1119,9 +1099,9 @@ function Step3Budget({
           <span>
             Run until manually stopped
             <span className="block text-[11px] text-ink-quiet">
-              No end date sent to Meta — winning ads keep delivering until
-              you pause them from /campaigns or Ads Manager. Recommended
-              for ads that hit positive ROI in the first week.
+              Webnua&apos;s Ad AI (monitored by humans) will optimise this
+              campaign or turn it off if lead cost rises too high. You can
+              manually turn this off whenever you want.
             </span>
           </span>
         </label>

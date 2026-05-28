@@ -3,26 +3,28 @@
 // =============================================================================
 // LaunchMetaCampaignButton — operator-only campaign actions strip.
 //
-// Phase 7.5 Session 1 rewrite. Was previously a deep-link to Ads Manager
-// only (V1 model: build campaigns in Meta's UI). Now hosts THREE actions:
+// Phase 7.5 · Session 1.2 — was a modal-trigger; now routes to the
+// in-page campaign builder at /campaigns/launch. The page itself owns
+// the same guards (role + sub-account + Meta wired); this button just
+// hides itself / disables when the preconditions aren't met so the
+// operator gets the right affordance from /campaigns directly.
 //
-//   • + New campaign (primary)   — opens LaunchCampaignWizard (the
-//                                  in-app Meta lead-form campaign builder)
+// Three actions:
+//   • + New campaign (primary)   — Link to /campaigns/launch (in-page
+//                                  wizard)
 //   • ↻ Sync campaigns           — fires the existing meta_sync_campaigns
 //                                  ingest job for the active client
-//   • Open Meta Ads Manager ↗   — keeps the deep-link as the secondary
-//                                  "advanced" path for campaigns the
-//                                  operator wants to manage outside
-//                                  Webnua's templated flow
+//   • Ads Manager ↗              — deep-link to Meta's UI for anything
+//                                  outside the templated flow
 //
 // Disabled states:
 //   • Agency mode (no client picked)   → "Pick a client" tooltip
 //   • Sub-account + no ad account      → "Wire Meta first" tooltip
 // =============================================================================
 
+import Link from 'next/link';
 import { useState } from 'react';
 
-import { LaunchCampaignWizard } from '@/components/admin/campaigns/LaunchCampaignWizard';
 import { Button } from '@/components/ui/button';
 import { useClientId } from '@/lib/clients/queries';
 import {
@@ -45,7 +47,6 @@ export function LaunchMetaCampaignButton() {
   const { activeClientId } = useWorkspace();
   const { data: clientId } = useClientId(activeClientId);
   const adAccount = useClientMetaAdAccount(clientId ?? null);
-  const [wizardOpen, setWizardOpen] = useState(false);
 
   if (!activeClientId) {
     return (
@@ -79,12 +80,8 @@ export function LaunchMetaCampaignButton() {
   const href = adsManagerUrl(row.meta_ad_account_id, row.meta_business_id);
   return (
     <div className="flex items-center gap-2">
-      <Button
-        type="button"
-        className="h-9"
-        onClick={() => setWizardOpen(true)}
-      >
-        + New campaign
+      <Button asChild type="button" className="h-9">
+        <Link href="/campaigns/launch">+ New campaign</Link>
       </Button>
       <SyncCampaignsButton clientId={clientId} />
       <Button asChild type="button" variant="outline" className="h-9">
@@ -97,12 +94,6 @@ export function LaunchMetaCampaignButton() {
           Ads Manager ↗
         </a>
       </Button>
-
-      <LaunchCampaignWizard
-        open={wizardOpen}
-        onOpenChange={setWizardOpen}
-        clientId={clientId}
-      />
     </div>
   );
 }
