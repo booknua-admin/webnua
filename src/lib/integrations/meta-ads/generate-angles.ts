@@ -2,7 +2,7 @@
 // Browser-side caller for /api/integrations/meta_ads/generate-angles.
 //
 // Phase 7.5 · Session 2.1. The Generate surface's big rust button calls
-// this on click — Sonnet returns three differentiated ad angles
+// this on click — Webnua AI returns three differentiated ad angles
 // (pain-led / outcome-led / trust-led), each with its own rationale
 // + 2-3 copy variants the picker renders inline.
 //
@@ -34,7 +34,7 @@ export type GeneratedAngle = {
    *  set inside the picked angle when launched (matrix architecture
    *  from Session 1.4a — angle = the copy axis). */
   variants: AdCreativeVariant[];
-  /** Sonnet's preferred CTA for this angle. The launch payload uses the
+  /** The model's preferred CTA for this angle. The launch payload uses the
    *  variant-level ctaType, but this is the angle-level recommendation
    *  the picker card surfaces alongside the rationale. */
   suggestedCtaType: AdCreativeVariant['ctaType'];

@@ -1,8 +1,8 @@
 // =============================================================================
 // POST /api/integrations/meta_ads/generate-angles
 //
-// Phase 7.5 · Session 2.1. The magic-moment backbone: ONE Sonnet call
-// returns three differentiated ad angles (pain-led, outcome-led,
+// Phase 7.5 · Session 2.1. The magic-moment backbone: ONE Webnua AI
+// call returns three differentiated ad angles (pain-led, outcome-led,
 // trust-led) for the customer's offer + brand. The Generate surface
 // renders the angles as cards; the operator picks 1-3 and launches.
 //
@@ -25,15 +25,17 @@
 //   503 → { error: 'anthropic-not-configured' }
 //   500 → { error: 'angle-generation-failed', name, status?, detail? }
 //
-// Model: Sonnet 4.6. Same choice as creative-draft.ts — short structured
-// copy doesn't need Opus. Anthropic constraint: thinking.enabled +
-// budget_tokens with max_tokens > budget_tokens; we use budget=3000,
-// max=6000 (three-angle output is ~2-3x the variant-drafter output).
+// Model: Webnua AI runs via the Anthropic SDK. The model-id string below
+// is the SDK API contract — internal only, never surfaced to operators.
+// Same choice as creative-draft.ts — short structured copy. Anthropic
+// constraint: thinking.enabled + budget_tokens with max_tokens >
+// budget_tokens; we use budget=3000, max=6000 (three-angle output is
+// ~2-3x the variant-drafter output).
 //
 // Rate limit: ai_angles_gen — 3/client/24h. Same shape as ai_site_gen /
 // ai_funnel_gen. Manual regenerate is the same call so the cap applies.
 //
-// Observability: missing-angle gaps (Sonnet returned 2 instead of 3)
+// Observability: missing-angle gaps (the model returned 2 instead of 3)
 // log to console for V1. Matches the /api/generate-offer +
 // /api/enhance-offer precedent — generation_log's section_type column
 // is constrained to the website section_type enum and adding
@@ -232,7 +234,7 @@ export async function POST(request: Request): Promise<Response> {
 
   let response;
   try {
-    response = await callClaude(brief);
+    response = await callModel(brief);
   } catch (error) {
     const e = error as { name?: string; status?: number; message?: string };
     return NextResponse.json(
@@ -252,13 +254,13 @@ export async function POST(request: Request): Promise<Response> {
       {
         error: 'angle-generation-failed',
         name: 'invalid-output',
-        detail: 'Sonnet returned no parseable angles.',
+        detail: 'The model returned no parseable angles.',
       },
       { status: 500 },
     );
   }
 
-  // Clip every variant defensively. Note any angle Sonnet failed to
+  // Clip every variant defensively. Note any angle the model failed to
   // return — console only for V1 (see header comment for the rationale).
   const clipped = parsed.map(clipAngleToMetaLimits);
   logMissingAngles(clientId, clipped);
@@ -411,9 +413,9 @@ function extractHomeHeroCopy(snapshot: unknown): string {
   return parts.join(' · ');
 }
 
-// --- claude call ------------------------------------------------------------
+// --- model call -------------------------------------------------------------
 
-async function callClaude(brief: Brief) {
+async function callModel(brief: Brief) {
   const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
   const template = templateForIndustry(brief.industry);
   const voiceLine = describeVoice(
@@ -526,7 +528,7 @@ function parseAngles(text: string): GeneratedAngle[] | null {
     const angle = parseAngle(a);
     if (angle) result.push(angle);
   }
-  // Ensure the response covers all three ids. If Sonnet skipped one,
+  // Ensure the response covers all three ids. If the model skipped one,
   // we still return what we got — the generation_log entry below
   // captures the gap for audit.
   return result;
@@ -600,7 +602,7 @@ function clipText(text: string, max: number): string {
 
 // --- observability ---------------------------------------------------------
 
-/** Note the angles Sonnet skipped (e.g. returned 2 instead of 3). Console
+/** Note the angles the model skipped (e.g. returned 2 instead of 3). Console
  *  only for V1 — generation_log's section_type enum doesn't carry a
  *  'meta_angle' value and adding one is its own migration. Promote to a
  *  table when angle telemetry becomes operationally important. */
@@ -613,6 +615,6 @@ function logMissingAngles(
   const missing = expected.filter((id) => !have.has(id));
   if (missing.length === 0) return;
   console.warn(
-    `[generate-angles] Sonnet skipped angle(s) for client=${clientId}: ${missing.join(', ')}`,
+    `[generate-angles] model skipped angle(s) for client=${clientId}: ${missing.join(', ')}`,
   );
 }

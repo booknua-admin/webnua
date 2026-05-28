@@ -13,9 +13,9 @@
 //     wired. Each surfaces its own remediation card; the button is
 //     hidden entirely.
 //   • `ready: false, missing` — the brand row is present but one or more
-//     fields needed for a good Sonnet draft are blank. V1 (Session 2.1)
+//     fields needed for a good AI draft are blank. V1 (Session 2.1)
 //     enables the button anyway and falls back to qualitative defaults
-//     in the Sonnet prompt; V2 (Session 2.2) will flip the button label
+//     in the model prompt; V2 (Session 2.2) will flip the button label
 //     ("✦ Generate my ads — N quick questions first") and open the
 //     conversational chat.
 //
@@ -32,7 +32,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { supabase } from '@/lib/supabase/client';
 
-/** Soft-block fields — these need values for the Sonnet prompt to draft
+/** Soft-block fields — these need values for the model prompt to draft
  *  on-brand. The set is closed for 2.1; if a new field becomes important
  *  (e.g. service-area copy), extend the union here AND add a question
  *  to the Session 2.2 chat. */
@@ -82,7 +82,7 @@ function db(): SupabaseClient {
 /** A `brands.offer` jsonb is "present" when its four canonical fields are
  *  non-empty strings (matches the snake_case shape `offerToRow` writes —
  *  see `lib/website/offer-generate.ts`). A partially-filled offer counts
- *  as missing because the Sonnet prompt expects all four. */
+ *  as missing because the model prompt expects all four. */
 function offerIsPresent(value: unknown): boolean {
   if (!value || typeof value !== 'object') return false;
   const o = value as Record<string, unknown>;

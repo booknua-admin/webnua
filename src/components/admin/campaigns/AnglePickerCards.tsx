@@ -8,7 +8,7 @@
 // carries:
 //   • An eyebrow chip: PAIN-LED / OUTCOME-LED / TRUST-LED.
 //   • A one-sentence rationale ("why this angle for this customer") —
-//     Sonnet writes this referring to something concrete from the brief.
+//     The model writes this referring to something concrete from the brief.
 //   • The angle's variants' headlines stacked underneath as a preview.
 //   • A checkbox in the corner (top-right) to include / exclude the angle.
 //
