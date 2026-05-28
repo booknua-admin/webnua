@@ -498,6 +498,112 @@ export async function getPageAccessToken(
   );
 }
 
+// --- targeting autocomplete (Phase 7.5 Session 1.1) -------------------------
+//
+// Meta's `/search` endpoint resolves free-text strings to the structured
+// targeting ids Meta's API expects. Three modes used by Webnua's launch
+// wizard:
+//   • type=adgeolocation  — city + region lookup; returns `key` strings
+//     that geo_locations.cities[] accepts
+//   • type=adinterest     — interest lookup; returns `id` + `name` that
+//     flexible_spec.interests[] accepts
+//
+// The wizard's step 2 calls these via a debounced autocomplete; no
+// queries fire until the operator types ≥ 2 chars.
+
+export interface MetaAdGeoLocation {
+  key?: string;             // Meta's geo id (e.g. '2270676' for Perth)
+  name?: string;
+  type?: string;            // 'city' | 'region' | 'country' | 'subcity' | …
+  country_code?: string;
+  country_name?: string;
+  region?: string;
+  region_id?: string;
+  supports_region?: boolean;
+  supports_city?: boolean;
+}
+
+export interface MetaAdInterest {
+  id?: string;              // Meta's numeric interest id (string-encoded)
+  name?: string;
+  audience_size_lower_bound?: number;
+  audience_size_upper_bound?: number;
+  path?: string[];          // Meta's taxonomy path, useful for disambiguation
+  description?: string;
+  topic?: string;
+}
+
+/** City / region autocomplete. Operator types "Perth" → returns the
+ *  matching geo locations from Meta. The wizard filters to type='city'
+ *  by default; the route exposes both shapes. `countryCode` narrows the
+ *  search to one country (recommended — otherwise "London" returns 30+
+ *  Londons across the world). */
+export async function searchAdGeoLocations(
+  clientId: string,
+  query: string,
+  options?: { countryCode?: string; limit?: number; locationTypes?: string[] },
+): Promise<IntegrationResult<MetaAdGeoLocation[]>> {
+  const limit = options?.limit ?? 12;
+  const locationTypes = options?.locationTypes ?? ['city', 'region'];
+  return callWithToken<MetaAdGeoLocation[]>(
+    clientId,
+    'meta_ads',
+    async (accessToken) => {
+      const url = `${GRAPH}/search?${form({
+        access_token: accessToken,
+        type: 'adgeolocation',
+        q: query,
+        limit,
+        location_types: JSON.stringify(locationTypes),
+        country_code: options?.countryCode ?? null,
+      })}`;
+      const result = await callExternal<{ data?: MetaAdGeoLocation[] }>({
+        provider: 'meta_ads',
+        operation: 'search_ad_geolocation',
+        url,
+        method: 'GET',
+        clientId,
+      });
+      if (!result.ok) return result;
+      return { ok: true, data: result.data.data ?? [], status: result.status };
+    },
+  );
+}
+
+/** Interest autocomplete. Operator types "plumbing" → returns matching
+ *  interest entries with their numeric id, name, audience size estimate,
+ *  and taxonomy path. The launch orchestrator passes the resolved ids
+ *  into the ad set's `flexible_spec.interests[]` so Meta knows what
+ *  audience to target. */
+export async function searchAdInterests(
+  clientId: string,
+  query: string,
+  options?: { limit?: number },
+): Promise<IntegrationResult<MetaAdInterest[]>> {
+  const limit = options?.limit ?? 12;
+  return callWithToken<MetaAdInterest[]>(
+    clientId,
+    'meta_ads',
+    async (accessToken) => {
+      const url = `${GRAPH}/search?${form({
+        access_token: accessToken,
+        type: 'adinterest',
+        q: query,
+        limit,
+      })}`;
+      const result = await callExternal<{ data?: MetaAdInterest[] }>({
+        provider: 'meta_ads',
+        operation: 'search_ad_interest',
+        url,
+        method: 'GET',
+        clientId,
+      });
+      if (!result.ok) return result;
+      return { ok: true, data: result.data.data ?? [], status: result.status };
+    },
+  );
+}
+
 // --- status flips ------------------------------------------------------------
 
 async function setObjectStatus(

@@ -123,6 +123,34 @@ function parseLaunchInput(
         (s): s is string => typeof s === 'string',
       )
     : [];
+  const interests = Array.isArray(targeting.interests)
+    ? (targeting.interests as unknown[])
+        .filter(
+          (v): v is { id: string; name: string } =>
+            v != null &&
+            typeof v === 'object' &&
+            typeof (v as { id?: unknown }).id === 'string' &&
+            typeof (v as { name?: unknown }).name === 'string',
+        )
+        .slice(0, 10)
+    : [];
+  const cities = Array.isArray(targeting.cities)
+    ? (targeting.cities as unknown[])
+        .filter(
+          (v): v is { key: string; label: string; radiusKm: number } => {
+            if (v == null || typeof v !== 'object') return false;
+            const o = v as { key?: unknown; label?: unknown; radiusKm?: unknown };
+            return (
+              typeof o.key === 'string' &&
+              typeof o.label === 'string' &&
+              typeof o.radiusKm === 'number' &&
+              o.radiusKm > 0
+            );
+          },
+        )
+        .map((v) => ({ key: v.key, label: v.label, radiusKm: Math.round(v.radiusKm) }))
+        .slice(0, 5)
+    : [];
   const countries = Array.isArray(targeting.countries)
     ? (targeting.countries as unknown[]).filter(
         (s): s is string => typeof s === 'string',
@@ -153,15 +181,24 @@ function parseLaunchInput(
     return { error: 'invalid-dailyBudgetCents' };
   }
   const startTimeIso = body.startTimeIso;
-  const endTimeIso = body.endTimeIso;
   if (typeof startTimeIso !== 'string' || !isValidIso(startTimeIso)) {
     return { error: 'invalid-startTimeIso' };
   }
-  if (typeof endTimeIso !== 'string' || !isValidIso(endTimeIso)) {
+  // endTimeIso is nullable — null = "run until stopped" (no Meta end time).
+  const endTimeRaw = body.endTimeIso;
+  let endTimeIso: string | null = null;
+  if (endTimeRaw === null) {
+    endTimeIso = null;
+  } else if (typeof endTimeRaw === 'string') {
+    if (!isValidIso(endTimeRaw)) {
+      return { error: 'invalid-endTimeIso' };
+    }
+    if (new Date(endTimeRaw).getTime() <= new Date(startTimeIso).getTime()) {
+      return { error: 'invalid-schedule' };
+    }
+    endTimeIso = endTimeRaw;
+  } else if (endTimeRaw !== undefined) {
     return { error: 'invalid-endTimeIso' };
-  }
-  if (new Date(endTimeIso).getTime() <= new Date(startTimeIso).getTime()) {
-    return { error: 'invalid-schedule' };
   }
 
   const creative = body.creative as Record<string, unknown> | undefined;
@@ -206,9 +243,11 @@ function parseLaunchInput(
     campaignName,
     targetingGeoCenter: geoCenter,
     targetingRadiusKm: radiusKm,
+    targetingCities: cities,
     targetingAgeMin: ageMin,
     targetingAgeMax: ageMax,
     targetingInterestTokens: interestTokens,
+    targetingInterests: interests,
     targetingCountries: countries,
     dailyBudgetCents,
     startTimeIso,

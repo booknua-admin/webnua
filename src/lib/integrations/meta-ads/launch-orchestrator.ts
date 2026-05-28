@@ -66,6 +66,22 @@ import {
 
 // --- input shape -------------------------------------------------------------
 
+/** A city resolved via Meta's `targetingsearch` autocomplete — carries
+ *  the Meta `key` that `geo_locations.cities[]` accepts plus the human
+ *  label for the snapshot. */
+export type LaunchTargetingCity = {
+  key: string;
+  label: string;
+  radiusKm: number;
+};
+
+/** An interest resolved via Meta's autocomplete — carries the numeric
+ *  `id` Meta expects in `flexible_spec.interests[]` plus the name. */
+export type LaunchTargetingInterest = {
+  id: string;
+  name: string;
+};
+
 export type LaunchCampaignInput = {
   clientId: string;
   /** Operator who initiated the launch — stamped on the launch +
@@ -79,19 +95,30 @@ export type LaunchCampaignInput = {
   /** Targeting */
   targetingGeoCenter: { lat: number; lng: number } | null;
   targetingRadiusKm: number | null;
+  /** Cities resolved via Meta autocomplete. When non-empty these drive
+   *  `geo_locations.cities[]` (preferred over lat/lng — Meta optimises
+   *  delivery better on named cities). */
+  targetingCities: LaunchTargetingCity[];
   targetingAgeMin: number;
   targetingAgeMax: number;
-  /** Free-form interest keyword tokens (the wizard captures these as
-   *  strings; Meta's interest-id lookup is V1.1). */
+  /** Free-form interest keyword tokens — kept on the snapshot for
+   *  training even when interest IDs ARE resolved (the human-readable
+   *  string is the training signal). */
   targetingInterestTokens: string[];
+  /** Resolved interest IDs from Meta autocomplete — passed through to
+   *  the ad set spec via `flexible_spec.interests[]`. Empty array =
+   *  broad targeting only. */
+  targetingInterests: LaunchTargetingInterest[];
   /** ISO country code (e.g. 'AU', 'IE'). Required — Meta won't accept
    *  a geo-target spec without at least one country. */
   targetingCountries: string[];
 
-  /** Budget + schedule */
+  /** Budget + schedule. endTimeIso = null means "run until manually
+   *  stopped" — Meta receives no end time, so winning ads keep
+   *  delivering instead of timing out. */
   dailyBudgetCents: number;
   startTimeIso: string;
-  endTimeIso: string;
+  endTimeIso: string | null;
 
   /** Creative */
   imageUrl: string;
@@ -232,7 +259,10 @@ export async function launchMetaCampaign(input: LaunchCampaignInput): Promise<La
   }
   const metaCampaignId = campaignResult.data.id;
 
-  // 5. Create ad set with targeting + budget + schedule.
+  // 5. Create ad set with targeting + budget + schedule. endTime is
+  // omitted when the operator opted for "run until manually stopped" —
+  // Meta accepts no end time as "indefinite", which is what we want for
+  // ads that should keep delivering past an arbitrary duration.
   const targetingSpec = buildTargetingSpec(input);
   const adSetResult = await createAdSet(input.clientId, {
     adAccountId,
@@ -245,7 +275,7 @@ export async function launchMetaCampaign(input: LaunchCampaignInput): Promise<La
     bidStrategy: 'LOWEST_COST_WITHOUT_CAP',
     status: 'PAUSED',
     startTime: input.startTimeIso,
-    endTime: input.endTimeIso,
+    endTime: input.endTimeIso ?? undefined,
     promotedObjectPageId: pageId,
   });
   if (!adSetResult.ok || !adSetResult.data.id) {
@@ -565,9 +595,20 @@ async function buildBriefSnapshot(clientId: string): Promise<{
   };
 }
 
-/** Build Meta's targeting spec from the wizard input. V1: country +
- *  optional geo radius + age. Custom audiences / lookalikes / detailed
- *  targeting expansion are V1.1. */
+/** Build Meta's targeting spec from the wizard input.
+ *
+ *  Geo (in order of preference, Meta merges them):
+ *    1. Resolved cities via autocomplete → `geo_locations.cities[]`
+ *    2. Lat/lng + radius (operator-typed) → `custom_locations[]`
+ *    3. Country fallback → `geo_locations.countries[]`
+ *
+ *  Interests: when resolved via autocomplete, passed as
+ *  `flexible_spec.interests[{ id, name }]` — the structure Meta uses
+ *  for "must match at least one of these interests". Free-form keyword
+ *  tokens are not passed to Meta (they're stored on the snapshot for
+ *  training but Meta needs numeric ids).
+ *
+ *  Custom audiences / lookalikes are V1.2. */
 function buildTargetingSpec(input: LaunchCampaignInput): Record<string, unknown> {
   const spec: Record<string, unknown> = {
     age_min: input.targetingAgeMin,
@@ -578,7 +619,13 @@ function buildTargetingSpec(input: LaunchCampaignInput): Record<string, unknown>
   if (input.targetingCountries.length > 0) {
     geoLocations.countries = input.targetingCountries;
   }
-  if (input.targetingGeoCenter && input.targetingRadiusKm) {
+  if (input.targetingCities.length > 0) {
+    geoLocations.cities = input.targetingCities.map((c) => ({
+      key: c.key,
+      radius: c.radiusKm,
+      distance_unit: 'kilometer',
+    }));
+  } else if (input.targetingGeoCenter && input.targetingRadiusKm) {
     geoLocations.custom_locations = [
       {
         latitude: input.targetingGeoCenter.lat,
@@ -589,6 +636,13 @@ function buildTargetingSpec(input: LaunchCampaignInput): Record<string, unknown>
     ];
   }
   spec.geo_locations = geoLocations;
+  if (input.targetingInterests.length > 0) {
+    spec.flexible_spec = [
+      {
+        interests: input.targetingInterests.map((i) => ({ id: i.id, name: i.name })),
+      },
+    ];
+  }
   return spec;
 }
 

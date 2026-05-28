@@ -39,6 +39,25 @@ export type DraftCreativesInput = {
   businessName: string;
   serviceArea: string;
   count?: number;
+  /** Brand voice axes (1-5, default neutral 3 each) — drives the
+   *  prompt's voice instructions so a casual brand doesn't get
+   *  formal-pitched copy. */
+  voiceFormality?: number;
+  voiceUrgency?: number;
+  voiceTechnicality?: number;
+  /** Audience description from `brands.audience_line` — sharpens
+   *  Sonnet's targeting in copy ("for new homeowners" vs broad). */
+  audienceLine?: string;
+  /** Services list (from `brands.services` / `top_jobs_to_be_booked`) —
+   *  lets variants reference actual service names instead of generic
+   *  trade nouns. */
+  services?: string[];
+  /** Website hero excerpts (eyebrow + headline + sub) — gives Sonnet
+   *  the customer's own positioning to draw from rather than inventing
+   *  a fresh angle. */
+  websiteHeroCopy?: string;
+  /** Brand tagline from `brands.tagline`. */
+  brandTagline?: string;
 };
 
 async function accessToken(): Promise<string> {

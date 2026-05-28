@@ -189,6 +189,22 @@ export async function POST(request: Request): Promise<Response> {
   const serviceArea =
     typeof body.serviceArea === 'string' ? body.serviceArea : 'the local area';
   const count = Math.min(5, Math.max(1, Number(body.count) || 3));
+  const voiceFormality = clampVoice(body.voiceFormality);
+  const voiceUrgency = clampVoice(body.voiceUrgency);
+  const voiceTechnicality = clampVoice(body.voiceTechnicality);
+  const audienceLine =
+    typeof body.audienceLine === 'string' ? body.audienceLine.trim() : '';
+  const services = Array.isArray(body.services)
+    ? (body.services as unknown[])
+        .filter((s): s is string => typeof s === 'string' && s.length > 0)
+        .slice(0, 12)
+    : [];
+  const websiteHeroCopy =
+    typeof body.websiteHeroCopy === 'string'
+      ? body.websiteHeroCopy.trim().slice(0, 600)
+      : '';
+  const brandTagline =
+    typeof body.brandTagline === 'string' ? body.brandTagline.trim() : '';
 
   const template = templateForIndustry(templateSlug);
 
@@ -200,6 +216,13 @@ export async function POST(request: Request): Promise<Response> {
       businessName,
       serviceArea,
       count,
+      voiceFormality,
+      voiceUrgency,
+      voiceTechnicality,
+      audienceLine,
+      services,
+      websiteHeroCopy,
+      brandTagline,
     });
   } catch (error) {
     const e = error as { name?: string; status?: number; message?: string };
@@ -238,16 +261,69 @@ type CallInput = {
   businessName: string;
   serviceArea: string;
   count: number;
+  voiceFormality: number;
+  voiceUrgency: number;
+  voiceTechnicality: number;
+  audienceLine: string;
+  services: string[];
+  websiteHeroCopy: string;
+  brandTagline: string;
 };
+
+function clampVoice(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 3;
+  return Math.max(1, Math.min(5, Math.round(n)));
+}
+
+function describeVoice(formality: number, urgency: number, technicality: number): string {
+  const parts: string[] = [];
+  if (formality <= 2) parts.push('casual + warm (skip the trade jargon, feel like a neighbour)');
+  else if (formality >= 4) parts.push('professional + measured (more formal register)');
+  else parts.push('friendly-professional (default register)');
+  if (urgency <= 2) parts.push('calm, no-pressure');
+  else if (urgency >= 4) parts.push('high-urgency (act-now framing where the offer supports it)');
+  else parts.push('moderate urgency (specific timeframe, no shouting)');
+  if (technicality <= 2) parts.push('plain English (no industry terms)');
+  else if (technicality >= 4) parts.push('comfortable with industry terms (the customer already knows the trade)');
+  return parts.join(' · ');
+}
 
 async function callClaude(input: CallInput) {
   const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  const voiceLine = describeVoice(
+    input.voiceFormality,
+    input.voiceUrgency,
+    input.voiceTechnicality,
+  );
+  const servicesLine =
+    input.services.length > 0
+      ? input.services.map((s) => `- ${s}`).join('\n')
+      : '(none listed — use generic trade language)';
+  const heroBlock = input.websiteHeroCopy
+    ? `# Their website's own positioning (lift voice + framing from this — do NOT copy verbatim)\n\n${input.websiteHeroCopy}`
+    : '';
+  const taglineBlock = input.brandTagline
+    ? `Their tagline: "${input.brandTagline}"`
+    : '';
+  const audienceBlock = input.audienceLine
+    ? `Their audience: ${input.audienceLine}`
+    : '';
   const userMessage = `# Context
 
 Business name: ${input.businessName}
 Service area: ${input.serviceArea}
 Industry: ${input.template.label}
 Template's default CTA: ${input.template.copyTemplates.ctaType}
+Brand voice: ${voiceLine}
+${audienceBlock}
+${taglineBlock}
+
+# Their services
+
+${servicesLine}
+
+${heroBlock}
 
 # The offer to sell
 
@@ -255,7 +331,12 @@ ${input.offer.trim()}
 
 # Output
 
-Return exactly ${input.count} variants in the locked JSON shape from the system prompt. JSON only.`;
+Return exactly ${input.count} variants in the locked JSON shape from the system prompt. Each variant should:
+- Match the brand voice line above
+- Pull specific words / framing from the services list + website positioning where it fits naturally
+- Take a distinct angle (pain-first / promise-first / trust-first / outcome-first — pick three)
+
+JSON only.`;
 
   return anthropic.messages.create({
     model: MODEL,

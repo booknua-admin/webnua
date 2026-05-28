@@ -36,8 +36,10 @@ import {
   useClientMetaAdAccount,
   useDraftMetaAdVariants,
   useLaunchMetaCampaign,
+  useSearchMetaTargeting,
   useUploadAdImage,
   type LaunchCampaignPayload,
+  type TargetingSearchResult,
 } from '@/lib/integrations/meta-ads/use-meta-ads';
 import {
   type AdCreativeVariant,
@@ -66,6 +68,9 @@ export type LaunchCampaignWizardProps = {
 
 type Step = 1 | 2 | 3 | 4 | 5;
 
+type PickedCity = { key: string; label: string; sublabel?: string; radiusKm: number };
+type PickedInterest = { id: string; name: string; sublabel?: string };
+
 type WizardState = {
   step: Step;
 
@@ -73,15 +78,21 @@ type WizardState = {
   brand: BrandRow | null;
   client: ClientRow | null;
   primaryDomain: string | null;
+  /** Hero section copy from the customer's published home page —
+   *  threaded into the draft prompt as positioning context. */
+  websiteHeroCopy: string;
+  /** Brand tagline (from brands.tagline) when set. */
+  brandTagline: string;
 
   // step 1
   templateSlug: string;
 
-  // step 2
+  // step 2 — targeting now wires through Meta's resolved ids, not
+  // free-text inputs.
   country: string;
   serviceAreaLabel: string;
-  geoCenter: { lat: number; lng: number } | null;
-  radiusKm: number;
+  cities: PickedCity[];
+  interests: PickedInterest[];
   ageMin: number;
   ageMax: number;
 
@@ -89,6 +100,10 @@ type WizardState = {
   campaignName: string;
   dailyBudgetCents: number;
   durationDays: number;
+  /** When true the campaign runs until manually stopped (no end time
+   *  sent to Meta) — winning ads keep delivering past an arbitrary
+   *  duration. */
+  runUntilStopped: boolean;
 
   // step 4
   offerText: string;
@@ -113,6 +128,12 @@ type BrandRow = {
   industry_category: string | null;
   offer: { headline?: string; promise?: string; risk_reversal?: string; cta_text?: string } | null;
   audience_line: string | null;
+  services?: string[] | null;
+  top_jobs_to_be_booked?: string[] | null;
+  voice_formality?: number | null;
+  voice_urgency?: number | null;
+  voice_technicality?: number | null;
+  tagline?: string | null;
 };
 
 type ClientRow = {
@@ -163,37 +184,40 @@ export function LaunchCampaignWizard({
   // Resolve client context once the dialog opens.
   useEffect(() => {
     if (!open || !clientId) return;
-    void resolveClientContext(clientId).then(({ brand, client, primaryDomain }) => {
-      setState((s) => {
-        const template = templateForIndustry(
-          brand?.industry_category ?? client?.industry ?? 'generic',
-        );
-        const offerDraft = composeDefaultOfferText(brand, client);
-        const subs = {
-          businessName: client?.name ?? '',
-          serviceArea: client?.service_area ?? '',
-        };
-        const seeded = resolveTemplateCopy(template, subs);
-        return {
-          ...s,
-          brand,
-          client,
-          primaryDomain,
-          templateSlug: template.slug,
-          serviceAreaLabel: client?.service_area ?? '',
-          ageMin: template.defaultAgeMin,
-          ageMax: template.defaultAgeMax,
-          radiusKm: template.defaultRadiusKm,
-          campaignName: defaultCampaignName(client, template),
-          dailyBudgetCents: template.defaultDailyBudgetCents,
-          offerText: offerDraft,
-          headline: seeded.headline,
-          primaryText: seeded.primaryText,
-          description: seeded.description,
-          ctaType: seeded.ctaType,
-        };
-      });
-    });
+    void resolveClientContext(clientId).then(
+      ({ brand, client, primaryDomain, websiteHeroCopy, brandTagline }) => {
+        setState((s) => {
+          const template = templateForIndustry(
+            brand?.industry_category ?? client?.industry ?? 'generic',
+          );
+          const offerDraft = composeDefaultOfferText(brand, client);
+          const subs = {
+            businessName: client?.name ?? '',
+            serviceArea: client?.service_area ?? '',
+          };
+          const seeded = resolveTemplateCopy(template, subs);
+          return {
+            ...s,
+            brand,
+            client,
+            primaryDomain,
+            websiteHeroCopy,
+            brandTagline,
+            templateSlug: template.slug,
+            serviceAreaLabel: client?.service_area ?? '',
+            ageMin: template.defaultAgeMin,
+            ageMax: template.defaultAgeMax,
+            campaignName: defaultCampaignName(client, template),
+            dailyBudgetCents: template.defaultDailyBudgetCents,
+            offerText: offerDraft,
+            headline: seeded.headline,
+            primaryText: seeded.primaryText,
+            description: seeded.description,
+            ctaType: seeded.ctaType,
+          };
+        });
+      },
+    );
   }, [open, clientId]);
 
   // Template-pick handler — also re-seeds the copy fields from the new
@@ -208,16 +232,10 @@ export function LaunchCampaignWizard({
         serviceArea: s.client?.service_area ?? '',
       };
       const seeded = resolveTemplateCopy(template, subs);
-      // Only re-seed fields the operator has not edited (variants null
-      // = no AI draft has been picked, so the copy is still template
-      // territory).
       const variantsActive = s.variants != null;
       return {
         ...s,
         templateSlug: slug,
-        ageMin: s.ageMin === s.ageMin ? s.ageMin : template.defaultAgeMin,
-        ageMax: s.ageMax === s.ageMax ? s.ageMax : template.defaultAgeMax,
-        radiusKm: s.radiusKm === s.radiusKm ? s.radiusKm : template.defaultRadiusKm,
         headline: variantsActive
           ? s.headline
           : s.headline.length === 0
@@ -239,6 +257,25 @@ export function LaunchCampaignWizard({
     });
   }
 
+  // Auto-fire variant draft on step 4 entry. Tracked in a ref (not
+  // state) so the effect doesn't have to setState — keeps the lint
+  // rule "no setState in effect" happy and avoids a re-render cycle.
+  const autoVariantsFiredRef = useRef(false);
+  useEffect(() => {
+    if (!open) {
+      // Reset on close so the next wizard session re-fires.
+      autoVariantsFiredRef.current = false;
+      return;
+    }
+    if (state.step !== 4) return;
+    if (autoVariantsFiredRef.current) return;
+    if (state.offerText.trim().length < 5) return;
+    if (draftMutation.isPending) return;
+    autoVariantsFiredRef.current = true;
+    void handleGenerateVariants();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, state.step, state.offerText]);
+
   const stepValid = useMemo(() => isStepValid(state), [state]);
   const canContinue = stepValid;
 
@@ -256,6 +293,10 @@ export function LaunchCampaignWizard({
 
   async function handleGenerateVariants() {
     if (state.offerText.trim().length === 0) return;
+    const services =
+      state.brand?.services && state.brand.services.length > 0
+        ? state.brand.services
+        : (state.brand?.top_jobs_to_be_booked ?? []);
     try {
       const variants = await draftMutation.mutateAsync({
         clientId,
@@ -264,6 +305,13 @@ export function LaunchCampaignWizard({
         businessName: state.client?.name ?? '',
         serviceArea: state.client?.service_area ?? '',
         count: 3,
+        voiceFormality: state.brand?.voice_formality ?? undefined,
+        voiceUrgency: state.brand?.voice_urgency ?? undefined,
+        voiceTechnicality: state.brand?.voice_technicality ?? undefined,
+        audienceLine: state.brand?.audience_line ?? undefined,
+        services: services.length > 0 ? services : undefined,
+        websiteHeroCopy: state.websiteHeroCopy || undefined,
+        brandTagline: state.brandTagline || undefined,
       });
       setState((s) => ({
         ...s,
@@ -317,19 +365,33 @@ export function LaunchCampaignWizard({
     const privacyPolicyUrl = `https://${state.primaryDomain}/privacy`;
     const now = new Date();
     const startTimeIso = now.toISOString();
-    const endTimeIso = new Date(
-      now.getTime() + state.durationDays * 24 * 60 * 60 * 1000,
-    ).toISOString();
+    const endTimeIso = state.runUntilStopped
+      ? null
+      : new Date(now.getTime() + state.durationDays * 24 * 60 * 60 * 1000).toISOString();
+    // Snapshot interest keyword tokens for training — pull from the
+    // resolved interests' display names (more honest than the
+    // template's default keyword list when the operator picked their
+    // own interests via autocomplete).
+    const interestTokens =
+      state.interests.length > 0
+        ? state.interests.map((i) => i.name)
+        : templateForIndustry(state.templateSlug).interestTokens;
     const payload: LaunchCampaignPayload = {
       clientId,
       templateSlug: state.templateSlug,
       campaignName: state.campaignName,
       targeting: {
-        geoCenter: state.geoCenter,
-        radiusKm: state.geoCenter ? state.radiusKm : null,
+        geoCenter: null,
+        radiusKm: null,
+        cities: state.cities.map((c) => ({
+          key: c.key,
+          label: c.label,
+          radiusKm: c.radiusKm,
+        })),
+        interests: state.interests.map((i) => ({ id: i.id, name: i.name })),
         ageMin: state.ageMin,
         ageMax: state.ageMax,
-        interestTokens: templateForIndustry(state.templateSlug).interestTokens,
+        interestTokens,
         countries: [state.country],
       },
       dailyBudgetCents: state.dailyBudgetCents,
@@ -378,11 +440,14 @@ export function LaunchCampaignWizard({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         size="lg"
-        className="max-h-[calc(100vh-4rem)] gap-0 overflow-hidden p-0"
+        className="flex max-h-[calc(100vh-4rem)] flex-col gap-0 overflow-hidden p-0"
       >
         <DialogTitle className="sr-only">Launch Meta campaign</DialogTitle>
         <WizardHeader step={state.step} />
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+        {/* min-h-0 is mandatory — without it the flex child defaults to
+            min-height:auto (= content size), which makes overflow-y-auto
+            a no-op and the modal renders un-scrollable. */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
           {state.step === 1 ? (
             <Step1Template
               value={state.templateSlug}
@@ -392,16 +457,17 @@ export function LaunchCampaignWizard({
           ) : null}
           {state.step === 2 ? (
             <Step2Geo
+              clientId={clientId}
               country={state.country}
               setCountry={(country) => setState((s) => ({ ...s, country }))}
               serviceAreaLabel={state.serviceAreaLabel}
               setServiceAreaLabel={(serviceAreaLabel) =>
                 setState((s) => ({ ...s, serviceAreaLabel }))
               }
-              geoCenter={state.geoCenter}
-              setGeoCenter={(geoCenter) => setState((s) => ({ ...s, geoCenter }))}
-              radiusKm={state.radiusKm}
-              setRadiusKm={(radiusKm) => setState((s) => ({ ...s, radiusKm }))}
+              cities={state.cities}
+              setCities={(cities) => setState((s) => ({ ...s, cities }))}
+              interests={state.interests}
+              setInterests={(interests) => setState((s) => ({ ...s, interests }))}
               ageMin={state.ageMin}
               setAgeMin={(ageMin) => setState((s) => ({ ...s, ageMin }))}
               ageMax={state.ageMax}
@@ -421,6 +487,10 @@ export function LaunchCampaignWizard({
               durationDays={state.durationDays}
               setDurationDays={(durationDays) =>
                 setState((s) => ({ ...s, durationDays }))
+              }
+              runUntilStopped={state.runUntilStopped}
+              setRunUntilStopped={(runUntilStopped) =>
+                setState((s) => ({ ...s, runUntilStopped }))
               }
             />
           ) : null}
@@ -620,27 +690,29 @@ function Step1Template({
 // --- step 2 -----------------------------------------------------------------
 
 function Step2Geo({
+  clientId,
   country,
   setCountry,
   serviceAreaLabel,
   setServiceAreaLabel,
-  geoCenter,
-  setGeoCenter,
-  radiusKm,
-  setRadiusKm,
+  cities,
+  setCities,
+  interests,
+  setInterests,
   ageMin,
   setAgeMin,
   ageMax,
   setAgeMax,
 }: {
+  clientId: string;
   country: string;
   setCountry: (v: string) => void;
   serviceAreaLabel: string;
   setServiceAreaLabel: (v: string) => void;
-  geoCenter: { lat: number; lng: number } | null;
-  setGeoCenter: (v: { lat: number; lng: number } | null) => void;
-  radiusKm: number;
-  setRadiusKm: (v: number) => void;
+  cities: PickedCity[];
+  setCities: (v: PickedCity[]) => void;
+  interests: PickedInterest[];
+  setInterests: (v: PickedInterest[]) => void;
   ageMin: number;
   setAgeMin: (v: number) => void;
   ageMax: number;
@@ -670,7 +742,7 @@ function Step2Geo({
 
       <div className="flex flex-col gap-2">
         <label className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
-          {'// Service area (for the copy)'}
+          {'// Service area (for the ad copy)'}
         </label>
         <Input
           value={serviceAreaLabel}
@@ -678,63 +750,22 @@ function Step2Geo({
           placeholder="e.g. Cottesloe, Mosman Park, Claremont"
         />
         <p className="text-[11px] text-ink-quiet">
-          Used in the ad copy (e.g. &quot;Plumber in {serviceAreaLabel || '{serviceArea}'}&quot;).
+          Used in the ad copy only (&quot;Plumber in {serviceAreaLabel || '{serviceArea}'}&quot;) — not for targeting.
         </p>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <label className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
-          {'// Geo-radius targeting (optional)'}
-        </label>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <Input
-            type="number"
-            inputMode="decimal"
-            placeholder="Latitude"
-            value={geoCenter?.lat ?? ''}
-            onChange={(e) => {
-              const lat = parseFloat(e.target.value);
-              const lng = geoCenter?.lng ?? NaN;
-              if (Number.isFinite(lat) && Number.isFinite(lng)) {
-                setGeoCenter({ lat, lng });
-              } else if (!Number.isFinite(lat)) {
-                setGeoCenter(null);
-              }
-            }}
-          />
-          <Input
-            type="number"
-            inputMode="decimal"
-            placeholder="Longitude"
-            value={geoCenter?.lng ?? ''}
-            onChange={(e) => {
-              const lng = parseFloat(e.target.value);
-              const lat = geoCenter?.lat ?? NaN;
-              if (Number.isFinite(lat) && Number.isFinite(lng)) {
-                setGeoCenter({ lat, lng });
-              } else if (!Number.isFinite(lng)) {
-                setGeoCenter(null);
-              }
-            }}
-          />
-          <div className="flex items-center gap-2">
-            <Input
-              type="number"
-              min={1}
-              max={80}
-              value={radiusKm}
-              onChange={(e) => setRadiusKm(parseInt(e.target.value, 10) || 0)}
-            />
-            <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-quiet">
-              km
-            </span>
-          </div>
-        </div>
-        <p className="text-[11px] text-ink-quiet">
-          Leave lat/long blank for country-level targeting. V1.1 will geocode
-          the service area automatically.
-        </p>
-      </div>
+      <CityAutocomplete
+        clientId={clientId}
+        country={country}
+        picked={cities}
+        onChange={setCities}
+      />
+
+      <InterestAutocomplete
+        clientId={clientId}
+        picked={interests}
+        onChange={setInterests}
+      />
 
       <div className="flex flex-col gap-2">
         <label className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
@@ -771,6 +802,252 @@ function Step2Geo({
   );
 }
 
+// --- targeting autocomplete components --------------------------------------
+//
+// City + interest pickers wired to Meta's /search endpoint via the
+// targeting-search route. Debounce at 300ms; minimum 2-char query;
+// results render in a popover under the input; clicking a result adds
+// it to the picked list. Picked items render as removable chips.
+// V1: pick one city + N interests; per-city radius is editable inline.
+
+function CityAutocomplete({
+  clientId,
+  country,
+  picked,
+  onChange,
+}: {
+  clientId: string;
+  country: string;
+  picked: PickedCity[];
+  onChange: (next: PickedCity[]) => void;
+}) {
+  return (
+    <TargetingPicker
+      label="// Cities (radius targeting)"
+      hint="Type a city name — Meta resolves to its targeting id automatically. Leave blank for country-level."
+      placeholder="e.g. Perth, Dublin, Manchester"
+      clientId={clientId}
+      country={country}
+      type="cities"
+      picked={picked.map((c) => ({
+        id: c.key,
+        label: c.label,
+        sublabel: c.sublabel,
+      }))}
+      onAdd={(result) => {
+        if (picked.some((c) => c.key === result.id)) return;
+        onChange([
+          ...picked,
+          { key: result.id, label: result.label, sublabel: result.sublabel, radiusKm: 25 },
+        ]);
+      }}
+      onRemove={(id) => onChange(picked.filter((c) => c.key !== id))}
+      renderPickedExtras={(id) => {
+        const city = picked.find((c) => c.key === id);
+        if (!city) return null;
+        return (
+          <div className="flex items-center gap-1.5 border-l border-ink/10 pl-2 text-[11px] text-ink-soft">
+            <Input
+              type="number"
+              min={1}
+              max={80}
+              value={city.radiusKm}
+              onChange={(e) => {
+                const next = parseInt(e.target.value, 10) || 1;
+                onChange(
+                  picked.map((c) =>
+                    c.key === id ? { ...c, radiusKm: Math.max(1, Math.min(80, next)) } : c,
+                  ),
+                );
+              }}
+              className="h-7 w-14 px-1.5 text-center text-[12px]"
+            />
+            <span className="font-mono uppercase tracking-[0.08em]">km</span>
+          </div>
+        );
+      }}
+    />
+  );
+}
+
+function InterestAutocomplete({
+  clientId,
+  picked,
+  onChange,
+}: {
+  clientId: string;
+  picked: PickedInterest[];
+  onChange: (next: PickedInterest[]) => void;
+}) {
+  return (
+    <TargetingPicker
+      label="// Interests (optional)"
+      hint="Type a keyword — Meta returns matching audience interests. Leave blank for broad targeting."
+      placeholder="e.g. home improvement, plumbing, renovations"
+      clientId={clientId}
+      type="interests"
+      picked={picked.map((i) => ({
+        id: i.id,
+        label: i.name,
+        sublabel: i.sublabel,
+      }))}
+      onAdd={(result) => {
+        if (picked.some((i) => i.id === result.id)) return;
+        onChange([
+          ...picked,
+          { id: result.id, name: result.label, sublabel: result.sublabel },
+        ]);
+      }}
+      onRemove={(id) => onChange(picked.filter((i) => i.id !== id))}
+    />
+  );
+}
+
+function TargetingPicker({
+  label,
+  hint,
+  placeholder,
+  clientId,
+  country,
+  type,
+  picked,
+  onAdd,
+  onRemove,
+  renderPickedExtras,
+}: {
+  label: string;
+  hint: string;
+  placeholder: string;
+  clientId: string;
+  country?: string;
+  type: 'cities' | 'interests';
+  picked: Array<{ id: string; label: string; sublabel?: string }>;
+  onAdd: (result: TargetingSearchResult) => void;
+  onRemove: (id: string) => void;
+  renderPickedExtras?: (id: string) => React.ReactNode;
+}) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<TargetingSearchResult[]>([]);
+  const [focused, setFocused] = useState(false);
+  const search = useSearchMetaTargeting();
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    // No setState here when the query is too short — the render
+    // derives an empty display list from query length below; that
+    // way we don't trigger a re-render just to clear state, and the
+    // lint rule "no setState in effect" stays satisfied.
+    if (query.trim().length < 2) return;
+    debounceTimer.current = setTimeout(async () => {
+      try {
+        const next = await search.mutateAsync({
+          clientId,
+          type,
+          query: query.trim(),
+          countryCode: country,
+        });
+        setResults(next);
+      } catch {
+        setResults([]);
+      }
+    }, 300);
+    return () => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, type, clientId, country]);
+  // Hide results the moment the query falls below the minimum length —
+  // derived during render so it doesn't need a setState in the effect.
+  const displayResults: TargetingSearchResult[] =
+    query.trim().length >= 2 ? results : [];
+
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
+        {label}
+      </label>
+      {picked.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {picked.map((p) => (
+            <div
+              key={p.id}
+              className="flex items-center gap-2 rounded-md border border-rule bg-card px-2.5 py-1.5 text-[12px]"
+            >
+              <div className="flex flex-col leading-tight">
+                <span className="font-semibold text-ink">{p.label}</span>
+                {p.sublabel ? (
+                  <span className="text-[10px] text-ink-quiet">{p.sublabel}</span>
+                ) : null}
+              </div>
+              {renderPickedExtras?.(p.id)}
+              <button
+                type="button"
+                onClick={() => onRemove(p.id)}
+                className="ml-1 rounded-md px-1.5 py-0.5 text-[14px] leading-none text-ink-quiet transition-colors hover:bg-paper-2 hover:text-warn"
+                aria-label="Remove"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <div className="relative">
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setTimeout(() => setFocused(false), 150)}
+          placeholder={placeholder}
+        />
+        {focused && (query.trim().length >= 2 || search.isPending) ? (
+          <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-64 overflow-y-auto rounded-md border border-rule bg-card shadow-card">
+            {search.isPending ? (
+              <div className="px-3 py-2 text-[12px] text-ink-quiet">Searching…</div>
+            ) : displayResults.length === 0 ? (
+              <div className="px-3 py-2 text-[12px] text-ink-quiet">
+                No matches in Meta for &quot;{query.trim()}&quot;.
+              </div>
+            ) : (
+              displayResults.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    onAdd(r);
+                    setQuery('');
+                  }}
+                  className="flex w-full flex-col items-start gap-0.5 border-b border-paper-2 px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-paper-2"
+                >
+                  <span className="text-[13px] font-semibold text-ink">{r.label}</span>
+                  {r.sublabel ? (
+                    <span className="text-[11px] text-ink-quiet">{r.sublabel}</span>
+                  ) : null}
+                  {r.audienceSize ? (
+                    <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-quiet">
+                      Audience: {formatAudienceSize(r.audienceSize.lower)}–
+                      {formatAudienceSize(r.audienceSize.upper)}
+                    </span>
+                  ) : null}
+                </button>
+              ))
+            )}
+          </div>
+        ) : null}
+      </div>
+      <p className="text-[11px] text-ink-quiet">{hint}</p>
+    </div>
+  );
+}
+
+function formatAudienceSize(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
+  return String(n);
+}
+
 // --- step 3 -----------------------------------------------------------------
 
 function Step3Budget({
@@ -780,6 +1057,8 @@ function Step3Budget({
   setDailyBudgetCents,
   durationDays,
   setDurationDays,
+  runUntilStopped,
+  setRunUntilStopped,
 }: {
   campaignName: string;
   setCampaignName: (v: string) => void;
@@ -787,9 +1066,10 @@ function Step3Budget({
   setDailyBudgetCents: (v: number) => void;
   durationDays: number;
   setDurationDays: (v: number) => void;
+  runUntilStopped: boolean;
+  setRunUntilStopped: (v: boolean) => void;
 }) {
-  const totalDollars =
-    ((dailyBudgetCents / 100) * durationDays).toFixed(2);
+  const totalDollars = ((dailyBudgetCents / 100) * durationDays).toFixed(2);
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-2">
@@ -828,31 +1108,66 @@ function Step3Budget({
         </div>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <label className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
-          {'// Duration (days)'}
+      <div className="flex flex-col gap-2.5 rounded-lg border border-rule bg-card px-4 py-3">
+        <label className="flex items-start gap-2.5 text-[13px] text-ink">
+          <input
+            type="checkbox"
+            checked={runUntilStopped}
+            onChange={(e) => setRunUntilStopped(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            Run until manually stopped
+            <span className="block text-[11px] text-ink-quiet">
+              No end date sent to Meta — winning ads keep delivering until
+              you pause them from /campaigns or Ads Manager. Recommended
+              for ads that hit positive ROI in the first week.
+            </span>
+          </span>
         </label>
-        <Input
-          type="number"
-          min={1}
-          max={365}
-          value={durationDays}
-          onChange={(e) =>
-            setDurationDays(Math.max(1, parseInt(e.target.value, 10) || 1))
-          }
-          className="max-w-[160px]"
-        />
+
+        {runUntilStopped ? null : (
+          <div className="flex flex-col gap-2 border-t border-paper-2 pt-2.5">
+            <label className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
+              {'// Duration (days)'}
+            </label>
+            <Input
+              type="number"
+              min={1}
+              max={365}
+              value={durationDays}
+              onChange={(e) =>
+                setDurationDays(Math.max(1, parseInt(e.target.value, 10) || 1))
+              }
+              className="max-w-[160px]"
+            />
+          </div>
+        )}
       </div>
 
       <div className="rounded-lg bg-paper-2 px-4 py-3">
         <div className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
-          {'// ESTIMATED TOTAL SPEND'}
+          {runUntilStopped
+            ? '// DAILY SPEND'
+            : '// ESTIMATED TOTAL SPEND'}
         </div>
         <div className="mt-1 text-[18px] font-semibold text-ink">
-          ${totalDollars}{' '}
-          <span className="text-[12px] font-normal text-ink-quiet">
-            ({(dailyBudgetCents / 100).toFixed(0)}/day × {durationDays} days)
-          </span>
+          {runUntilStopped ? (
+            <>
+              ${(dailyBudgetCents / 100).toFixed(0)}
+              <span className="text-[12px] font-normal text-ink-quiet">
+                {' '}
+                /day · indefinite
+              </span>
+            </>
+          ) : (
+            <>
+              ${totalDollars}{' '}
+              <span className="text-[12px] font-normal text-ink-quiet">
+                ({(dailyBudgetCents / 100).toFixed(0)}/day × {durationDays} days)
+              </span>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -1131,20 +1446,28 @@ function Step5Review({
         <SummaryCard label="// TARGETING">
           <div className="text-[14px] text-ink">
             {state.country}
-            {state.geoCenter
-              ? ` · ${state.radiusKm}km around ${state.geoCenter.lat.toFixed(3)}, ${state.geoCenter.lng.toFixed(3)}`
+            {state.cities.length > 0
+              ? ` · ${state.cities.map((c) => `${c.label} (${c.radiusKm}km)`).join(', ')}`
               : ' · country-level'}
           </div>
           <div className="text-[12px] text-ink-quiet">
-            Age {state.ageMin}-{state.ageMax} · {template.interestTokens.join(', ') || 'broad'}
+            Age {state.ageMin}-{state.ageMax}
+            {state.interests.length > 0
+              ? ` · ${state.interests.map((i) => i.name).join(', ')}`
+              : ' · broad'}
           </div>
         </SummaryCard>
         <SummaryCard label="// BUDGET">
           <div className="text-[14px] text-ink">
-            ${(state.dailyBudgetCents / 100).toFixed(0)}/day × {state.durationDays} days
+            ${(state.dailyBudgetCents / 100).toFixed(0)}/day{' '}
+            {state.runUntilStopped
+              ? '· run until manually stopped'
+              : `× ${state.durationDays} days`}
           </div>
           <div className="text-[12px] text-ink-quiet">
-            Estimated total spend: ${totalDollars}
+            {state.runUntilStopped
+              ? 'No end date — winning ads keep delivering.'
+              : `Estimated total spend: $${totalDollars}`}
           </div>
         </SummaryCard>
         <SummaryCard label="// CREATIVE">
@@ -1256,16 +1579,19 @@ function freshState(): WizardState {
     brand: null,
     client: null,
     primaryDomain: null,
+    websiteHeroCopy: '',
+    brandTagline: '',
     templateSlug: 'generic',
     country: 'AU',
     serviceAreaLabel: '',
-    geoCenter: null,
-    radiusKm: 25,
+    cities: [],
+    interests: [],
     ageMin: 25,
     ageMax: 65,
     campaignName: '',
     dailyBudgetCents: 3000,
     durationDays: 14,
+    runUntilStopped: false,
     offerText: '',
     variants: null,
     selectedVariantIdx: null,
@@ -1291,7 +1617,7 @@ function isStepValid(s: WizardState): boolean {
       return (
         s.campaignName.trim().length > 0 &&
         s.dailyBudgetCents >= 100 &&
-        s.durationDays >= 1
+        (s.runUntilStopped || s.durationDays >= 1)
       );
     case 4:
       return (
@@ -1338,14 +1664,14 @@ async function resolveClientContext(clientId: string): Promise<{
   brand: BrandRow | null;
   client: ClientRow | null;
   primaryDomain: string | null;
+  websiteHeroCopy: string;
+  brandTagline: string;
 }> {
   type SB = {
     from: (table: string) => {
       select: (cols: string) => {
         eq: (col: string, val: string) => {
           maybeSingle: () => Promise<{ data: unknown }>;
-          single?: () => Promise<{ data: unknown }>;
-          is?: (col: string, val: unknown) => unknown;
         };
       };
     };
@@ -1354,7 +1680,9 @@ async function resolveClientContext(clientId: string): Promise<{
   const [brandRes, clientRes, websiteRes] = await Promise.all([
     sb
       .from('brands')
-      .select('accent_color, logo_url, industry_category, offer, audience_line')
+      .select(
+        'accent_color, logo_url, industry_category, offer, audience_line, services, top_jobs_to_be_booked, voice_formality, voice_urgency, voice_technicality, tagline',
+      )
       .eq('client_id', clientId)
       .maybeSingle(),
     sb
@@ -1364,16 +1692,74 @@ async function resolveClientContext(clientId: string): Promise<{
       .maybeSingle(),
     sb
       .from('websites')
-      .select('domain_primary')
+      .select('domain_primary, draft_version_id')
       .eq('client_id', clientId)
       .maybeSingle(),
   ]);
   const brand = (brandRes.data as BrandRow | null) ?? null;
   const client = (clientRes.data as ClientRow | null) ?? null;
-  const websiteRow = (websiteRes.data as { domain_primary?: string | null } | null) ?? null;
+  const websiteRow =
+    (websiteRes.data as {
+      domain_primary?: string | null;
+      draft_version_id?: string | null;
+    } | null) ?? null;
+
+  // Best-effort hero-copy extraction from the home page's draft
+  // snapshot. The Sonnet variant drafter consumes this as positioning
+  // context so the generated copy matches the customer's own framing
+  // instead of inventing a fresh angle.
+  let websiteHeroCopy = '';
+  if (websiteRow?.draft_version_id) {
+    const versionRes = await sb
+      .from('website_versions')
+      .select('snapshot')
+      .eq('id', websiteRow.draft_version_id)
+      .maybeSingle();
+    websiteHeroCopy = extractHomeHeroCopy(
+      (versionRes.data as { snapshot?: unknown } | null)?.snapshot,
+    );
+  }
+
   return {
     brand,
     client,
     primaryDomain: websiteRow?.domain_primary ?? null,
+    websiteHeroCopy,
+    brandTagline: typeof brand?.tagline === 'string' ? brand.tagline : '',
   };
+}
+
+/** Walk a Version snapshot to find the home page's hero section and
+ *  join its eyebrow + headline + sub into a single context string the
+ *  variant draft prompt consumes. Best-effort — returns '' when the
+ *  snapshot is missing, malformed, or has no hero section.
+ *
+ *  Snapshot shape per CLAUDE.md: `{ pages, header, footer, nav, pageOrder }`
+ *  where each page has `{ slug, type, sections: Section[] }` and each
+ *  section has `{ type, data }`. Hero section type = 'hero' with data
+ *  fields `eyebrow`, `headline`, `sub`. */
+function extractHomeHeroCopy(snapshot: unknown): string {
+  if (!snapshot || typeof snapshot !== 'object') return '';
+  const pages = (snapshot as { pages?: unknown }).pages;
+  if (!Array.isArray(pages)) return '';
+  // Prefer the page with type='home'; fall back to the first page.
+  const homePage =
+    pages.find(
+      (p): p is { sections?: unknown[] } =>
+        p != null && typeof p === 'object' && (p as { type?: unknown }).type === 'home',
+    ) ?? (pages[0] as { sections?: unknown[] } | undefined);
+  const sections = homePage?.sections;
+  if (!Array.isArray(sections)) return '';
+  const heroSection = sections.find(
+    (s): s is { data?: Record<string, unknown> } =>
+      s != null && typeof s === 'object' && (s as { type?: unknown }).type === 'hero',
+  );
+  const data = heroSection?.data;
+  if (!data || typeof data !== 'object') return '';
+  const parts: string[] = [];
+  for (const key of ['eyebrow', 'headline', 'sub'] as const) {
+    const v = (data as Record<string, unknown>)[key];
+    if (typeof v === 'string' && v.trim().length > 0) parts.push(v.trim());
+  }
+  return parts.join(' · ');
 }
