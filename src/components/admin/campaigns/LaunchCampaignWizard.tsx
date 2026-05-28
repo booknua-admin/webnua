@@ -51,7 +51,6 @@ import {
 } from '@/lib/integrations/meta-ads/creative-draft';
 import {
   listTemplates,
-  resolveTemplateCopy,
   templateForIndustry,
   type MetaAdTemplate,
 } from '@/lib/integrations/meta-ads/templates';
@@ -118,14 +117,13 @@ type WizardState = {
    *  duration. */
   runUntilStopped: boolean;
 
-  // step 4
+  // step 4 — multi-variant launch (Session 1.3). Each variant carries
+  // a `selected` flag; the launch sends ONE ad per selected variant
+  // inside the same ad set. Meta auto-allocates spend by performance.
   offerText: string;
-  variants: AdCreativeVariant[] | null;
+  variants: Array<AdCreativeVariant & { selected: boolean }> | null;
+  /** Index of the variant currently shown in the live preview. */
   selectedVariantIdx: number | null;
-  headline: string;
-  primaryText: string;
-  description: string;
-  ctaType: string;
   imageUrl: string | null;
   imageWidth: number | null;
   imageHeight: number | null;
@@ -191,11 +189,6 @@ export function LaunchCampaignWizard({
             brand?.industry_category ?? client?.industry ?? 'generic',
           );
           const offerDraft = composeDefaultOfferText(brand, client);
-          const subs = {
-            businessName: client?.name ?? '',
-            serviceArea: client?.service_area ?? '',
-          };
-          const seeded = resolveTemplateCopy(template, subs);
           return {
             ...s,
             brand,
@@ -210,51 +203,18 @@ export function LaunchCampaignWizard({
             campaignName: defaultCampaignName(client, template),
             dailyBudgetCents: template.defaultDailyBudgetCents,
             offerText: offerDraft,
-            headline: seeded.headline,
-            primaryText: seeded.primaryText,
-            description: seeded.description,
-            ctaType: seeded.ctaType,
           };
         });
       },
     );
   }, [clientId]);
 
-  // Template-pick handler — also re-seeds the copy fields from the new
-  // template (preserves any operator edits that already have content).
-  // Lives outside an effect so the lint rule "no setState in effect" is
-  // satisfied; template change is a discrete user action, not a sync.
+  // Template-pick handler. Session 1.3: variants drive copy now —
+  // picking a template doesn't pre-seed inline fields (there are no
+  // inline fields anymore). The operator generates variants once
+  // they reach step 4.
   function pickTemplate(slug: string) {
-    setState((s) => {
-      const template = templateForIndustry(slug);
-      const subs = {
-        businessName: s.client?.name ?? '',
-        serviceArea: s.client?.service_area ?? '',
-      };
-      const seeded = resolveTemplateCopy(template, subs);
-      const variantsActive = s.variants != null;
-      return {
-        ...s,
-        templateSlug: slug,
-        headline: variantsActive
-          ? s.headline
-          : s.headline.length === 0
-            ? seeded.headline
-            : s.headline,
-        primaryText: variantsActive
-          ? s.primaryText
-          : s.primaryText.length === 0
-            ? seeded.primaryText
-            : s.primaryText,
-        description: variantsActive
-          ? s.description
-          : s.description.length === 0
-            ? seeded.description
-            : s.description,
-        ctaType:
-          variantsActive || s.ctaType.length > 0 ? s.ctaType : seeded.ctaType,
-      };
-    });
+    setState((s) => ({ ...s, templateSlug: slug }));
   }
 
   // Auto-fire variant draft on step 4 entry. Tracked in a ref (not
@@ -287,55 +247,92 @@ export function LaunchCampaignWizard({
 
   // --- Step 4 actions --------------------------------------------------------
 
-  async function handleGenerateVariants() {
-    if (state.offerText.trim().length === 0) return;
+  function brandContextForDraft() {
     const services =
       state.brand?.services && state.brand.services.length > 0
         ? state.brand.services
         : (state.brand?.top_jobs_to_be_booked ?? []);
+    return {
+      voiceFormality: state.brand?.voice_formality ?? undefined,
+      voiceUrgency: state.brand?.voice_urgency ?? undefined,
+      voiceTechnicality: state.brand?.voice_technicality ?? undefined,
+      audienceLine: state.brand?.audience_line ?? undefined,
+      services: services.length > 0 ? services : undefined,
+      websiteHeroCopy: state.websiteHeroCopy || undefined,
+      brandTagline: state.brandTagline || undefined,
+    };
+  }
+
+  /** Initial generation — drafts the first 3 variants, all selected
+   *  by default. Auto-fired on step 4 entry. */
+  async function handleGenerateVariants() {
+    if (state.offerText.trim().length === 0) return;
     try {
-      const variants = await draftMutation.mutateAsync({
+      const drafted = await draftMutation.mutateAsync({
         clientId,
         offer: state.offerText.trim(),
         templateSlug: state.templateSlug,
         businessName: state.client?.name ?? '',
         serviceArea: state.client?.service_area ?? '',
         count: 3,
-        voiceFormality: state.brand?.voice_formality ?? undefined,
-        voiceUrgency: state.brand?.voice_urgency ?? undefined,
-        voiceTechnicality: state.brand?.voice_technicality ?? undefined,
-        audienceLine: state.brand?.audience_line ?? undefined,
-        services: services.length > 0 ? services : undefined,
-        websiteHeroCopy: state.websiteHeroCopy || undefined,
-        brandTagline: state.brandTagline || undefined,
+        ...brandContextForDraft(),
       });
+      const withSelected = drafted.map((v) => ({ ...v, selected: true }));
       setState((s) => ({
         ...s,
-        variants,
-        // Auto-select the first variant + populate the editable fields.
-        selectedVariantIdx: variants.length > 0 ? 0 : null,
-        headline: variants[0]?.headline ?? s.headline,
-        primaryText: variants[0]?.primaryText ?? s.primaryText,
-        description: variants[0]?.description ?? s.description,
-        ctaType: variants[0]?.ctaType ?? s.ctaType,
+        variants: withSelected,
+        selectedVariantIdx: withSelected.length > 0 ? 0 : null,
       }));
     } catch {
       // Error is exposed via draftMutation.error — UI surfaces it inline.
     }
   }
 
-  function handlePickVariant(idx: number) {
+  /** Append N more variants (default 3) to the existing list. All new
+   *  variants land selected; operator unticks any they don't want. */
+  async function handleAddMoreVariants() {
+    if (state.offerText.trim().length === 0) return;
+    try {
+      const drafted = await draftMutation.mutateAsync({
+        clientId,
+        offer: state.offerText.trim(),
+        templateSlug: state.templateSlug,
+        businessName: state.client?.name ?? '',
+        serviceArea: state.client?.service_area ?? '',
+        count: 3,
+        ...brandContextForDraft(),
+      });
+      const appended = drafted.map((v) => ({ ...v, selected: true }));
+      setState((s) => ({
+        ...s,
+        variants: [...(s.variants ?? []), ...appended],
+      }));
+    } catch {
+      // surfaces via draftMutation.error
+    }
+  }
+
+  /** Click a variant card → preview that variant in the live mockup.
+   *  Does NOT toggle the variant's `selected` flag — selection is the
+   *  checkbox on the card. */
+  function handlePreviewVariant(idx: number) {
     if (state.variants == null) return;
-    const v = state.variants[idx];
-    if (!v) return;
-    setState((s) => ({
-      ...s,
-      selectedVariantIdx: idx,
-      headline: v.headline,
-      primaryText: v.primaryText,
-      description: v.description,
-      ctaType: v.ctaType,
-    }));
+    setState((s) => ({ ...s, selectedVariantIdx: idx }));
+  }
+
+  function handleToggleVariantSelected(idx: number, selected: boolean) {
+    setState((s) => {
+      if (!s.variants) return s;
+      const next = s.variants.map((v, i) => (i === idx ? { ...v, selected } : v));
+      return { ...s, variants: next };
+    });
+  }
+
+  function handleSetAllSelected(selected: boolean) {
+    setState((s) => {
+      if (!s.variants) return s;
+      return { ...s, variants: s.variants.map((v) => ({ ...v, selected })) };
+    });
   }
 
   async function handleImagePick(file: File) {
@@ -372,6 +369,8 @@ export function LaunchCampaignWizard({
       state.interests.length > 0
         ? state.interests.map((i) => i.name)
         : templateForIndustry(state.templateSlug).interestTokens;
+    const selectedVariants = (state.variants ?? []).filter((v) => v.selected);
+    if (selectedVariants.length === 0) return;
     const payload: LaunchCampaignPayload = {
       clientId,
       templateSlug: state.templateSlug,
@@ -399,10 +398,13 @@ export function LaunchCampaignWizard({
         imageUrl: state.imageUrl,
         imageWidth: state.imageWidth,
         imageHeight: state.imageHeight,
-        headline: state.headline,
-        primaryText: state.primaryText,
-        description: state.description.length > 0 ? state.description : null,
-        ctaType: state.ctaType,
+        variants: selectedVariants.map((v) => ({
+          headline: v.headline,
+          primaryText: v.primaryText,
+          description:
+            v.description && v.description.length > 0 ? v.description : null,
+          ctaType: v.ctaType,
+        })),
         linkUrl,
         privacyPolicyUrl,
       },
@@ -504,21 +506,21 @@ export function LaunchCampaignWizard({
               uploadPending={uploadMutation.isPending}
               uploadError={uploadMutation.error}
               onGenerate={handleGenerateVariants}
-              onPickVariant={handlePickVariant}
+              onAddMore={handleAddMoreVariants}
+              onPreviewVariant={handlePreviewVariant}
+              onToggleVariantSelected={handleToggleVariantSelected}
+              onSetAllSelected={handleSetAllSelected}
               onImagePick={handleImagePick}
               setOfferText={(offerText) =>
-                setState((s) => ({ ...s, offerText, variants: null, selectedVariantIdx: null }))
+                setState((s) => ({
+                  ...s,
+                  offerText,
+                  // Operator changed the offer — drop the existing
+                  // variants so they re-generate against the new copy.
+                  variants: null,
+                  selectedVariantIdx: null,
+                }))
               }
-              setHeadline={(headline) =>
-                setState((s) => ({ ...s, headline, selectedVariantIdx: null }))
-              }
-              setPrimaryText={(primaryText) =>
-                setState((s) => ({ ...s, primaryText, selectedVariantIdx: null }))
-              }
-              setDescription={(description) =>
-                setState((s) => ({ ...s, description, selectedVariantIdx: null }))
-              }
-              setCtaType={(ctaType) => setState((s) => ({ ...s, ctaType }))}
             />
           ) : null}
           {state.step === 5 ? (
@@ -1440,13 +1442,12 @@ function Step4Creative({
   uploadPending,
   uploadError,
   onGenerate,
-  onPickVariant,
+  onAddMore,
+  onPreviewVariant,
+  onToggleVariantSelected,
+  onSetAllSelected,
   onImagePick,
   setOfferText,
-  setHeadline,
-  setPrimaryText,
-  setDescription,
-  setCtaType,
 }: {
   state: WizardState;
   draftPending: boolean;
@@ -1454,15 +1455,19 @@ function Step4Creative({
   uploadPending: boolean;
   uploadError: unknown;
   onGenerate: () => void;
-  onPickVariant: (idx: number) => void;
+  onAddMore: () => void;
+  onPreviewVariant: (idx: number) => void;
+  onToggleVariantSelected: (idx: number, selected: boolean) => void;
+  onSetAllSelected: (selected: boolean) => void;
   onImagePick: (file: File) => void;
   setOfferText: (v: string) => void;
-  setHeadline: (v: string) => void;
-  setPrimaryText: (v: string) => void;
-  setDescription: (v: string) => void;
-  setCtaType: (v: string) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const variants = state.variants ?? [];
+  const selectedCount = variants.filter((v) => v.selected).length;
+  const allSelected = variants.length > 0 && selectedCount === variants.length;
+  const previewIdx = state.selectedVariantIdx ?? 0;
+  const previewVariant = variants[previewIdx];
 
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_360px]">
@@ -1489,89 +1494,70 @@ function Step4Creative({
               disabled={draftPending || state.offerText.trim().length < 5}
               onClick={onGenerate}
             >
-              {draftPending ? 'Generating…' : '✦ Generate 3 variants'}
+              {draftPending
+                ? 'Generating…'
+                : variants.length === 0
+                  ? '✦ Generate 3 variants'
+                  : '↻ Regenerate from offer'}
             </Button>
           </div>
           {draftError ? (
             <div className="rounded-md bg-warn-soft px-3 py-2 text-[12px] text-warn">
               {(draftError as Error).message ??
-                'Could not generate variants — type the fields manually instead.'}
+                'Could not generate variants — try regenerating in a moment.'}
             </div>
           ) : null}
         </div>
 
-        {state.variants ? (
-          <div className="flex flex-col gap-2">
-            <label className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
-              {'// Pick a variant'}
-            </label>
+        {variants.length > 0 ? (
+          <div className="flex flex-col gap-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <label className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
+                {`// VARIANTS · ${selectedCount}/${variants.length} testing`}
+              </label>
+              <button
+                type="button"
+                className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-rust transition-colors hover:underline"
+                onClick={() => onSetAllSelected(!allSelected)}
+              >
+                {allSelected ? 'Untick all' : 'Test all'}
+              </button>
+            </div>
+            <p className="text-[11px] text-ink-quiet">
+              Each ticked variant launches as its own ad inside the same ad
+              set. Meta auto-allocates spend to the best performer.
+            </p>
             <div className="grid grid-cols-1 gap-2">
-              {state.variants.map((v, idx) => (
-                <button
+              {variants.map((v, idx) => (
+                <VariantCard
                   key={idx}
-                  type="button"
-                  onClick={() => onPickVariant(idx)}
-                  data-selected={
-                    state.selectedVariantIdx === idx ? 'true' : undefined
-                  }
-                  className="flex flex-col gap-1 rounded-lg border border-rule bg-card px-3 py-2.5 text-left transition-colors hover:border-rust data-[selected=true]:border-rust data-[selected=true]:bg-rust-soft"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="text-[14px] font-semibold text-ink">
-                      {v.headline}
-                    </div>
-                    <div className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-quiet">
-                      {v.ctaType}
-                    </div>
-                  </div>
-                  <div className="text-[12px] text-ink-soft">{v.primaryText}</div>
-                  <div className="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-quiet">
-                    {v.description}
-                  </div>
-                </button>
+                  variant={v}
+                  idx={idx}
+                  isPreviewed={previewIdx === idx}
+                  onToggle={(selected) => onToggleVariantSelected(idx, selected)}
+                  onPreview={() => onPreviewVariant(idx)}
+                />
               ))}
             </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 self-start"
+              disabled={draftPending || state.offerText.trim().length < 5 || variants.length >= 10}
+              onClick={onAddMore}
+            >
+              {draftPending
+                ? 'Drafting…'
+                : variants.length >= 10
+                  ? 'Max 10 variants'
+                  : '+ Draft 3 more variants'}
+            </Button>
           </div>
         ) : null}
 
-        <div className="grid grid-cols-1 gap-3">
-          <FieldRow label="Headline (≤ 40)" max={40} value={state.headline} onChange={setHeadline} />
-          <FieldRow
-            label="Primary text (≤ 125)"
-            max={125}
-            value={state.primaryText}
-            onChange={setPrimaryText}
-            textarea
-          />
-          <FieldRow
-            label="Description (≤ 27)"
-            max={27}
-            value={state.description}
-            onChange={setDescription}
-          />
-          <div className="flex flex-col gap-1.5">
-            <label className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
-              {'// CTA button'}
-            </label>
-            <select
-              value={state.ctaType}
-              onChange={(e) => setCtaType(e.target.value)}
-              className="h-10 rounded-md border border-input bg-card px-3 text-[14px] text-ink"
-            >
-              <option value="LEARN_MORE">Learn more</option>
-              <option value="BOOK_NOW">Book now</option>
-              <option value="GET_QUOTE">Get quote</option>
-              <option value="CONTACT_US">Contact us</option>
-              <option value="SIGN_UP">Sign up</option>
-              <option value="GET_OFFER">Get offer</option>
-              <option value="APPLY_NOW">Apply now</option>
-            </select>
-          </div>
-        </div>
-
         <div className="flex flex-col gap-2">
           <label className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
-            {'// Image'}
+            {'// Image (shared across all variants)'}
           </label>
           <div className="flex items-center gap-3">
             <Button
@@ -1619,13 +1605,17 @@ function Step4Creative({
       {/* --- right: live preview --- */}
       <div className="lg:sticky lg:top-0">
         <MetaAdPreview
-          caption="// LIVE PREVIEW"
+          caption={
+            variants.length > 0
+              ? `// PREVIEW · VARIANT ${previewIdx + 1} OF ${variants.length}`
+              : '// LIVE PREVIEW'
+          }
           pageName={state.client?.name ?? 'Your Business'}
           pageLogoUrl={state.brand?.logo_url ?? null}
-          primaryText={state.primaryText}
-          headline={state.headline}
-          description={state.description}
-          ctaType={state.ctaType}
+          primaryText={previewVariant?.primaryText ?? ''}
+          headline={previewVariant?.headline ?? ''}
+          description={previewVariant?.description ?? ''}
+          ctaType={previewVariant?.ctaType ?? 'LEARN_MORE'}
           imageUrl={state.imageUrl}
           accentColor={state.brand?.accent_color ?? '#d24317'}
           linkHost={state.primaryDomain ?? undefined}
@@ -1635,41 +1625,59 @@ function Step4Creative({
   );
 }
 
-function FieldRow({
-  label,
-  value,
-  onChange,
-  max,
-  textarea = false,
+function VariantCard({
+  variant,
+  idx,
+  isPreviewed,
+  onToggle,
+  onPreview,
 }: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  max: number;
-  textarea?: boolean;
+  variant: AdCreativeVariant & { selected: boolean };
+  idx: number;
+  isPreviewed: boolean;
+  onToggle: (selected: boolean) => void;
+  onPreview: () => void;
 }) {
-  const tooLong = value.length > max;
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center justify-between">
-        <label className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
-          {`// ${label}`}
-        </label>
-        <span
-          className={
-            tooLong
-              ? 'font-mono text-[10px] uppercase tracking-[0.08em] text-warn'
-              : 'font-mono text-[10px] uppercase tracking-[0.08em] text-ink-quiet'
-          }
-        >
-          {value.length}/{max}
-        </span>
-      </div>
-      {textarea ? (
-        <Textarea rows={3} value={value} onChange={(e) => onChange(e.target.value)} />
-      ) : (
-        <Input value={value} onChange={(e) => onChange(e.target.value)} />
-      )}
+    <div
+      data-selected={variant.selected ? 'true' : undefined}
+      data-previewed={isPreviewed ? 'true' : undefined}
+      className="flex items-start gap-3 rounded-lg border border-rule bg-card px-3 py-2.5 transition-colors data-[selected=true]:bg-rust-soft data-[selected=true]:border-rust data-[previewed=true]:ring-2 data-[previewed=true]:ring-rust/30"
+    >
+      <label className="mt-0.5 flex shrink-0 cursor-pointer items-center">
+        <input
+          type="checkbox"
+          checked={variant.selected}
+          onChange={(e) => onToggle(e.target.checked)}
+          className="h-4 w-4 cursor-pointer"
+          aria-label={`Test variant ${idx + 1}`}
+        />
+      </label>
+      <button
+        type="button"
+        onClick={onPreview}
+        className="flex min-w-0 flex-1 cursor-pointer flex-col gap-1 text-left"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-quiet">
+              {`Variant ${idx + 1}`}
+            </span>
+            <span className="text-[14px] font-semibold text-ink">
+              {variant.headline}
+            </span>
+          </div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-quiet">
+            {variant.ctaType}
+          </div>
+        </div>
+        <div className="text-[12px] text-ink-soft">{variant.primaryText}</div>
+        {variant.description ? (
+          <div className="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-quiet">
+            {variant.description}
+          </div>
+        ) : null}
+      </button>
     </div>
   );
 }
@@ -1693,6 +1701,10 @@ function Step5Review({
 }) {
   const totalDollars = ((state.dailyBudgetCents / 100) * state.durationDays).toFixed(2);
   const template = templateForIndustry(state.templateSlug);
+  const selectedReviewVariants = (state.variants ?? []).filter((v) => v.selected);
+  const previewVariant =
+    selectedReviewVariants[0] ??
+    (state.variants?.[state.selectedVariantIdx ?? 0] ?? null);
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
       <div className="flex flex-col gap-3">
@@ -1741,12 +1753,37 @@ function Step5Review({
               : `Estimated total spend: $${totalDollars}`}
           </div>
         </SummaryCard>
-        <SummaryCard label="// CREATIVE">
-          <div className="text-[14px] font-semibold text-ink">{state.headline}</div>
-          <div className="text-[12px] text-ink-soft">{state.primaryText}</div>
-          <div className="text-[11px] text-ink-quiet">
-            {state.description} · CTA: {state.ctaType}
-          </div>
+        <SummaryCard
+          label={`// CREATIVE · ${selectedReviewVariants.length} VARIANT${selectedReviewVariants.length === 1 ? '' : 'S'} TESTING`}
+        >
+          {selectedReviewVariants.length === 0 ? (
+            <div className="text-[12px] text-warn">
+              No variants selected — go back and pick at least one.
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {selectedReviewVariants.map((v, i) => (
+                <div key={i} className="flex flex-col gap-0.5 rounded-md bg-paper-2 px-2.5 py-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[13px] font-semibold text-ink">
+                      {v.headline}
+                    </span>
+                    <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-quiet">
+                      {v.ctaType}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-ink-soft">{v.primaryText}</div>
+                </div>
+              ))}
+              {selectedReviewVariants.length > 1 ? (
+                <div className="text-[11px] text-ink-quiet">
+                  Meta will A/B-test the {selectedReviewVariants.length}{' '}
+                  variants inside one ad set and auto-allocate spend to the
+                  best performer.
+                </div>
+              ) : null}
+            </div>
+          )}
         </SummaryCard>
         <SummaryCard label="// DESTINATION">
           <div className="text-[14px] text-ink">
@@ -1812,10 +1849,10 @@ function Step5Review({
           caption="// FINAL PREVIEW"
           pageName={state.client?.name ?? 'Your Business'}
           pageLogoUrl={state.brand?.logo_url ?? null}
-          primaryText={state.primaryText}
-          headline={state.headline}
-          description={state.description}
-          ctaType={state.ctaType}
+          primaryText={previewVariant?.primaryText ?? ''}
+          headline={previewVariant?.headline ?? ''}
+          description={previewVariant?.description ?? ''}
+          ctaType={previewVariant?.ctaType ?? 'LEARN_MORE'}
           imageUrl={state.imageUrl}
           accentColor={state.brand?.accent_color ?? '#d24317'}
           linkHost={state.primaryDomain ?? undefined}
@@ -1868,10 +1905,6 @@ function freshState(): WizardState {
     offerText: '',
     variants: null,
     selectedVariantIdx: null,
-    headline: '',
-    primaryText: '',
-    description: '',
-    ctaType: 'LEARN_MORE',
     imageUrl: null,
     imageWidth: null,
     imageHeight: null,
@@ -1898,15 +1931,19 @@ function isStepValid(s: WizardState): boolean {
         s.dailyBudgetCents >= 100 &&
         (s.runUntilStopped || s.durationDays >= 1)
       );
-    case 4:
-      return (
-        s.imageUrl != null &&
-        s.headline.trim().length > 0 &&
-        s.primaryText.trim().length > 0 &&
-        s.headline.length <= 40 &&
-        s.primaryText.length <= 125 &&
-        s.description.length <= 27
+    case 4: {
+      // V1.3 multi-variant — step is valid when:
+      //   • the image is uploaded
+      //   • at least one variant is selected for testing
+      //   • every selected variant carries headline + primaryText (Sonnet
+      //     drafts always do; this is defence in depth)
+      if (s.imageUrl == null) return false;
+      const selected = (s.variants ?? []).filter((v) => v.selected);
+      if (selected.length === 0) return false;
+      return selected.every(
+        (v) => v.headline.trim().length > 0 && v.primaryText.trim().length > 0,
       );
+    }
     case 5:
       return s.primaryDomain != null && s.imageUrl != null;
     default:

@@ -222,20 +222,40 @@ function parseLaunchInput(
   if (typeof imageUrl !== 'string' || imageUrl.length === 0) {
     return { error: 'missing-creative.imageUrl' };
   }
-  const headline = creative.headline;
-  const primaryText = creative.primaryText;
-  if (typeof headline !== 'string' || headline.length === 0) {
-    return { error: 'missing-creative.headline' };
+  // V1.3 multi-variant: the body carries `variants[]` (one creative
+  // per launched variant inside the same ad set). Capped at 10 — Meta
+  // technically allows more but performance signal dilutes past ~5.
+  const variantsRaw = Array.isArray(creative.variants) ? creative.variants : [];
+  const variants: Array<{
+    headline: string;
+    primaryText: string;
+    description: string | null;
+    ctaType: string;
+  }> = [];
+  for (let i = 0; i < variantsRaw.length && variants.length < 10; i += 1) {
+    const v = variantsRaw[i];
+    if (!v || typeof v !== 'object') continue;
+    const obj = v as Record<string, unknown>;
+    const headline = typeof obj.headline === 'string' ? obj.headline.trim() : '';
+    const primaryText =
+      typeof obj.primaryText === 'string' ? obj.primaryText.trim() : '';
+    if (headline.length === 0 || primaryText.length === 0) continue;
+    variants.push({
+      headline,
+      primaryText,
+      description:
+        typeof obj.description === 'string' && obj.description.length > 0
+          ? obj.description
+          : null,
+      ctaType:
+        typeof obj.ctaType === 'string' && obj.ctaType.length > 0
+          ? obj.ctaType
+          : 'LEARN_MORE',
+    });
   }
-  if (typeof primaryText !== 'string' || primaryText.length === 0) {
-    return { error: 'missing-creative.primaryText' };
+  if (variants.length === 0) {
+    return { error: 'missing-creative.variants' };
   }
-  const description =
-    typeof creative.description === 'string' ? creative.description : null;
-  const ctaType =
-    typeof creative.ctaType === 'string' && creative.ctaType.length > 0
-      ? creative.ctaType
-      : 'LEARN_MORE';
   const linkUrl = creative.linkUrl;
   if (typeof linkUrl !== 'string' || linkUrl.length === 0) {
     return { error: 'missing-creative.linkUrl' };
@@ -270,10 +290,7 @@ function parseLaunchInput(
     imageUrl,
     imageWidth,
     imageHeight,
-    headline,
-    primaryText,
-    description,
-    ctaType,
+    variants,
     linkUrl,
     privacyPolicyUrl,
     isFirstLaunch: Boolean(body.isFirstLaunch),

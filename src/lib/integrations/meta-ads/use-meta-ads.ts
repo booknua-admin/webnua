@@ -550,10 +550,16 @@ export type LaunchCampaignPayload = {
     imageUrl: string;
     imageWidth?: number | null;
     imageHeight?: number | null;
-    headline: string;
-    primaryText: string;
-    description?: string | null;
-    ctaType: string;
+    /** V1.3 multi-variant: one creative + one ad per variant inside
+     *  the same ad set. All share the imageUrl above (per-variant
+     *  imagery is V1.4 with the template overlays). Capped at 10
+     *  server-side. */
+    variants: Array<{
+      headline: string;
+      primaryText: string;
+      description?: string | null;
+      ctaType: string;
+    }>;
     linkUrl: string;
     privacyPolicyUrl: string;
   };
