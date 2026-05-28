@@ -29,10 +29,20 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
   CREATIVE_TEMPLATE_REGISTRY,
+  type AuthorPosition,
+  type BannerBg,
+  type BannerHeight,
   type BannerPosition,
   type CreativeTemplateId,
   type CreativeTemplateOverlay,
+  type GradientIntensity,
   type OfferCardCorner,
+  type OfferCardSize,
+  type OfferCardSurface,
+  type QuoteMarkStyle,
+  type SplitDividerBg,
+  type SplitRatio,
+  type TextAlign,
   listCreativeTemplates,
   validateOverlay,
 } from '@/lib/integrations/meta-ads/creative-templates';
@@ -187,6 +197,35 @@ function BannerEditor({
           { id: 'bottom', label: 'Bottom' },
         ]}
       />
+      <SegmentedField<BannerBg>
+        label="// Background"
+        value={overlay.bg}
+        onChange={(bg) => onChange({ ...overlay, bg })}
+        options={[
+          { id: 'accent', label: 'Brand' },
+          { id: 'dark', label: 'Dark' },
+          { id: 'light', label: 'Light' },
+        ]}
+      />
+      <SegmentedField<TextAlign>
+        label="// Text align"
+        value={overlay.textAlign}
+        onChange={(textAlign) => onChange({ ...overlay, textAlign })}
+        options={[
+          { id: 'left', label: 'Left' },
+          { id: 'center', label: 'Center' },
+          { id: 'right', label: 'Right' },
+        ]}
+      />
+      <SegmentedField<BannerHeight>
+        label="// Strip height"
+        value={overlay.height}
+        onChange={(height) => onChange({ ...overlay, height })}
+        options={[
+          { id: 'standard', label: 'Standard' },
+          { id: 'tall', label: 'Tall' },
+        ]}
+      />
     </div>
   );
 }
@@ -227,6 +266,43 @@ function OfferCardEditor({
           { id: 'br', label: 'Bottom-right' },
         ]}
       />
+      <SegmentedField<OfferCardSurface>
+        label="// Card surface"
+        value={overlay.surface}
+        onChange={(surface) => onChange({ ...overlay, surface })}
+        options={[
+          { id: 'paper', label: 'Paper' },
+          { id: 'white', label: 'White' },
+          { id: 'dark', label: 'Dark' },
+        ]}
+      />
+      <SegmentedField<OfferCardSize>
+        label="// Size"
+        value={overlay.size}
+        onChange={(size) => onChange({ ...overlay, size })}
+        options={[
+          { id: 'sm', label: 'Small' },
+          { id: 'md', label: 'Medium' },
+          { id: 'lg', label: 'Large' },
+        ]}
+      />
+      <label className="flex items-start gap-2 text-[12px] text-ink">
+        <input
+          type="checkbox"
+          checked={overlay.accentRail}
+          onChange={(e) =>
+            onChange({ ...overlay, accentRail: e.target.checked })
+          }
+          className="mt-0.5"
+        />
+        <span>
+          Brand-accent left rail
+          <span className="block text-[10px] text-ink-quiet">
+            A thin coloured bar down the card&apos;s left edge. Adds brand
+            identity without taking up text space.
+          </span>
+        </span>
+      </label>
     </div>
   );
 }
@@ -311,6 +387,39 @@ function QuoteDropEditor({
           error={secondaryUploadError}
         />
       ) : null}
+      <SegmentedField<QuoteMarkStyle>
+        label="// Quote mark"
+        value={overlay.quoteMarkStyle}
+        onChange={(quoteMarkStyle) => onChange({ ...overlay, quoteMarkStyle })}
+        options={[
+          { id: 'rust', label: 'Brand' },
+          { id: 'subtle', label: 'Subtle' },
+          { id: 'none', label: 'None' },
+        ]}
+      />
+      <SegmentedField<GradientIntensity>
+        label="// Dark gradient"
+        value={overlay.gradientIntensity}
+        onChange={(gradientIntensity) =>
+          onChange({ ...overlay, gradientIntensity })
+        }
+        options={[
+          { id: 'standard', label: 'Standard' },
+          { id: 'strong', label: 'Strong' },
+          { id: 'none', label: 'None' },
+        ]}
+      />
+      <SegmentedField<AuthorPosition>
+        label="// Author anchor"
+        value={overlay.authorPosition}
+        onChange={(authorPosition) =>
+          onChange({ ...overlay, authorPosition })
+        }
+        options={[
+          { id: 'left', label: 'Left' },
+          { id: 'right', label: 'Right' },
+        ]}
+      />
     </div>
   );
 }
@@ -356,6 +465,41 @@ function SplitEditor({
           images flush together.
         </p>
       </div>
+      <SegmentedField<SplitRatio>
+        label="// Split ratio"
+        value={overlay.ratio}
+        onChange={(ratio) => onChange({ ...overlay, ratio })}
+        options={[
+          { id: '50-50', label: 'Even' },
+          { id: '60-40', label: 'Top dominant' },
+          { id: '40-60', label: 'Bottom dominant' },
+        ]}
+      />
+      <SegmentedField<SplitDividerBg>
+        label="// Divider background"
+        value={overlay.dividerBg}
+        onChange={(dividerBg) => onChange({ ...overlay, dividerBg })}
+        options={[
+          { id: 'accent', label: 'Brand' },
+          { id: 'dark', label: 'Dark' },
+          { id: 'light', label: 'Light' },
+        ]}
+      />
+      <label className="flex items-start gap-2 text-[12px] text-ink">
+        <input
+          type="checkbox"
+          checked={overlay.swap}
+          onChange={(e) => onChange({ ...overlay, swap: e.target.checked })}
+          className="mt-0.5"
+        />
+        <span>
+          Swap order (secondary on top)
+          <span className="block text-[10px] text-ink-quiet">
+            By default the primary photo sits on top. Flip for an
+            &quot;after / before&quot; framing without re-uploading.
+          </span>
+        </span>
+      </label>
     </div>
   );
 }

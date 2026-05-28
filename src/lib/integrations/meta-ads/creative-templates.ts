@@ -51,7 +51,17 @@ export const CREATIVE_TEMPLATE_IDS: readonly CreativeTemplateId[] = [
 ] as const;
 
 export type BannerPosition = 'top' | 'bottom';
+export type BannerBg = 'accent' | 'dark' | 'light';
+export type TextAlign = 'left' | 'center' | 'right';
+export type BannerHeight = 'standard' | 'tall';
 export type OfferCardCorner = 'tl' | 'tr' | 'bl' | 'br';
+export type OfferCardSurface = 'paper' | 'white' | 'dark';
+export type OfferCardSize = 'sm' | 'md' | 'lg';
+export type QuoteMarkStyle = 'rust' | 'subtle' | 'none';
+export type GradientIntensity = 'standard' | 'strong' | 'none';
+export type AuthorPosition = 'left' | 'right';
+export type SplitRatio = '50-50' | '60-40' | '40-60';
+export type SplitDividerBg = 'accent' | 'dark' | 'light';
 
 // --- per-template overlay shapes --------------------------------------------
 //
@@ -64,12 +74,29 @@ export type CreativeTemplateOverlay =
       kind: 'banner';
       position: BannerPosition;
       text: string;
+      /** Background fill: 'accent' = brand colour (default), 'dark' =
+       *  near-black, 'light' = paper. White text auto-switches to ink
+       *  on the 'light' variant. */
+      bg: BannerBg;
+      /** Horizontal alignment of the wrapped text. */
+      textAlign: TextAlign;
+      /** Strip height: 'standard' = 124px (default — 22% of canvas),
+       *  'tall' = 180px for longer messages or louder presence. */
+      height: BannerHeight;
     }
   | {
       kind: 'offer_card';
       corner: OfferCardCorner;
       headline: string;
       subline: string;
+      /** Card background: 'paper' = off-white (default), 'white' = pure
+       *  white, 'dark' = ink. Headline + subline auto-flip to paper on
+       *  the dark variant. */
+      surface: OfferCardSurface;
+      /** Brand-accent left rail toggle. Default true. */
+      accentRail: boolean;
+      /** Card size — affects width + padding + headline font size. */
+      size: OfferCardSize;
     }
   | {
       kind: 'quote_drop';
@@ -86,11 +113,30 @@ export type CreativeTemplateOverlay =
        *  top-right with a white border. Falls back to false silently
        *  when no secondary image is uploaded. */
       useInset: boolean;
+      /** Style of the large opening quote mark in the corner of the
+       *  block. 'rust' = brand-accent serif glyph (default), 'subtle' =
+       *  faded white serif, 'none' = no glyph. */
+      quoteMarkStyle: QuoteMarkStyle;
+      /** Intensity of the dark gradient behind the quote. 'standard' =
+       *  default 78% black at bottom, 'strong' = 92%, 'none' = no
+       *  gradient (use when the photo is already dim enough). */
+      gradientIntensity: GradientIntensity;
+      /** Which side the author + subtitle anchor to. Default 'left'. */
+      authorPosition: AuthorPosition;
     }
   | {
       kind: 'split';
       /** Thin text strip between the two images. Empty = no divider. */
       dividerText: string;
+      /** Vertical split ratio. '50-50' (default) | '60-40' (top dominant)
+       *  | '40-60' (bottom dominant). */
+      ratio: SplitRatio;
+      /** Divider background: 'accent' (default) | 'dark' | 'light'. */
+      dividerBg: SplitDividerBg;
+      /** When true, the secondary base image renders on TOP and the
+       *  primary on BOTTOM. Lets the operator pick "after / before" vs
+       *  the default "before / after" by toggling instead of re-uploading. */
+      swap: boolean;
     };
 
 // --- registry --------------------------------------------------------------
@@ -167,13 +213,23 @@ export function defaultOverlayFor(
     case 'plain':
       return { kind: 'plain' };
     case 'banner':
-      return { kind: 'banner', position: 'bottom', text: '' };
+      return {
+        kind: 'banner',
+        position: 'bottom',
+        text: '',
+        bg: 'accent',
+        textAlign: 'center',
+        height: 'standard',
+      };
     case 'offer_card':
       return {
         kind: 'offer_card',
         corner: 'tl',
         headline: '',
         subline: '',
+        surface: 'paper',
+        accentRail: true,
+        size: 'md',
       };
     case 'quote_drop':
       return {
@@ -183,9 +239,18 @@ export function defaultOverlayFor(
         author: '',
         subtitle: '',
         useInset: false,
+        quoteMarkStyle: 'rust',
+        gradientIntensity: 'standard',
+        authorPosition: 'left',
       };
     case 'split':
-      return { kind: 'split', dividerText: '' };
+      return {
+        kind: 'split',
+        dividerText: '',
+        ratio: '50-50',
+        dividerBg: 'accent',
+        swap: false,
+      };
   }
 }
 

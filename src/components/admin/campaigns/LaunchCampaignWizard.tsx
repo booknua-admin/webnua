@@ -1864,7 +1864,7 @@ function Step4Creative({
     state.images.length > 0 && selectedImageCount === state.images.length;
 
   return (
-    <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_360px]">
+    <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_360px] lg:items-start">
       {/* --- left: inputs --- */}
       <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-2">
@@ -2071,7 +2071,7 @@ function Step4Creative({
       </div>
 
       {/* --- right: live preview --- */}
-      <div className="lg:sticky lg:top-0">
+      <div className="lg:sticky lg:top-6 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto">
         <MetaAdPreview
           caption={
             variants.length > 0 || state.images.length > 0
@@ -2247,7 +2247,7 @@ function Step5Review({
     selectedReviewVariants[0] ??
     (state.variants?.[state.selectedVariantIdx ?? 0] ?? null);
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px] lg:items-start">
       <div className="flex flex-col gap-3">
         <SummaryCard label="// TEMPLATE">
           <div className="text-[14px] font-semibold text-ink">{template.label}</div>
@@ -2419,7 +2419,7 @@ function Step5Review({
         ) : null}
       </div>
 
-      <div className="lg:sticky lg:top-0">
+      <div className="lg:sticky lg:top-6 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto">
         <MetaAdPreview
           caption="// FINAL PREVIEW"
           pageName={state.client?.name ?? 'Your Business'}
