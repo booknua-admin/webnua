@@ -8,6 +8,7 @@
 //   • ai_funnel_gen           {client_id}  3/client/24h
 //   • ai_section_regen        {client_id} 10/client/hour
 //   • ai_industry_knowledge   {ip}         5/IP/hour
+//   • ai_angles_gen           {client_id}  3/client/24h
 //
 // Storage is `public.rate_limit_hits` (migration 0085) — one append-only row
 // per attempt. The 0086 cron deletes rows older than 7 days. The query shape
@@ -39,6 +40,7 @@ export type RateLimitAction =
   | 'ai_funnel_gen'
   | 'ai_section_regen'
   | 'ai_industry_knowledge'
+  | 'ai_angles_gen'
   | 'verification_code_request'
   | 'verification_code_attempt';
 
@@ -89,6 +91,17 @@ export const RATE_LIMITS: Record<RateLimitAction, RateLimitConfig> = {
     windowSeconds: 60 * 60,
     limit: 10,
     windowLabel: 'hour',
+  },
+  // Phase 7.5 · Session 2.1 — Meta Ads three-angle generator. Same
+  // rationale as ai_site_gen / ai_funnel_gen: a Sonnet draft is expensive
+  // (one structured ~2-3x the variant drafter's output) and the operator
+  // shouldn't burn it casually. 3/client/24h gives room for an initial
+  // generate + two re-runs while keeping a runaway script bounded.
+  ai_angles_gen: {
+    action: 'ai_angles_gen',
+    windowSeconds: 24 * 60 * 60,
+    limit: 3,
+    windowLabel: '24 hours',
   },
   // Conversational onboarding — industry-knowledge AI call (fires once
   // per signup, between business-name capture and the services picker).
@@ -248,6 +261,7 @@ function humanise(action: RateLimitAction): string {
     case 'ai_funnel_gen': return 'funnel-generation';
     case 'ai_section_regen': return 'section-regeneration';
     case 'ai_industry_knowledge': return 'industry-knowledge';
+    case 'ai_angles_gen': return 'angle-generation';
     case 'verification_code_request': return 'verification-code';
     case 'verification_code_attempt': return 'verification-code';
   }
