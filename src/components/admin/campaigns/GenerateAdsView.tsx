@@ -7,28 +7,19 @@
 // /campaigns/launch. One button → 3 AI-generated angles → pick → existing
 // orchestrator launches.
 //
-// Five phases (one component, internal state machine):
+// Four phases (one component, internal state machine):
 //   • idle      — brand summary card + big rust "✦ Generate my ads" button.
-//                 If the brief is incomplete (soft missing fields), the
-//                 explainer renders inline + the button stays enabled
-//                 (the model falls back to qualitative defaults). Hard blocks
-//                 (no published site, no Meta ad account) render a
-//                 remediation card and hide the button entirely.
-//   • generating— rust spinner + "Drafting three angles…" splash. The
-//                 model typically returns in 10-30s.
-//   • picker    — three AnglePickerCards + a summary band at the bottom.
-//                 Auto-selects all three; operator unticks any they don't
-//                 want. CTA reads "Continue to review →".
-//   • tree      — pre-launch visual tree (Session 2.3). Campaign root
-//                 card (editable name / daily ad spend / country) over
-//                 N ad-set nodes, each expandable for per-variant edits
-//                 (headline / primaryText / description / CTA) + a
-//                 selection checkbox to drop variants from the launch.
-//                 The Launch button lives HERE — Meta is only called
-//                 after the operator confirms the tree.
-//   • launching — rust spinner + "Setting up your campaign on Meta…" while
-//                 the orchestrator runs (8-step Meta chain — can take
-//                 30-60s).
+//                 Hard blocks (no published site, no Meta ad account)
+//                 render a remediation card and hide the button entirely.
+//   • chat      — CampaignChat owns gap-fill → "got an idea?" → angle
+//                 generation → angle picker, all in one conversation.
+//                 Exits with the picked angles, which seed the blueprint.
+//   • blueprint — the visual hierarchy: Campaign root → Ad Set row →
+//                 Ad preview row (real MetaAdPreview cards). Click any
+//                 node to open its focused modal editor. Launch fires
+//                 from the sticky bottom band.
+//   • launching — rust spinner + "Setting up your campaign on Meta…"
+//                 while the orchestrator runs (8-step Meta chain).
 //
 // On launch success, calls `onLaunched` which the page handler uses to
 // route back to /campaigns + invalidate caches.
@@ -47,8 +38,7 @@ import Link from 'next/link';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { AnglePickerCards } from './AnglePickerCards';
-import { BriefGapFillReview } from './BriefGapFillReview';
+import { CampaignChat } from './CampaignChat';
 import {
   CampaignBlueprint,
   type AdSetNode,
@@ -56,7 +46,6 @@ import {
   type CtaType,
   type LaunchSettings,
 } from './CampaignBlueprint';
-import { MetaAdPreview } from './MetaAdPreview';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/lib/auth/user-stub';
 import {
@@ -65,7 +54,7 @@ import {
   type BriefField,
   BRIEF_FIELD_LABEL,
 } from '@/lib/campaigns/brief-completeness';
-import { generateMetaAdAngles, type GeneratedAngle } from '@/lib/integrations/meta-ads/generate-angles';
+import type { GeneratedAngle } from '@/lib/integrations/meta-ads/generate-angles';
 import {
   templateForIndustry,
   type MetaAdTemplate,
@@ -97,12 +86,9 @@ export type GenerateAdsViewProps = {
 type Phase =
   | { kind: 'idle' }
   | { kind: 'chat'; missing: readonly BriefField[] }
-  | { kind: 'generating' }
-  | { kind: 'picker'; angles: GeneratedAngle[] }
-  | { kind: 'tree'; angles: GeneratedAngle[]; settings: LaunchSettings; adSets: AdSetNode[] }
+  | { kind: 'blueprint'; settings: LaunchSettings; adSets: AdSetNode[] }
   | {
       kind: 'launching';
-      angles: GeneratedAngle[];
       settings: LaunchSettings;
       adSets: AdSetNode[];
     };
@@ -128,112 +114,47 @@ export function GenerateAdsView({
   const queryClient = useQueryClient();
 
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
-  const [selectedAngles, setSelectedAngles] = useState<Set<string>>(new Set());
-  const [generateError, setGenerateError] = useState<GenerateError | null>(null);
   const [launchError, setLaunchError] = useState<GenerateError | null>(null);
 
   const brief = useBriefContext(clientId);
 
   // --- Generate handler ----------------------------------------------------
 
-  /** Top-level Generate click — dispatches based on the completeness
-   *  state. Missing soft-block fields → flip to the chat; otherwise
-   *  fire generation directly. Hard blocks are caught upstream by the
-   *  HardBlockCard so this path never sees them. */
+  /** Top-level Generate click — open the chat. The chat handles
+   *  everything: gap-fill if needed, optional ad-idea capture, angle
+   *  draft, angle picker — all in one conversation. Hard blocks are
+   *  caught upstream by the HardBlockCard so this path never sees
+   *  them. */
   function handleGenerateClick() {
     if (!completeness.data) return;
-    if (!completeness.data.ready && 'missing' in completeness.data) {
-      setGenerateError(null);
-      setPhase({ kind: 'chat', missing: completeness.data.missing });
-      return;
-    }
-    void runGeneration();
+    const missing =
+      !completeness.data.ready && 'missing' in completeness.data
+        ? completeness.data.missing
+        : [];
+    setPhase({ kind: 'chat', missing });
   }
 
-  /** Actually fire the angle-generation request. Shared between the
-   *  direct path (handleGenerateClick when ready) and the chat path
-   *  (BriefCompletionChat's onComplete after the last answer saves). */
-  async function runGeneration() {
-    setGenerateError(null);
-    setPhase({ kind: 'generating' });
-    try {
-      const angles = await generateMetaAdAngles({ clientId });
-      if (angles.length === 0) {
-        setGenerateError({
-          message: 'Generation returned no angles. Try again.',
-        });
-        setPhase({ kind: 'idle' });
-        return;
-      }
-      // Auto-select all returned angles — the operator unticks any they
-      // don't want. Three is the standard pick; if the model returned fewer
-      // we still pre-select them all.
-      setSelectedAngles(new Set(angles.map((a) => a.id)));
-      setPhase({ kind: 'picker', angles });
-    } catch (error) {
-      setGenerateError({
-        message:
-          error instanceof Error ? error.message : 'Generation failed unexpectedly.',
-      });
-      setPhase({ kind: 'idle' });
-    }
-  }
-
-  /** Chat completed — invalidate the brand-context + completeness
-   *  queries so any inline reader (brief context, generation-prompt
-   *  resolver on the server) reads fresh values, then fire generation.
-   *  No "review your answers" intermediate step per the design doc:
-   *  the chat is the brand-completion tool, not a draft surface. */
-  function handleChatComplete() {
-    void queryClient.invalidateQueries({ queryKey: ['brief-completeness', clientId] });
-    void queryClient.invalidateQueries({ queryKey: ['generate-ads-brief', clientId] });
-    void runGeneration();
-  }
-
-  function handleChatCancel() {
-    // Drop back to idle — any saved-during-chat answers stay persisted,
-    // so reopening the chat starts from where the operator left off.
-    void queryClient.invalidateQueries({ queryKey: ['brief-completeness', clientId] });
-    void queryClient.invalidateQueries({ queryKey: ['generate-ads-brief', clientId] });
-    setPhase({ kind: 'idle' });
-  }
-
-  function handleToggleAngle(angleId: string, selected: boolean) {
-    setSelectedAngles((prev) => {
-      const next = new Set(prev);
-      if (selected) next.add(angleId);
-      else next.delete(angleId);
-      return next;
+  /** Chat completed — receives the angles + the operator's picks,
+   *  builds the blueprint, and transitions. Brand-context + completeness
+   *  queries are invalidated so anything reading them downstream sees
+   *  the updated brand values from gap-fill. */
+  function handleChatComplete(input: {
+    angles: GeneratedAngle[];
+    selectedAngleIds: Set<string>;
+  }) {
+    void queryClient.invalidateQueries({
+      queryKey: ['brief-completeness', clientId],
     });
-  }
-
-  function handleRegenerate() {
-    setSelectedAngles(new Set());
-    setPhase({ kind: 'idle' });
-  }
-
-  /** Picker → tree. Seed launch settings from the industry template
-   *  defaults + build one AdSetNode per PICKED angle (the operator's
-   *  selection on the picker is honoured — unselected angles never
-   *  enter the tree at all; re-tick on the picker to bring them in).
-   *  Country is heuristic-seeded from the customer's service-area
-   *  string. */
-  function handleContinueToTree() {
-    if (phase.kind !== 'picker') return;
+    void queryClient.invalidateQueries({
+      queryKey: ['generate-ads-brief', clientId],
+    });
     if (!brief.data) return;
     const template = templateForIndustry(brief.data.industry);
-    const settings: LaunchSettings = {
-      campaignName: defaultCampaignName(clientName, template),
-      dailyBudgetCents: template.defaultDailyBudgetCents,
-      country: inferCountryFromServiceArea(brief.data.serviceArea),
-    };
-    const pickedAngles = phase.angles.filter((a) => selectedAngles.has(a.id));
-    // Each picked angle is one ad set on the blueprint. The angle's
-    // copy variants become the ads inside that set; every ad inherits
-    // the angle's shared image (the hero stock photo for the industry)
-    // until the operator overrides it via AdEditModal.
     const industryTemplate = resolveIndustryTemplate(brief.data.industry);
     const sharedImage = industryTemplate.stockImages.hero;
+    const pickedAngles = input.angles.filter((a) =>
+      input.selectedAngleIds.has(a.id),
+    );
     const adSets: AdSetNode[] = pickedAngles.map((a) => ({
       angleId: a.id,
       label: a.label,
@@ -249,33 +170,39 @@ export function GenerateAdsView({
         selected: true,
       })),
     }));
+    const settings: LaunchSettings = {
+      campaignName: defaultCampaignName(clientName, template),
+      dailyBudgetCents: template.defaultDailyBudgetCents,
+      country: inferCountryFromServiceArea(brief.data.serviceArea),
+    };
     setLaunchError(null);
-    setPhase({ kind: 'tree', angles: phase.angles, settings, adSets });
+    setPhase({ kind: 'blueprint', settings, adSets });
   }
 
-  function handleBackToPicker() {
-    if (phase.kind !== 'tree') return;
-    setPhase({ kind: 'picker', angles: phase.angles });
+  function handleChatCancel() {
+    // Drop back to idle — any saved-during-chat answers stay persisted,
+    // so reopening the chat starts from where the operator left off.
+    void queryClient.invalidateQueries({
+      queryKey: ['brief-completeness', clientId],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ['generate-ads-brief', clientId],
+    });
+    setPhase({ kind: 'idle' });
   }
 
   function handleSettingsChange(next: LaunchSettings) {
-    if (phase.kind !== 'tree') return;
-    setPhase({
-      kind: 'tree',
-      angles: phase.angles,
-      settings: next,
-      adSets: phase.adSets,
-    });
+    if (phase.kind !== 'blueprint') return;
+    setPhase({ kind: 'blueprint', settings: next, adSets: phase.adSets });
   }
 
   /** Replace one ad-set draft (variant edit / selection toggle). The
-   *  CampaignTree component emits the whole new AdSetNode; we splice
+   *  CampaignBlueprint component emits the whole new AdSetNode; we splice
    *  by angleId so a future reorder doesn't break the mapping. */
   function handleAdSetChange(next: AdSetNode) {
-    if (phase.kind !== 'tree') return;
+    if (phase.kind !== 'blueprint') return;
     setPhase({
-      kind: 'tree',
-      angles: phase.angles,
+      kind: 'blueprint',
       settings: phase.settings,
       adSets: phase.adSets.map((a) => (a.angleId === next.angleId ? next : a)),
     });
@@ -285,7 +212,7 @@ export function GenerateAdsView({
   // --- Launch handler ------------------------------------------------------
 
   async function handleLaunch() {
-    if (phase.kind !== 'tree') return;
+    if (phase.kind !== 'blueprint') return;
     if (!brief.data) return;
     if (!adAccount.data) return;
     if (!user) return;
@@ -329,7 +256,7 @@ export function GenerateAdsView({
     );
 
     setLaunchError(null);
-    setPhase({ kind: 'launching', angles: phase.angles, settings, adSets });
+    setPhase({ kind: 'launching', settings, adSets });
 
     const template = templateForIndustry(brief.data.industry);
 
@@ -387,7 +314,7 @@ export function GenerateAdsView({
       });
       // Surface the error on the tree screen so the operator can
       // adjust budget / variants and retry without re-picking angles.
-      setPhase({ kind: 'tree', angles: phase.angles, settings, adSets });
+      setPhase({ kind: 'blueprint', settings, adSets });
     }
   }
 
@@ -421,7 +348,6 @@ export function GenerateAdsView({
       {phase.kind === 'idle' && (
         <IdleState
           completeness={completenessData}
-          generateError={generateError}
           onGenerate={handleGenerateClick}
           onCancel={onCancel}
           classicBuilderHref={classicBuilderHref}
@@ -429,7 +355,7 @@ export function GenerateAdsView({
       )}
 
       {phase.kind === 'chat' && (
-        <BriefGapFillReview
+        <CampaignChat
           clientId={clientId}
           clientName={clientName}
           missing={phase.missing}
@@ -438,31 +364,14 @@ export function GenerateAdsView({
         />
       )}
 
-      {phase.kind === 'generating' && (
-        <SplashState label="Drafting three angles…" sub="Webnua AI is reading your brand, audience, and offer." />
-      )}
-
-      {phase.kind === 'picker' && (
-        <PickerState
-          angles={phase.angles}
-          selected={selectedAngles}
-          onContinue={handleContinueToTree}
-          onToggle={handleToggleAngle}
-          onRegenerate={handleRegenerate}
-          onCancel={onCancel}
-          brief={brief.data ?? null}
-          classicBuilderHref={classicBuilderHref}
-        />
-      )}
-
-      {phase.kind === 'tree' && (
+      {phase.kind === 'blueprint' && (
         <CampaignBlueprint
           settings={phase.settings}
           adSets={phase.adSets}
           brief={buildBlueprintBrief(brief.data, clientId)}
           onSettingsChange={handleSettingsChange}
           onAdSetChange={handleAdSetChange}
-          onCancel={handleBackToPicker}
+          onCancel={onCancel}
           onLaunch={handleLaunch}
           launchPending={launchMutation.isPending}
           launchError={launchError}
@@ -508,13 +417,11 @@ function Header({
 
 function IdleState({
   completeness,
-  generateError,
   onGenerate,
   onCancel,
   classicBuilderHref,
 }: {
   completeness: BriefCompleteness;
-  generateError: GenerateError | null;
   onGenerate: () => void;
   onCancel: () => void;
   classicBuilderHref: string;
@@ -541,10 +448,6 @@ function IdleState({
 
       {softMissing && softMissing.length > 0 ? (
         <SoftMissingExplainer missing={softMissing} />
-      ) : null}
-
-      {generateError ? (
-        <ErrorPanel error={generateError} />
       ) : null}
 
       <div className="flex flex-wrap items-center gap-3">
@@ -594,162 +497,6 @@ function SoftMissingExplainer({ missing }: { missing: readonly BriefField[] }) {
         </Link>
         ) so we never ask again.
       </p>
-    </div>
-  );
-}
-
-function PickerState({
-  angles,
-  selected,
-  onContinue,
-  onToggle,
-  onRegenerate,
-  onCancel,
-  brief,
-  classicBuilderHref,
-}: {
-  angles: GeneratedAngle[];
-  selected: Set<string>;
-  onContinue: () => void;
-  onToggle: (id: string, selected: boolean) => void;
-  onRegenerate: () => void;
-  onCancel: () => void;
-  brief: BriefContext | null;
-  classicBuilderHref: string;
-}) {
-  const pickedCount = selected.size;
-  const totalAds = angles
-    .filter((a) => selected.has(a.id))
-    .reduce((sum, a) => sum + a.variants.length, 0);
-
-  // First selected angle's first variant — used as the live Meta-feed
-  // preview underneath the cards. Helps the operator picture what's
-  // about to ship without opening the classic builder.
-  const previewAngle =
-    angles.find((a) => selected.has(a.id)) ?? angles[0] ?? null;
-  const previewVariant = previewAngle?.variants[0] ?? null;
-  const industry = brief ? resolveIndustryTemplate(brief.industry) : null;
-  const previewImage = industry?.stockImages.hero ?? null;
-
-  return (
-    <section className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-[20px] font-semibold tracking-tight text-ink">
-          Pick your angles
-        </h2>
-        <p className="text-[13px] leading-snug text-ink-soft">
-          All three are selected by default. Untick any you don&rsquo;t want to
-          test — Meta runs each picked angle as its own ad set.
-        </p>
-      </div>
-
-      <AnglePickerCards
-        angles={angles}
-        selected={selected}
-        onToggle={onToggle}
-      />
-
-      {previewVariant && previewImage ? (
-        <div className="flex flex-col gap-3">
-          <div className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
-            {'// LIVE PREVIEW · '}
-            <span className="text-rust">{previewAngle?.label}</span>
-          </div>
-          <div className="max-w-[420px]">
-            <MetaAdPreview
-              pageName={brief?.businessName ?? 'Your business'}
-              pageLogoUrl={null}
-              primaryText={previewVariant.primaryText}
-              headline={previewVariant.headline}
-              description={previewVariant.description}
-              ctaType={previewVariant.ctaType}
-              imageUrl={previewImage}
-              linkHost={brief?.primaryDomain ?? undefined}
-            />
-          </div>
-        </div>
-      ) : null}
-
-      <PickerSummaryBand
-        pickedCount={pickedCount}
-        totalAds={totalAds}
-        onContinue={onContinue}
-        onRegenerate={onRegenerate}
-        onCancel={onCancel}
-        continueDisabled={pickedCount === 0}
-        classicBuilderHref={classicBuilderHref}
-      />
-    </section>
-  );
-}
-
-function PickerSummaryBand({
-  pickedCount,
-  totalAds,
-  onContinue,
-  onRegenerate,
-  onCancel,
-  continueDisabled,
-  classicBuilderHref,
-}: {
-  pickedCount: number;
-  totalAds: number;
-  onContinue: () => void;
-  onRegenerate: () => void;
-  onCancel: () => void;
-  continueDisabled: boolean;
-  classicBuilderHref: string;
-}) {
-  return (
-    <div className="sticky bottom-0 z-10 flex flex-col gap-3 rounded-2xl border border-rule bg-ink px-5 py-4 text-paper shadow-card md:flex-row md:items-center md:gap-5 md:px-6 md:py-5">
-      <div className="flex flex-col gap-1">
-        <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust-light">
-          {'// READY TO REVIEW'}
-        </span>
-        <span className="text-[15px] font-medium leading-snug">
-          {pickedCount > 0 ? (
-            <>
-              {pickedCount} angle{pickedCount === 1 ? '' : 's'} ·{' '}
-              <strong className="font-semibold text-paper">{totalAds}</strong>{' '}
-              ad{totalAds === 1 ? '' : 's'} — next: confirm your daily ad spend
-            </>
-          ) : (
-            <span className="text-paper/70">Pick at least one angle to continue.</span>
-          )}
-        </span>
-      </div>
-      <div className="flex flex-wrap items-center gap-2 md:ml-auto">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onRegenerate}
-          className="text-paper hover:bg-paper/10 hover:text-paper"
-        >
-          Regenerate
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onCancel}
-          className="text-paper hover:bg-paper/10 hover:text-paper"
-        >
-          Cancel
-        </Button>
-        <Button
-          type="button"
-          onClick={onContinue}
-          disabled={continueDisabled}
-          className="h-11 px-6 text-[14px] font-semibold"
-        >
-          Continue to review →
-        </Button>
-        <Link
-          href={classicBuilderHref}
-          className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-paper/70 underline-offset-4 hover:text-paper hover:underline"
-        >
-          Classic builder →
-        </Link>
-      </div>
     </div>
   );
 }
@@ -827,20 +574,6 @@ function HardBlockCard({
       <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-quiet">
         Client: <span className="text-ink">{clientName}</span>
       </p>
-    </div>
-  );
-}
-
-function ErrorPanel({ error }: { error: GenerateError }) {
-  return (
-    <div className="rounded-md border border-warn/40 border-l-4 border-l-warn bg-warn-soft/40 px-4 py-3">
-      <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-warn">
-        {'// SOMETHING WENT WRONG'}
-      </div>
-      <p className="text-[13px] leading-snug text-ink">{error.message}</p>
-      {error.detail ? (
-        <p className="mt-1 text-[12px] leading-snug text-ink-soft">{error.detail}</p>
-      ) : null}
     </div>
   );
 }
