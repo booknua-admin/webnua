@@ -170,6 +170,7 @@ export default async function PublishedPage({
           pages={target.pages}
           page={target.page}
           isPreview={target.isPreview}
+          metaPixelId={target.metaPixelId}
         />
         <TrackingScript tracking={target.tracking} />
       </>
@@ -187,6 +188,7 @@ export default async function PublishedPage({
         stepCount={target.stepCount}
         nextStepHref={target.nextStepHref}
         isPreview={target.isPreview}
+        metaPixelId={target.metaPixelId}
       />
       <TrackingScript tracking={target.tracking} />
     </>

@@ -106,6 +106,19 @@ function parseLaunchInput(
   if (typeof campaignName !== 'string' || campaignName.length === 0) {
     return { error: 'missing-campaignName' };
   }
+  // Closed-set objective. Defaults to 'lead_form_meta' for back-compat
+  // with bodies posted from pre-1.2 callers.
+  const campaignObjectiveRaw = body.campaignObjective;
+  const campaignObjective:
+    | 'lead_form_meta'
+    | 'lead_form_landing' =
+    campaignObjectiveRaw === 'lead_form_landing' ? 'lead_form_landing' : 'lead_form_meta';
+  const pixelIdRaw = body.pixelId;
+  const pixelId: string | null =
+    typeof pixelIdRaw === 'string' && pixelIdRaw.length > 0 ? pixelIdRaw : null;
+  if (campaignObjective === 'lead_form_landing' && !pixelId) {
+    return { error: 'missing-pixelId' };
+  }
   const targeting = body.targeting as Record<string, unknown> | undefined;
   if (!targeting || typeof targeting !== 'object') {
     return { error: 'missing-targeting' };
@@ -241,6 +254,8 @@ function parseLaunchInput(
     launchedByUserId,
     templateSlug,
     campaignName,
+    campaignObjective,
+    pixelId,
     targetingGeoCenter: geoCenter,
     targetingRadiusKm: radiusKm,
     targetingCities: cities,

@@ -415,6 +415,46 @@ export function useDraftMetaAdVariants() {
   });
 }
 
+// --- Phase 7.5 · Session 1.2 — pixel discovery + selection ------------------
+
+export type MetaPixelOption = {
+  id: string;
+  name: string;
+  lastFiredAt: string | null;
+};
+
+/** List the Meta Pixels reachable from this client's connected ad
+ *  account — the wizard's landing-page objective path consumes this to
+ *  populate the pixel picker. */
+export function useListMetaPixels() {
+  return useMutation({
+    mutationFn: async (input: { clientId: string }): Promise<MetaPixelOption[]> => {
+      const response = (await postJson(
+        '/api/integrations/meta_ads/pixels',
+        { ...input, action: 'list' },
+      )) as unknown as { pixels: MetaPixelOption[] };
+      return response.pixels ?? [];
+    },
+  });
+}
+
+/** Persist the operator-confirmed pixel id on client_meta_ad_accounts.
+ *  Idempotent — re-running overwrites. */
+export function useSelectMetaPixel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { clientId: string; pixelId: string }) => {
+      await postJson(
+        '/api/integrations/meta_ads/pixels',
+        { ...input, action: 'select' },
+      );
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: adAccountKey(vars.clientId) });
+    },
+  });
+}
+
 /** Operator-side targeting autocomplete proxy. Wraps the
  *  /targeting-search route — debounced in the consumer (the wizard
  *  uses 300ms). */
@@ -474,6 +514,14 @@ export type LaunchCampaignPayload = {
   clientId: string;
   templateSlug: string;
   campaignName: string;
+  /** Phase 7.5 · Session 1.2 — closed-set objective flavour.
+   *  'lead_form_meta' is the default (Meta's native instant lead form);
+   *  'lead_form_landing' routes the ad to the customer's website + uses
+   *  Meta Pixel for optimisation against the Lead event. */
+  campaignObjective: 'lead_form_meta' | 'lead_form_landing';
+  /** Required when `campaignObjective === 'lead_form_landing'`. The
+   *  operator-confirmed Meta Pixel id for this client. */
+  pixelId: string | null;
   targeting: {
     /** Cities resolved via Meta autocomplete (preferred over geoCenter
      *  — Meta optimises better on named cities). Each carries Meta's

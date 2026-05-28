@@ -91,6 +91,17 @@ export type LaunchCampaignInput = {
   templateSlug: string;
   /** Display name of the campaign in Meta + Webnua. */
   campaignName: string;
+  /** Closed-set objective flavour (Session 1.2). 'lead_form_meta' uses
+   *  Meta's native instant lead form (default); 'lead_form_landing'
+   *  routes the ad to the customer's website + uses Meta Pixel for
+   *  optimisation against the Lead event. */
+  campaignObjective: 'lead_form_meta' | 'lead_form_landing';
+  /** Required when `campaignObjective === 'lead_form_landing'` — the
+   *  operator-selected pixel id. Persisted on
+   *  `client_meta_ad_accounts.meta_pixel_id` separately; this is the
+   *  value used in the ad set's promoted_object so Meta optimises
+   *  against the Lead conversion event. */
+  pixelId: string | null;
 
   /** Targeting */
   targetingGeoCenter: { lat: number; lng: number } | null;
@@ -196,6 +207,19 @@ export async function launchMetaCampaign(input: LaunchCampaignInput): Promise<La
     };
   }
 
+  // Landing-page objective requires a pixel id — Meta needs it on the
+  // ad set's promoted_object so it can optimise against the Lead
+  // conversion event. The wizard blocks Launch until a pixel is
+  // resolved; this is defence in depth at the orchestrator layer.
+  if (input.campaignObjective === 'lead_form_landing' && !input.pixelId) {
+    return {
+      ok: false,
+      step: 'resolve_ad_account',
+      message:
+        'Landing-page objective requires a Meta Pixel — pick one in step 1 of the wizard.',
+    };
+  }
+
   // 1. Resolve the client's connected ad account + Page.
   const adAccount = await fetchAdAccountForClient(input.clientId);
   if (!adAccount) {
@@ -259,10 +283,15 @@ export async function launchMetaCampaign(input: LaunchCampaignInput): Promise<La
   }
   const metaCampaignId = campaignResult.data.id;
 
-  // 5. Create ad set with targeting + budget + schedule. endTime is
-  // omitted when the operator opted for "run until manually stopped" —
-  // Meta accepts no end time as "indefinite", which is what we want for
-  // ads that should keep delivering past an arbitrary duration.
+  // 5. Create ad set with targeting + budget + schedule.
+  //   • endTime is omitted when the operator opted for "run until
+  //     manually stopped" — Meta accepts no end time as "indefinite",
+  //     which is what we want for ads that should keep delivering past
+  //     an arbitrary duration.
+  //   • For the landing-page objective the ad set's promoted_object
+  //     carries the customer's Meta Pixel id + 'LEAD' custom event so
+  //     Meta optimises bidding against the Lead conversion fired on
+  //     form submit (PublicSiteRenderer / FormBlock embed the pixel).
   const targetingSpec = buildTargetingSpec(input);
   const adSetResult = await createAdSet(input.clientId, {
     adAccountId,
@@ -277,6 +306,8 @@ export async function launchMetaCampaign(input: LaunchCampaignInput): Promise<La
     startTime: input.startTimeIso,
     endTime: input.endTimeIso ?? undefined,
     promotedObjectPageId: pageId,
+    promotedObjectPixelId:
+      input.campaignObjective === 'lead_form_landing' ? input.pixelId : null,
   });
   if (!adSetResult.ok || !adSetResult.data.id) {
     return {
@@ -289,33 +320,40 @@ export async function launchMetaCampaign(input: LaunchCampaignInput): Promise<La
   }
   const metaAdSetId = adSetResult.data.id;
 
-  // 6. Create lead form on the Page.
+  // 6. Create lead form on the Page — ONLY for the in-Meta objective.
+  //    The landing-page objective routes the click to the customer's
+  //    website, so there's no on-Meta form to attach.
   const template = templateForIndustry(input.templateSlug);
-  const leadFormResult = await createLeadForm(input.clientId, {
-    pageId,
-    pageAccessToken,
-    name: `${input.campaignName} · Lead form`,
-    questions: template.leadFormQuestions.map((q) => ({
-      type: q.type,
-      key: q.key,
-      label: q.label,
-    })),
-    privacyPolicyUrl: input.privacyPolicyUrl,
-  });
-  if (!leadFormResult.ok || !leadFormResult.data.id) {
-    return {
-      ok: false,
-      step: 'create_lead_form',
-      message: 'Meta rejected the lead-form create.',
-      detail: leadFormResult.ok
-        ? 'No lead-form id returned.'
-        : leadFormResult.error.message,
-      partial: { metaCampaignId, metaAdSetId },
-    };
+  let metaLeadFormId: string | null = null;
+  if (input.campaignObjective === 'lead_form_meta') {
+    const leadFormResult = await createLeadForm(input.clientId, {
+      pageId,
+      pageAccessToken,
+      name: `${input.campaignName} · Lead form`,
+      questions: template.leadFormQuestions.map((q) => ({
+        type: q.type,
+        key: q.key,
+        label: q.label,
+      })),
+      privacyPolicyUrl: input.privacyPolicyUrl,
+    });
+    if (!leadFormResult.ok || !leadFormResult.data.id) {
+      return {
+        ok: false,
+        step: 'create_lead_form',
+        message: 'Meta rejected the lead-form create.',
+        detail: leadFormResult.ok
+          ? 'No lead-form id returned.'
+          : leadFormResult.error.message,
+        partial: { metaCampaignId, metaAdSetId },
+      };
+    }
+    metaLeadFormId = leadFormResult.data.id;
   }
-  const metaLeadFormId = leadFormResult.data.id;
 
-  // 7. Create ad creative.
+  // 7. Create ad creative. `leadFormId` is null for the landing-page
+  // objective — Meta routes the click to `linkUrl` instead of an
+  // on-platform form.
   const creativeResult = await createAdCreative(input.clientId, {
     adAccountId,
     name: `${input.campaignName} · Creative`,
@@ -336,7 +374,7 @@ export async function launchMetaCampaign(input: LaunchCampaignInput): Promise<La
       detail: creativeResult.ok
         ? 'No creative id returned.'
         : creativeResult.error.message,
-      partial: { metaCampaignId, metaAdSetId, metaLeadFormId },
+      partial: { metaCampaignId, metaAdSetId, metaLeadFormId: metaLeadFormId ?? undefined },
     };
   }
   const metaCreativeId = creativeResult.data.id;
@@ -358,7 +396,7 @@ export async function launchMetaCampaign(input: LaunchCampaignInput): Promise<La
       partial: {
         metaCampaignId,
         metaAdSetId,
-        metaLeadFormId,
+        metaLeadFormId: metaLeadFormId ?? undefined,
         metaCreativeId,
       },
     };
@@ -400,7 +438,7 @@ export async function launchMetaCampaign(input: LaunchCampaignInput): Promise<La
       partial: {
         metaCampaignId,
         metaAdSetId,
-        metaLeadFormId,
+        metaLeadFormId: metaLeadFormId ?? undefined,
         metaCreativeId,
         metaAdId,
       },
@@ -422,7 +460,7 @@ export async function launchMetaCampaign(input: LaunchCampaignInput): Promise<La
       partial: {
         metaCampaignId,
         metaAdSetId,
-        metaLeadFormId,
+        metaLeadFormId: metaLeadFormId ?? undefined,
         metaCreativeId,
         metaAdId,
       },
@@ -450,6 +488,7 @@ export async function launchMetaCampaign(input: LaunchCampaignInput): Promise<La
       client_id: input.clientId,
       template_slug: input.templateSlug,
       template_variant: null,
+      campaign_objective: input.campaignObjective,
       targeting_geo_center: input.targetingGeoCenter,
       targeting_radius_km: input.targetingRadiusKm,
       targeting_age_min: input.targetingAgeMin,

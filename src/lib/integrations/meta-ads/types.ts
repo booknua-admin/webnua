@@ -171,6 +171,9 @@ export type ClientMetaAdAccountRow = {
   // back-compat with pre-0113 rows.
   meta_page_id: string | null;
   meta_page_name: string | null;
+  // Operator-selected Meta Pixel id (migration 0116). NULL until the
+  // launch wizard's landing-page objective path resolves a pixel.
+  meta_pixel_id: string | null;
   // Ad-account partnership state (migration 0113).
   webnua_partner_status: MetaPartnerStatus | null;
   webnua_partner_granted_at: string | null;
@@ -258,12 +261,19 @@ export type MetaLeadFormInsert = Omit<
 // service-role write. Powers Session 4's refresh comparison + the
 // deferred cross-tenant training pipeline.
 
+/** Closed set of objective flavours the in-app launch wizard supports.
+ *  V1.2 lands two; future objectives (traffic / engagement / conversions)
+ *  extend this union + the orchestrator's branching, NOT the prompt or
+ *  the template catalogue. */
+export type CampaignObjective = 'lead_form_meta' | 'lead_form_landing';
+
 export type MetaCampaignLaunchRow = {
   id: string;
   meta_campaign_id: string;
   client_id: string;
   template_slug: string;
   template_variant: string | null;
+  campaign_objective: CampaignObjective;
   targeting_geo_center: { lat: number; lng: number } | null;
   targeting_radius_km: number | null;
   targeting_age_min: number;

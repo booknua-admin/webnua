@@ -38,9 +38,12 @@ import {
   useClientMetaAdAccount,
   useDraftMetaAdVariants,
   useLaunchMetaCampaign,
+  useListMetaPixels,
   useSearchMetaTargeting,
+  useSelectMetaPixel,
   useUploadAdImage,
   type LaunchCampaignPayload,
+  type MetaPixelOption,
   type TargetingSearchResult,
 } from '@/lib/integrations/meta-ads/use-meta-ads';
 import {
@@ -88,8 +91,14 @@ type WizardState = {
   /** Brand tagline (from brands.tagline) when set. */
   brandTagline: string;
 
-  // step 1
+  // step 1 — template + objective + (for landing-page) pixel
   templateSlug: string;
+  /** Closed-set objective: in-Meta lead form (default) vs landing-page
+   *  with Meta Pixel tracking. */
+  campaignObjective: 'lead_form_meta' | 'lead_form_landing';
+  /** Operator-confirmed Meta Pixel id when objective is
+   *  'lead_form_landing'. NULL otherwise. */
+  pixelId: string | null;
 
   // step 2 — targeting now wires through Meta's resolved ids, not
   // free-text inputs.
@@ -367,6 +376,8 @@ export function LaunchCampaignWizard({
       clientId,
       templateSlug: state.templateSlug,
       campaignName: state.campaignName,
+      campaignObjective: state.campaignObjective,
+      pixelId: state.pixelId,
       targeting: {
         geoCenter: null,
         radiusKm: null,
@@ -427,10 +438,23 @@ export function LaunchCampaignWizard({
       <WizardHeader step={state.step} />
       <div className="px-4 py-6 pb-28 md:px-10 md:py-8 md:pb-32">
         {state.step === 1 ? (
-            <Step1Template
-              value={state.templateSlug}
-              onChange={pickTemplate}
+            <Step1TemplateAndObjective
+              clientId={clientId}
+              templateSlug={state.templateSlug}
+              setTemplateSlug={pickTemplate}
               clientIndustry={state.client?.industry ?? null}
+              campaignObjective={state.campaignObjective}
+              setCampaignObjective={(campaignObjective) =>
+                setState((s) => ({
+                  ...s,
+                  campaignObjective,
+                  pixelId:
+                    campaignObjective === 'lead_form_landing' ? s.pixelId : null,
+                }))
+              }
+              pixelId={state.pixelId}
+              setPixelId={(pixelId) => setState((s) => ({ ...s, pixelId }))}
+              primaryDomain={state.primaryDomain}
             />
           ) : null}
           {state.step === 2 ? (
@@ -613,6 +637,259 @@ function WizardFooter({
 }
 
 // --- step 1 -----------------------------------------------------------------
+//
+// Composes the existing template grid + an objective picker
+// (in-Meta lead form vs landing-page on the customer's site) + a
+// pixel picker (only when objective is 'lead_form_landing'). The
+// pixel picker calls the operator-only /api/integrations/meta_ads/pixels
+// route on mount + auto-selects the only pixel when there's one;
+// when multiple, the operator picks via dropdown; when zero, the step
+// blocks with a "Set up a Meta Pixel first" empty state.
+
+type ObjectiveOption = {
+  id: 'lead_form_meta' | 'lead_form_landing';
+  title: string;
+  blurb: string;
+  badge: string;
+};
+
+const OBJECTIVE_OPTIONS: ObjectiveOption[] = [
+  {
+    id: 'lead_form_meta',
+    title: 'Lead form on Meta',
+    blurb:
+      'Visitor never leaves Meta — the form opens inline, prefilled with their Meta profile. Higher conversion at a slightly lower lead quality. Best default.',
+    badge: 'Default',
+  },
+  {
+    id: 'lead_form_landing',
+    title: 'Lead form on landing page',
+    blurb:
+      "Ad routes to the customer's website. We embed the Meta Pixel so Meta optimises against your real Lead conversion. Higher lead quality, marginally lower volume. Needs a Pixel.",
+    badge: 'Higher quality',
+  },
+];
+
+function Step1TemplateAndObjective({
+  clientId,
+  templateSlug,
+  setTemplateSlug,
+  clientIndustry,
+  campaignObjective,
+  setCampaignObjective,
+  pixelId,
+  setPixelId,
+  primaryDomain,
+}: {
+  clientId: string;
+  templateSlug: string;
+  setTemplateSlug: (slug: string) => void;
+  clientIndustry: string | null;
+  campaignObjective: 'lead_form_meta' | 'lead_form_landing';
+  setCampaignObjective: (v: 'lead_form_meta' | 'lead_form_landing') => void;
+  pixelId: string | null;
+  setPixelId: (v: string | null) => void;
+  primaryDomain: string | null;
+}) {
+  return (
+    <div className="flex flex-col gap-7">
+      <Step1Template
+        value={templateSlug}
+        onChange={setTemplateSlug}
+        clientIndustry={clientIndustry}
+      />
+      <ObjectivePicker
+        value={campaignObjective}
+        onChange={setCampaignObjective}
+        primaryDomain={primaryDomain}
+      />
+      {campaignObjective === 'lead_form_landing' ? (
+        <PixelPicker clientId={clientId} value={pixelId} onChange={setPixelId} />
+      ) : null}
+    </div>
+  );
+}
+
+function ObjectivePicker({
+  value,
+  onChange,
+  primaryDomain,
+}: {
+  value: 'lead_form_meta' | 'lead_form_landing';
+  onChange: (v: 'lead_form_meta' | 'lead_form_landing') => void;
+  primaryDomain: string | null;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1">
+        <label className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
+          {'// Where does the lead get captured?'}
+        </label>
+        <p className="text-[12px] text-ink-quiet">
+          Both objectives optimise for leads — they differ in where the form
+          lives and what data Meta sees to optimise against.
+        </p>
+      </div>
+      <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
+        {OBJECTIVE_OPTIONS.map((opt) => {
+          const selected = opt.id === value;
+          const blocked = opt.id === 'lead_form_landing' && !primaryDomain;
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => !blocked && onChange(opt.id)}
+              disabled={blocked}
+              data-selected={selected ? 'true' : undefined}
+              className="group flex flex-col gap-2 rounded-lg border border-rule bg-card px-4 py-3.5 text-left transition-colors hover:border-rust disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:border-rule data-[selected=true]:border-rust data-[selected=true]:bg-rust-soft"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[14px] font-semibold text-ink">
+                  {opt.title}
+                </div>
+                <div className="rounded-full bg-paper-2 px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.1em] text-ink-quiet">
+                  {opt.badge}
+                </div>
+              </div>
+              <div className="text-[12px] leading-snug text-ink-soft">
+                {opt.blurb}
+              </div>
+              {blocked ? (
+                <div className="mt-1 rounded-md bg-warn-soft px-2.5 py-1.5 text-[11px] text-warn">
+                  Customer has no published site yet — publish first or use the
+                  Meta lead form objective.
+                </div>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PixelPicker({
+  clientId,
+  value,
+  onChange,
+}: {
+  clientId: string;
+  value: string | null;
+  onChange: (id: string | null) => void;
+}) {
+  const list = useListMetaPixels();
+  const select = useSelectMetaPixel();
+  const [options, setOptions] = useState<MetaPixelOption[] | null>(null);
+  const fetchedRef = useRef(false);
+
+  useEffect(() => {
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
+    list
+      .mutateAsync({ clientId })
+      .then((pixels) => {
+        setOptions(pixels);
+        // Auto-select when there's exactly one — operator doesn't need
+        // to make a non-decision.
+        if (pixels.length === 1 && !value) {
+          onChange(pixels[0].id);
+          void select.mutateAsync({ clientId, pixelId: pixels[0].id });
+        }
+      })
+      .catch(() => {
+        setOptions([]);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId]);
+
+  function handlePick(pixelId: string) {
+    onChange(pixelId);
+    void select.mutateAsync({ clientId, pixelId });
+  }
+
+  if (options === null) {
+    return (
+      <div className="flex flex-col gap-2 rounded-lg border border-rule bg-paper-2 px-4 py-3">
+        <div className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
+          {'// Meta Pixel'}
+        </div>
+        <div className="text-[12px] text-ink-quiet">
+          Looking up Pixels on this client&apos;s ad account…
+        </div>
+      </div>
+    );
+  }
+
+  if (options.length === 0) {
+    return (
+      <div className="flex flex-col gap-2 rounded-lg border border-warn bg-warn-soft px-4 py-3">
+        <div className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-warn">
+          {'// META PIXEL REQUIRED'}
+        </div>
+        <p className="text-[12px] text-ink">
+          This customer&apos;s ad account has no Pixels. Set one up in Meta
+          Events Manager first — then come back to this step and we&apos;ll
+          pick it automatically.
+        </p>
+      </div>
+    );
+  }
+
+  if (options.length === 1) {
+    const only = options[0];
+    return (
+      <div className="flex flex-col gap-2 rounded-lg border border-rust bg-rust-soft px-4 py-3">
+        <div className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-rust">
+          {'// Meta Pixel · auto-selected'}
+        </div>
+        <div className="text-[14px] font-semibold text-ink">{only.name}</div>
+        <div className="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-quiet">
+          ID: {only.id}
+          {only.lastFiredAt ? ' · Active' : ' · Never fired'}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-quiet">
+        {'// Meta Pixel'}
+      </label>
+      <p className="text-[11px] text-ink-quiet">
+        This ad account has more than one Pixel — pick the one that should
+        fire when leads land on the customer&apos;s site.
+      </p>
+      <div className="flex flex-col gap-1.5">
+        {options.map((p) => {
+          const selected = p.id === value;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => handlePick(p.id)}
+              data-selected={selected ? 'true' : undefined}
+              className="flex items-center justify-between gap-3 rounded-md border border-rule bg-card px-3 py-2 text-left transition-colors hover:border-rust data-[selected=true]:border-rust data-[selected=true]:bg-rust-soft"
+            >
+              <div className="flex flex-col">
+                <span className="text-[13px] font-semibold text-ink">{p.name}</span>
+                <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-quiet">
+                  {p.id}
+                  {p.lastFiredAt ? ' · Active' : ' · Never fired'}
+                </span>
+              </div>
+              {selected ? (
+                <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-rust">
+                  Selected
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function Step1Template({
   value,
@@ -1423,6 +1700,20 @@ function Step5Review({
           <div className="text-[14px] font-semibold text-ink">{template.label}</div>
           <div className="text-[12px] text-ink-quiet">{template.blurb}</div>
         </SummaryCard>
+        <SummaryCard label="// OBJECTIVE">
+          <div className="text-[14px] font-semibold text-ink">
+            {state.campaignObjective === 'lead_form_landing'
+              ? 'Lead form on landing page'
+              : 'Lead form on Meta'}
+          </div>
+          <div className="text-[12px] text-ink-quiet">
+            {state.campaignObjective === 'lead_form_landing'
+              ? state.pixelId
+                ? `Meta Pixel ${state.pixelId} fires Lead event on form submit.`
+                : 'No pixel — go back and pick one.'
+              : 'Meta instant lead form — visitor never leaves Facebook / Instagram.'}
+          </div>
+        </SummaryCard>
         <SummaryCard label="// TARGETING">
           <div className="text-[14px] text-ink">
             {state.country}
@@ -1562,6 +1853,8 @@ function freshState(): WizardState {
     websiteHeroCopy: '',
     brandTagline: '',
     templateSlug: 'generic',
+    campaignObjective: 'lead_form_meta',
+    pixelId: null,
     country: 'AU',
     serviceAreaLabel: '',
     cities: [],
@@ -1590,7 +1883,13 @@ function freshState(): WizardState {
 function isStepValid(s: WizardState): boolean {
   switch (s.step) {
     case 1:
-      return s.templateSlug.length > 0;
+      return (
+        s.templateSlug.length > 0 &&
+        // Landing-page objective requires a pixel resolved + persisted.
+        // The pixel picker auto-selects when there's exactly one, so
+        // this only blocks when the customer has no pixels at all.
+        (s.campaignObjective !== 'lead_form_landing' || s.pixelId != null)
+      );
     case 2:
       return s.country.length > 0 && s.ageMin >= 18 && s.ageMax >= s.ageMin;
     case 3:

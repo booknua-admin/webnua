@@ -241,6 +241,13 @@ export type CreateAdSetParams = {
   startTime?: string;
   endTime?: string;
   promotedObjectPageId?: string;
+  /** Phase 7.5 · Session 1.2 — for the landing-page objective, the
+   *  customer's Meta Pixel id + 'LEAD' custom event get attached to
+   *  promoted_object so Meta bids against the Lead conversion fired
+   *  on the customer's website. NULL/undefined for the in-Meta lead
+   *  form path (Meta optimises against the on-platform lead form
+   *  natively when no pixel is set). */
+  promotedObjectPixelId?: string | null;
 };
 
 export async function createAdSet(
@@ -264,7 +271,22 @@ export async function createAdSet(
       };
       if (params.startTime) body.start_time = params.startTime;
       if (params.endTime) body.end_time = params.endTime;
-      if (params.promotedObjectPageId) {
+      // promoted_object shape depends on the optimisation target:
+      //   • Pixel-tracked (landing page) → { pixel_id, custom_event_type }
+      //     + the Page id (Meta needs both: pixel for conversion target,
+      //     page for ad attribution).
+      //   • Lead form on Meta (default) → just the Page id; Meta routes
+      //     optimisation against the on-platform lead form.
+      if (params.promotedObjectPixelId) {
+        const promoted: Record<string, unknown> = {
+          pixel_id: params.promotedObjectPixelId,
+          custom_event_type: 'LEAD',
+        };
+        if (params.promotedObjectPageId) {
+          promoted.page_id = params.promotedObjectPageId;
+        }
+        body.promoted_object = promoted;
+      } else if (params.promotedObjectPageId) {
         body.promoted_object = { page_id: params.promotedObjectPageId };
       }
       return callExternal<MetaAdSetCreateResponse>({
@@ -330,8 +352,10 @@ export type CreateAdCreativeParams = {
   adAccountId: string;
   name: string;
   pageId: string;
-  /** The lead form id — wired into the creative's call-to-action. */
-  leadFormId: string;
+  /** The lead form id — wired into the creative's call-to-action. Set
+   *  for the in-Meta lead form objective; omit for the landing-page
+   *  objective (Meta routes the click to `linkUrl` instead). */
+  leadFormId?: string | null;
   /** Headline / primary copy / description. */
   headline: string;
   primaryText: string;
@@ -341,7 +365,8 @@ export type CreateAdCreativeParams = {
    *  imagery and capture the returned hash. */
   imageHash?: string;
   /** Destination URL — irrelevant for lead-form ads but Meta still
-   *  requires SOMETHING; defaults to the customer's website. */
+   *  requires SOMETHING; defaults to the customer's website. For the
+   *  landing-page objective this is the ad's actual destination. */
   linkUrl: string;
   ctaType?: string;
 };
@@ -354,13 +379,21 @@ export async function createAdCreative(
     clientId,
     'meta_ads',
     async (accessToken) => {
+      // call_to_action.value shape depends on the objective:
+      //   • Lead form on Meta  → { lead_gen_form_id, link }
+      //   • Landing page       → { link } (Meta routes the click to
+      //                           the URL; Meta Pixel `Lead` event on
+      //                           the customer's page is what closes
+      //                           the loop for optimisation).
+      const ctaValue: Record<string, unknown> = { link: params.linkUrl };
+      if (params.leadFormId) ctaValue.lead_gen_form_id = params.leadFormId;
       const linkData: Record<string, unknown> = {
         message: params.primaryText,
         link: params.linkUrl,
         name: params.headline,
         call_to_action: {
           type: params.ctaType ?? 'LEARN_MORE',
-          value: { lead_gen_form_id: params.leadFormId, link: params.linkUrl },
+          value: ctaValue,
         },
       };
       if (params.description) linkData.description = params.description;
@@ -560,6 +593,54 @@ export async function searchAdGeoLocations(
       const result = await callExternal<{ data?: MetaAdGeoLocation[] }>({
         provider: 'meta_ads',
         operation: 'search_ad_geolocation',
+        url,
+        method: 'GET',
+        clientId,
+      });
+      if (!result.ok) return result;
+      return { ok: true, data: result.data.data ?? [], status: result.status };
+    },
+  );
+}
+
+// --- pixel discovery (Phase 7.5 · Session 1.2) -------------------------------
+//
+// The landing-page objective routes ad clicks to the customer's own
+// website; Meta needs a Pixel id on the ad set's promoted_object so it
+// can optimise against the customer's Lead conversion event. This
+// endpoint lists every pixel the connected user can see on a given ad
+// account; the wizard's pixel picker consumes the shaped output.
+
+export interface MetaPixel {
+  id?: string;
+  name?: string;
+  code?: string;             // the fbq init string (rarely used by Webnua)
+  is_unavailable?: boolean;
+  last_fired_time?: string;
+  data_use_setting?: string;
+}
+
+/** List every Meta Pixel reachable from the customer's ad account. The
+ *  /adspixels endpoint returns the pixels the connected user has
+ *  permission to read — for a properly-shared ad account this is the
+ *  set the wizard's picker offers. Excludes is_unavailable rows at the
+ *  route layer (not here). */
+export async function listAdsPixels(
+  clientId: string,
+  adAccountId: string,
+): Promise<IntegrationResult<MetaPixel[]>> {
+  return callWithToken<MetaPixel[]>(
+    clientId,
+    'meta_ads',
+    async (accessToken) => {
+      const url = `${GRAPH}/${adAccountId}/adspixels?${form({
+        access_token: accessToken,
+        fields: 'id,name,code,is_unavailable,last_fired_time,data_use_setting',
+        limit: 50,
+      })}`;
+      const result = await callExternal<{ data?: MetaPixel[] }>({
+        provider: 'meta_ads',
+        operation: 'list_ads_pixels',
         url,
         method: 'GET',
         clientId,

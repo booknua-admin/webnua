@@ -61,6 +61,11 @@ type Props =
        *  disables form submission (the form slot's `publicSubmit.isPreview`
        *  flag carries it to FormBlock). Resolver-set. */
       isPreview: boolean;
+      /** Phase 7.5 · Session 1.2 — operator-selected Meta Pixel id. When
+       *  set, the renderer injects fbq(init, ...) + a PageView track so
+       *  Meta attribution + the Lead event fired by FormBlock route
+       *  through the right pixel. */
+      metaPixelId?: string | null;
     }
   | {
       kind: 'funnel';
@@ -75,7 +80,45 @@ type Props =
       /** Total step count — a single-step funnel hides the indicator. */
       stepCount: number;
       isPreview: boolean;
+      /** Same semantics as the website case above. */
+      metaPixelId?: string | null;
     };
+
+/** Inline Meta Pixel snippet — drops `fbq` onto window, initialises the
+ *  pixel, and fires a single PageView. Lives via dangerouslySetInnerHTML
+ *  because Meta's snippet is the canonical install path and they ship it
+ *  as raw script; rewriting it as an effect would lose the noscript
+ *  fallback Meta uses for crawler attribution. Preview-mode skips the
+ *  embed entirely — we don't want preview traffic polluting the
+ *  customer's pixel data. */
+function MetaPixelScript({
+  pixelId,
+  isPreview,
+}: {
+  pixelId: string | null | undefined;
+  isPreview: boolean;
+}) {
+  if (!pixelId || isPreview) return null;
+  const initSnippet = `!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','${pixelId}');fbq('track','PageView');`;
+  return (
+    <>
+      <script
+        data-slot="meta-pixel"
+        dangerouslySetInnerHTML={{ __html: initSnippet }}
+      />
+      <noscript>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          height="1"
+          width="1"
+          style={{ display: 'none' }}
+          src={`https://www.facebook.com/tr?id=${pixelId}&ev=PageView&noscript=1`}
+          alt=""
+        />
+      </noscript>
+    </>
+  );
+}
 
 function RenderedSection({
   section,
@@ -142,6 +185,10 @@ export function PublicSiteRenderer(props: Props) {
   if (props.kind === 'funnel') {
     return (
       <LiveSurfaceProvider>
+        <MetaPixelScript
+          pixelId={props.metaPixelId}
+          isPreview={props.isPreview}
+        />
         <PopupHost
           brand={props.brand}
           surface={{
@@ -181,6 +228,7 @@ export function PublicSiteRenderer(props: Props) {
   }
 
   const { brand, clientId, header, footer, nav, pages, page, isPreview } = props;
+  const metaPixelId = props.metaPixelId ?? null;
   // Resolve Website.nav into real links and hand them to the header section
   // through the nav slot — the header renders the site's one navigation bar.
 
@@ -238,6 +286,7 @@ export function PublicSiteRenderer(props: Props) {
 
   return (
     <LiveSurfaceProvider>
+      <MetaPixelScript pixelId={metaPixelId} isPreview={isPreview} />
       <PopupHost brand={brand} surface={{ clientId, surfaceKind: 'website' }}>
         <WebsiteNavProvider links={resolveNavLinks(nav, pages)}>
           {overlay && !sticky ? (
