@@ -14,6 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      agency_notification_recipients: {
+        Row: {
+          created_at: string
+          display_name: string | null
+          email: string
+          id: string
+          is_active: boolean
+          notify_on_cancellation: boolean
+          notify_on_integration_failure: boolean
+          notify_on_new_signup: boolean
+          notify_on_new_ticket: boolean
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string | null
+          email: string
+          id?: string
+          is_active?: boolean
+          notify_on_cancellation?: boolean
+          notify_on_integration_failure?: boolean
+          notify_on_new_signup?: boolean
+          notify_on_new_ticket?: boolean
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string | null
+          email?: string
+          id?: string
+          is_active?: boolean
+          notify_on_cancellation?: boolean
+          notify_on_integration_failure?: boolean
+          notify_on_new_signup?: boolean
+          notify_on_new_ticket?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
       agency_policy: {
         Row: {
           policy_key: Database["public"]["Enums"]["policy_key"]
@@ -214,6 +253,68 @@ export type Database = {
           },
         ]
       }
+      automation_assignments: {
+        Row: {
+          assigned_at: string
+          assigned_by: string | null
+          automation_id: string | null
+          client_id: string
+          id: string
+          is_active: boolean
+          pricing_tier: string | null
+          template_id: string
+        }
+        Insert: {
+          assigned_at?: string
+          assigned_by?: string | null
+          automation_id?: string | null
+          client_id: string
+          id?: string
+          is_active?: boolean
+          pricing_tier?: string | null
+          template_id: string
+        }
+        Update: {
+          assigned_at?: string
+          assigned_by?: string | null
+          automation_id?: string | null
+          client_id?: string
+          id?: string
+          is_active?: boolean
+          pricing_tier?: string | null
+          template_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_assignments_assigned_by_fkey"
+            columns: ["assigned_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_assignments_automation_id_fkey"
+            columns: ["automation_id"]
+            isOneToOne: false
+            referencedRelation: "automations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_assignments_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_assignments_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "automation_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       automation_runs: {
         Row: {
           action_sequence: string[]
@@ -380,6 +481,94 @@ export type Database = {
           },
         ]
       }
+      automation_template_actions: {
+        Row: {
+          action_config: Json
+          action_type: Database["public"]["Enums"]["automation_action_type"]
+          created_at: string
+          id: string
+          pauses_on_human_activity: boolean
+          position: number
+          template_id: string
+        }
+        Insert: {
+          action_config?: Json
+          action_type: Database["public"]["Enums"]["automation_action_type"]
+          created_at?: string
+          id?: string
+          pauses_on_human_activity?: boolean
+          position: number
+          template_id: string
+        }
+        Update: {
+          action_config?: Json
+          action_type?: Database["public"]["Enums"]["automation_action_type"]
+          created_at?: string
+          id?: string
+          pauses_on_human_activity?: boolean
+          position?: number
+          template_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_template_actions_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "automation_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      automation_templates: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+          template_key: string
+          trigger_config: Json | null
+          trigger_filters: Json | null
+          trigger_type: Database["public"]["Enums"]["automation_trigger_type"]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          template_key: string
+          trigger_config?: Json | null
+          trigger_filters?: Json | null
+          trigger_type: Database["public"]["Enums"]["automation_trigger_type"]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          template_key?: string
+          trigger_config?: Json | null
+          trigger_filters?: Json | null
+          trigger_type?: Database["public"]["Enums"]["automation_trigger_type"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_templates_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       automations: {
         Row: {
           automation_key: string
@@ -395,6 +584,7 @@ export type Database = {
           trigger_filters: Json
           trigger_type: Database["public"]["Enums"]["automation_trigger_type"]
           updated_at: string
+          visibility: string
         }
         Insert: {
           automation_key: string
@@ -410,6 +600,7 @@ export type Database = {
           trigger_filters?: Json
           trigger_type: Database["public"]["Enums"]["automation_trigger_type"]
           updated_at?: string
+          visibility?: string
         }
         Update: {
           automation_key?: string
@@ -425,6 +616,7 @@ export type Database = {
           trigger_filters?: Json
           trigger_type?: Database["public"]["Enums"]["automation_trigger_type"]
           updated_at?: string
+          visibility?: string
         }
         Relationships: [
           {
@@ -944,9 +1136,18 @@ export type Database = {
           last_synced_at: string | null
           meta_ad_account_id: string
           meta_business_id: string | null
+          meta_page_id: string | null
+          meta_page_name: string | null
+          meta_pixel_id: string | null
           meta_user_id: string | null
           timezone_name: string | null
           updated_at: string
+          webnua_page_partner_error: string | null
+          webnua_page_partner_granted_at: string | null
+          webnua_page_partner_status: string | null
+          webnua_partner_error: string | null
+          webnua_partner_granted_at: string | null
+          webnua_partner_status: string | null
         }
         Insert: {
           account_status?: number | null
@@ -962,9 +1163,18 @@ export type Database = {
           last_synced_at?: string | null
           meta_ad_account_id: string
           meta_business_id?: string | null
+          meta_page_id?: string | null
+          meta_page_name?: string | null
+          meta_pixel_id?: string | null
           meta_user_id?: string | null
           timezone_name?: string | null
           updated_at?: string
+          webnua_page_partner_error?: string | null
+          webnua_page_partner_granted_at?: string | null
+          webnua_page_partner_status?: string | null
+          webnua_partner_error?: string | null
+          webnua_partner_granted_at?: string | null
+          webnua_partner_status?: string | null
         }
         Update: {
           account_status?: number | null
@@ -980,9 +1190,18 @@ export type Database = {
           last_synced_at?: string | null
           meta_ad_account_id?: string
           meta_business_id?: string | null
+          meta_page_id?: string | null
+          meta_page_name?: string | null
+          meta_pixel_id?: string | null
           meta_user_id?: string | null
           timezone_name?: string | null
           updated_at?: string
+          webnua_page_partner_error?: string | null
+          webnua_page_partner_granted_at?: string | null
+          webnua_page_partner_status?: string | null
+          webnua_partner_error?: string | null
+          webnua_partner_granted_at?: string | null
+          webnua_partner_status?: string | null
         }
         Relationships: [
           {
@@ -998,8 +1217,12 @@ export type Database = {
         Row: {
           client_id: string
           id: string
+          last_failure_code: string | null
+          last_failure_message: string | null
+          last_registration_attempt_at: string | null
           notes: string | null
           registered_at: string
+          registration_job_id: string | null
           sender_id: string
           status: string
           twilio_registration_sid: string | null
@@ -1007,8 +1230,12 @@ export type Database = {
         Insert: {
           client_id: string
           id?: string
+          last_failure_code?: string | null
+          last_failure_message?: string | null
+          last_registration_attempt_at?: string | null
           notes?: string | null
           registered_at?: string
+          registration_job_id?: string | null
           sender_id: string
           status?: string
           twilio_registration_sid?: string | null
@@ -1016,8 +1243,12 @@ export type Database = {
         Update: {
           client_id?: string
           id?: string
+          last_failure_code?: string | null
+          last_failure_message?: string | null
+          last_registration_attempt_at?: string | null
           notes?: string | null
           registered_at?: string
+          registration_job_id?: string | null
           sender_id?: string
           status?: string
           twilio_registration_sid?: string | null
@@ -1028,6 +1259,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: true
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_sms_senders_registration_job_id_fkey"
+            columns: ["registration_job_id"]
+            isOneToOne: false
+            referencedRelation: "integration_jobs"
             referencedColumns: ["id"]
           },
         ]
@@ -2346,6 +2584,97 @@ export type Database = {
           },
         ]
       }
+      meta_ad_creatives: {
+        Row: {
+          client_id: string
+          copy_variant_index: number
+          created_at: string
+          created_by_user_id: string | null
+          cta_type: string
+          description: string | null
+          ended_at: string | null
+          headline: string
+          id: string
+          image_height: number | null
+          image_url: string
+          image_variant_index: number
+          image_width: number | null
+          meta_ad_id: string | null
+          meta_ad_set_id: string | null
+          meta_campaign_id: string
+          meta_creative_id: string | null
+          meta_image_hash: string | null
+          primary_text: string
+          started_at: string
+        }
+        Insert: {
+          client_id: string
+          copy_variant_index?: number
+          created_at?: string
+          created_by_user_id?: string | null
+          cta_type?: string
+          description?: string | null
+          ended_at?: string | null
+          headline: string
+          id?: string
+          image_height?: number | null
+          image_url: string
+          image_variant_index?: number
+          image_width?: number | null
+          meta_ad_id?: string | null
+          meta_ad_set_id?: string | null
+          meta_campaign_id: string
+          meta_creative_id?: string | null
+          meta_image_hash?: string | null
+          primary_text: string
+          started_at?: string
+        }
+        Update: {
+          client_id?: string
+          copy_variant_index?: number
+          created_at?: string
+          created_by_user_id?: string | null
+          cta_type?: string
+          description?: string | null
+          ended_at?: string | null
+          headline?: string
+          id?: string
+          image_height?: number | null
+          image_url?: string
+          image_variant_index?: number
+          image_width?: number | null
+          meta_ad_id?: string | null
+          meta_ad_set_id?: string | null
+          meta_campaign_id?: string
+          meta_creative_id?: string | null
+          meta_image_hash?: string | null
+          primary_text?: string
+          started_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_ad_creatives_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_ad_creatives_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_ad_creatives_meta_campaign_id_fkey"
+            columns: ["meta_campaign_id"]
+            isOneToOne: false
+            referencedRelation: "meta_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       meta_ads_insights: {
         Row: {
           clicks: number
@@ -2401,6 +2730,91 @@ export type Database = {
             foreignKeyName: "meta_ads_insights_meta_campaign_id_fkey"
             columns: ["meta_campaign_id"]
             isOneToOne: false
+            referencedRelation: "meta_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meta_campaign_launches: {
+        Row: {
+          brief_snapshot: Json
+          campaign_objective: string
+          client_id: string
+          created_at: string
+          id: string
+          is_first_launch: boolean
+          launched_at: string
+          launched_by_user_id: string | null
+          meta_campaign_id: string
+          targeting_age_max: number
+          targeting_age_min: number
+          targeting_countries: string[]
+          targeting_full_spec: Json
+          targeting_geo_center: Json | null
+          targeting_interest_tokens: string[]
+          targeting_radius_km: number | null
+          template_slug: string
+          template_variant: string | null
+        }
+        Insert: {
+          brief_snapshot: Json
+          campaign_objective?: string
+          client_id: string
+          created_at?: string
+          id?: string
+          is_first_launch?: boolean
+          launched_at?: string
+          launched_by_user_id?: string | null
+          meta_campaign_id: string
+          targeting_age_max?: number
+          targeting_age_min?: number
+          targeting_countries?: string[]
+          targeting_full_spec: Json
+          targeting_geo_center?: Json | null
+          targeting_interest_tokens?: string[]
+          targeting_radius_km?: number | null
+          template_slug: string
+          template_variant?: string | null
+        }
+        Update: {
+          brief_snapshot?: Json
+          campaign_objective?: string
+          client_id?: string
+          created_at?: string
+          id?: string
+          is_first_launch?: boolean
+          launched_at?: string
+          launched_by_user_id?: string | null
+          meta_campaign_id?: string
+          targeting_age_max?: number
+          targeting_age_min?: number
+          targeting_countries?: string[]
+          targeting_full_spec?: Json
+          targeting_geo_center?: Json | null
+          targeting_interest_tokens?: string[]
+          targeting_radius_km?: number | null
+          template_slug?: string
+          template_variant?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_campaign_launches_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_campaign_launches_launched_by_user_id_fkey"
+            columns: ["launched_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_campaign_launches_meta_campaign_id_fkey"
+            columns: ["meta_campaign_id"]
+            isOneToOne: true
             referencedRelation: "meta_campaigns"
             referencedColumns: ["id"]
           },
@@ -2500,6 +2914,44 @@ export type Database = {
           },
         ]
       }
+      meta_data_deletion_log: {
+        Row: {
+          client_ids_count: number
+          code: string
+          deleted_at: string
+          deleted_resources: Json
+          initiated_by: string
+          initiated_by_user: string | null
+          meta_user_id: string | null
+        }
+        Insert: {
+          client_ids_count: number
+          code?: string
+          deleted_at?: string
+          deleted_resources: Json
+          initiated_by: string
+          initiated_by_user?: string | null
+          meta_user_id?: string | null
+        }
+        Update: {
+          client_ids_count?: number
+          code?: string
+          deleted_at?: string
+          deleted_resources?: Json
+          initiated_by?: string
+          initiated_by_user?: string | null
+          meta_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_data_deletion_log_initiated_by_user_fkey"
+            columns: ["initiated_by_user"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       meta_lead_forms: {
         Row: {
           archived_at: string | null
@@ -2550,9 +3002,11 @@ export type Database = {
           created_at: string
           digest_frequency: string
           id: string
+          notify_monthly_digest: boolean
           notify_on_new_lead: boolean
           notify_on_payment_failure: boolean
           notify_on_review_received: boolean
+          notify_weekly_digest: boolean
           operator_email: string
           updated_at: string
         }
@@ -2561,9 +3015,11 @@ export type Database = {
           created_at?: string
           digest_frequency?: string
           id?: string
+          notify_monthly_digest?: boolean
           notify_on_new_lead?: boolean
           notify_on_payment_failure?: boolean
           notify_on_review_received?: boolean
+          notify_weekly_digest?: boolean
           operator_email: string
           updated_at?: string
         }
@@ -2572,9 +3028,11 @@ export type Database = {
           created_at?: string
           digest_frequency?: string
           id?: string
+          notify_monthly_digest?: boolean
           notify_on_new_lead?: boolean
           notify_on_payment_failure?: boolean
           notify_on_review_received?: boolean
+          notify_weekly_digest?: boolean
           operator_email?: string
           updated_at?: string
         }
@@ -3729,6 +4187,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      assign_template_to_client: {
+        Args: { p_client_id: string; p_template_id: string }
+        Returns: string
+      }
+      revoke_template_from_client: {
+        Args: { p_client_id: string; p_template_id: string }
+        Returns: undefined
+      }
       webnua_vault_create_secret: {
         Args: { p_description?: string; p_secret: string }
         Returns: string

@@ -87,7 +87,7 @@ create index meta_campaign_launches_template_idx
 alter table public.meta_campaign_launches enable row level security;
 
 create policy meta_campaign_launches_select on public.meta_campaign_launches
-  for select using (client_id = any (private.accessible_client_ids()));
+  for select using (client_id in (select private.accessible_client_ids()));
 
 -- No insert/update/delete policies: service-role only.
 
@@ -155,7 +155,7 @@ create unique index meta_ad_creatives_one_active_per_campaign
 alter table public.meta_ad_creatives enable row level security;
 
 create policy meta_ad_creatives_select on public.meta_ad_creatives
-  for select using (client_id = any (private.accessible_client_ids()));
+  for select using (client_id in (select private.accessible_client_ids()));
 
 -- No insert/update/delete policies: service-role only.
 
