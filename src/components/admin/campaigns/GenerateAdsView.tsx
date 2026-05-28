@@ -41,7 +41,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { CampaignChat } from './CampaignChat';
 import {
   CampaignBlueprint,
+  DEFAULT_AUDIENCE,
+  recommendedAdSetCount,
+  recommendedImagesPerAdSet,
   type AdSetNode,
+  type AudienceSpec,
   type BlueprintBrief,
   type CtaType,
   type LaunchSettings,
@@ -151,28 +155,72 @@ export function GenerateAdsView({
     if (!brief.data) return;
     const template = templateForIndustry(brief.data.industry);
     const industryTemplate = resolveIndustryTemplate(brief.data.industry);
-    const sharedImage = industryTemplate.stockImages.hero;
-    const pickedAngles = input.angles.filter((a) =>
-      input.selectedAngleIds.has(a.id),
-    );
-    const adSets: AdSetNode[] = pickedAngles.map((a) => ({
-      angleId: a.id,
-      label: a.label,
-      rationale: a.rationale,
-      sharedImageUrl: sharedImage,
-      ads: a.variants.map((v, idx) => ({
-        id: `${a.id}-${idx}`,
-        headline: v.headline,
-        primaryText: v.primaryText,
-        description: v.description,
-        ctaType: v.ctaType as CtaType,
-        imageUrl: null,
-        selected: true,
-      })),
-    }));
+
+    // Budget-tier scaling: the operator's spend determines how many
+    // ad sets we run (Meta needs ~€5-10/day per set to learn). At low
+    // budgets we test fewer angles but with more image variants per
+    // set so the operator still gets meaningful signal.
+    const dailyBudgetCents = template.defaultDailyBudgetCents;
+    const targetAdSetCount = recommendedAdSetCount(dailyBudgetCents);
+    const imagesPerAdSet = recommendedImagesPerAdSet(targetAdSetCount);
+
+    // Honour the operator's pick first; if they picked more angles than
+    // the budget supports, take the first N. If they picked fewer, use
+    // what they gave us. (Future polish: surface this trade-off in chat
+    // before the operator commits, so they can either bump budget or
+    // accept fewer angles.)
+    const pickedAngles = input.angles
+      .filter((a) => input.selectedAngleIds.has(a.id))
+      .slice(0, targetAdSetCount);
+
+    // Two shared images A + B — same across every ad set. The operator
+    // overrides per-ad via AdEditModal if they want to diverge later.
+    // At 1-ad-set scale we expand to three images to keep the test
+    // meaningful when angle variety is capped.
+    const stockImages = industryTemplate.stockImages;
+    const imagePool: string[] = [
+      stockImages.hero,
+      stockImages.gallery[0] ?? stockImages.hero,
+      stockImages.gallery[1] ?? stockImages.gallery[0] ?? stockImages.hero,
+    ].slice(0, imagesPerAdSet);
+    const imageLabels = ['Image A', 'Image B', 'Image C'];
+
+    const seedAudience = (): AudienceSpec => ({
+      ...DEFAULT_AUDIENCE,
+      description: brief.data?.audienceLine ?? '',
+      ageMin: template.defaultAgeMin,
+      ageMax: template.defaultAgeMax,
+      radiusKm: template.defaultRadiusKm,
+      interestKeywords: template.interestTokens.join(', '),
+    });
+
+    const adSets: AdSetNode[] = pickedAngles.map((a) => {
+      // ONE copy variant per ad set — the angle's first variant. The
+      // operator can edit the copy on the AdEditModal's "Copy (shared)"
+      // panel; per-ad-set copy variation is intentional, per-ad copy
+      // variation is NOT (image is the only within-set variable).
+      const primary = a.variants[0];
+      return {
+        angleId: a.id,
+        label: a.label,
+        rationale: a.rationale,
+        headline: primary?.headline ?? '',
+        primaryText: primary?.primaryText ?? '',
+        description: primary?.description ?? '',
+        ctaType: (primary?.ctaType ?? 'LEARN_MORE') as CtaType,
+        audience: seedAudience(),
+        ads: imagePool.map((imageUrl, idx) => ({
+          id: `${a.id}-${idx}`,
+          label: imageLabels[idx] ?? `Image ${idx + 1}`,
+          imageUrl,
+          selected: true,
+        })),
+      };
+    });
+
     const settings: LaunchSettings = {
       campaignName: defaultCampaignName(clientName, template),
-      dailyBudgetCents: template.defaultDailyBudgetCents,
+      dailyBudgetCents,
       country: inferCountryFromServiceArea(brief.data.serviceArea),
     };
     setLaunchError(null);
@@ -221,38 +269,34 @@ export function GenerateAdsView({
     const settings = phase.settings;
     const adSets = phase.adSets;
 
-    // Flatten every SELECTED ad across every ad-set draft. The
-    // operator's per-ad unticks (AdEditModal) drop ads here; an ad
-    // set with zero selected ads contributes nothing. Cap at 5 total
-    // (Meta's learning algorithm dilutes past that; the orchestrator
-    // caps at 10 for safety).
-    const selectedAds = adSets
-      .flatMap((adSet) =>
-        adSet.ads
-          .filter((ad) => ad.selected)
-          .map((ad) => ({
-            ad,
-            // Per-ad image override → fall back to the ad-set's
-            // shared image when null. V1 uses ONE image per ad.
-            imageUrl: ad.imageUrl || adSet.sharedImageUrl,
-          })),
-      )
-      .slice(0, 5);
-    if (selectedAds.length === 0) return;
+    // Each ad set contributes ONE copy variant (its shared copy) — the
+    // experiment design holds copy constant within a set and varies
+    // image. Drop ad sets where every image variant is unticked.
+    const activeAdSets = adSets.filter((s) => s.ads.some((a) => a.selected));
+    if (activeAdSets.length === 0) return;
 
-    const allVariants = selectedAds.map(({ ad }) => ({
-      headline: ad.headline,
-      primaryText: ad.primaryText,
+    // The launch payload's `variants` axis is per-ad-set copy. Cap at
+    // 5 (Meta's learning ceiling).
+    const allVariants = activeAdSets.slice(0, 5).map((adSet) => ({
+      headline: adSet.headline,
+      primaryText: adSet.primaryText,
       description:
-        ad.description && ad.description.length > 0 ? ad.description : null,
-      ctaType: ad.ctaType,
+        adSet.description && adSet.description.length > 0
+          ? adSet.description
+          : null,
+      ctaType: adSet.ctaType,
     }));
-    // Distinct image URLs across the selected ads — Meta's orchestrator
-    // dedupes hashes per ad account, so duplicates are cheap. We feed
-    // every image so the M × N matrix in Session 1.4a (M variants ×
-    // N images) lights up each (copy, image) cell.
+
+    // Distinct image URLs across every selected ad — Meta dedupes
+    // hashes per account, so duplicates are cheap. The matrix is
+    // M (copy variants) × N (images); within an ad set every image
+    // becomes its own ad.
     const distinctImages = Array.from(
-      new Set(selectedAds.map((s) => s.imageUrl).filter(Boolean)),
+      new Set(
+        activeAdSets
+          .flatMap((s) => s.ads.filter((a) => a.selected).map((a) => a.imageUrl))
+          .filter(Boolean),
+      ),
     );
 
     setLaunchError(null);
@@ -263,22 +307,34 @@ export function GenerateAdsView({
     const linkUrl = `https://${brief.data.primaryDomain}`;
     const privacyPolicyUrl = `https://${brief.data.primaryDomain}/privacy`;
 
+    // V1 caveat (documented in AdSetEditModal): the orchestrator
+    // accepts one targeting spec per launch, so we apply the FIRST
+    // ad set's audience to the whole campaign. Per-set targeting is
+    // V1.1 — needs orchestrator changes to accept different specs
+    // per ad set.
+    const primaryAudience = activeAdSets[0].audience;
+    const interestTokens = primaryAudience.interestKeywords
+      .split(/[,;\n]/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+      .slice(0, 12);
+    const fallbackInterestTokens =
+      interestTokens.length > 0 ? interestTokens : [...template.interestTokens];
+
     const payload: LaunchCampaignPayload = {
       clientId,
       templateSlug: template.slug,
-      // Operator-edited fields below — the review screen is the only
-      // place these are settled.
       campaignName: settings.campaignName,
       campaignObjective: 'lead_form_meta',
       pixelId: null,
       targeting: {
         geoCenter: null,
-        radiusKm: null,
+        radiusKm: primaryAudience.radiusKm,
         cities: [],
         interests: [],
-        ageMin: template.defaultAgeMin,
-        ageMax: template.defaultAgeMax,
-        interestTokens: [...template.interestTokens],
+        ageMin: primaryAudience.ageMin,
+        ageMax: primaryAudience.ageMax,
+        interestTokens: fallbackInterestTokens,
         countries: [settings.country],
       },
       dailyBudgetCents: settings.dailyBudgetCents,
@@ -342,7 +398,7 @@ export function GenerateAdsView({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-6 px-4 py-8 md:px-10 md:py-10">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-4 py-8 md:px-10 md:py-10">
       <Header clientName={clientName} brief={brief.data ?? null} />
 
       {phase.kind === 'idle' && (

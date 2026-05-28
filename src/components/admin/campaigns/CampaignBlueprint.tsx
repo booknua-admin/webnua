@@ -58,30 +58,86 @@ export type LaunchSettings = {
 };
 
 export type AdNode = {
-  /** Stable id per (angle, variant) cell — also identifies the ad in
-   *  the per-ad modal. */
+  /** Stable id per (ad set, image variant) cell. */
   id: string;
-  headline: string;
-  primaryText: string;
-  description: string;
-  ctaType: CtaType;
-  /** Per-ad image override. Falls back to the ad-set's shared image
-   *  pool when null. V1 supports operator upload here. */
-  imageUrl: string | null;
+  /** Operator-facing label for the variant — "Image A" / "Image B".
+   *  Drives the badge on the preview card. */
+  label: string;
+  /** The only thing that varies within an ad set. Editable via
+   *  AdEditModal (URL + Storage upload). */
+  imageUrl: string;
   /** Operator can untick an ad to drop it from the launch. */
   selected: boolean;
 };
 
 export type AdSetNode = {
-  /** Angle id (pain / outcome / trust) — also drives the eyebrow chip. */
+  /** Angle id (pain / outcome / trust) — drives the eyebrow chip. */
   angleId: string;
   label: string;
   rationale: string;
-  /** Shared image pool — V1 inherits from the industry's stock set
-   *  unless an individual ad overrides via AdEditModal. */
-  sharedImageUrl: string;
+  /** Shared copy across every ad in this set. The IMAGE is the only
+   *  variable within an ad set; COPY is the only variable between ad
+   *  sets. Clean experiment shape: each set isolates one axis. Edited
+   *  via AdEditModal's "Copy (shared across this set)" panel. */
+  headline: string;
+  primaryText: string;
+  description: string;
+  ctaType: CtaType;
+  /** Per-ad-set audience override. Edited via AdSetEditModal — the
+   *  TARGETING editor. V1: captured here but the launch orchestrator
+   *  applies the first ad set's audience to the whole campaign (per-
+   *  set targeting is V1.1 — needs orchestrator changes to accept
+   *  different specs per set). Until then, audience-per-set is a
+   *  forward-looking shape. */
+  audience: AudienceSpec;
   ads: AdNode[];
 };
+
+/** Per-ad-set audience definition. V1 fields are the common-case
+ *  knobs the operator can articulate without a Meta Ads Manager deep-
+ *  dive. The classic builder's full targeting spec (placements, custom
+ *  audiences, lookalikes, etc.) stays the V1.1 path. */
+export type AudienceSpec = {
+  /** Free-form description, e.g. "Cottesloe homeowners renovating
+   *  their kitchens." Seeded from brands.audience_line. */
+  description: string;
+  ageMin: number;
+  ageMax: number;
+  /** Meta's radius in km around the customer's primary city. */
+  radiusKm: number;
+  /** Comma-separated interest keywords. Meta's autocomplete-resolved
+   *  ids are V1.1 — V1 captures strings for the snapshot + ops audit. */
+  interestKeywords: string;
+};
+
+export const DEFAULT_AUDIENCE: AudienceSpec = {
+  description: '',
+  ageMin: 25,
+  ageMax: 65,
+  radiusKm: 25,
+  interestKeywords: '',
+};
+
+// --- budget-tier helpers ---------------------------------------------------
+
+/** Recommended ad-set count for a daily budget. Meta's learning algo
+ *  needs ~€5-10/day per ad set to leave the learning phase; below
+ *  that, spend dilutes. With <€15/day the operator should test one
+ *  angle deeply (more images, fewer ad sets); €15-30 is a healthy
+ *  two-angle test; €30+ supports the full three-angle matrix. */
+export function recommendedAdSetCount(dailyBudgetCents: number): 1 | 2 | 3 {
+  if (dailyBudgetCents < 1500) return 1;
+  if (dailyBudgetCents < 3000) return 2;
+  return 3;
+}
+
+/** How many image variants per ad set, given the recommended ad-set
+ *  count. Inverse relationship: fewer ad sets → more images per set so
+ *  the operator still tests a meaningful matrix. */
+export function recommendedImagesPerAdSet(adSetCount: 1 | 2 | 3): number {
+  if (adSetCount === 1) return 3;
+  return 2;
+}
 
 export type BlueprintBrief = {
   /** Required by AdEditModal for image-upload Storage scoping. */
@@ -154,8 +210,8 @@ export function CampaignBlueprint({
           Your campaign — ready to publish
         </h2>
         <p className="text-[13px] leading-snug text-ink-soft">
-          Click any node to edit. The bottom row shows the actual ad
-          preview each customer will scroll past.
+          Click any node to edit. Each ad set tests one piece of copy across
+          multiple images — the bottom row is the actual ad your audience sees.
         </p>
       </header>
 
@@ -261,7 +317,7 @@ function BlueprintTree({
   onOpenAd: (angleId: string, adId: string) => void;
 }) {
   return (
-    <div className="flex flex-col items-center gap-0 overflow-x-auto rounded-2xl border border-rule bg-paper-2/40 px-4 py-8 sm:px-8 sm:py-10">
+    <div className="flex w-full flex-col items-center gap-0 overflow-x-auto">
       {/* Layer 1: Campaign root */}
       <CampaignRootCard
         settings={settings}
@@ -272,7 +328,7 @@ function BlueprintTree({
       />
 
       {/* Connector: root → branches */}
-      <ConnectorVertical height={32} />
+      <ConnectorVertical height={28} />
 
       {adSets.length > 0 ? (
         <ConnectorHorizontalBranch count={adSets.length} />
@@ -280,8 +336,8 @@ function BlueprintTree({
 
       {/* Layer 2: Ad Set row */}
       <div
-        className="grid gap-6 sm:gap-8"
-        style={{ gridTemplateColumns: `repeat(${Math.max(adSets.length, 1)}, minmax(220px, 1fr))` }}
+        className="grid w-full gap-5 sm:gap-6"
+        style={{ gridTemplateColumns: `repeat(${Math.max(adSets.length, 1)}, minmax(180px, 1fr))` }}
       >
         {adSets.map((adSet) => (
           <div key={adSet.angleId} className="flex flex-col items-center gap-0">
@@ -290,17 +346,17 @@ function BlueprintTree({
               onClick={() => onOpenAdSet(adSet.angleId)}
             />
 
-            <ConnectorVertical height={28} />
+            <ConnectorVertical height={24} />
 
             {adSet.ads.length > 1 ? (
               <ConnectorHorizontalBranch count={adSet.ads.length} short />
             ) : null}
 
-            {/* Layer 3: Ad previews */}
+            {/* Layer 3: Ad previews — image variants only */}
             <div
-              className="grid gap-4"
+              className="grid w-full gap-3"
               style={{
-                gridTemplateColumns: `repeat(${Math.max(adSet.ads.length, 1)}, minmax(260px, 280px))`,
+                gridTemplateColumns: `repeat(${Math.max(adSet.ads.length, 1)}, minmax(0, 1fr))`,
               }}
             >
               {adSet.ads.map((ad) => (
@@ -422,39 +478,41 @@ function AdPreviewCard({
   onClick: () => void;
 }) {
   const dim = !ad.selected;
-  const imageUrl = ad.imageUrl || adSet.sharedImageUrl;
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`group relative flex flex-col gap-0 rounded-xl border border-rule bg-card p-0 text-left shadow-sm transition-transform hover:-translate-y-0.5 hover:border-rust hover:shadow-card ${
+      className={`group relative flex w-full flex-col gap-0 overflow-hidden rounded-lg border border-rule bg-card p-0 text-left shadow-sm transition-transform hover:-translate-y-0.5 hover:border-rust hover:shadow-card ${
         dim ? 'opacity-50' : ''
       }`}
-      style={{ width: 280 }}
     >
-      <div className="pointer-events-none origin-top-left" style={{ transform: 'scale(0.85)', width: 330, height: 'auto', marginBottom: -60 }}>
+      <div
+        className="pointer-events-none w-full origin-top-left"
+        style={{ transform: 'scale(0.6)', width: '166.67%', marginBottom: '-40%' }}
+      >
         <MetaAdPreview
           pageName={brief?.businessName ?? 'Your business'}
           pageLogoUrl={null}
-          primaryText={ad.primaryText}
-          headline={ad.headline}
-          description={ad.description}
-          ctaType={ad.ctaType}
-          imageUrl={imageUrl}
+          // Copy is shared at the ad-set level; image varies per ad.
+          primaryText={adSet.primaryText}
+          headline={adSet.headline}
+          description={adSet.description}
+          ctaType={adSet.ctaType}
+          imageUrl={ad.imageUrl}
           accentColor={brief?.accentColor}
           linkHost={brief?.primaryDomain ?? undefined}
         />
       </div>
-      <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-paper-2/95 px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-ink-quiet shadow-sm">
+      <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-paper-2/95 px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-ink-quiet shadow-sm">
         {ad.selected ? (
           <>
-            <span className="h-1.5 w-1.5 rounded-full bg-good" aria-hidden /> LIVE
+            <span className="h-1.5 w-1.5 rounded-full bg-good" aria-hidden /> {ad.label.toUpperCase()}
           </>
         ) : (
-          <>OFF</>
+          <>{ad.label.toUpperCase()} · OFF</>
         )}
       </span>
-      <span className="absolute right-3 top-3 rounded-full bg-rust px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-paper opacity-0 transition-opacity group-hover:opacity-100 shadow-sm">
+      <span className="absolute right-2 top-2 rounded-full bg-rust px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-paper opacity-0 transition-opacity group-hover:opacity-100 shadow-sm">
         Edit →
       </span>
     </button>
@@ -590,8 +648,7 @@ function toAdSetEditDraft(adSet: AdSetNode): AdSetEditDraft {
   return {
     angleId: adSet.angleId,
     label: adSet.label,
-    rationale: adSet.rationale,
-    sharedImageUrl: adSet.sharedImageUrl,
+    audience: adSet.audience,
     activeAdCount: adSet.ads.filter((a) => a.selected).length,
     totalAdCount: adSet.ads.length,
   };
@@ -600,35 +657,43 @@ function toAdSetEditDraft(adSet: AdSetNode): AdSetEditDraft {
 function applyAdSetEdit(adSet: AdSetNode, edit: AdSetEditDraft): AdSetNode {
   return {
     ...adSet,
-    label: edit.label,
-    rationale: edit.rationale,
-    sharedImageUrl: edit.sharedImageUrl,
+    audience: edit.audience,
   };
 }
 
 function toAdDraft(ad: AdNode, adSet: AdSetNode): AdDraft {
   return {
     id: ad.id,
-    headline: ad.headline,
-    primaryText: ad.primaryText,
-    description: ad.description,
-    ctaType: ad.ctaType,
-    imageUrl: ad.imageUrl ?? adSet.sharedImageUrl,
+    label: ad.label,
+    imageUrl: ad.imageUrl,
     selected: ad.selected,
+    // Shared copy — the operator edits these on the ad modal, but the
+    // change applies to every ad in the set (the experiment design is
+    // image-vary, copy-fixed within the set).
+    sharedHeadline: adSet.headline,
+    sharedPrimaryText: adSet.primaryText,
+    sharedDescription: adSet.description,
+    sharedCtaType: adSet.ctaType,
+    /** Operator-facing eyebrow on the modal so they know which angle
+     *  this ad sits inside. */
+    adSetLabel: adSet.label,
+    adSetAngleId: adSet.angleId,
   };
 }
 
 function applyAdEdit(adSet: AdSetNode, adId: string, edit: AdDraft): AdSetNode {
   return {
     ...adSet,
+    // Shared-copy fields write through to the AD-SET level — by design.
+    headline: edit.sharedHeadline,
+    primaryText: edit.sharedPrimaryText,
+    description: edit.sharedDescription,
+    ctaType: edit.sharedCtaType,
     ads: adSet.ads.map((a) =>
       a.id === adId
         ? {
             ...a,
-            headline: edit.headline,
-            primaryText: edit.primaryText,
-            description: edit.description,
-            ctaType: edit.ctaType,
+            label: edit.label,
             imageUrl: edit.imageUrl,
             selected: edit.selected,
           }
