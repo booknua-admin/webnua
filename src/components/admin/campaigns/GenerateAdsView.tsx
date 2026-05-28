@@ -48,7 +48,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { AnglePickerCards } from './AnglePickerCards';
-import { BriefCompletionChat } from './BriefCompletionChat';
+import { BriefGapFillReview } from './BriefGapFillReview';
 import {
   CampaignTree,
   type AdSetDraft,
@@ -415,10 +415,9 @@ export function GenerateAdsView({
       )}
 
       {phase.kind === 'chat' && (
-        <BriefCompletionChat
+        <BriefGapFillReview
           clientId={clientId}
           clientName={clientName}
-          industryFreeText={brief.data?.industry ?? ''}
           missing={phase.missing}
           onComplete={handleChatComplete}
           onCancel={handleChatCancel}
@@ -550,7 +549,7 @@ function IdleState({
           className="h-12 px-7 text-[14px] font-semibold"
         >
           {softMissing && softMissing.length > 0
-            ? `✦ Generate my ads — ${softMissing.length} quick question${softMissing.length === 1 ? '' : 's'} first`
+            ? `✦ Generate my ads — ${softMissing.length} gap${softMissing.length === 1 ? '' : 's'} to confirm first`
             : '✦ Generate my ads'}
         </Button>
         <Button type="button" variant="ghost" onClick={onCancel}>
@@ -573,16 +572,15 @@ function SoftMissingExplainer({ missing }: { missing: readonly BriefField[] }) {
   return (
     <div className="rounded-md border border-rust-soft bg-rust-soft/40 px-4 py-3">
       <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust">
-        {'// QUICK QUESTION' + (missing.length === 1 ? '' : 'S') + ' FIRST'}
+        {'// ' + missing.length + ' GAP' + (missing.length === 1 ? '' : 'S') + ' TO CONFIRM'}
       </div>
       <p className="text-[13px] leading-snug text-ink-soft">
-        We need {missing.length} short answer
-        {missing.length === 1 ? '' : 's'} before the AI can draft ads worth
-        running:{' '}
+        Webnua AI will propose a fill for{' '}
         <strong className="font-semibold text-ink">
           {missing.map((f) => BRIEF_FIELD_LABEL[f]).join(', ')}
-        </strong>
-        . Each answer saves to your brand profile (
+        </strong>{' '}
+        on one screen — edit anything that doesn&rsquo;t fit, then we draft
+        your ads. Each saves to your brand profile (
         <Link
           href="/settings/brand"
           className="font-medium text-rust underline-offset-4 hover:underline"

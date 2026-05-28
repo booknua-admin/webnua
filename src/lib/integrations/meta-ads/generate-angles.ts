@@ -64,10 +64,13 @@ export async function generateMetaAdAngles(
     body: JSON.stringify(input),
   });
   if (response.status === 503) {
-    throw AppError.validation({
-      anthropic:
-        'Anthropic is not configured on this deployment. Ask the operator to set ANTHROPIC_API_KEY.',
-    });
+    // Anthropic key isn't configured on the deployment. Use unexpected
+    // so the catcher sees the human message directly — validation's
+    // default "Some fields need attention." is misleading here.
+    throw AppError.unexpected(
+      undefined,
+      'Webnua AI is not configured on this deployment. Ask your operator to set ANTHROPIC_API_KEY.',
+    );
   }
   if (response.status === 429) {
     let body: Record<string, unknown> = {};
@@ -79,8 +82,8 @@ export async function generateMetaAdAngles(
     const detail =
       typeof body.detail === 'string'
         ? body.detail
-        : 'You have hit the daily limit for angle generation — try again tomorrow.';
-    throw AppError.validation({ rateLimited: detail });
+        : 'Daily limit for ad generation reached — try again tomorrow.';
+    throw AppError.unexpected(undefined, detail);
   }
   if (!response.ok) {
     let body: Record<string, unknown> = {};
