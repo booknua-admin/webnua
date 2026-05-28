@@ -44,10 +44,11 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { AnglePickerCards } from './AnglePickerCards';
+import { BriefCompletionChat } from './BriefCompletionChat';
 import { MetaAdPreview } from './MetaAdPreview';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/lib/auth/user-stub';
@@ -88,6 +89,7 @@ export type GenerateAdsViewProps = {
 
 type Phase =
   | { kind: 'idle' }
+  | { kind: 'chat'; missing: readonly BriefField[] }
   | { kind: 'generating' }
   | { kind: 'picker'; angles: GeneratedAngle[] }
   | { kind: 'review'; angles: GeneratedAngle[]; settings: LaunchSettings }
@@ -140,6 +142,7 @@ export function GenerateAdsView({
   const completeness = useBriefCompleteness(clientId);
   const adAccount = useClientMetaAdAccount(clientId);
   const launchMutation = useLaunchMetaCampaign();
+  const queryClient = useQueryClient();
 
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
   const [selectedAngles, setSelectedAngles] = useState<Set<string>>(new Set());
@@ -150,7 +153,24 @@ export function GenerateAdsView({
 
   // --- Generate handler ----------------------------------------------------
 
-  async function handleGenerate() {
+  /** Top-level Generate click — dispatches based on the completeness
+   *  state. Missing soft-block fields → flip to the chat; otherwise
+   *  fire generation directly. Hard blocks are caught upstream by the
+   *  HardBlockCard so this path never sees them. */
+  function handleGenerateClick() {
+    if (!completeness.data) return;
+    if (!completeness.data.ready && 'missing' in completeness.data) {
+      setGenerateError(null);
+      setPhase({ kind: 'chat', missing: completeness.data.missing });
+      return;
+    }
+    void runGeneration();
+  }
+
+  /** Actually fire the angle-generation request. Shared between the
+   *  direct path (handleGenerateClick when ready) and the chat path
+   *  (BriefCompletionChat's onComplete after the last answer saves). */
+  async function runGeneration() {
     setGenerateError(null);
     setPhase({ kind: 'generating' });
     try {
@@ -174,6 +194,25 @@ export function GenerateAdsView({
       });
       setPhase({ kind: 'idle' });
     }
+  }
+
+  /** Chat completed — invalidate the brand-context + completeness
+   *  queries so any inline reader (brief context, generation-prompt
+   *  resolver on the server) reads fresh values, then fire generation.
+   *  No "review your answers" intermediate step per the design doc:
+   *  the chat is the brand-completion tool, not a draft surface. */
+  function handleChatComplete() {
+    void queryClient.invalidateQueries({ queryKey: ['brief-completeness', clientId] });
+    void queryClient.invalidateQueries({ queryKey: ['generate-ads-brief', clientId] });
+    void runGeneration();
+  }
+
+  function handleChatCancel() {
+    // Drop back to idle — any saved-during-chat answers stay persisted,
+    // so reopening the chat starts from where the operator left off.
+    void queryClient.invalidateQueries({ queryKey: ['brief-completeness', clientId] });
+    void queryClient.invalidateQueries({ queryKey: ['generate-ads-brief', clientId] });
+    setPhase({ kind: 'idle' });
   }
 
   function handleToggleAngle(angleId: string, selected: boolean) {
@@ -350,9 +389,20 @@ export function GenerateAdsView({
         <IdleState
           completeness={completenessData}
           generateError={generateError}
-          onGenerate={handleGenerate}
+          onGenerate={handleGenerateClick}
           onCancel={onCancel}
           classicBuilderHref={classicBuilderHref}
+        />
+      )}
+
+      {phase.kind === 'chat' && (
+        <BriefCompletionChat
+          clientId={clientId}
+          clientName={clientName}
+          industryFreeText={brief.data?.industry ?? ''}
+          missing={phase.missing}
+          onComplete={handleChatComplete}
+          onCancel={handleChatCancel}
         />
       )}
 
@@ -472,7 +522,9 @@ function IdleState({
           onClick={onGenerate}
           className="h-12 px-7 text-[14px] font-semibold"
         >
-          ✦ Generate my ads
+          {softMissing && softMissing.length > 0
+            ? `✦ Generate my ads — ${softMissing.length} quick question${softMissing.length === 1 ? '' : 's'} first`
+            : '✦ Generate my ads'}
         </Button>
         <Button type="button" variant="ghost" onClick={onCancel}>
           Cancel
@@ -494,19 +546,23 @@ function SoftMissingExplainer({ missing }: { missing: readonly BriefField[] }) {
   return (
     <div className="rounded-md border border-rust-soft bg-rust-soft/40 px-4 py-3">
       <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust">
-        {'// HEADS UP'}
+        {'// QUICK QUESTION' + (missing.length === 1 ? '' : 'S') + ' FIRST'}
       </div>
       <p className="text-[13px] leading-snug text-ink-soft">
-        Generation works best when we know more about you. We&rsquo;ll fall
-        back to qualitative defaults for: {missing.map((f) => BRIEF_FIELD_LABEL[f]).join(', ')}.
-        You can edit your brand profile any time at{' '}
+        We need {missing.length} short answer
+        {missing.length === 1 ? '' : 's'} before the AI can draft ads worth
+        running:{' '}
+        <strong className="font-semibold text-ink">
+          {missing.map((f) => BRIEF_FIELD_LABEL[f]).join(', ')}
+        </strong>
+        . Each answer saves to your brand profile (
         <Link
           href="/settings/brand"
           className="font-medium text-rust underline-offset-4 hover:underline"
         >
           /settings/brand
         </Link>
-        .
+        ) so we never ask again.
       </p>
     </div>
   );
