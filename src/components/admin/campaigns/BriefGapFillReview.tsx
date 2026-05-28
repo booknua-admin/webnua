@@ -1,34 +1,39 @@
 'use client';
 
 // =============================================================================
-// BriefGapFillReview — AI-proposed gap-fills, edited + confirmed in one pass.
+// BriefGapFillReview — chat-shaped, AI-proposed gap-fill review.
 //
-// Phase 7.5 · Session 2.2 polish. Replaces the multi-turn chat. When the
-// brief has soft-block gaps, one Webnua AI call proposes a value + a
-// rationale for every missing field; the operator reviews them all on
-// this screen, edits anything they want to override, then clicks "Use
-// these →" to save in parallel and auto-fire generation.
+// Phase 7.5 · Session 2.2 polish (v2). Visual language is the chat
+// (ChatBubble + composer) — same as conversational onboarding — but
+// the substance is ONE Webnua AI call upfront that proposes a value
+// for every missing field, then the chat walks through each in turn:
 //
-// Why one screen, not a chat:
-//   • Onboarding already captured most context — chat asking N
-//     questions repeats what the operator just typed.
-//   • One AI call beats N AI calls in cost + latency.
-//   • Operator sees everything at once and accepts/edits in 5 seconds.
+//   • Bot: "For your offer, I'd suggest: 'Same-day fixed-price quotes,
+//          fully licensed local electrician.' Hit Send to use this, or
+//          type your own."
+//   • Composer is PRE-FILLED with the proposal — operator can hit Enter
+//          to accept, or edit + send.
+//   • Persist on send → next bubble for the next field → … → auto-fire
+//          generation.
 //
-// Mount: REPLACES the Generate surface's idle state in-place (same
-// shape as the prior chat). Cancel returns to idle with no changes
-// saved; "Use these →" persists every card's CURRENT value (edited or
-// proposed-as-is) then fires generation.
+// One model call. N persistence writes (one per accepted field). The
+// operator sees a chat AND avoids re-typing answers the model can draft
+// from existing brand context.
+//
+// Mount: REPLACES the Generate surface's idle state in-place. Cancel
+// returns to idle with whatever fields the operator already accepted
+// in-flight persisted (mirrors the prior chat's behaviour).
 // =============================================================================
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { ChatBubble } from '@/components/shared/conversation/ChatBubble';
+import { TypingIndicator } from '@/components/shared/conversation/TypingIndicator';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import {
   saveBriefAnswer,
+  sortChatFields,
   type BriefAnswerInput,
 } from '@/lib/campaigns/brief-update';
 import type { BriefField } from '@/lib/campaigns/brief-completeness';
@@ -44,34 +49,61 @@ export type BriefGapFillReviewProps = {
   clientId: string;
   clientName: string;
   missing: readonly BriefField[];
-  /** Fires after every card has saved. Parent auto-fires generation. */
+  /** Fires after every accepted answer has saved. Parent auto-fires
+   *  generation. */
   onComplete: () => void;
-  /** Fires when the operator backs out — no fields are saved. */
+  /** Fires when the operator backs out — answers already accepted stay
+   *  persisted; in-flight answer is discarded. */
   onCancel: () => void;
 };
 
 // --- field metadata --------------------------------------------------------
 
 const FIELD_LABEL: Record<BriefField, string> = {
-  offer: 'Your offer',
-  audience_line: 'Who you want more of',
-  services: 'Top services',
-  accent_color: 'Brand colour',
+  offer: 'your offer',
+  audience_line: 'your ideal customer',
+  services: 'your top services',
+  accent_color: 'your brand colour',
 };
 
-const FIELD_SUB: Record<BriefField, string> = {
-  offer: 'One line — the promise the ad makes.',
-  audience_line: 'One sentence — the customer you want more of.',
-  services: 'Comma-separated. The AI uses these as the ad’s service hook.',
-  accent_color: 'Hex colour. Appears on buttons + highlights.',
+const FIELD_QUESTION: Record<BriefField, string> = {
+  offer:
+    'For **your offer** — the promise the ad makes — I would draft:',
+  audience_line:
+    'For **the customer you want more of** I would draft:',
+  services:
+    'For **your top services** I would list:',
+  accent_color:
+    'For **your brand colour** I would pick:',
 };
+
+const ACCEPT_HINT: Record<BriefField, string> = {
+  offer: "Hit Send to use this, or edit it and Send your version.",
+  audience_line: "Hit Send to use this, or edit it and Send your version.",
+  services: "Hit Send to use this, or edit and Send.",
+  accent_color: 'Hit Send to use this colour, or paste your own hex.',
+};
+
+// --- log entry shape -------------------------------------------------------
+
+type LogEntry =
+  | { kind: 'bot-greeting'; id: string; clientName: string; gapCount: number }
+  | {
+      kind: 'bot-proposal';
+      id: string;
+      field: BriefField;
+      proposed: string;
+      rationale: string;
+    }
+  | { kind: 'bot-typing'; id: string }
+  | { kind: 'user'; id: string; text: string }
+  | { kind: 'bot-done'; id: string };
 
 // --- main component --------------------------------------------------------
 
 type Phase =
   | { kind: 'loading' }
-  | { kind: 'review'; proposals: BriefFillProposal[] }
-  | { kind: 'saving'; proposals: BriefFillProposal[] }
+  | { kind: 'chat'; proposals: BriefFillProposal[]; stepIndex: number }
   | { kind: 'failed'; error: string };
 
 export function BriefGapFillReview({
@@ -81,29 +113,68 @@ export function BriefGapFillReview({
   onComplete,
   onCancel,
 }: BriefGapFillReviewProps) {
-  const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
-  const [edits, setEdits] = useState<Record<BriefField, string>>(
-    {} as Record<BriefField, string>,
+  const orderedMissing = useMemo(
+    () => sortChatFields(missing),
+    [missing],
   );
 
-  // Propose on mount — one Webnua AI call returns one proposal per
-  // missing field. The route guarantees one entry per field in the
-  // missing list (it falls back when the model skips one), so the
-  // review screen ALWAYS has every gap covered.
+  const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
+  const [log, setLog] = useState<LogEntry[]>([]);
+  const [composerValue, setComposerValue] = useState<string>('');
+  const [pending, setPending] = useState<boolean>(false);
+  const [inlineError, setInlineError] = useState<string | null>(null);
+
+  // Auto-scroll the message stream to the bottom on every log change.
+  const streamRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    let cancelled = false;
+    streamRef.current?.scrollTo({
+      top: streamRef.current.scrollHeight,
+      behavior: 'smooth',
+    });
+  }, [log]);
+
+  // One-shot mount effect — runs propose + seeds the log + opens the
+  // first proposal bubble. The model call happens here so the chat
+  // does not flicker through a loading splash inside the bubble.
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current) return;
+    seededRef.current = true;
+
     (async () => {
       try {
-        const proposals = await proposeBriefFills(clientId, missing);
-        if (cancelled) return;
-        const seed: Partial<Record<BriefField, string>> = {};
-        for (const p of proposals) {
-          seed[p.field] = p.proposed;
-        }
-        setEdits(seed as Record<BriefField, string>);
-        setPhase({ kind: 'review', proposals });
+        const proposals = await proposeBriefFills(clientId, orderedMissing);
+        // The route guarantees one proposal per missing field (it
+        // falls back when the model skips one), but defence in depth:
+        // if anything is missing, build it from the field defaults.
+        const proposalsByField = new Map(proposals.map((p) => [p.field, p]));
+        const orderedProposals: BriefFillProposal[] = orderedMissing.map(
+          (f) =>
+            proposalsByField.get(f) ?? {
+              field: f,
+              proposed: '',
+              rationale: '',
+            },
+        );
+
+        setLog([
+          {
+            kind: 'bot-greeting',
+            id: 'g',
+            clientName,
+            gapCount: orderedMissing.length,
+          },
+          {
+            kind: 'bot-proposal',
+            id: makeProposalId(0),
+            field: orderedProposals[0].field,
+            proposed: orderedProposals[0].proposed,
+            rationale: orderedProposals[0].rationale,
+          },
+        ]);
+        setComposerValue(orderedProposals[0].proposed);
+        setPhase({ kind: 'chat', proposals: orderedProposals, stepIndex: 0 });
       } catch (error) {
-        if (cancelled) return;
         setPhase({
           kind: 'failed',
           error:
@@ -113,278 +184,469 @@ export function BriefGapFillReview({
         });
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [clientId, missing]);
+  }, [clientId, orderedMissing, clientName]);
 
-  function handleEdit(field: BriefField, value: string) {
-    setEdits((prev) => ({ ...prev, [field]: value }));
+  // --- send / advance -----------------------------------------------------
+
+  async function handleSend(rawValue?: string) {
+    if (phase.kind !== 'chat') return;
+    const value = (rawValue ?? composerValue).trim();
+    if (value.length === 0) {
+      setInlineError('Type a value or paste the suggestion.');
+      return;
+    }
+    const proposal = phase.proposals[phase.stepIndex];
+    const answer = toAnswer(proposal.field, value);
+    if (!answer) {
+      setInlineError(
+        proposal.field === 'accent_color'
+          ? 'That doesn’t look like a hex colour — try #rrggbb.'
+          : 'That value couldn’t be saved — try again.',
+      );
+      return;
+    }
+    setInlineError(null);
+    setPending(true);
+
+    setLog((prev) => [
+      ...prev,
+      { kind: 'user', id: makeUserId(phase.stepIndex), text: value },
+      { kind: 'bot-typing', id: `t-${phase.stepIndex}` },
+    ]);
+
+    try {
+      await saveBriefAnswer(clientId, answer);
+    } catch (error) {
+      setLog((prev) => prev.filter((e) => e.id !== `t-${phase.stepIndex}`));
+      setInlineError(
+        error instanceof Error
+          ? error.message
+          : 'Saving that failed — try again.',
+      );
+      setPending(false);
+      return;
+    }
+
+    const nextIndex = phase.stepIndex + 1;
+    setLog((prev) => {
+      const withoutTyping = prev.filter(
+        (e) => e.id !== `t-${phase.stepIndex}`,
+      );
+      if (nextIndex >= phase.proposals.length) {
+        return [
+          ...withoutTyping,
+          { kind: 'bot-done', id: 'done' },
+        ];
+      }
+      const nextProposal = phase.proposals[nextIndex];
+      return [
+        ...withoutTyping,
+        {
+          kind: 'bot-proposal',
+          id: makeProposalId(nextIndex),
+          field: nextProposal.field,
+          proposed: nextProposal.proposed,
+          rationale: nextProposal.rationale,
+        },
+      ];
+    });
+
+    setPhase({ ...phase, stepIndex: nextIndex });
+    setComposerValue(
+      nextIndex < phase.proposals.length
+        ? phase.proposals[nextIndex].proposed
+        : '',
+    );
+    setPending(false);
+
+    if (nextIndex >= phase.proposals.length) {
+      // Brief beat so the operator sees the "done" line before the
+      // generation splash takes over.
+      setTimeout(onComplete, 900);
+    }
   }
 
-  /** Persist every card's current value, then fire onComplete. Errors
-   *  on any one field abort + surface the message inline so the
-   *  operator can fix and retry. */
-  async function handleConfirm() {
-    if (phase.kind !== 'review') return;
-    setPhase({ kind: 'saving', proposals: phase.proposals });
-    try {
-      for (const proposal of phase.proposals) {
-        const value = edits[proposal.field] ?? proposal.proposed;
-        const answer = toAnswer(proposal.field, value);
-        if (!answer) continue;
-        await saveBriefAnswer(clientId, answer);
-      }
-      onComplete();
-    } catch (error) {
-      setPhase({
-        kind: 'failed',
-        error:
-          error instanceof Error
-            ? error.message
-            : 'Saving one of the answers failed — try again.',
-      });
-    }
+  function handleRevertToProposed() {
+    if (phase.kind !== 'chat') return;
+    const proposal = phase.proposals[phase.stepIndex];
+    setComposerValue(proposal.proposed);
+    setInlineError(null);
   }
 
   // --- render -------------------------------------------------------------
 
+  const currentField =
+    phase.kind === 'chat' ? phase.proposals[phase.stepIndex]?.field : null;
+  const currentProposal =
+    phase.kind === 'chat' ? phase.proposals[phase.stepIndex] : null;
+  const totalSteps = phase.kind === 'chat' ? phase.proposals.length : missing.length;
+  const stepNumber =
+    phase.kind === 'chat'
+      ? Math.min(phase.stepIndex + 1, Math.max(1, totalSteps))
+      : 1;
+
   return (
-    <section className="flex flex-col gap-5 rounded-2xl border border-rule bg-card px-5 py-5 md:px-8 md:py-8">
-      <header className="flex flex-col gap-2">
-        <div className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust">
-          {'// FILL THE GAPS · ONE SCREEN'}
-        </div>
-        <h2 className="text-[20px] font-semibold tracking-tight text-ink md:text-[22px]">
-          A few details for {clientName}
-        </h2>
-        <p className="max-w-2xl text-[13px] leading-snug text-ink-soft">
-          We drafted these from what&rsquo;s already on your brand profile. Tweak
-          anything that doesn&rsquo;t fit, then click <strong className="font-semibold text-ink">Use these</strong>.
-          Each answer saves to your profile so we never ask again.
-        </p>
-      </header>
+    <div className="flex min-h-[480px] flex-col gap-0 overflow-hidden rounded-2xl border border-rule bg-card">
+      <Header
+        stepNumber={stepNumber}
+        totalSteps={totalSteps}
+        onCancel={onCancel}
+      />
+      <div
+        ref={streamRef}
+        className="flex-1 overflow-y-auto px-4 py-5 sm:px-8 sm:py-7"
+      >
+        <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
+          {phase.kind === 'loading' ? (
+            <LoadingBubble missing={missing.length} clientName={clientName} />
+          ) : null}
 
-      {phase.kind === 'loading' && (
-        <LoadingState
-          missing={missing.length}
-          onCancel={onCancel}
-        />
-      )}
+          {phase.kind === 'failed' ? (
+            <FailedBubble error={phase.error} onCancel={onCancel} />
+          ) : null}
 
-      {phase.kind === 'failed' && (
-        <FailedState
-          error={phase.error}
-          onRetry={() => setPhase({ kind: 'loading' })}
-          onCancel={onCancel}
-        />
-      )}
+          {log.map((entry) => (
+            <LogEntryView key={entry.id} entry={entry} />
+          ))}
 
-      {(phase.kind === 'review' || phase.kind === 'saving') && (
-        <>
-          <div className="flex flex-col gap-3">
-            {phase.proposals.map((proposal) => (
-              <ProposalCard
-                key={proposal.field}
-                proposal={proposal}
-                value={edits[proposal.field] ?? proposal.proposed}
-                disabled={phase.kind === 'saving'}
-                onChange={(value) => handleEdit(proposal.field, value)}
-              />
-            ))}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3 border-t border-paper-2 pt-4">
-            <Button
-              type="button"
-              onClick={handleConfirm}
-              disabled={phase.kind === 'saving'}
-              className="h-11 px-6 text-[14px] font-semibold"
-            >
-              {phase.kind === 'saving' ? 'Saving…' : 'Use these →'}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={onCancel}
-              disabled={phase.kind === 'saving'}
-            >
-              Back to Generate
-            </Button>
-            <Link
-              href="/settings/brand"
-              className="ml-auto font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet underline-offset-4 hover:text-rust hover:underline"
-            >
-              Edit your full brand profile →
-            </Link>
-          </div>
-        </>
-      )}
-    </section>
-  );
-}
-
-// --- sub-components --------------------------------------------------------
-
-function ProposalCard({
-  proposal,
-  value,
-  disabled,
-  onChange,
-}: {
-  proposal: BriefFillProposal;
-  value: string;
-  disabled: boolean;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div className="rounded-xl border border-rule bg-paper/40 px-4 py-4">
-      <div className="mb-2 flex items-baseline justify-between gap-3">
-        <div className="flex flex-col gap-0.5">
-          <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust">
-            {`// ${FIELD_LABEL[proposal.field]}`}
-          </span>
-          <span className="text-[11px] leading-snug text-ink-quiet">
-            {FIELD_SUB[proposal.field]}
-          </span>
+          {inlineError ? <InlineErrorBanner message={inlineError} /> : null}
         </div>
       </div>
 
-      <ProposalInput
-        field={proposal.field}
-        value={value}
-        disabled={disabled}
-        onChange={onChange}
-      />
-
-      {proposal.rationale ? (
-        <p className="mt-2 text-[11px] italic leading-snug text-ink-quiet">
-          {proposal.rationale}
-        </p>
+      {phase.kind === 'chat' && currentField && currentProposal ? (
+        <ProposalComposer
+          field={currentField}
+          value={composerValue}
+          proposed={currentProposal.proposed}
+          disabled={pending}
+          onChange={setComposerValue}
+          onSend={() => handleSend()}
+          onRevertToProposed={handleRevertToProposed}
+          onCancel={onCancel}
+        />
       ) : null}
     </div>
   );
 }
 
-function ProposalInput({
-  field,
-  value,
-  disabled,
-  onChange,
-}: {
-  field: BriefField;
-  value: string;
-  disabled: boolean;
-  onChange: (value: string) => void;
-}) {
-  if (field === 'accent_color') {
-    return (
-      <div className="flex items-center gap-3">
-        <input
-          type="color"
-          value={normaliseHex(value) ?? '#d24317'}
-          onChange={(e) => onChange(e.target.value)}
-          disabled={disabled}
-          className="h-10 w-14 cursor-pointer rounded-md border border-rule bg-paper/40 p-0 disabled:cursor-not-allowed disabled:opacity-60"
-          aria-label="Pick brand colour"
-        />
-        <Input
-          type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          disabled={disabled}
-          maxLength={9}
-          className="h-10 max-w-[140px] font-mono text-[13px]"
-          aria-label="Hex value"
-        />
-      </div>
-    );
-  }
-  if (field === 'offer' || field === 'audience_line') {
-    return (
-      <Textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        rows={2}
-        className={cn('min-h-[68px] text-[14px]')}
-        aria-label={FIELD_LABEL[field]}
-      />
-    );
-  }
-  // services — comma-separated, single line typically
-  return (
-    <Input
-      type="text"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      disabled={disabled}
-      aria-label={FIELD_LABEL[field]}
-    />
-  );
-}
+// --- sub-components --------------------------------------------------------
 
-function LoadingState({
-  missing,
+function Header({
+  stepNumber,
+  totalSteps,
   onCancel,
 }: {
-  missing: number;
+  stepNumber: number;
+  totalSteps: number;
   onCancel: () => void;
 }) {
   return (
-    <div className="flex flex-col items-start gap-3 rounded-md bg-paper/40 px-4 py-5">
-      <div className="flex items-center gap-3">
-        <span
-          className="h-5 w-5 animate-spin rounded-full border-2 border-rust/20 border-t-rust"
-          aria-hidden
-        />
-        <span className="text-[13px] font-medium text-ink">
-          Drafting {missing} suggestion{missing === 1 ? '' : 's'}…
+    <div className="flex items-center justify-between border-b-2 border-ink/10 bg-paper-2 px-4 py-3 sm:px-6">
+      <div className="flex flex-col gap-0.5">
+        <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust">
+          {'// FILL THE GAPS'}
+        </span>
+        <span className="font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-ink-quiet">
+          Step {stepNumber} of {totalSteps}
         </span>
       </div>
-      <p className="text-[12px] leading-snug text-ink-quiet">
-        Reading your brand profile, services, and published site — proposing
-        fills you can edit in a second.
-      </p>
-      <Button type="button" variant="ghost" onClick={onCancel} className="mt-1">
+      <button
+        type="button"
+        onClick={onCancel}
+        className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet underline-offset-4 hover:text-rust hover:underline"
+      >
         Cancel
-      </Button>
+      </button>
     </div>
   );
 }
 
-function FailedState({
+function LogEntryView({ entry }: { entry: LogEntry }) {
+  switch (entry.kind) {
+    case 'bot-greeting':
+      return (
+        <ChatBubble author="bot">
+          Looking at <strong className="font-semibold">{entry.clientName}</strong>.
+          I&rsquo;ve drafted {entry.gapCount} suggestion
+          {entry.gapCount === 1 ? '' : 's'} from your brand profile — accept or
+          tweak each one in five seconds.
+        </ChatBubble>
+      );
+    case 'bot-proposal':
+      return (
+        <ChatBubble author="bot">
+          <span>{renderInlineMarkdown(FIELD_QUESTION[entry.field])}</span>
+          <div className="mt-2 rounded-md border border-rule bg-paper/40 px-3 py-2 text-[14px] leading-snug text-ink">
+            {entry.proposed.length > 0 ? (
+              <ProposalDisplay field={entry.field} value={entry.proposed} />
+            ) : (
+              <span className="italic text-ink-quiet">(no suggestion — type your own)</span>
+            )}
+          </div>
+          {entry.rationale ? (
+            <p className="mt-2 text-[12px] italic leading-snug text-ink-quiet">
+              {entry.rationale}
+            </p>
+          ) : null}
+        </ChatBubble>
+      );
+    case 'bot-typing':
+      return (
+        <ChatBubble author="bot">
+          <TypingIndicator />
+        </ChatBubble>
+      );
+    case 'user':
+      return <ChatBubble author="user">{entry.text}</ChatBubble>;
+    case 'bot-done':
+      return (
+        <ChatBubble author="bot">All set. Drafting your ads now.</ChatBubble>
+      );
+  }
+}
+
+function ProposalDisplay({
+  field,
+  value,
+}: {
+  field: BriefField;
+  value: string;
+}) {
+  if (field === 'accent_color') {
+    return (
+      <span className="inline-flex items-center gap-2 font-mono">
+        <span
+          className="h-4 w-4 rounded-sm border border-ink/10"
+          style={{ backgroundColor: value }}
+          aria-hidden
+        />
+        {value}
+      </span>
+    );
+  }
+  return <span>&ldquo;{value}&rdquo;</span>;
+}
+
+function LoadingBubble({
+  missing,
+  clientName,
+}: {
+  missing: number;
+  clientName: string;
+}) {
+  return (
+    <ChatBubble author="bot">
+      Reading {clientName}&rsquo;s brand profile…
+      <div className="mt-2 flex items-center gap-3 rounded-md bg-paper/40 px-3 py-2">
+        <span
+          className="h-4 w-4 animate-spin rounded-full border-2 border-rust/20 border-t-rust"
+          aria-hidden
+        />
+        <span className="text-[12px] text-ink-quiet">
+          Drafting {missing} suggestion{missing === 1 ? '' : 's'}…
+        </span>
+      </div>
+    </ChatBubble>
+  );
+}
+
+function FailedBubble({
   error,
-  onRetry,
   onCancel,
 }: {
   error: string;
-  onRetry: () => void;
   onCancel: () => void;
 }) {
   return (
-    <div className="rounded-md border border-warn/40 border-l-4 border-l-warn bg-warn-soft/40 px-4 py-3">
-      <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-warn">
-        {'// COULD NOT DRAFT FILLS'}
-      </div>
-      <p className="text-[13px] leading-snug text-ink">{error}</p>
-      <div className="mt-3 flex items-center gap-2">
-        <Button type="button" onClick={onRetry} className="h-9">
-          Try again
-        </Button>
+    <ChatBubble author="bot">
+      <span className="text-warn">{error}</span>
+      <div className="mt-3">
         <Button type="button" variant="ghost" onClick={onCancel} className="h-9">
           Back to Generate
         </Button>
       </div>
+    </ChatBubble>
+  );
+}
+
+function InlineErrorBanner({ message }: { message: string }) {
+  return (
+    <div className="rounded-md border border-warn/40 border-l-4 border-l-warn bg-warn-soft/40 px-3 py-2">
+      <p className="text-[12px] leading-snug text-warn">{message}</p>
     </div>
+  );
+}
+
+// --- composer --------------------------------------------------------------
+
+/** Pre-filled per-field composer. Hitting Send sends the current value;
+ *  Enter (no shift) sends; "Reset to suggestion" reverts to the model's
+ *  proposal. */
+function ProposalComposer({
+  field,
+  value,
+  proposed,
+  disabled,
+  onChange,
+  onSend,
+  onRevertToProposed,
+  onCancel,
+}: {
+  field: BriefField;
+  value: string;
+  proposed: string;
+  disabled: boolean;
+  onChange: (next: string) => void;
+  onSend: () => void;
+  onRevertToProposed: () => void;
+  onCancel: () => void;
+}) {
+  const edited = value !== proposed;
+  const isMultiline = field === 'offer' || field === 'audience_line';
+  const isColor = field === 'accent_color';
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>) {
+    if (e.key === 'Enter' && !e.shiftKey && !isMultiline) {
+      e.preventDefault();
+      onSend();
+    }
+    if (e.key === 'Enter' && !e.shiftKey && isMultiline) {
+      // For textareas, Cmd/Ctrl+Enter sends; plain Enter inserts a newline.
+      if (e.metaKey || e.ctrlKey) {
+        e.preventDefault();
+        onSend();
+      }
+    }
+  }
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (disabled) return;
+        onSend();
+      }}
+      className="sticky bottom-0 z-10 border-t-2 border-ink/20 bg-paper px-4 py-4 sm:px-6 sm:py-5"
+    >
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-2">
+        <div className="flex items-center justify-between gap-3">
+          <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+            {`// YOUR ${FIELD_LABEL[field].toUpperCase()}`}
+          </span>
+          <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-quiet/60">
+            {isMultiline
+              ? '⌘ + enter to send'
+              : 'enter to send'}
+          </span>
+        </div>
+
+        {isColor ? (
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              value={ensureHex(value)}
+              onChange={(e) => onChange(e.target.value)}
+              disabled={disabled}
+              className="h-11 w-14 cursor-pointer rounded-md border-2 border-ink/20 bg-paper/40 p-0 disabled:cursor-not-allowed disabled:opacity-60"
+              aria-label="Pick brand colour"
+            />
+            <Input
+              type="text"
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              onKeyDown={(e) =>
+                handleKeyDown(
+                  e as React.KeyboardEvent<HTMLInputElement>,
+                )
+              }
+              disabled={disabled}
+              maxLength={9}
+              className="h-11 max-w-[160px] font-mono text-[13px]"
+              aria-label="Hex value"
+            />
+            <SendButton disabled={disabled || value.trim().length === 0} />
+          </div>
+        ) : isMultiline ? (
+          <div className="flex items-end gap-2">
+            <textarea
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={disabled}
+              rows={2}
+              aria-label={FIELD_LABEL[field]}
+              className={cn(
+                'min-h-[68px] flex-1 resize-none rounded-md border-2 border-ink/20 bg-paper/40 px-3 py-2.5',
+                'text-[14px] leading-[1.45] text-ink placeholder:text-ink-quiet',
+                'focus:border-rust focus:outline-none focus:ring-1 focus:ring-rust',
+                'disabled:cursor-not-allowed disabled:bg-paper-2 disabled:opacity-60',
+              )}
+            />
+            <SendButton disabled={disabled || value.trim().length === 0} />
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Input
+              type="text"
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              onKeyDown={(e) =>
+                handleKeyDown(
+                  e as React.KeyboardEvent<HTMLInputElement>,
+                )
+              }
+              disabled={disabled}
+              aria-label={FIELD_LABEL[field]}
+              className="h-11"
+            />
+            <SendButton disabled={disabled || value.trim().length === 0} />
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3 text-[11px]">
+          <span className="text-ink-quiet">{ACCEPT_HINT[field]}</span>
+          {edited && proposed.length > 0 ? (
+            <button
+              type="button"
+              onClick={onRevertToProposed}
+              disabled={disabled}
+              className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              ↺ Reset to suggestion
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={disabled}
+            className="ml-auto font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet underline-offset-4 hover:text-rust hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Back to Generate
+          </button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
+function SendButton({ disabled }: { disabled: boolean }) {
+  return (
+    <button
+      type="submit"
+      disabled={disabled}
+      className={cn(
+        'inline-flex h-11 min-w-[72px] items-center justify-center rounded-md bg-rust px-4',
+        'font-mono text-[12px] font-bold uppercase tracking-[0.08em] text-paper hover:bg-rust-deep',
+        'disabled:cursor-not-allowed disabled:opacity-50',
+      )}
+    >
+      Send
+    </button>
   );
 }
 
 // --- helpers ---------------------------------------------------------------
 
-/** Convert a card's CURRENT value back into the BriefAnswerInput shape
- *  saveBriefAnswer expects. Empty strings → skip (the chat allows
- *  this; the operator deleted the proposal entirely). */
 function toAnswer(field: BriefField, raw: string): BriefAnswerInput | null {
   const value = raw.trim();
   if (value.length === 0) return null;
@@ -411,4 +673,35 @@ function normaliseHex(raw: string): string | null {
       .join('')}`.toLowerCase();
   }
   return `#${trimmed.toLowerCase()}`;
+}
+
+/** Coerce any hex-like string into a 7-char `#rrggbb` colour input
+ *  can render. Defaults to Webnua rust when the value is unparseable. */
+function ensureHex(raw: string): string {
+  return normaliseHex(raw) ?? '#d24317';
+}
+
+function makeProposalId(stepIndex: number): string {
+  return `p-${stepIndex}`;
+}
+
+function makeUserId(stepIndex: number): string {
+  return `u-${stepIndex}`;
+}
+
+/** Tiny markdown — `**bold**` → JSX <strong>. The bot question template
+ *  uses `**field**` markers; rendering them inline keeps the question
+ *  scannable without dragging in a markdown lib. */
+function renderInlineMarkdown(text: string): React.ReactNode {
+  const parts = text.split(/(\*\*[^*]+\*\*)/);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return (
+        <strong key={i} className="font-semibold">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
 }

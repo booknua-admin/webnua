@@ -92,15 +92,17 @@ export const RATE_LIMITS: Record<RateLimitAction, RateLimitConfig> = {
     limit: 10,
     windowLabel: 'hour',
   },
-  // Phase 7.5 · Session 2.1 — Meta Ads three-angle generator. Same
-  // rationale as ai_site_gen / ai_funnel_gen: a Sonnet draft is expensive
-  // (one structured ~2-3x the variant drafter's output) and the operator
-  // shouldn't burn it casually. 3/client/24h gives room for an initial
-  // generate + two re-runs while keeping a runaway script bounded.
+  // Phase 7.5 · Session 2.1 — Meta Ads three-angle generator. Shared
+  // with the brief-fill proposer (Session 2.2 polish) so a single
+  // "Generate my ads" cycle is metered as one operation. 20/client/24h
+  // gives plenty of room for real iteration (regenerate, propose-fills,
+  // edit, retry) while keeping a runaway script bounded. The model
+  // itself is the expensive surface — operator should still pay
+  // attention to bursts.
   ai_angles_gen: {
     action: 'ai_angles_gen',
     windowSeconds: 24 * 60 * 60,
-    limit: 3,
+    limit: 20,
     windowLabel: '24 hours',
   },
   // Conversational onboarding — industry-knowledge AI call (fires once
