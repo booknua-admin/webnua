@@ -327,3 +327,211 @@ publish-approval queues. What is absent is everything that makes these a *team*.
 
 Specialists become configs once 1–4 exist: system prompt + tool-set + model tier
 + output schema, with junior and senior variants of each role.
+
+---
+
+## 9. Feasibility & the build-vs-run distinction
+
+The recurring question — "can this be built with Claude Code alone?" — needs the
+term split three ways, because the answer differs for each:
+
+| "Claude Code" means… | Verdict | Reality |
+|---|---|---|
+| The CLI / dev tool — to **build** the system | ✅ Yes | It's building this platform already. Schema, runtime, routes, UI, integrations all in scope. |
+| The CLI — as the production **runtime** | ❌ No | You do not run 100 clients' nightly loops by spawning CLI sessions. It's a developer harness, not a multi-tenant server. |
+| The underlying **Claude Agent SDK / API** | ✅ Yes — for the runtime | What the CLI is built on. Agents run as the **Agent SDK invoked as a library inside the existing `integration_jobs` queue** — same model family, library form. |
+
+**Claude Code builds it; the Agent SDK runs it; the queue schedules it.**
+
+### The reframe that makes or breaks it: LLM vs deterministic
+
+The biggest failure mode is treating the whole loop as "AI." It is ~50%
+deterministic software, ~30% existing infrastructure, ~20% third-party
+integrations Claude cannot conjure.
+
+| Part of the vision | Engine | Why |
+|---|---|---|
+| Strategy, briefs, copy, creative direction, **review/critique**, report narratives, inbound replies | **Claude (judgment)** | Genuine reasoning. The Agent SDK's home turf. |
+| Scorecard maths, cost governor, the **decision trees** (§3), priority scoring, approval state machine, scheduling | **SQL + code** | An LLM computing CPL or deciding *when* to act is slow, costly, unreliable. **Code decides *when*; Claude decides *what the copy says*.** The §3 decision trees are pseudocode for deterministic rules, NOT prompts. |
+| Execute (Meta API, CMS write, send SMS) | **Existing executors + queue** | Already built. Agents propose; the queue runs. |
+
+### Feasibility caveats that are real (none are "can Claude do it")
+
+- **Cost governor is existential, not nice-to-have** (see §10). The €20/client
+  budget is achievable but a naive daily-Opus-everywhere build blows it instantly.
+- **Don't over-decompose the org chart into model calls.** Each agent's 4–5
+  "sub-agents" are a *mental model*, not a 1:1 map to model calls. Many
+  ("Creative Fatigue Detector", "Budget Optimiser", "Form Friction Analyst") are
+  **deterministic functions**, not LLMs. More sub-agents = more cost, latency,
+  failure surface. Map the chart to *responsibilities*, not *processes*.
+- **The learning loop is statistically weak at single-client scale.** A roofing
+  client gets ~20 leads/month; an A/B test rarely reaches significance in two
+  weeks. Per-client "learnings" are **hypotheses, not conclusions**. The real
+  signal is **cross-client** (pool insights across similar trades) — so build
+  `agent_learnings` cross-client from day one (raises the data/ToS question
+  already parked in `CLAUDE.md`).
+- **Human-review budget only holds if the queue is exception-based.** 20
+  min/client/month × 100 clients ≈ one FTE — but only if most actions
+  auto-execute below threshold. If everything routes to approval, the headcount
+  math breaks. The autonomy dial is what makes the human scale.
+
+### What to prove before the full build
+
+Ship **Workflow A (cheaper leads) end-to-end for one client, instrumented for
+cost**, on the Phase-1 spine: measure → detect → brief → draft (Haiku) → review
+(Opus) → human approve → launch → measure → learn, every token costed. That one
+proof tells you whether €20/client holds and whether the loop produces lift.
+Everything else is replication.
+
+---
+
+## 10. Cost model (the governor is the business)
+
+Two economic layers, both metered:
+
+1. **Client's economics** — what the team optimises *for* the client (their CPA).
+2. **Webnua's economics** — client pays a flat fee; if their agents burn €18 of
+   compute that month, the margin is gone. The system optimises client CPA
+   **subject to a per-client compute budget.**
+
+**Per-client envelope (illustrative):** ~€20/month AI compute, ~20 min human
+review. Order-of-magnitude routing (verify against live pricing):
+
+| Work | Tier | Cadence | Rough cost |
+|---|---|---|---|
+| Account-Manager daily health check | Sonnet | daily | ~€1.5/mo |
+| (same on Opus daily — **avoid**) | Opus | daily | ~€8/mo (40% of budget!) |
+| Junior copy/design drafts | Haiku | high-volume | fractions of a cent each |
+| Senior review / strategy | Opus | weekly/monthly | ~€1–3/mo total |
+
+**Conclusion: €20 is feasible only with disciplined routing** — Sonnet (or
+cheaper) on the daily loop, Haiku for production, Opus reserved for weekly
+strategy + final review. The junior/senior tiering is not org theatre; it is the
+margin-control mechanism, enforced in code from day one (routing + per-client
+budget + batching + prompt caching). If compute trends high, the governor's
+levers: cheaper models, fewer senior reviews, batch tasks, pause low-impact
+experiments, reduce generation volume.
+
+---
+
+## 11. Business model & go-to-market
+
+> The agent ecosystem is the *cost structure*, not the product. The product is an
+> **outcome** (booked jobs) sold to a market human agencies can't serve
+> profitably. This section is the commercial half of the design.
+
+### 11.1 Positioning — sell the outcome, hide the AI
+
+A local tradesperson does not want "AI" or "agency services" — they want the
+phone to ring. Three rules:
+
+- **Never sell "AI agents."** Sell *"your marketing team"* / *"more local jobs,
+  one price, we handle everything."* The platform's existing "managed by Webnua"
+  framing is correct — lean in.
+- **Never sell "agency services" as a retainer.** Agencies are opaque, expensive,
+  churny. The whole edge is delivering the *same outcome* at ~1/10th the cost.
+- **The uniqueness is the market, not the tech.** A human agency's marginal cost
+  per client is a person's time (→ €1,500–3,000/mo, top-of-market only). Webnua's
+  marginal cost is ~€20 compute + minutes of review, which **unlocks the local-
+  business long tail that human delivery economics permanently exclude.** That is
+  the YC-shaped story: *services-as-software collapses agency delivery cost ~10×
+  and opens a market that was never addressable.*
+
+### 11.2 The defensibility ladder (honest — near-term is thin)
+
+1. **Unit economics + outcome pricing** — real and immediate; no human agency can
+   match it without becoming Webnua.
+2. **Full-stack delivery, not a tool** — competitors sell a copilot the customer
+   operates; Webnua does the work and owns the whole loop (and its data).
+3. **Cross-client data flywheel — the only durable moat.** Vertical density
+   (1,000 plumber campaigns) beats any human agency or horizontal tool. Race
+   toward it; make `agent_learnings` cross-client from day one.
+4. **Human-in-the-loop as a trust feature** — "AI does the work, a real marketer
+   approves it" beats pure-AI (untrusted) and pure-human (expensive). Sell the
+   human; don't hide them.
+
+Edges 1–2 are replicable in ~12 months; the moat is 3 + distribution. **Speed to
+vertical density is the strategy.**
+
+### 11.3 GTM motion — free wedge → guided expansion
+
+**Wedge: the free website.** Not merely a CAC reducer — it *manufactures the next
+purchase*. A new site with no traffic creates the ache (*"how do people find
+me?"*) that justifies every upsell: no traffic → ads; invisible on Google → SEO;
+visits-but-no-calls → lead follow-up. The free product creates the need the paid
+products cure.
+
+**It maps onto what's already built.** The generator, publish flow, `.webnua.dev`
+hosting, and the **`preview → publish-to-go-live → active` lifecycle** exist — the
+`preview` state *is* the free tier; the conversational onboarding *is* the
+qualifying conversation. The main net-new is the **commerce layer**, not the
+product.
+
+**Expansion: guided bundles, NOT raw "build your own plan."** À la carte is the
+classic SMB pricing mistake — choice paralysis (a plumber can't self-architect a
+marketing plan), ARPU suppression, and data-moat dilution (cherry-pickers anchor
+low; the flywheel needs the *whole* funnel). Fix: same modular delivery
+underneath (each service = an agent switched on), presented as **2–3 recommended
+plans** (e.g. *Get Found* / *Get Leads* / *Full Growth*) with customisation
+available, not required. The platform can do any combination; the *sale* is "for a
+business like yours we recommend Growth." Modularity's flexibility without the
+menu's friction.
+
+**The expansion engine: data-triggered, AM-surfaced upsell.** Tie every upgrade
+to the customer's own performance, surfaced by the Account Manager agent:
+
+- *"240 visits last month, 2 calls — add Lead Follow-up, €X/mo."*
+- *"Invisible for 'emergency electrician Dublin' (~90 searches/mo) — add SEO, €99/mo."*
+- *"Ads converting at €0.40/click — scale the budget? Move to the €399 tier."*
+
+That is an account manager advising on real data — except it is the AM agent on
+data the platform already collects. **Performance-justified, in-product upsell is
+the land-and-expand engine and the most agency-feeling thing in the product.** It
+is also defensible: nobody can make that pitch without owning the whole funnel,
+which the free site secured.
+
+**Proof-first top-of-funnel.** Service sales are trust sales. Break "agencies are
+hard to sell" with proof before commitment — the deferred **Proof Page tool**
+(audit a prospect's online presence → show the gap → hand them proof) is both the
+wedge and an SEO-able acquisition channel. It is more important to the business
+than the 6th agent.
+
+**Retention = the weekly report.** Agencies churn on opaque results. *"Here's what
+we did, your 9 leads, €14 cost-per-lead, what we're testing next"* makes the price
+feel like a steal. The Account-Manager report (§4.7 / sequencing #7) is the
+retention product, not a nicety.
+
+### 11.4 Indicative pricing
+
+| Tier | Price | Notes |
+|---|---|---|
+| Free website | €0 | `.webnua.dev` subdomain, capped regen, no ongoing agent spend. The wedge + qualified top-of-funnel. |
+| SEO | +€99/mo | Strong first upsell — cheap to deliver (content + GBP + metadata, mostly built), sticky (rankings compound). |
+| Ads management | €199–499/mo | **Management fee only — ad spend is separate and goes to Meta/Google. State this loudly.** Tier by something legible (channels / spend band / campaign count), **not "strategy"** — customers can't self-select that. |
+
+### 11.5 Commercial watch-outs
+
+- **Free attracts zero-intent signups.** Measure free→paid conversion, not
+  signups. Qualify through the onboarding conversation; let the AM gate the warm
+  upsell.
+- **Cap the cost of free, hard.** Subdomain only, capped regenerations, no agent
+  spend until paying. An agent starts working only when they're on a plan.
+- **Modular billing is the real build.** Stripe today is a single flat plan; the
+  `lib/billing/` catalog is agency-policy bundles, not customer-facing add-ons.
+  Multi-product subscriptions + add-on proration is genuine commerce work — the
+  main thing standing between the platform and this motion.
+- **Outcome promises must scope to what Webnua controls.** "More customers"
+  depends on the tradie answering the phone. Promise on what's owned (leads
+  delivered, cost-per-lead, reviews), not what isn't (jobs closed) — which is
+  *why* owning lead follow-up + booking matters (it closes the controllable part
+  of the funnel).
+
+### 11.6 One-sentence thesis
+
+Webnua is **the first marketing department the local-business long tail can
+afford** — AI is the cost structure that makes flat/modular outcome pricing
+profitable, the free website is the wedge that manufactures demand, the Account
+Manager's data-triggered recommendations are the expansion engine, and
+cross-client data density is the moat. Sell booked jobs, lead with a free
+proof-audit, hide the AI, prove value weekly, and win distribution before
+features.
