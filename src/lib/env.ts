@@ -61,6 +61,7 @@ const envSchema = z.object({
 
   // --- AI generation ---------------------------------------------------------
   ANTHROPIC_API_KEY: optionalStr,
+  UNSPLASH_ACCESS_KEY: optionalStr,
 
   // --- public-site routing + self-addressing --------------------------------
   APP_HOST: optionalStr,
