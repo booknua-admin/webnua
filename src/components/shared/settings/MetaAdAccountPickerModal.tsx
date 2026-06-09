@@ -5,9 +5,9 @@
 //
 // Phase 7 Meta Ads. Auto-opens after a successful Meta OAuth callback (the
 // `IntegrationConnectionsSection` lifts the URL params and opens this).
-// The operator picks WHICH ad account Webnua should manage for the
-// customer + acknowledges the customer agreement (the customer's email
-// gets recorded as the audit trail).
+// The customer or operator picks WHICH ad account Webnua should work with
+// for this client, then records the customer agreement email as the audit
+// trail.
 //
 // Sibling of `GbpLocationPickerModal` — same overall flow shape (list →
 // pick → save) but with the additional customer-agreement field; the
@@ -50,7 +50,7 @@ export function MetaAdAccountPickerModal({
   const [agreementEmail, setAgreementEmail] = useState('');
   const [agreementAcknowledged, setAgreementAcknowledged] = useState(false);
 
-  // Auto-list on open so the operator doesn't see an empty modal first.
+  // Auto-list on open so the picker doesn't show an empty modal first.
   useEffect(() => {
     if (open && clientId && !listMutation.data && !listMutation.isPending) {
       listMutation.mutate({ clientId });
@@ -99,13 +99,13 @@ export function MetaAdAccountPickerModal({
         <div className="flex shrink-0 items-start justify-between gap-4 border-b border-paper-2 px-7 pb-4 pt-5.5">
           <div className="flex-1">
             <DialogTitle className="mb-1.5 text-[20px] font-extrabold leading-[1.15] tracking-[-0.02em] text-ink">
-              Pick a Meta ad account to manage
+              Choose the Meta ad account to connect
             </DialogTitle>
             <p className="text-[13px] leading-[1.45] text-ink-quiet">
-              Webnua will create + manage campaigns on this ad account. The
+              Pick the ad account Webnua should use for this business. The
               customer agrees that <strong className="text-ink">Meta bills
               their card directly</strong> for ad spend, and that{' '}
-              <strong className="text-ink">Webnua makes campaign changes on
+              <strong className="text-ink">Webnua can manage campaigns on
               their behalf</strong>.
             </p>
           </div>
@@ -133,7 +133,7 @@ export function MetaAdAccountPickerModal({
               </div>
             ) : accounts.length === 0 ? (
               <div className="rounded-md border border-dashed border-rule bg-paper px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-quiet">
-                {'// No ad accounts found. Confirm the customer granted ads_management.'}
+                {'// No ad accounts found. Confirm the Meta login has access to the right business assets.'}
               </div>
             ) : (
               accounts.map((acct) => (
@@ -177,7 +177,7 @@ export function MetaAdAccountPickerModal({
             />
             <p className="mt-1 text-[11px] leading-[1.4] text-ink-quiet">
               The customer&apos;s email is recorded with this selection as the
-              audit trail for both consents above.
+              audit trail for those permissions.
             </p>
           </div>
           <label className="flex items-start gap-2 text-[12px] leading-[1.45] text-ink-soft">
@@ -190,7 +190,7 @@ export function MetaAdAccountPickerModal({
             />
             <span>
               I confirm the customer agreed to (a) Meta billing their card
-              directly for ad spend and (b) Webnua managing campaigns on
+              directly for ad spend and (b) Webnua managing campaigns
               their behalf.
             </span>
           </label>
@@ -207,7 +207,7 @@ export function MetaAdAccountPickerModal({
             Cancel
           </Button>
           <Button onClick={handleSave} disabled={!canSave}>
-            {selectMutation.isPending ? 'Saving…' : 'Wire to Webnua'}
+            {selectMutation.isPending ? 'Saving…' : 'Save ad account'}
           </Button>
         </div>
       </DialogContent>

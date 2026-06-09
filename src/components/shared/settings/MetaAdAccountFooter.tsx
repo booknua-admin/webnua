@@ -52,7 +52,7 @@ export function MetaAdAccountFooter({ clientId }: { clientId: string }) {
         <div className="text-[12px] leading-[1.5] text-ink-quiet">
           <strong className="text-ink">Pick an ad account</strong> — the
           OAuth connect is live but Webnua doesn&apos;t know which of this
-          customer&apos;s ad accounts to manage.
+          business&apos;s ad accounts it should use yet.
         </div>
         <div className="mt-2">
           <Button size="sm" onClick={() => setPickerOpen(true)}>

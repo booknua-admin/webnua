@@ -63,8 +63,9 @@ export function ClientIntegrationsContent() {
           <>
             Connect Google Business Profile and Meta so Webnua can manage your
             reviews, ads, and reputation directly. <strong>Each connect takes about
-            a minute</strong> — sign into your business account and grant the
-            permissions the wizard asks for.
+            a minute</strong> — sign into your business account, grant the
+            requested permissions, and choose the account or location Webnua
+            should use.
           </>
         }
       >
