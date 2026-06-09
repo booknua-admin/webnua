@@ -1,23 +1,20 @@
 'use client';
 
 // =============================================================================
-// /website/new — form-to-page Q&A generation flow (Session 6).
+// /website/new — new-page creation flow.
 //
-// Five questions (locked in reference/builder-generation-design.md §2):
-//   1. Page type   (required, chip)
-//   2. Primary intent (required, chip + "Other" free-text fallback)
-//   3. Audience    (required, chip)
-//   4. Specifics   (optional, free text)
-//   5. Avoid       (optional, free text)
-// Then a review card → generation card → router push into the editor.
+// Two entry lanes:
+//   - AI draft        → the existing 5-question form-to-page flow
+//   - Starter template → curated builder-facing page starters that drop
+//                        straight into the editor with intentional section
+//                        stacks and seeded copy.
 //
 // State lives in URL search params (?step=N&q1=...&q2=...) so back/forward
 // and refresh work natively. No localStorage — see design doc §1.
 //
-// Capability gating: entry requires `editPages` AND `useAI` (see /website
-// hub for the gated CTA). This route itself doesn't re-check the caps —
-// if you arrive here without them, the review card's Generate button is
-// disabled with a tooltip pointing back to the hub.
+// Capability gating:
+//   - AI lane        → `editPages` AND `useAI`
+//   - starter lane   → `editPages`
 // =============================================================================
 
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -34,7 +31,7 @@ import {
 } from '@/components/shared/builder/BuilderField';
 import { BuilderFooterActions } from '@/components/shared/builder/BuilderFooterActions';
 import { Button } from '@/components/ui/button';
-import { useUser, useCanAll } from '@/lib/auth/user-stub';
+import { useCan, useUser } from '@/lib/auth/user-stub';
 import { useWorkspace } from '@/lib/workspace/workspace-stub';
 import {
   getBrandForClient,
@@ -45,6 +42,12 @@ import {
   useWebsiteForClient,
 } from '@/lib/website/queries';
 import { addGeneratedPage } from '@/lib/website/generated-pages-stub';
+import {
+  buildStarterPage,
+  getPageStarter,
+  getPageStarters,
+  type PageStarterId,
+} from '@/lib/website/page-starters';
 import {
   generatePageStub,
   type GenerationResult,
@@ -65,13 +68,16 @@ import type { Page, PageType } from '@/lib/website/types';
 import Link from 'next/link';
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6; // 1-5 questions, 6 review
+type CreationMode = 'ai' | 'starter';
 
 export default function WebsiteNewPage() {
   const user = useUser();
   const workspace = useWorkspace();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const canGenerate = useCanAll('editPages', 'useAI');
+  const canEditPages = useCan('editPages');
+  const canUseAI = useCan('useAI');
+  const canGenerate = canEditPages && canUseAI;
 
   const [generating, setGenerating] = useState<null | {
     ctx: GenerationContext;
@@ -85,9 +91,14 @@ export default function WebsiteNewPage() {
   const websiteQuery = useWebsiteForClient(activeClientId);
   const website = websiteQuery.data ?? null;
   const draftQuery = useEffectiveDraft(website?.id ?? null);
+  const draftPages = draftQuery.data?.snapshot.pages ?? [];
 
   const step = Math.max(1, Math.min(6, Number(searchParams.get('step') ?? '1'))) as Step;
+  const modeParam = searchParams.get('mode');
+  const mode: CreationMode | null =
+    modeParam === 'ai' || modeParam === 'starter' ? modeParam : null;
   const pageType = (searchParams.get('pageType') as PageType | null) ?? null;
+  const starterId = (searchParams.get('starterId') as PageStarterId | null) ?? null;
   const intentKind = searchParams.get('intent') as PrimaryIntent['kind'] | null;
   const intentOther = searchParams.get('intentOther') ?? '';
   const audience = searchParams.get('audience') as Audience | null;
@@ -150,9 +161,9 @@ export default function WebsiteNewPage() {
   }
 
   const brand = getBrandForClient(activeClientId) ?? DEFAULT_PREVIEW_BRAND;
-  const existingPages: ExistingPageSnapshot[] = (
-    draftQuery.data?.snapshot.pages ?? []
-  ).map(snapshotFromPage);
+  const existingPages: ExistingPageSnapshot[] = draftPages.map(snapshotFromPage);
+  const starterOptions = pageType ? getPageStarters(pageType) : [];
+  const selectedStarter = starterId ? getPageStarter(starterId) : null;
 
   if (generating) {
     return (
@@ -161,6 +172,241 @@ export default function WebsiteNewPage() {
           specifics={generating.ctx.specifics}
           avoid={generating.ctx.avoid}
         />
+      </Shell>
+    );
+  }
+
+  if (!canEditPages) {
+    return (
+      <Shell>
+        <NoAccessState />
+      </Shell>
+    );
+  }
+
+  if (!mode) {
+    return (
+      <Shell>
+        <div className="mx-auto max-w-[760px] py-12">
+          <p className="mb-3 font-mono text-[11px] font-bold uppercase tracking-[0.18em] text-rust">
+            {'// START A NEW PAGE'}
+          </p>
+          <h1 className="mb-2 text-[36px] font-extrabold leading-[1.05] tracking-[-0.025em] text-ink">
+            How do you want to <em className="not-italic text-rust">start</em>?
+          </h1>
+          <p className="mb-8 max-w-[620px] text-[15px] leading-[1.55] text-ink-mid">
+            Use AI when you want a fresh draft from a brief. Use a starter
+            template when you want a solid page structure you can edit by hand.
+          </p>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <ModeCard
+              eyebrow="// AI DRAFT"
+              title="Answer a few questions"
+              body="Best when you want the builder to draft the copy, section order, and CTA direction for you."
+              actionLabel={canGenerate ? 'Start AI draft →' : 'AI access required'}
+              disabled={!canGenerate}
+              onClick={() =>
+                updateSearch(router, searchParams, {
+                  mode: 'ai',
+                  step: '1',
+                  pageType: null,
+                  starterId: null,
+                })
+              }
+            />
+            <ModeCard
+              eyebrow="// STARTER TEMPLATE"
+              title="Drop in a page starter"
+              body="Best when you want a curated section stack with intentional layouts, then edit the copy yourself."
+              actionLabel="Choose a starter →"
+              onClick={() =>
+                updateSearch(router, searchParams, {
+                  mode: 'starter',
+                  step: '1',
+                  pageType: null,
+                  starterId: null,
+                  intent: null,
+                  intentOther: null,
+                  audience: null,
+                  specifics: null,
+                  avoid: null,
+                })
+              }
+            />
+          </div>
+        </div>
+      </Shell>
+    );
+  }
+
+  if (mode === 'starter') {
+    const starterStep = Math.max(1, Math.min(3, step)) as 1 | 2 | 3;
+    const goToStarterStep = (s: 1 | 2 | 3) =>
+      updateSearch(router, searchParams, { step: String(s) });
+
+    if (starterStep === 1) {
+      return (
+        <Shell>
+          <QuestionCard
+            eyebrow="// STARTER 1 OF 3"
+            title={
+              <>
+                What <em>kind of page</em> do you want to start from?
+              </>
+            }
+            helper="Pick the page type first — we’ll show the strongest starter templates for that job."
+            progressLabel={
+              <>
+                Starter <strong>1</strong> of 3
+              </>
+            }
+            isAnswered={!!pageType}
+            required
+            onBack={() =>
+              updateSearch(router, searchParams, {
+                mode: null,
+                step: null,
+                pageType: null,
+                starterId: null,
+              })
+            }
+            onContinue={() => goToStarterStep(2)}
+          >
+            <ChipSelector
+              options={PAGE_TYPE_CHIPS.map((c) => ({ id: c.id, label: c.label }))}
+              value={pageType ?? undefined}
+              onChange={(id) =>
+                updateSearch(router, searchParams, {
+                  pageType: id,
+                  starterId: null,
+                })
+              }
+              layout="wrap"
+            />
+          </QuestionCard>
+        </Shell>
+      );
+    }
+
+    if (starterStep === 2) {
+      return (
+        <Shell>
+          <QuestionCard
+            eyebrow="// STARTER 2 OF 3"
+            title={
+              <>
+                Pick a <em>starter template</em>.
+              </>
+            }
+            helper="These are curated page starters — section stacks plus layout choices you can edit immediately."
+            progressLabel={
+              <>
+                Starter <strong>2</strong> of 3
+              </>
+            }
+            isAnswered={!!selectedStarter}
+            required
+            onBack={() => goToStarterStep(1)}
+            onContinue={() => goToStarterStep(3)}
+          >
+            <div className="grid gap-3">
+              {starterOptions.map((starter) => (
+                <StarterCard
+                  key={starter.id}
+                  active={starterId === starter.id}
+                  label={starter.label}
+                  description={starter.description}
+                  sections={starter.sections.map((section) => section.type)}
+                  onClick={() =>
+                    updateSearch(router, searchParams, { starterId: starter.id })
+                  }
+                />
+              ))}
+            </div>
+          </QuestionCard>
+        </Shell>
+      );
+    }
+
+    const handleCreateStarter = () => {
+      if (!website || !selectedStarter) return;
+      const stored = addGeneratedPage(
+        website.id,
+        buildStarterPage({
+          websiteId: website.id,
+          starterId: selectedStarter.id,
+          existingPages: draftPages,
+          brand,
+        }),
+      );
+      router.push(`/website/${stored.id}`);
+    };
+
+    return (
+      <Shell>
+        <div className="mx-auto max-w-[640px] py-12">
+          <p className="mb-3 font-mono text-[11px] font-bold uppercase tracking-[0.18em] text-rust">
+            {'// READY TO CREATE'}
+          </p>
+          <h1 className="mb-2 text-[36px] font-extrabold leading-[1.05] tracking-[-0.025em] text-ink">
+            Review your <em className="not-italic text-rust">starter page</em>.
+          </h1>
+          <p className="mb-7 text-[15px] leading-[1.55] text-ink-mid">
+            We&rsquo;ll add this page to{' '}
+            <strong className="font-bold text-ink">{website.name}</strong> with
+            its starter sections ready to edit.
+          </p>
+
+          <div className="mb-6 overflow-hidden rounded-xl border border-rule bg-card">
+            <ReviewRow
+              label="Mode"
+              value="Starter template"
+              onEdit={() =>
+                updateSearch(router, searchParams, { mode: null, step: null })
+              }
+            />
+            <ReviewRow
+              label="Page type"
+              value={pageType ? describePageType(pageType) : '—'}
+              onEdit={() => goToStarterStep(1)}
+            />
+            <ReviewRow
+              label="Starter"
+              value={
+                selectedStarter ? (
+                  <>
+                    <strong className="text-ink">{selectedStarter.label}</strong>
+                    <span className="block text-[13px] text-ink-mid">
+                      {selectedStarter.description}
+                    </span>
+                  </>
+                ) : (
+                  '—'
+                )
+              }
+              onEdit={() => goToStarterStep(2)}
+            />
+          </div>
+
+          <BuilderFooterActions
+            progress={
+              <>
+                Starter <strong>3</strong> of 3
+              </>
+            }
+            actions={
+              <>
+                <Button variant="ghost" onClick={() => goToStarterStep(2)}>
+                  ← Back
+                </Button>
+                <Button onClick={handleCreateStarter} disabled={!selectedStarter}>
+                  Create starter page →
+                </Button>
+              </>
+            }
+          />
+        </div>
       </Shell>
     );
   }
@@ -184,6 +430,19 @@ export default function WebsiteNewPage() {
           }
           isAnswered={!!pageType}
           required
+          onBack={() =>
+            updateSearch(router, searchParams, {
+              mode: null,
+              step: null,
+              pageType: null,
+              starterId: null,
+              intent: null,
+              intentOther: null,
+              audience: null,
+              specifics: null,
+              avoid: null,
+            })
+          }
           onContinue={() => goToStep(2)}
         >
           <ChipSelector
@@ -373,7 +632,10 @@ export default function WebsiteNewPage() {
     setGenerating({ ctx });
     try {
       const result: GenerationResult = await generatePageStub(ctx);
-      const stored = addGeneratedPage(website.id, withDedupedSlug(result.page, existingPages));
+      const stored = addGeneratedPage(
+        website.id,
+        withDedupedSlug(result.page, draftPages),
+      );
       router.push(`/website/${stored.id}`);
     } catch (err) {
       // Aborted (e.g. browser back) — drop back to the review step.
@@ -398,6 +660,13 @@ export default function WebsiteNewPage() {
         </p>
 
         <div className="mb-6 overflow-hidden rounded-xl border border-rule bg-card">
+          <ReviewRow
+            label="Mode"
+            value="AI draft"
+            onEdit={() =>
+              updateSearch(router, searchParams, { mode: null, step: null })
+            }
+          />
           <ReviewRow
             label="Page type"
             value={pageType ? describePageType(pageType) : '—'}
@@ -528,6 +797,23 @@ function NoContextState({
   );
 }
 
+function NoAccessState() {
+  return (
+    <div className="mx-auto max-w-[480px] py-16 text-center">
+      <p className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust">
+        {'// PAGE CREATION LOCKED'}
+      </p>
+      <p className="mb-5 text-[16px] text-ink">
+        You can view the builder, but you don&rsquo;t have permission to create pages in
+        this workspace.
+      </p>
+      <Button asChild variant="secondary">
+        <Link href="/website">← Back to website</Link>
+      </Button>
+    </div>
+  );
+}
+
 // -- Helpers -----------------------------------------------------------------
 
 function snapshotFromPage(p: Page): ExistingPageSnapshot {
@@ -546,13 +832,116 @@ function snapshotFromPage(p: Page): ExistingPageSnapshot {
   };
 }
 
-/** Avoid slug collisions with existing pages. */
-function withDedupedSlug(page: Page, existing: ExistingPageSnapshot[]): Page {
-  const existingSlugs = new Set(existing.map((p) => p.pageTitle.toLowerCase()));
-  // existing-pages snapshot doesn't carry slug; compare on title as a proxy.
-  // The real backend will check against the actual slug column.
-  if (!existingSlugs.has(page.title.toLowerCase())) return page;
+/** Avoid title / slug collisions with existing pages. */
+function withDedupedSlug(page: Page, existing: readonly Page[]): Page {
+  const existingTitles = new Set(existing.map((p) => p.title.toLowerCase()));
+  const existingSlugs = new Set(existing.map((p) => p.slug.toLowerCase()));
+  if (!existingTitles.has(page.title.toLowerCase()) && !existingSlugs.has(page.slug.toLowerCase())) {
+    return page;
+  }
   let n = 2;
-  while (existingSlugs.has(`${page.title.toLowerCase()}-${n}`)) n += 1;
+  while (
+    existingTitles.has(`${page.title.toLowerCase()} ${n}`) ||
+    existingSlugs.has(`${page.slug.toLowerCase()}-${n}`)
+  ) {
+    n += 1;
+  }
   return { ...page, slug: `${page.slug}-${n}`, title: `${page.title} ${n}` };
+}
+
+function updateSearch(
+  router: ReturnType<typeof useRouter>,
+  searchParams: ReturnType<typeof useSearchParams>,
+  patch: Record<string, string | null>,
+) {
+  const next = new URLSearchParams(searchParams.toString());
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === null || v === '') next.delete(k);
+    else next.set(k, v);
+  }
+  router.push(`/website/new?${next.toString()}`);
+}
+
+function ModeCard({
+  eyebrow,
+  title,
+  body,
+  actionLabel,
+  onClick,
+  disabled = false,
+}: {
+  eyebrow: string;
+  title: string;
+  body: string;
+  actionLabel: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="rounded-xl border border-rule bg-card px-5 py-5 text-left transition-colors hover:border-rust disabled:cursor-not-allowed disabled:opacity-55"
+    >
+      <p className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust">
+        {eyebrow}
+      </p>
+      <p className="mb-2 text-[22px] font-extrabold leading-tight tracking-[-0.02em] text-ink">
+        {title}
+      </p>
+      <p className="mb-5 text-[14px] leading-[1.55] text-ink-mid">{body}</p>
+      <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-rust">
+        {actionLabel}
+      </span>
+    </button>
+  );
+}
+
+function StarterCard({
+  active,
+  label,
+  description,
+  sections,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  description: string;
+  sections: readonly string[];
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-xl border px-4 py-4 text-left transition-colors ${
+        active
+          ? 'border-rust bg-rust-soft/40'
+          : 'border-rule bg-card hover:border-rust/60'
+      }`}
+    >
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <p className="text-[18px] font-extrabold leading-tight tracking-[-0.02em] text-ink">
+          {label}
+        </p>
+        {active ? (
+          <span className="rounded-pill bg-rust px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-paper">
+            Selected
+          </span>
+        ) : null}
+      </div>
+      <p className="mb-3 text-[14px] leading-[1.55] text-ink-mid">{description}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {sections.map((section, index) => (
+          <span
+            key={`${section}-${index}`}
+            className="rounded-pill bg-paper-2 px-2 py-1 font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-ink-quiet"
+          >
+            {section}
+          </span>
+        ))}
+      </div>
+    </button>
+  );
 }

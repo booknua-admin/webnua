@@ -129,7 +129,17 @@ export function SectionFieldsPanel({
         {/* `as never` cast at the registry boundary — the Fields component
             is typed against its specific data shape; the registry stores
             them as unknown. defaultData() guarantees the shape on creation. */}
-        <SectionFieldContextProvider sectionLabel={def.label}>
+        <SectionFieldContextProvider
+          sectionLabel={def.label}
+          aiContext={
+            brand
+              ? {
+                  industry: brand.industryCategory,
+                  audienceLine: brand.audienceLine,
+                }
+              : null
+          }
+        >
           {/* The popup envelope is exposed to the section's LinkField(s) — a
               button set to "Open a popup" configures the popup right there.
               Provided only with a brand (the popup editor needs it). */}

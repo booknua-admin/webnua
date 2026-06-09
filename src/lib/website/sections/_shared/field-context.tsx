@@ -14,21 +14,29 @@ import { createContext, useContext, type ReactNode } from 'react';
 type SectionFieldContextValue = {
   /** Human label of the section being edited, e.g. "Hero". */
   sectionLabel: string | null;
+  /** Brand / business context used by AI field rewrite affordances. */
+  aiContext: {
+    industry?: string;
+    audienceLine?: string;
+  } | null;
 };
 
 const SectionFieldContext = createContext<SectionFieldContextValue>({
   sectionLabel: null,
+  aiContext: null,
 });
 
 export function SectionFieldContextProvider({
   sectionLabel,
+  aiContext = null,
   children,
 }: {
   sectionLabel: string;
+  aiContext?: SectionFieldContextValue['aiContext'];
   children: ReactNode;
 }) {
   return (
-    <SectionFieldContext.Provider value={{ sectionLabel }}>
+    <SectionFieldContext.Provider value={{ sectionLabel, aiContext }}>
       {children}
     </SectionFieldContext.Provider>
   );

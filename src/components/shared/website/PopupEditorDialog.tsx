@@ -96,7 +96,13 @@ export function PopupEditorDialog({
         </div>
 
         {content.kind === 'form' ? (
-          <SectionFieldContextProvider sectionLabel="Popup">
+          <SectionFieldContextProvider
+            sectionLabel="Popup"
+            aiContext={{
+              industry: brand.industryCategory,
+              audienceLine: brand.audienceLine,
+            }}
+          >
             <div className="grid gap-5 sm:grid-cols-[1fr_300px]">
               <div className="rounded-lg border border-rule bg-paper-2 p-4">
                 <p className="mb-3 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-quiet">

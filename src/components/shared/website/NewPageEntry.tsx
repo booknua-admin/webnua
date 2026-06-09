@@ -4,8 +4,8 @@
 // NewPageEntry — the "+ New page" CTA on /website. Encapsulates the two-cap
 // gating story (design doc generation §5):
 //
-//   has editPages + useAI  → rust button, links to /website/new
-//   has editPages only     → MVP: hidden (V2: manual new-page modal)
+//   has editPages + useAI  → rust button, links to /website/new (AI + starters)
+//   has editPages only     → button still links to /website/new (starter templates)
 //   missing editPages      → CapabilityGate `request` mode reveals the
 //                            "Request a new page" affordance for client users
 //
@@ -33,8 +33,11 @@ function NewPageEntry() {
   }
 
   if (canEditPages && !canUseAI) {
-    // V2 manual-new-page modal would mount here. Hidden for Session 6.
-    return null;
+    return (
+      <Button asChild size="sm">
+        <Link href="/website/new">+ New page</Link>
+      </Button>
+    );
   }
 
   // Missing editPages — surface the request-change affordance instead.
