@@ -11,6 +11,7 @@ import { OperatorActionBar } from '@/components/admin/hub/OperatorActionBar';
 import { ActivityFeed } from '@/components/shared/ActivityFeed';
 import type { ActivityRowData, ActivityTone } from '@/components/shared/ActivityRow';
 import { MiniTrendBars } from '@/components/shared/MiniTrendBars';
+import { PageSkeleton } from '@/components/shared/PageSkeleton';
 import { RailCard } from '@/components/shared/RailCard';
 import { StatCard } from '@/components/shared/StatCard';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
@@ -78,7 +79,7 @@ function ClientHubContent() {
       <div className="flex flex-col gap-7 px-4 py-6 md:px-10 md:py-10">
         <WorkspaceContextBanner />
         {isLoading ? (
-          <HubNotice>{'// Loading client overview…'}</HubNotice>
+          <PageSkeleton hero statCount={4} />
         ) : error || !hub ? (
           <HubNotice>
             {`// ${error ? normalizeError(error).message : 'Client overview unavailable'}`}

@@ -3,6 +3,7 @@
 import { Menu } from 'lucide-react';
 
 import { NotificationBell } from '@/components/client/notifications/NotificationBell';
+import { CommandPaletteProvider } from '@/components/shared/search/CommandPalette';
 import { GlobalSearchInput } from '@/components/shared/search/GlobalSearchInput';
 import { useRole } from '@/lib/auth/user-stub';
 import { cn } from '@/lib/utils';
@@ -53,42 +54,51 @@ function Topbar({
   // The notification bell is a client-role fixture — every client page that
   // mounts a Topbar gets it for free; operators never see it.
   const showBell = hydrated && role === 'client';
-  // Global search is the operator-role mirror of the bell: every operator
-  // page that mounts a Topbar gets the search field for free. Explicit
-  // `middle`/`search` win; `hideSearch` opts a page out. On mobile we hide
-  // the auto-search to leave room for the hamburger + breadcrumb (operators
-  // can still drill in via the drawer + the dedicated /search route).
-  const autoSearch =
-    hydrated && role === 'admin' && !hideSearch ? (
-      <div className="hidden md:block">
-        <GlobalSearchInput />
-      </div>
-    ) : null;
-  const centre = middle ?? search ?? autoSearch;
+  // The CommandPaletteProvider mounts here so every page with a Topbar gets
+  // ⌘K for free (both roles); the operator's auto-rendered search field is
+  // the click trigger for the same palette. Explicit `middle`/`search` win;
+  // `hideSearch` opts a page out of the visible field (the ⌘K hotkey still
+  // works). On mobile we hide the auto-search to leave room for the
+  // hamburger + breadcrumb.
   return (
-    <div
-      data-slot="topbar"
-      className={cn(
-        'sticky top-0 z-10 flex h-[68px] items-center gap-3 border-b border-rule bg-paper px-4 md:gap-6 md:px-10',
-        className,
-      )}
-    >
-      <MobileMenuButton />
-      <div className="flex min-w-0 items-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
-        {breadcrumb}
-      </div>
-      {centre ? (
-        <div className="flex flex-1 items-center justify-center">{centre}</div>
-      ) : (
-        <div className="flex-1" />
-      )}
-      {showBell || actions ? (
-        <div className="flex items-center gap-3">
-          {showBell ? <NotificationBell /> : null}
-          {actions}
-        </div>
-      ) : null}
-    </div>
+    <CommandPaletteProvider>
+      {(openPalette) => {
+        const autoSearch =
+          hydrated && role === 'admin' && !hideSearch ? (
+            <div className="hidden w-full max-w-[440px] md:block">
+              <GlobalSearchInput onTrigger={openPalette} />
+            </div>
+          ) : null;
+        const centre = middle ?? search ?? autoSearch;
+        return (
+          <div
+            data-slot="topbar"
+            className={cn(
+              'sticky top-0 z-10 flex h-[68px] items-center gap-3 border-b border-rule bg-paper px-4 md:gap-6 md:px-10',
+              className,
+            )}
+          >
+            <MobileMenuButton />
+            <div className="flex min-w-0 items-center font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink-quiet">
+              {breadcrumb}
+            </div>
+            {centre ? (
+              <div className="flex flex-1 items-center justify-center">
+                {centre}
+              </div>
+            ) : (
+              <div className="flex-1" />
+            )}
+            {showBell || actions ? (
+              <div className="flex items-center gap-3">
+                {showBell ? <NotificationBell /> : null}
+                {actions}
+              </div>
+            ) : null}
+          </div>
+        );
+      }}
+    </CommandPaletteProvider>
   );
 }
 

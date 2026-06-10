@@ -160,3 +160,16 @@ body {
     stroke-dashoffset: 0;
   }
 }
+
+/* ============================================================
+   Skeleton shimmer — the sweep used by components/ui/skeleton.tsx
+   (`motion-safe:after:animate-[shimmer_…]`). Kept outside @theme
+   so the inline arbitrary animation utility resolves at the call
+   site, same convention as `draw` above. Reduced-motion users get
+   the static paper-2 block (the utility is motion-safe gated).
+   ============================================================ */
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}

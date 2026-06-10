@@ -6,6 +6,7 @@ import { ClientPerformanceCard } from '@/components/admin/dashboard/ClientPerfor
 import { ReviewRequestsPanel } from '@/components/admin/dashboard/ReviewRequestsPanel';
 import { ActivityFeed } from '@/components/shared/ActivityFeed';
 import { PageHeader } from '@/components/shared/PageHeader';
+import { PageSkeleton } from '@/components/shared/PageSkeleton';
 import { StatCard } from '@/components/shared/StatCard';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { Eyebrow } from '@/components/ui/eyebrow';
@@ -48,7 +49,7 @@ export function AdminDashboardContent() {
       <Topbar breadcrumb={<TopbarBreadcrumb current="Dashboard" />} />
       <div className="flex flex-col gap-7 px-4 py-6 md:px-10 md:py-10">
         {isLoading ? (
-          <DashboardNotice>{'// Loading agency overview…'}</DashboardNotice>
+          <PageSkeleton />
         ) : error || !data ? (
           <DashboardNotice>
             {`// ${error ? normalizeError(error).message : 'Dashboard unavailable'}`}
