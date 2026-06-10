@@ -12,14 +12,25 @@
 
 import { Eyebrow } from '@/components/ui/eyebrow';
 import { useSuggestedActions } from '@/lib/actions/queries';
+import type { SuggestedActionKind } from '@/lib/actions/types';
 
 import { ActionCard } from './ActionCard';
+
+/** Ads governance is operator-only (managed-service model) — the client
+ *  dashboard passes this so owners never see a card they can't approve. */
+export const OPERATOR_ONLY_KINDS: readonly SuggestedActionKind[] = [
+  'ads_budget',
+  'ads_pause',
+  'ads_creative_refresh',
+];
 
 export type ActionFeedProps = {
   /** Client UUID scope. Omit/null = every accessible client (operator). */
   clientId?: string | null;
   /** Scope to one entity (a lead detail surface). */
   sourceEntityId?: string;
+  /** Drop kinds the viewer can't act on. */
+  excludeKinds?: readonly SuggestedActionKind[];
   /** Heading above the cards. */
   title?: string;
   limit?: number;
@@ -30,6 +41,7 @@ export type ActionFeedProps = {
 export function ActionFeed({
   clientId,
   sourceEntityId,
+  excludeKinds,
   title = 'Ready for your review',
   limit,
   showEmpty = false,
@@ -37,6 +49,7 @@ export function ActionFeed({
   const { data: actions, isLoading } = useSuggestedActions({
     clientId,
     sourceEntityId,
+    excludeKinds,
     limit,
   });
 

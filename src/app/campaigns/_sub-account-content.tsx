@@ -5,6 +5,7 @@ import { CampaignActivityCard } from '@/components/shared/campaigns/CampaignActi
 import { CampaignHeroCard } from '@/components/shared/campaigns/CampaignHeroCard';
 import { CampaignTrendChart } from '@/components/shared/campaigns/CampaignTrendChart';
 import { MetaConnectPanel } from '@/components/shared/meta/MetaConnectPanel';
+import { ActionFeed } from '@/components/shared/actions/ActionFeed';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { normalizeError } from '@/lib/errors';
@@ -70,6 +71,8 @@ function SubAccountCampaignsContent() {
                * Showing the empty hero card + "awaiting Meta" placeholder
                * alongside the connect CTA would just be visual noise — the
                * deep-dive has nothing to show until the account is wired. */}
+            <ActionFeed clientId={page.clientId} title="Today's actions" />
+
             {!metaConnected ? (
               <MetaConnectPanel
                 clientId={page.clientId}

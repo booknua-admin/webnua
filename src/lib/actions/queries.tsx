@@ -18,7 +18,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { normalizeError } from '@/lib/errors';
 import { supabase } from '@/lib/supabase/client';
 
-import type { SuggestedActionRow } from './types';
+import type { SuggestedActionKind, SuggestedActionRow } from './types';
 
 function db(): SupabaseClient {
   return supabase as unknown as SupabaseClient;
@@ -37,6 +37,9 @@ export type SuggestedActionsFilter = {
   clientId?: string | null;
   /** Scope to one source entity (e.g. a lead detail surface). */
   sourceEntityId?: string;
+  /** Drop kinds the viewer can't act on (e.g. ads governance is
+   *  operator-only, so the client dashboard excludes the ads kinds). */
+  excludeKinds?: readonly SuggestedActionKind[];
   limit?: number;
 };
 
@@ -60,7 +63,11 @@ async function fetchSuggestedActions(
     if (isMissingTableError(error)) return [];
     throw normalizeError(error);
   }
-  const rows = (data as SuggestedActionRow[] | null) ?? [];
+  let rows = (data as SuggestedActionRow[] | null) ?? [];
+  if (filter.excludeKinds?.length) {
+    const excluded = new Set(filter.excludeKinds);
+    rows = rows.filter((row) => !excluded.has(row.kind));
+  }
   // Postgres text ordering puts 'high' before 'normal' ascending — we asked
   // descending above which inverts it, so re-sort here for clarity: high
   // urgency first, then newest first.
@@ -78,6 +85,7 @@ export function useSuggestedActions(filter: SuggestedActionsFilter = {}) {
       ...SUGGESTED_ACTIONS_KEY,
       filter.clientId ?? 'all',
       filter.sourceEntityId ?? 'any',
+      filter.excludeKinds?.join(',') ?? '',
     ],
     queryFn: () => fetchSuggestedActions(filter),
   });

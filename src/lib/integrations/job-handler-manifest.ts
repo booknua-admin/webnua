@@ -51,6 +51,10 @@ import '@/lib/integrations/_shared/job-handlers';
 import '@/lib/integrations/_shared/agency-notifications';
 import '@/lib/integrations/gbp/job-handlers';
 import '@/lib/integrations/meta-ads/job-handlers';
+// Ads autopilot — Registers meta_detect_anomalies, fired daily (migration
+// 0120 cron) per client with a wired ad account. Writes meta_campaign_flags
+// + fans plain-English suggested_actions cards (pause / budget / refresh).
+import '@/lib/integrations/meta-ads/anomaly-handlers';
 import '@/lib/integrations/resend/job-handlers';
 import '@/lib/integrations/stripe/job-handlers';
 import '@/lib/integrations/twilio/job-handlers';

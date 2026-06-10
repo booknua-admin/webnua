@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 
 import { CampaignClientRow } from '@/components/admin/campaigns/CampaignClientRow';
 import { FilterChips } from '@/components/shared/FilterChips';
+import { ActionFeed } from '@/components/shared/actions/ActionFeed';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { StatCard } from '@/components/shared/StatCard';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
@@ -96,6 +97,8 @@ function AdminCampaignsContent() {
               title={page.hero.title}
               subtitle={page.hero.subtitle}
             />
+
+            <ActionFeed title="Today's actions" />
 
             <FilterChips
               label="// STATUS"

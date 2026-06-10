@@ -765,6 +765,33 @@ async function setObjectStatus(
   );
 }
 
+/** Update a campaign's daily budget. Campaigns launched in-app run CBO, so
+ *  the budget lives at the campaign level; cents in the ad account currency.
+ *  The ads-autopilot approve path is the main caller. */
+export function updateCampaignDailyBudget(
+  clientId: string,
+  metaCampaignId: string,
+  dailyBudgetCents: number,
+): Promise<IntegrationResult<{ success?: boolean }>> {
+  return callWithToken<{ success?: boolean }>(
+    clientId,
+    'meta_ads',
+    async (accessToken) =>
+      callExternal<{ success?: boolean }>({
+        provider: 'meta_ads',
+        operation: 'update_campaign_budget',
+        url: `${GRAPH}/${metaCampaignId}`,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        rawBody: form({
+          access_token: accessToken,
+          daily_budget: String(Math.round(dailyBudgetCents)),
+        }),
+        clientId,
+      }),
+  );
+}
+
 // --- Business Asset Sharing (migration 0113) --------------------------------
 //
 // After OAuth + ad-account pick, we add Webnua's Business Manager as a
