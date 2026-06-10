@@ -29,7 +29,9 @@ function TeamRow({
     <div
       data-slot="team-row"
       className={cn(
-        'grid grid-cols-[44px_1fr_160px_140px_90px] items-center gap-4 border-b border-paper-2 py-4 last:border-b-0',
+        // Mobile: avatar + identity on the first row, role / status / actions
+        // wrap underneath. Desktop (md+): the original 5-column table row.
+        'grid grid-cols-[44px_1fr] items-center gap-x-4 gap-y-2.5 border-b border-paper-2 py-4 last:border-b-0 md:grid-cols-[44px_1fr_160px_140px_90px]',
         className,
       )}
     >
@@ -47,7 +49,7 @@ function TeamRow({
         </div>
         <div className="font-mono text-[11px] tracking-[0.02em] text-ink-quiet">{email}</div>
       </div>
-      <div>
+      <div className="col-start-2 md:col-start-auto">
         <div className="text-[13px] font-semibold text-ink">{role}</div>
         <div className="mt-0.5 font-mono text-[10px] font-semibold tracking-[0.04em] text-ink-quiet">
           {roleSub}
@@ -56,7 +58,7 @@ function TeamRow({
       <span
         data-slot="team-status"
         className={cn(
-          'inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.08em]',
+          'col-start-2 inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.08em] md:col-start-auto',
           status === 'active' ? 'bg-good-soft text-good' : 'bg-rust-soft text-rust',
         )}
       >
@@ -66,7 +68,7 @@ function TeamRow({
         />
         {statusLabel}
       </span>
-      <div className="flex justify-end gap-1.5">
+      <div className="col-start-2 flex flex-wrap gap-1.5 md:col-start-auto md:justify-end">
         {actions.map((action) => {
           const baseClass = cn(
             'cursor-pointer rounded-md border border-rule bg-paper-2 px-2.5 py-[5px] font-mono text-[10px] font-bold uppercase tracking-[0.06em] text-ink-soft hover:bg-ink hover:text-paper',

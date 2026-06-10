@@ -4,6 +4,7 @@ import { AgencyUrgentBanner } from '@/components/admin/dashboard/AgencyUrgentBan
 import { AttentionPanelCard } from '@/components/admin/dashboard/AttentionPanelCard';
 import { ClientPerformanceCard } from '@/components/admin/dashboard/ClientPerformanceCard';
 import { ReviewRequestsPanel } from '@/components/admin/dashboard/ReviewRequestsPanel';
+import { ActionFeed } from '@/components/shared/actions/ActionFeed';
 import { ActivityFeed } from '@/components/shared/ActivityFeed';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { PageSkeleton } from '@/components/shared/PageSkeleton';
@@ -68,6 +69,8 @@ export function AdminDashboardContent() {
             />
 
             {data.urgent ? <AgencyUrgentBanner {...data.urgent} /> : null}
+
+            <ActionFeed title="Ready for review · all clients" />
 
             <ReviewRequestsPanel />
 

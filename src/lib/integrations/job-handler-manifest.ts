@@ -51,6 +51,10 @@ import '@/lib/integrations/_shared/job-handlers';
 import '@/lib/integrations/_shared/agency-notifications';
 import '@/lib/integrations/gbp/job-handlers';
 import '@/lib/integrations/meta-ads/job-handlers';
+// Ads autopilot — Registers meta_detect_anomalies, fired daily (migration
+// 0120 cron) per client with a wired ad account. Writes meta_campaign_flags
+// + fans plain-English suggested_actions cards (pause / budget / refresh).
+import '@/lib/integrations/meta-ads/anomaly-handlers';
 import '@/lib/integrations/resend/job-handlers';
 import '@/lib/integrations/stripe/job-handlers';
 import '@/lib/integrations/twilio/job-handlers';
@@ -63,6 +67,19 @@ import '@/lib/integrations/twilio/sender-registration';
 // automation_action, and cold_lead_scan handlers so the integration_jobs
 // executor can dispatch the engine.
 import '@/lib/automations/job-handlers';
+
+// Conversation intelligence — Registers analyze_inbound_message, enqueued by
+// the Resend inbound webhook for every customer reply. Classifies intent +
+// drafts an approvable reply into suggested_actions (migration 0119).
+import '@/lib/conversation-ai/job-handlers';
+// …and draft_review_reply — enqueued by the GBP review sync for every fresh
+// review; drafts an approvable reply into suggested_actions.
+import '@/lib/conversation-ai/review-reply';
+
+// Social calendar — Registers generate_social_calendar (Sonnet drafts ~13
+// posts/30 days into social_posts) + social_publish_due (the every-15-min
+// cron sweep publishing approved posts to the client's Facebook Page).
+import '@/lib/social/job-handlers';
 
 // Phase 9 — custom-domain attachment. Registers check_domain_verification,
 // the every-5-min poller (migration 0082 cron) that reconciles in-flight

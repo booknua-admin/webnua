@@ -8,6 +8,7 @@ import { FunnelConversionBars } from '@/components/shared/funnels/FunnelConversi
 import { GbpReviewsWidget } from '@/components/shared/GbpReviewsWidget';
 import { HubInsightBand } from '@/components/admin/hub/HubInsightBand';
 import { OperatorActionBar } from '@/components/admin/hub/OperatorActionBar';
+import { ActionFeed } from '@/components/shared/actions/ActionFeed';
 import { ActivityFeed } from '@/components/shared/ActivityFeed';
 import type { ActivityRowData, ActivityTone } from '@/components/shared/ActivityRow';
 import { MiniTrendBars } from '@/components/shared/MiniTrendBars';
@@ -108,6 +109,8 @@ function ClientHubBody({ hub }: { hub: ClientHub }) {
   return (
     <>
       <OperatorActionBar actions={hub.operatorActions} />
+
+      <ActionFeed clientId={clientUuid ?? null} title="Ready for review" />
 
       <ClientHubHero hero={hub.hero} />
 

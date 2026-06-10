@@ -66,6 +66,11 @@ type Props =
        *  Meta attribution + the Lead event fired by FormBlock route
        *  through the right pixel. */
       metaPixelId?: string | null;
+      /** Business name + serving host — drive the LocalBusiness JSON-LD
+       *  schema block (local SEO). Optional so editor previews (which have
+       *  no public host) skip the schema cleanly. */
+      siteName?: string;
+      canonicalHost?: string;
     }
   | {
       kind: 'funnel';
@@ -83,6 +88,54 @@ type Props =
       /** Same semantics as the website case above. */
       metaPixelId?: string | null;
     };
+
+/** LocalBusiness JSON-LD — the schema.org block local search reads. Built
+ *  from data the owner already supplied (business name + the footer
+ *  section's contact fields + the brand logo); nothing is invented. Preview
+ *  mode skips it (the page is noindexed anyway). */
+function LocalBusinessJsonLd({
+  siteName,
+  host,
+  footer,
+  logoUrl,
+  isPreview,
+}: {
+  siteName?: string;
+  host?: string;
+  footer: Section;
+  logoUrl: string | null;
+  isPreview: boolean;
+}) {
+  if (!siteName || !host || isPreview) return null;
+  const data = footer.data as {
+    phone?: string;
+    email?: string;
+    address?: string;
+  };
+  const schema: Record<string, unknown> = {
+    '@context': 'https://schema.org',
+    '@type': 'LocalBusiness',
+    name: siteName,
+    url: `https://${host}/`,
+  };
+  if (data.phone?.trim()) schema.telephone = data.phone.trim();
+  if (data.email?.trim()) schema.email = data.email.trim();
+  if (data.address?.trim()) {
+    schema.address = {
+      '@type': 'PostalAddress',
+      streetAddress: data.address.trim(),
+    };
+  }
+  if (logoUrl) schema.image = logoUrl;
+  return (
+    <script
+      type="application/ld+json"
+      // JSON-LD is inert data, not executable markup; the values are the
+      // owner's own footer fields, JSON-encoded.
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+    />
+  );
+}
 
 /** Inline Meta Pixel snippet — drops `fbq` onto window, initialises the
  *  pixel, and fires a single PageView. Lives via dangerouslySetInnerHTML
@@ -287,6 +340,13 @@ export function PublicSiteRenderer(props: Props) {
   return (
     <LiveSurfaceProvider>
       <MetaPixelScript pixelId={metaPixelId} isPreview={isPreview} />
+      <LocalBusinessJsonLd
+        siteName={props.siteName}
+        host={props.canonicalHost}
+        footer={footer}
+        logoUrl={brand.logoUrl ?? null}
+        isPreview={isPreview}
+      />
       <PopupHost brand={brand} surface={{ clientId, surfaceKind: 'website' }}>
         <WebsiteNavProvider links={resolveNavLinks(nav, pages)}>
           {overlay && !sticky ? (

@@ -87,7 +87,7 @@ export function SectionFieldsPanel({
   return (
     <aside
       data-slot="section-fields-panel"
-      className="flex h-full min-h-0 flex-col border-l border-rule bg-paper"
+      className="flex h-full min-h-0 flex-col border-t border-rule bg-paper lg:border-l lg:border-t-0"
     >
       <div className="flex items-center justify-between gap-3 border-b border-rule px-4 py-3">
         {elementLabel ? (

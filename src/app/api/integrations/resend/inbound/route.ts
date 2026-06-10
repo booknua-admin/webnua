@@ -405,6 +405,29 @@ export async function POST(request: Request): Promise<Response> {
       } catch (handoffError) {
         console.warn('[resend/inbound] recordInboundOnLead failed', handoffError);
       }
+
+      // Conversation intelligence — analyse the inbound and draft a reply
+      // the owner approves from the action feed. Runs on the jobs spine so
+      // the webhook returns fast; best-effort enqueue.
+      try {
+        const { enqueueJobImmediate } = await import(
+          '@/lib/integrations/_shared/jobs'
+        );
+        const { ANALYZE_INBOUND_MESSAGE_JOB } = await import(
+          '@/lib/conversation-ai/job-handlers'
+        );
+        await enqueueJobImmediate(
+          ANALYZE_INBOUND_MESSAGE_JOB,
+          {
+            emailMessageId: row.id,
+            leadId: resolvedLeadId,
+            clientId: sender.client_id,
+          },
+          { provider: 'anthropic', clientId: sender.client_id, correlationId: resolvedLeadId },
+        );
+      } catch (analyzeError) {
+        console.warn('[resend/inbound] analyze enqueue failed', analyzeError);
+      }
     }
     // Capture a payload sample for diagnosis. When the body is empty
     // (the symptom of the wrong Resend feature being configured —

@@ -53,6 +53,24 @@ registerJobHandler(SEND_SMS_JOB, async (rawPayload, ctx: JobContext) => {
     return { skipped: true, reason: 'twilio-not-configured' };
   }
 
+  // --- opt-out gate -----------------------------------------------------------
+  // Alphanumeric senders are one-way (no STOP path), so the email
+  // unsubscribe flag covers SMS too: an unsubscribed customer gets no
+  // automation-driven SMS either. Migration 0121.
+  if (payload.relatedLeadId) {
+    const { data: optOutData } = await getIntegrationDb()
+      .from('leads')
+      .select('customer:customers(unsubscribed_at)')
+      .eq('id', payload.relatedLeadId)
+      .maybeSingle();
+    const unsubscribedAt = (
+      optOutData as { customer: { unsubscribed_at: string | null } | null } | null
+    )?.customer?.unsubscribed_at;
+    if (unsubscribedAt) {
+      return { skipped: true, reason: 'customer-unsubscribed' };
+    }
+  }
+
   // --- resolve the sender ----------------------------------------------------
   const sender = await getSenderByClientId(clientId);
   if (!sender) {

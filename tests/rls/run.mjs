@@ -22,6 +22,7 @@ import isolation from './suites/isolation.mjs';
 import automationEngine from './suites/automation-engine.mjs';
 import integrations from './suites/integrations.mjs';
 import storage from './suites/storage.mjs';
+import approvalActions from './suites/approval-actions.mjs';
 
 const SUITES = [
   anonymous,
@@ -33,6 +34,7 @@ const SUITES = [
   automationEngine,
   integrations,
   storage,
+  approvalActions,
 ];
 
 async function main() {

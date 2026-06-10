@@ -171,6 +171,8 @@ export default async function PublishedPage({
           page={target.page}
           isPreview={target.isPreview}
           metaPixelId={target.metaPixelId}
+          siteName={target.siteName}
+          canonicalHost={decodeURIComponent(host).toLowerCase()}
         />
         <TrackingScript tracking={target.tracking} />
       </>

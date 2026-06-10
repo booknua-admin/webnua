@@ -25,6 +25,7 @@ export const clientNav: NavSection[] = [
       { label: 'Automations', href: '/automations', icon: '⤿' },
       { label: 'Reviews', href: '/reviews', icon: '★' },
       { label: 'Campaigns', href: '/campaigns', icon: '↗' },
+      { label: 'Social', href: '/social', icon: '✦' },
       { label: 'Funnels', href: '/funnels', icon: '⇶' },
       { label: 'Website', href: '/website', icon: '▦' },
       { label: 'Settings', href: '/settings', icon: '⚙' },

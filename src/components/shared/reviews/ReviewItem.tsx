@@ -35,7 +35,7 @@ function ReviewItem({ review, variant, className }: ReviewItemProps) {
         data-slot="review-item"
         data-variant="full"
         className={cn(
-          'grid grid-cols-[44px_1fr_100px_80px] items-start gap-4 border-b border-paper-2 px-5.5 py-4.5 last:border-b-0',
+          'grid grid-cols-[44px_1fr] items-start gap-x-4 gap-y-2 border-b border-paper-2 px-4 py-4 last:border-b-0 md:grid-cols-[44px_1fr_100px_80px] md:px-5.5 md:py-4.5',
           className,
         )}
       >
@@ -56,10 +56,10 @@ function ReviewItem({ review, variant, className }: ReviewItemProps) {
           </p>
           <ReviewReplyBlock review={review} variant="full" />
         </div>
-        <div className="text-left text-[14px] font-bold leading-[1.6] text-rust">
+        <div className="col-start-2 text-left text-[14px] font-bold leading-[1.6] text-rust md:col-start-auto">
           {'★'.repeat(review.stars)}
         </div>
-        <div className="text-right font-mono text-[10px] leading-[1.6] tracking-[0.04em] text-ink-quiet">
+        <div className="col-start-2 text-left font-mono text-[10px] leading-[1.6] tracking-[0.04em] text-ink-quiet md:col-start-auto md:text-right">
           {review.age}
         </div>
       </div>

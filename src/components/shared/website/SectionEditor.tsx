@@ -448,7 +448,12 @@ export function SectionEditor({ mode }: SectionEditorProps) {
         }))
       : [];
   // No left rail — section management is the per-section hover toolbar.
-  const gridCols = showFields ? 'grid-cols-[1fr_400px]' : 'grid-cols-[1fr]';
+  // Mobile (<lg): the fields panel stacks as the bottom half of the viewport
+  // (preview above, fields below — both scroll independently); desktop keeps
+  // the side-by-side [preview | 400px fields] layout.
+  const gridCols = showFields
+    ? 'grid-cols-1 grid-rows-[minmax(0,1.1fr)_minmax(0,1fr)] lg:grid-cols-[1fr_400px] lg:grid-rows-[minmax(0,1fr)]'
+    : 'grid-cols-1 grid-rows-[minmax(0,1fr)]';
 
   return (
     <div className="flex h-svh flex-col bg-paper">
@@ -505,7 +510,7 @@ export function SectionEditor({ mode }: SectionEditorProps) {
         device={{ value: device, onChange: setDevice }}
       />
       <div
-        className={`grid min-h-0 flex-1 overflow-hidden grid-rows-[minmax(0,1fr)] ${gridCols} ${
+        className={`grid min-h-0 flex-1 overflow-hidden ${gridCols} ${
           locked ? 'opacity-65 [&_*]:pointer-events-none' : ''
         }`}
       >

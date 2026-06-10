@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 
+import { ActionFeed } from '@/components/shared/actions/ActionFeed';
 import { ConversationHeader } from '@/components/shared/leads/ConversationHeader';
 import { ConversationThread } from '@/components/shared/leads/ConversationThread';
 import { LeadConversationComposer } from '@/components/shared/leads/LeadConversationComposer';
@@ -75,6 +76,9 @@ function AdminLeadConversationContent() {
                     onChannelChange={setActiveChannel}
                   />
                   <ConversationThread days={conv.days} />
+                  <div className="px-1 py-2">
+                    <ActionFeed sourceEntityId={conv.id} title="Drafted for you" />
+                  </div>
                   <LeadConversationComposer
                     leadId={conv.id}
                     firstName={conv.firstName}

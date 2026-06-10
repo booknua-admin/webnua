@@ -84,10 +84,18 @@ function renderOne(
 export const CUSTOMER_FOOTER = '\n\n-- \nPowered by Webnua · https://webnua.com';
 
 /** Append the customer-facing footer to a plain-text body. Idempotent on
- *  empty input (returns empty — never a footer with no body above it). */
-export function appendCustomerFooter(text: string): string {
+ *  empty input (returns empty — never a footer with no body above it).
+ *  `unsubscribeUrl` adds the compliance opt-out line — automation-driven
+ *  sends pass it; direct 1:1 operator replies (transactional) don't. */
+export function appendCustomerFooter(
+  text: string,
+  unsubscribeUrl?: string | null,
+): string {
   if (!text || !text.trim()) return text;
-  return text + CUSTOMER_FOOTER;
+  const unsubscribeLine = unsubscribeUrl
+    ? `\nUnsubscribe from these messages: ${unsubscribeUrl}`
+    : '';
+  return text + CUSTOMER_FOOTER + unsubscribeLine;
 }
 
 /** Strip an HTML body down to a plain-text approximation — used when a caller

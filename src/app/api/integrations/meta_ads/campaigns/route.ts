@@ -24,6 +24,7 @@ import {
   activateCampaign,
   isMetaConfigured,
   pauseCampaign,
+  updateCampaignDailyBudget,
 } from '@/lib/integrations/meta-ads/client';
 import {
   findMetaCampaignById,
@@ -58,7 +59,56 @@ export async function POST(request: Request): Promise<Response> {
   if (action === 'pause' || action === 'activate') {
     return handleStatusFlip(body, clientId, action);
   }
+  if (action === 'set_budget') {
+    return handleSetBudget(body, clientId);
+  }
   return NextResponse.json({ error: 'unknown-action' }, { status: 400 });
+}
+
+/** set_budget — update a campaign's daily budget on Meta + the local rows.
+ *  The ads-autopilot approve dispatcher is the main caller. */
+async function handleSetBudget(
+  body: Record<string, unknown>,
+  clientId: string,
+): Promise<Response> {
+  const metaCampaignDbId = body.metaCampaignDbId;
+  if (typeof metaCampaignDbId !== 'string' || metaCampaignDbId.length === 0) {
+    return NextResponse.json({ error: 'missing-metaCampaignDbId' }, { status: 400 });
+  }
+  const dailyBudgetCents = body.dailyBudgetCents;
+  if (
+    typeof dailyBudgetCents !== 'number' ||
+    !Number.isFinite(dailyBudgetCents) ||
+    dailyBudgetCents < 100
+  ) {
+    return NextResponse.json({ error: 'invalid-dailyBudgetCents' }, { status: 400 });
+  }
+  const local = await findMetaCampaignById(metaCampaignDbId);
+  if (!local || local.client_id !== clientId) {
+    return NextResponse.json({ error: 'not-found' }, { status: 404 });
+  }
+
+  const result = await updateCampaignDailyBudget(
+    clientId,
+    local.meta_campaign_id,
+    dailyBudgetCents,
+  );
+  if (!result.ok) {
+    return NextResponse.json(
+      {
+        error: 'budget-update-failed',
+        detail: result.error.message,
+        class: result.error.class,
+      },
+      { status: 502 },
+    );
+  }
+  const db = getIntegrationDb();
+  await db
+    .from('meta_campaigns')
+    .update({ daily_budget_cents: Math.round(dailyBudgetCents) } as unknown as never)
+    .eq('id', local.id);
+  return NextResponse.json({ ok: true, dailyBudgetCents: Math.round(dailyBudgetCents) });
 }
 
 async function handleStatusFlip(

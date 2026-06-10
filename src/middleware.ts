@@ -148,8 +148,12 @@ export async function middleware(req: NextRequest) {
   return NextResponse.rewrite(url);
 }
 
-// Skip Next internals, the API, and well-known static files — those must be
-// served as-is on every host (including published client sites).
+// Skip Next internals, the API, and the favicon — those must be served
+// as-is on every host. robots.txt + sitemap.xml deliberately DO run through
+// the middleware: on a published client host they rewrite to the per-site
+// /published/{host}/robots.txt + sitemap.xml route handlers (local SEO);
+// on the app host the middleware passes straight through, so the app's own
+// static files still serve.
 export const config = {
-  matcher: ['/((?!_next/|api/|favicon.ico|robots.txt|sitemap.xml).*)'],
+  matcher: ['/((?!_next/|api/|favicon.ico).*)'],
 };

@@ -13,7 +13,7 @@ function SettingsFieldRow({ label, sub, value, action, className }: SettingsFiel
     <div
       data-slot="settings-field-row"
       className={cn(
-        'grid grid-cols-[220px_1fr] items-center gap-6 border-b border-dotted border-rule-soft py-3.5 last:border-b-0 last:pb-0',
+        'grid grid-cols-1 gap-1.5 border-b border-dotted border-rule-soft py-3.5 last:border-b-0 last:pb-0 md:grid-cols-[220px_1fr] md:items-center md:gap-6',
         className,
       )}
     >
