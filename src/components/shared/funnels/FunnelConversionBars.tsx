@@ -36,7 +36,7 @@ function FunnelConversionBars({ funnel, className }: FunnelConversionBarsProps) 
 
       <div className="flex flex-col gap-2.5">
         {funnel.steps.map((step) => (
-          <div key={step.kind} className="grid grid-cols-[190px_1fr_92px] items-center gap-4">
+          <div key={step.kind} className="grid grid-cols-[108px_1fr_64px] items-center gap-2.5 md:grid-cols-[190px_1fr_92px] md:gap-4">
             <div className="min-w-0">
               <div className="text-[13px] font-bold text-ink">{step.label}</div>
               <div className="font-mono text-[9px] font-bold uppercase tracking-[0.08em] text-ink-quiet">
