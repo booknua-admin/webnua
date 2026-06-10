@@ -14,6 +14,7 @@ export const adminWorkspaceNav: NavSection = {
     { label: 'Funnels', href: '/funnels', icon: '⇶' },
     { label: 'Internal automations', href: '/automations', icon: '⤿' },
     { label: 'Campaigns', href: '/campaigns', icon: '↗' },
+    { label: 'Social', href: '/social', icon: '✦' },
     { label: 'Reviews', href: '/reviews', icon: '★' },
     { label: 'Calendar', href: '/calendar', icon: '▤' },
     { label: 'Settings', href: '/settings', icon: '⚙' },

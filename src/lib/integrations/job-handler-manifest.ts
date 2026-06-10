@@ -76,6 +76,11 @@ import '@/lib/conversation-ai/job-handlers';
 // review; drafts an approvable reply into suggested_actions.
 import '@/lib/conversation-ai/review-reply';
 
+// Social calendar — Registers generate_social_calendar (Sonnet drafts ~13
+// posts/30 days into social_posts) + social_publish_due (the every-15-min
+// cron sweep publishing approved posts to the client's Facebook Page).
+import '@/lib/social/job-handlers';
+
 // Phase 9 — custom-domain attachment. Registers check_domain_verification,
 // the every-5-min poller (migration 0082 cron) that reconciles in-flight
 // client_custom_domains rows against Vercel.
