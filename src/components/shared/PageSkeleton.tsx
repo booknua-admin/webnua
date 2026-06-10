@@ -84,5 +84,41 @@ function PageSkeleton({ statCount = 4, hero = false, className }: PageSkeletonPr
   );
 }
 
-export { PageSkeleton };
-export type { PageSkeletonProps };
+type SkeletonRowsProps = {
+  /** Number of placeholder rows. Default 5 — a believable inbox first paint. */
+  rows?: number;
+  className?: string;
+};
+
+/**
+ * Row-level loading state for an inbox / list whose surrounding chrome
+ * (header, tabs, list-card frame, column header) has already rendered —
+ * drop it where the rows will land. For "whole page is waiting" use
+ * `PageSkeleton` instead.
+ */
+function SkeletonRows({ rows = 5, className }: SkeletonRowsProps) {
+  return (
+    <div
+      data-slot="skeleton-rows"
+      className={cn('animate-in fade-in-0 duration-300', className)}
+    >
+      {Array.from({ length: rows }).map((_, i) => (
+        <div
+          key={i}
+          className="flex items-center gap-4 border-b border-ink/5 px-[18px] py-4 last:border-b-0"
+        >
+          <Skeleton className="size-9 shrink-0 rounded-lg" />
+          <div className="flex min-w-0 flex-1 flex-col gap-2">
+            <Skeleton className="h-3.5 w-full max-w-[260px]" />
+            <Skeleton className="h-3 w-full max-w-[400px]" />
+          </div>
+          <Skeleton className="hidden h-5 w-20 rounded-full md:block" />
+          <Skeleton className="hidden h-3 w-12 md:block" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export { PageSkeleton, SkeletonRows };
+export type { PageSkeletonProps, SkeletonRowsProps };

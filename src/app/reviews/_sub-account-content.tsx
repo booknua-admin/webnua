@@ -1,6 +1,7 @@
 'use client';
 
 import { GbpConnectPanel } from '@/components/shared/gbp/GbpConnectPanel';
+import { PageSkeleton } from '@/components/shared/PageSkeleton';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { ReviewCallout } from '@/components/shared/reviews/ReviewCallout';
 import { ReviewDistributionBars } from '@/components/shared/reviews/ReviewDistributionBars';
@@ -48,7 +49,7 @@ function SubAccountReviewsContent() {
       />
       <div className="flex flex-col gap-5 px-4 py-6 md:px-10 md:py-10">
         {isLoading ? (
-          <ReviewsNotice>{'// Loading reviews…'}</ReviewsNotice>
+          <PageSkeleton statCount={0} />
         ) : error || !page ? (
           <ReviewsNotice>
             {`// ${error ? normalizeError(error).message : 'Reviews unavailable'}`}
