@@ -116,6 +116,23 @@ export async function dismissFollowupTask(
     .from('leads')
     .update({ followup_dismissed_at: new Date().toISOString() })
     .eq('id', leadId);
+  // The dashboard feed mirrors the nudge as a followup_nudge card — a reply
+  // (or explicit dismiss) retires it too. Lead-scoped lookup: the card's
+  // dedupe key is followup:{leadId}.
+  const { data: leadRow } = await db
+    .from('leads')
+    .select('client_id')
+    .eq('id', leadId)
+    .maybeSingle();
+  const clientId = (leadRow as { client_id: string } | null)?.client_id;
+  if (clientId) {
+    await db
+      .from('suggested_actions')
+      .update({ status: 'expired', resolved_at: new Date().toISOString() })
+      .eq('client_id', clientId)
+      .eq('dedupe_key', `followup:${leadId}`)
+      .eq('status', 'pending');
+  }
   // userId is captured for future audit; intentionally unused beyond receipt.
   void userId;
   return { ok: true };
