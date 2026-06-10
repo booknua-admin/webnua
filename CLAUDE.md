@@ -2381,6 +2381,40 @@ Two migration prefixes were inadvertently reused. Postgres' migration ordering i
   Hook surface (`use-autosave`, `use-publish-state`) preserved.
 - **Funnel publish / preflight unbuilt** — see the parked decision.
 
+**Business-in-a-Box completion roadmap (June 2026).** The June 2026
+approval-first session closed: the `suggested_actions` spine + action-first
+dashboard feed, conversation intelligence v1 (inbound-email intent +
+approvable reply drafts), AI-drafted review replies, the ads autopilot
+(anomaly flags + approvable pause/budget actions — Phase 7.5 Sessions 2-3),
+the social media calendar (draft → approve → auto-publish to Facebook
+Pages), per-site sitemap/robots + LocalBusiness JSON-LD, the customer
+opt-out pipeline, cold-lead nudge cards, and a mobile fixed-grid polish
+pass (migrations 0119–0122). **The remaining sessions are fully specced as
+ready-to-paste prompts in `reference/remaining-sessions-build-prompts.md`**
+— run them in order:
+
+1. **Quotes** — builder + hosted accept page + accept→schedule card.
+2. **Invoices + Stripe Connect** — get-paid, payment reminders, the
+   Lead→…→Paid→Reviewed pipeline strip. (Operator prereq: enable Connect.)
+3. **Onboarding full-stack generation** — social calendar + drafted first
+   campaign (`campaign_drafts` prefilling the launch wizard) + goals
+   capture + rolling social refresh.
+4. **Local SEO autopilot** — location pages, blog engine, monthly
+   plain-English report.
+5. **Two-way SMS** — long codes, inbound webhook → conversation AI, STOP
+   compliance, composer SMS channel un-inerted.
+6. **WhatsApp Business** — credential-gated; mirror the SMS session.
+7. **Daily digest + weekly scorecard** — owner + operator digests
+   (skip-when-empty), trailing-7-day scorecard.
+8. **Instagram + GBP social publishing** — per-channel results on
+   `social_posts`, IG container flow, GBP localPosts.
+
+Every session inherits the standing rules at the top of that doc
+(approval-first via the spine, anti-fabrication, jobs spine, RLS + tests
+in the same PR, migration numbering from 0123, honest degradation without
+credentials). Google Ads / FB-IG DMs / Stripe trial + usage caps /
+platform fees stay explicitly deferred pending operator decisions.
+
 ---
 
 ## Deferred / out of scope until end
