@@ -45,7 +45,7 @@ import {
   formatSectionShape,
   voiceToneToProse,
 } from '@/lib/website/generation-prompt';
-import { validateEnums } from '@/lib/website/generation-validation';
+import { applySurfaceChoice, validateEnums } from '@/lib/website/generation-validation';
 import { SECTION_REGISTRY_META } from '@/lib/website/sections/registry-meta';
 import type { SectionType, VoiceTone } from '@/lib/website/types';
 
@@ -86,7 +86,7 @@ const SYSTEM_PROMPT = `You are the AI editor inside a website + funnel builder f
 
 - Change the MINIMUM needed to satisfy the instruction. Do not "improve" sections the instruction didn't mention.
 - Never change a section's "id" or "type" via update.
-- Never output a "theme", "form", or "popup" field — those are managed outside this surface.
+- Never output a raw "theme", "form", or "popup" field — those are managed outside this surface. You MAY set a section’s "surface" ("default" | "tinted" | "dark" | "accent") to change its colour band — it maps to contrast-safe brand colours. Use it when the instruction asks for mood or colour changes ("make it more premium" often warrants a dark band), and keep a sensible light/dark rhythm.
 - Copy must be specific, benefit-led, locally grounded, in the brand voice provided. Never generic "Welcome to our website" filler.
 - NEVER invent facts: no fabricated reviews, review counts, star ratings, certifications, "fully insured" claims, years in business, prices, or response times that are not already present in the existing sections or the brand context. Rewriting existing copy may carry existing facts forward; it may not mint new ones.
 - Banned vocabulary: comprehensive, leverage, elevate, transform, solutions, premium quality, world-class, industry-leading, innovative, seamless, robust, synergy, cutting-edge, best-in-class, trusted partner, discerning.
@@ -119,6 +119,7 @@ type EditSectionsRequest = {
     industryCategory?: unknown;
     audienceLine?: unknown;
     voice?: unknown;
+    accentColor?: unknown;
   };
 };
 
@@ -239,7 +240,8 @@ export async function POST(request: Request): Promise<Response> {
       .trim();
 
     const parsed = parseModelResponse(text);
-    const validated = validateOperations(parsed.operations, sections, container);
+    const accent = readString(brand.accentColor) || '#d24317';
+    const validated = validateOperations(parsed.operations, sections, container, accent);
     return NextResponse.json({ operations: validated, summary: parsed.summary });
   } catch (error) {
     console.error('[edit-sections] generation failed', error);
@@ -287,6 +289,7 @@ function validateOperations(
   raw: RawOperation[],
   sections: { id: string; type: SectionType }[],
   container: 'page' | 'funnelStep',
+  accent: string,
 ): Record<string, unknown>[] {
   const ids = new Set(sections.map((s) => s.id));
   const typeById = new Map(sections.map((s) => [s.id, s.type]));
@@ -307,15 +310,19 @@ function validateOperations(
       if (!type || !isRecord(op.fields)) continue;
       const fields = stripKeys(op.fields, FORBIDDEN_FIELDS);
       if (Object.keys(fields).length === 0) continue;
-      // Enum-validate just the patched keys — validateEnums substitutes any
-      // out-of-catalog variant value with the catalog's first listed value.
-      const { data } = validateEnums(type, fields);
+      // Surface macro first (maps a sanctioned `surface` pick to contrast-
+      // safe theme overrides from the brand accent), then enum-validate the
+      // patched keys — validateEnums substitutes any out-of-catalog variant
+      // value with the catalog's first listed value.
+      const surfaced = applySurfaceChoice(type, fields, accent).data;
+      const { data } = validateEnums(type, surfaced);
       out.push({ op: 'update', sectionId, fields: data });
     } else if (op.op === 'add') {
       const type = readString(op.type) as SectionType;
       if (!addable.has(type)) continue;
       const fields = isRecord(op.fields) ? stripKeys(op.fields, FORBIDDEN_FIELDS) : {};
-      const { data } = validateEnums(type, fields);
+      const surfaced = applySurfaceChoice(type, fields, accent).data;
+      const { data } = validateEnums(type, surfaced);
       const after = readString(op.afterSectionId);
       out.push({
         op: 'add',

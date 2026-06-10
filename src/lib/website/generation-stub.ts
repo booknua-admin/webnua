@@ -20,6 +20,7 @@ import type {
 import { getBundle } from './design-bundles';
 import {
   assignBundleVariants,
+  applySurfaceChoice,
   coerceDeprecatedSection,
   enforceTrustCompactSingleWord,
   injectStockImages,
@@ -442,13 +443,12 @@ function runValidationPipeline(
     let data: Record<string, unknown> = { ...s.data };
     const populated = new Set(s.populatedFields);
 
-    // Pass A — theme-discard guard: the model is told not to emit a `theme`
-    // field, but it sometimes still does — and a per-section theme can
-    // fight the brand defaults (text-on-bg contrast bugs). Strip it before
-    // the section lands in the editor so brand defaults apply uniformly.
-    // Logged as a fallback (reason='invalid') so /api/generate-site's
-    // generation_log writer can track whether the model is still attempting
-    // it after the prompt change.
+    // Pass A — theme-discard guard: the model is told not to emit a raw
+    // `theme` field, but it sometimes still does — and a free-form
+    // per-section theme can fight the brand defaults (text-on-bg contrast
+    // bugs). Strip it before the section lands in the editor. Logged as a
+    // fallback (reason='invalid') so /api/generate-site's generation_log
+    // writer can track whether the model is still attempting it.
     if ('theme' in data) {
       const modelValue = data.theme;
       delete data.theme;
@@ -460,6 +460,22 @@ function runValidationPipeline(
         reason: 'invalid',
         modelValue,
       });
+    }
+
+    // Pass A+ — surface macro (the art-director pass). The model's
+    // SANCTIONED colour knob: a closed-set `surface` choice
+    // (default/tinted/dark/accent) mapped to contrast-safe theme overrides
+    // built from the brand accent. This is what gives an AI-designed page
+    // light/dark rhythm; raw theme freedom stays banned above.
+    const surfacePass = applySurfaceChoice(
+      s.type,
+      data,
+      ctx.brand.accentColor,
+    );
+    data = surfacePass.data;
+    populated.delete('surface');
+    for (const fb of surfacePass.fallbacks) {
+      fallbackLog.push({ generationId, ...fb });
     }
 
     // Pass B — enum validation. The model is told the catalog of allowed

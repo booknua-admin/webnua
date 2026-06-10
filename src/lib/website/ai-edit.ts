@@ -81,6 +81,9 @@ export async function requestSectionEdit(
               industryCategory: input.brand.industryCategory,
               audienceLine: input.brand.audienceLine,
               voice: input.brand.voice,
+              // The route maps any model-emitted `surface` pick to contrast-
+              // safe theme overrides built from this accent.
+              accentColor: input.brand.accentColor,
             }
           : undefined,
       }),

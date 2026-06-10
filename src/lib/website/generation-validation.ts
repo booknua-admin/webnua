@@ -35,6 +35,7 @@ import {
   type IndustryTemplate,
   resolveIndustryTemplate,
 } from './industry-templates';
+import { isSectionSurface, surfaceThemeOverrides } from './section-theme';
 import type { SectionType } from './types';
 
 // -- Shared building blocks -------------------------------------------------
@@ -68,6 +69,42 @@ const ENUM_OVERRIDES: Partial<Record<SectionType, never>> = {};
  *  missing-field reporting picks those up. Each substitution emits a
  *  fallback entry with `reason='invalid'` so `generation_log` carries the
  *  rejected value for telemetry. */
+// =============================================================================
+// Pass A+ — surface macro (the art-director pass's colour half)
+// =============================================================================
+
+/** Convert a model-emitted `surface` choice into concrete theme overrides
+ *  built from the brand accent. Raw `theme` emission stays banned (the
+ *  pipelines discard it before this pass runs); `surface` is the sanctioned
+ *  closed-set knob — every value maps to a contrast-safe palette pairing via
+ *  `surfaceThemeOverrides`, so the model gets light/dark page rhythm without
+ *  re-opening text-on-bg contrast bugs. An out-of-set value is dropped + logged
+ *  (`reason='invalid'`, `fieldName='surface'`) so generation_log telemetry
+ *  tracks drift. `default` (or absence) leaves the section on brand defaults. */
+export function applySurfaceChoice(
+  type: SectionType,
+  data: Record<string, unknown>,
+  accent: string,
+): RepairResult {
+  if (!('surface' in data)) return { data, fallbacks: [] };
+  const out = shallowClone(data);
+  const value = out.surface;
+  delete out.surface;
+  if (!isSectionSurface(value)) {
+    return {
+      data: out,
+      fallbacks: [
+        { sectionType: type, fieldName: 'surface', reason: 'invalid', modelValue: value },
+      ],
+    };
+  }
+  if (value !== 'default') {
+    const overrides = surfaceThemeOverrides(value, accent);
+    if (Object.keys(overrides).length > 0) out.theme = overrides;
+  }
+  return { data: out, fallbacks: [] };
+}
+
 export function validateEnums(
   type: SectionType,
   data: Record<string, unknown>,

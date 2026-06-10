@@ -119,6 +119,66 @@ export function resolveTheme(
   };
 }
 
+// -- Surface macro ------------------------------------------------------------
+// The sanctioned per-section colour knob the AI is allowed to use (the parked
+// "section themes" decision anticipated exactly this). The model never emits
+// raw `theme` colours — it emits a `surface` from this closed set, and the
+// generation/edit pipelines map it to concrete, CONTRAST-SAFE theme overrides
+// derived from the brand accent. Surfaces give a page light/dark rhythm
+// ("custom-designed" feel) without re-opening the text-on-bg contrast bugs
+// that got raw theme emission banned.
+
+export type SectionSurface = 'default' | 'tinted' | 'dark' | 'accent';
+
+export const SECTION_SURFACES: readonly SectionSurface[] = [
+  'default',
+  'tinted',
+  'dark',
+  'accent',
+];
+
+export function isSectionSurface(v: unknown): v is SectionSurface {
+  return typeof v === 'string' && (SECTION_SURFACES as readonly string[]).includes(v);
+}
+
+/** Map a surface choice to concrete theme overrides built from the brand
+ *  accent. Every pairing is contrast-safe by construction:
+ *  - `default` → no overrides (brand defaults / section hardcoded apply);
+ *  - `tinted`  → a soft accent-washed near-white with near-black text;
+ *  - `dark`    → an accent-tinted near-black with light text;
+ *  - `accent`  → the accent itself, text flipped by the accent's luminance. */
+export function surfaceThemeOverrides(
+  surface: SectionSurface,
+  accent: string,
+): SectionTheme {
+  switch (surface) {
+    case 'default':
+      return {};
+    case 'tinted':
+      return {
+        background: mixHex(accent, '#ffffff', 0.93),
+        heading: mixHex(accent, '#121110', 0.88),
+        body: mixHex(accent, '#45433e', 0.84),
+      };
+    case 'dark':
+      return {
+        background: mixHex(accent, '#0d0e12', 0.88),
+        heading: '#ffffff',
+        body: mixHex(accent, '#d4d5da', 0.8),
+      };
+    case 'accent': {
+      const dark = isColorDark(accent);
+      return {
+        background: accent,
+        heading: dark ? '#ffffff' : mixHex(accent, '#15130e', 0.9),
+        body: dark
+          ? mixHex(accent, '#ffffff', 0.82)
+          : mixHex(accent, '#2c2a24', 0.84),
+      };
+    }
+  }
+}
+
 // -- hex helpers ------------------------------------------------------------
 
 /** Mix colour `a` toward `b` by `t` (0 = a, 1 = b). */

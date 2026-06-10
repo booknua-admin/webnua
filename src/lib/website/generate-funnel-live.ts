@@ -62,6 +62,7 @@ import {
 } from './generation-stub';
 import {
   assignBundleVariants,
+  applySurfaceChoice,
   coerceDeprecatedSection,
   enforceTrustCompactSingleWord,
   injectStockImages,
@@ -360,9 +361,9 @@ Rules:
 - Output EXACTLY eight sections, in the order specified above (hero, offer, reviews, features, trust, faq, reviews, form).
 - The per-section catalog under "Field keys per section" splits each section's fields into COPY and LAYOUT buckets.
 - Populate every COPY field with real, specific, on-brand text. Never placeholders, never lorem ipsum.
-- Do NOT specify LAYOUT fields unless the brief specifically requires a variation (e.g. brief asks for a centered hero). The renderer applies sensible defaults — emit fewer keys when in doubt.
-- When you DO specify a layout field, the catalog enumerates the allowed values — pick exactly one of those for each variant key.
-- Do NOT output a \`theme\` field on any section. Section themes are applied automatically by the renderer from the brand palette; any \`theme\` you emit will be discarded.
+- DESIGN the page, don't just fill it: pick LAYOUT variants deliberately from each section's allowed enum values so the funnel feels custom-designed (vary alignment, density, structure across sections), and give the page a \`surface\` rhythm — open strong, alternate "default" and "tinted" through the middle, and put high-drama bands ("dark") under trust or reviews. See the surface notes in the field appendix. An omitted key falls back to the default.
+- When you specify a layout field, the catalog enumerates the allowed values — pick exactly one of those for each variant key.
+- Do NOT output a raw \`theme\` field on any section — free-form colours are discarded. \`surface\` is the colour knob.
 - Item arrays (offer.inclusions, offer.items, offer.signals, features.items, trust.items, trust.badges, reviews.items, faq.items) MUST be arrays of objects matching the shape given in the catalog. Every item needs a short unique "id" string (e.g. "feat-1", "rev-2", "faq-1"). Do not emit items as bare strings.
 - \`headlineAccent\` / \`titleAccent\` is an OPTIONAL SECOND LINE in the accent colour — never duplicate the headline into it. If no second-line emphasis adds value, leave it empty.
 - Honour the brand voice exactly. Length: headlines <= 72 chars, subheadings <= 140 chars, body copy <= 400 chars unless explicitly a paragraph.
@@ -543,9 +544,9 @@ Rules:
 - Output EXACTLY four sections, in the order specified above (hero, reviews, features, form).
 - The per-section catalog under "Field keys per section" splits each section's fields into COPY and LAYOUT buckets.
 - Populate every COPY field with real, specific, on-brand text. Never placeholders, never lorem ipsum.
-- Do NOT specify LAYOUT fields unless the brief specifically requires a variation. The renderer applies sensible defaults — emit fewer keys when in doubt.
-- When you DO specify a layout field, the catalog enumerates the allowed values — pick exactly one of those for each variant key.
-- Do NOT output a \`theme\` field on any section. Section themes are applied automatically by the renderer from the brand palette; any \`theme\` you emit will be discarded.
+- Pick LAYOUT variants deliberately from each section's allowed enum values, and use \`surface\` sparingly here — this page is the homestretch; one "tinted" or "dark" band for the reviews is plenty. An omitted key falls back to the default.
+- When you specify a layout field, the catalog enumerates the allowed values — pick exactly one of those for each variant key.
+- Do NOT output a raw \`theme\` field on any section — free-form colours are discarded. \`surface\` is the colour knob.
 - Item arrays (reviews.items, features.items) MUST be arrays of objects matching the shape given in the catalog. Every item needs a short unique "id" string.
 - \`headlineAccent\` / \`titleAccent\` is an OPTIONAL SECOND LINE in the accent colour — never duplicate the headline into it. Leave empty when no second-line emphasis adds value.
 - Honour the brand voice. Headlines <= 72 chars; subheadings <= 140; body copy <= 400.
@@ -863,8 +864,8 @@ function validateAndAssemble(
 
     let data: Record<string, unknown> = coerced.data;
 
-    // Pass A — theme-discard guard. Per-section theme overrides fight
-    // the brand palette; strip them so brand defaults apply uniformly.
+    // Pass A — theme-discard guard. Free-form per-section theme overrides
+    // fight the brand palette; strip them so brand defaults apply uniformly.
     if ('theme' in data) {
       const modelValue = data.theme;
       delete data.theme;
@@ -875,6 +876,15 @@ function validateAndAssemble(
         reason: 'invalid',
         modelValue,
       });
+    }
+
+    // Pass A+ — surface macro (the art-director pass). The model's sanctioned
+    // closed-set colour knob; maps to contrast-safe theme overrides from the
+    // brand accent. See `applySurfaceChoice`.
+    const surfacePass = applySurfaceChoice(type, data, brief.brand.accentColor);
+    data = surfacePass.data;
+    for (const fb of surfacePass.fallbacks) {
+      fallbackLog.push({ generationId, ...fb });
     }
 
     // Pass B — enum validation. Substitute invalid enum values with the

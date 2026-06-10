@@ -109,9 +109,9 @@ function buildSystemPreamble(): string {
     '- Use only section types listed in "Available section types" below.',
     '- For each section you include, set `enabled: true`.',
     '- Populate every COPY field listed for each section with real, specific, on-brand content built from the business details provided. Never placeholders, never lorem ipsum, never "[business name]"-style tokens.',
-    "- Do NOT specify LAYOUT fields unless the brief specifically requires a variation (e.g. brief says \"use a centered hero\" would justify setting `contentAlign: 'center'`). The renderer applies sensible defaults.",
-    '- When you DO specify a layout field, the catalog enumerates the allowed values — pick exactly one of those values. Variant keys are closed enums, not free text.',
-    '- Do NOT output a `theme` field on any section. Section themes are applied automatically by the renderer from the brand palette; any `theme` you emit will be discarded.',
+    '- DESIGN the page, don\'t just fill it. Decide a design plan like an art director before writing copy: (a) a `surface` rhythm across the page — open strong, alternate "default" and "tinted" bands through the middle, close the final cta on "dark" or "accent" (see the surface notes in the field appendix); (b) deliberate LAYOUT variant picks from each section\'s allowed values — vary alignment, density, and structure so the page feels custom-designed, not templated. An omitted key falls back to the default.',
+    '- When you specify a layout field, the catalog enumerates the allowed values — pick exactly one of those values. Variant keys are closed enums, not free text.',
+    '- Do NOT output a raw `theme` field on any section — free-form colours are discarded by the validation pipeline. `surface` is the sanctioned colour knob.',
     '- Item-array fields (`items`, `inclusions`, `signals`, `features`, `stats`, `badges`) are arrays of OBJECTS matching the per-section shape in the catalog. Every item needs a short unique `id`. Do not emit items as bare strings.',
     '- `headlineAccent` / `titleAccent` is an optional SECOND LINE rendered in the brand accent colour beneath the main heading. It is not a substring of the headline and not a duplicate of it. Leave empty when no second-line emphasis adds value.',
     '- Headlines: ≤72 chars. Subheadings: ≤140 chars. Bodies: ≤400 chars unless the field is explicitly a paragraph.',
@@ -285,7 +285,7 @@ export function formatSectionEntry(def: SectionMeta): string {
     `Description: ${def.description}`,
     `Copy fields (populate with specific, on-brand content):`,
     `  ${copyFields.join(', ') || '(none)'}`,
-    `Layout fields (omit unless the brief specifically requires a variation — defaults apply):`,
+    `Layout fields (choose DELIBERATELY from the allowed values to give the page a designed feel — vary them across sections rather than leaving everything default; omitting a key applies the default):`,
     `  ${layoutFields.join(', ') || '(none)'}`,
   ];
   const shape = SECTION_SHAPE_CATALOG[def.type];
@@ -686,9 +686,16 @@ const ICON_LIBRARY: readonly string[] = [
 ];
 
 export const SHARED_FIELD_NOTES = [
-  '### Section themes',
+  '### Section colour: the `surface` field (use it!) — never a raw `theme`',
   '',
-  'Section themes (background, heading colour, body colour, accent colour) are applied AUTOMATICALLY by the renderer using the brand colour palette. Do NOT output a `theme` field on any section — the renderer ignores it, and any `theme` you emit will be discarded by the validation pipeline. Skip the `theme` key entirely; brand defaults apply.',
+  'Do NOT output a `theme` field on any section — free-form colours are discarded by the validation pipeline. Instead, every section accepts an optional `surface` field — a closed-set art-direction choice the renderer maps to contrast-safe colours built from the brand palette:',
+  '',
+  '  surface: "default"  — the standard light surface (brand defaults). The baseline.',
+  '  surface: "tinted"   — a soft brand-washed off-white. Gentle change of pace between two light sections.',
+  '  surface: "dark"     — a deep, brand-tinted dark band with light text. High drama; great for trust, reviews, or the closing cta.',
+  '  surface: "accent"   — the brand colour itself as the background. Loudest option; use at most once per page.',
+  '',
+  'Design the page like an art director: give it a deliberate light/dark RHYTHM rather than a wall of identical white bands. A typical strong rhythm: open strong (a hero on "dark" or "default" with imagery), alternate "default" and "tinted" through the middle, and close the final cta on "dark" or "accent". Avoid two consecutive "dark" sections; never use "accent" more than once per page. Omitting `surface` means "default".',
   '',
   '### Heading accents',
   '',
@@ -813,6 +820,7 @@ const WORKED_EXAMPLE_BODY = `Here is a complete, well-formed output for a Voltli
       "type": "trust",
       "enabled": true,
       "data": {
+        "surface": "tinted",
         "display": "stats",
         "columns": 4,
         "headerAlign": "center",
@@ -867,6 +875,7 @@ const WORKED_EXAMPLE_BODY = `Here is a complete, well-formed output for a Voltli
       "type": "reviews",
       "enabled": true,
       "data": {
+        "surface": "dark",
         "layout": "grid",
         "columns": 3,
         "headerAlign": "center",
@@ -931,6 +940,7 @@ const WORKED_EXAMPLE_BODY = `Here is a complete, well-formed output for a Voltli
       "type": "cta",
       "enabled": true,
       "data": {
+        "surface": "dark",
         "layout": "centered",
         "align": "center",
         "headlineSize": "l",
