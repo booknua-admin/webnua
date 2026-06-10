@@ -139,8 +139,46 @@ export async function POST(
         break;
       }
 
+      case 'review_reply_draft': {
+        const reviewDbId =
+          typeof action.payload.reviewDbId === 'string'
+            ? (action.payload.reviewDbId as string)
+            : null;
+        const draftText =
+          typeof action.payload.draftText === 'string'
+            ? (action.payload.draftText as string)
+            : '';
+        const replyText = editedBody ?? draftText;
+        if (!reviewDbId || !replyText) {
+          return NextResponse.json({ error: 'malformed-payload' }, { status: 422 });
+        }
+        const response = await fetch(
+          `${baseUrl(request)}/api/integrations/google_business_profile/reply`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: authorization,
+            },
+            body: JSON.stringify({
+              clientId: action.client_id,
+              reviewId: reviewDbId,
+              replyText,
+            }),
+          },
+        );
+        const result = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+        if (!response.ok) {
+          return NextResponse.json(
+            { error: 'dispatch-failed', detail: result.error ?? response.status },
+            { status: 502 },
+          );
+        }
+        resolution = { posted: true, edited: !!editedBody };
+        break;
+      }
+
       // Acknowledge-only kinds — no side effect to dispatch.
-      case 'review_reply_draft':
       case 'ads_creative_refresh':
       case 'followup_nudge':
       case 'generic':

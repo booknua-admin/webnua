@@ -72,6 +72,9 @@ import '@/lib/automations/job-handlers';
 // the Resend inbound webhook for every customer reply. Classifies intent +
 // drafts an approvable reply into suggested_actions (migration 0119).
 import '@/lib/conversation-ai/job-handlers';
+// …and draft_review_reply — enqueued by the GBP review sync for every fresh
+// review; drafts an approvable reply into suggested_actions.
+import '@/lib/conversation-ai/review-reply';
 
 // Phase 9 — custom-domain attachment. Registers check_domain_verification,
 // the every-5-min poller (migration 0082 cron) that reconciles in-flight

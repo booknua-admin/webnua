@@ -173,6 +173,22 @@ registerJobHandler(GBP_SYNC_REVIEWS_JOB, async (rawPayload) => {
   const upserted = [...insertedRows, ...updatedRows];
   await markReviewsDeleted(clientId, presentReviewIds);
 
+  // Conversation intelligence — draft an approvable reply for every FRESH
+  // review without one. Best-effort: a draft enqueue failure never fails
+  // the sync.
+  for (const review of insertedRows) {
+    if (review.reply_text || review.deleted_at_google) continue;
+    try {
+      await enqueueJobImmediate(
+        'draft_review_reply',
+        { reviewDbId: review.id, clientId },
+        { provider: 'anthropic', clientId, correlationId: review.id },
+      );
+    } catch (draftError) {
+      console.warn('[gbp_sync_reviews] draft enqueue failed', draftError);
+    }
+  }
+
   // (c) Attribute any unattributed request — match each freshly-synced
   // review to a candidate gbp_review_request within the 7-day window.
   for (const review of upserted) {

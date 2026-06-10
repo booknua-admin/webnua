@@ -30,7 +30,10 @@ const KIND_PRESENTATION: Record<SuggestedActionKind, { icon: string; tile: strin
 };
 
 /** Kinds whose body is an editable draft (Edit-then-approve). */
-const EDITABLE_KINDS: ReadonlySet<SuggestedActionKind> = new Set(['reply_draft']);
+const EDITABLE_KINDS: ReadonlySet<SuggestedActionKind> = new Set([
+  'reply_draft',
+  'review_reply_draft',
+]);
 
 export function ActionCard({ action }: { action: SuggestedActionRow }) {
   const router = useRouter();
