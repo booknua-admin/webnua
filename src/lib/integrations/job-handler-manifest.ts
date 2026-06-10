@@ -64,6 +64,11 @@ import '@/lib/integrations/twilio/sender-registration';
 // executor can dispatch the engine.
 import '@/lib/automations/job-handlers';
 
+// Conversation intelligence — Registers analyze_inbound_message, enqueued by
+// the Resend inbound webhook for every customer reply. Classifies intent +
+// drafts an approvable reply into suggested_actions (migration 0119).
+import '@/lib/conversation-ai/job-handlers';
+
 // Phase 9 — custom-domain attachment. Registers check_domain_verification,
 // the every-5-min poller (migration 0082 cron) that reconciles in-flight
 // client_custom_domains rows against Vercel.

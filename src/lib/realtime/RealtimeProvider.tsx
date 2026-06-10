@@ -85,6 +85,13 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         { event: '*', schema: 'public', table: 'lead_events' },
         () => invalidate(['leads']),
       )
+      // Suggested actions — a freshly-drafted action (or one resolved on
+      // another device) reflows the approval-first dashboard feed.
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'suggested_actions' },
+        () => invalidate(['suggested-actions']),
+      )
       // Builder approval lanes — a BUILDER_EVENT refetches every builder query
       // (publish state, approval queue, the editor lock, version history).
       .on(

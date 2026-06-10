@@ -6,6 +6,7 @@ import { ClientDashboardHero } from '@/components/client/dashboard/ClientDashboa
 import { DashboardQueueCard } from '@/components/client/dashboard/DashboardQueueCard';
 import { FunnelSummaryBand } from '@/components/client/dashboard/FunnelSummaryBand';
 import { LandingSnapshotCard } from '@/components/client/dashboard/LandingSnapshotCard';
+import { ActionFeed } from '@/components/shared/actions/ActionFeed';
 import { ActivityFeed } from '@/components/shared/ActivityFeed';
 import { GbpReviewsWidget } from '@/components/shared/GbpReviewsWidget';
 import type { ActivityRowData, ActivityTone } from '@/components/shared/ActivityRow';
@@ -90,6 +91,8 @@ function ClientDashboardBody({ dash }: { dash: ClientDashboard }) {
           </>
         }
       />
+
+      <ActionFeed clientId={clientUuid ?? null} title="Ready for your review" />
 
       <ClientDashboardHero hero={dash.urgentHero} />
 
