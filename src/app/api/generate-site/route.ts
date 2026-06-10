@@ -27,6 +27,7 @@ import {
   briefToGenerationContext,
   type ClientBrief,
   type SiteGenerationResult,
+  type WebsiteGenerationProfile,
 } from '@/lib/website/site-generation-stub';
 import type { PageType } from '@/lib/website/types';
 import { getServiceClient } from '@/lib/supabase/server';
@@ -36,7 +37,10 @@ export const maxDuration = 300;
 
 const SITE_PAGE_TYPES: readonly PageType[] = ['home', 'services', 'about', 'contact'];
 
-type GenerateSiteRequest = ClientBrief & { clientId?: string };
+type GenerateSiteRequest = ClientBrief & {
+  clientId?: string;
+  generationProfile?: WebsiteGenerationProfile;
+};
 
 export async function POST(request: Request): Promise<Response> {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -50,7 +54,9 @@ export async function POST(request: Request): Promise<Response> {
   } catch {
     return NextResponse.json({ error: 'invalid-body' }, { status: 400 });
   }
-  const { clientId, ...brief } = body;
+  const { clientId, generationProfile, ...brief } = body;
+  const profile: WebsiteGenerationProfile =
+    generationProfile === 'draft' ? 'draft' : 'full';
 
   // Pattern B per-workspace AI rate limit — 3 site-gens per client per 24h.
   // The check happens AFTER body parsing so a malformed request doesn't
@@ -73,7 +79,9 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const results = await Promise.all(
       SITE_PAGE_TYPES.map((pageType) =>
-        generatePageLive(briefToGenerationContext(brief, pageType), generationId),
+        generatePageLive(briefToGenerationContext(brief, pageType), generationId, {
+          profile,
+        }),
       ),
     );
     const chrome = briefToGenerationContext(brief, 'home');

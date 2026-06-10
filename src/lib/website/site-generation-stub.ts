@@ -101,6 +101,11 @@ export type SiteGenerationResult = {
   footer: Section;
 };
 
+/** Quality/speed preset for website generation. `draft` is used by the
+ *  onboarding wizard's first-pass site build; `full` keeps the higher-
+ *  quality default for concierge and later explicit generations. */
+export type WebsiteGenerationProfile = 'draft' | 'full';
+
 /** The page set a generated site ships with. */
 const SITE_PAGE_TYPES: readonly PageType[] = ['home', 'services', 'about', 'contact'];
 
@@ -146,7 +151,12 @@ export function generateSiteSync(brief: ClientBrief): SiteGenerationResult {
  *  may run without a created client). */
 export async function generateSiteStub(
   brief: ClientBrief,
-  options?: { signal?: AbortSignal; instantForDev?: boolean; clientId?: string },
+  options?: {
+    signal?: AbortSignal;
+    instantForDev?: boolean;
+    clientId?: string;
+    generationProfile?: WebsiteGenerationProfile;
+  },
 ): Promise<SiteGenerationResult> {
   if (options?.instantForDev) {
     return generateSiteSync(brief);
@@ -158,7 +168,11 @@ export async function generateSiteStub(
     response = await fetch('/api/generate-site', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...brief, clientId: options?.clientId }),
+      body: JSON.stringify({
+        ...brief,
+        clientId: options?.clientId,
+        generationProfile: options?.generationProfile ?? 'full',
+      }),
       signal: options?.signal,
     });
   } catch (error) {

@@ -91,12 +91,14 @@ export function WizardShell({
   const [state, setState] = useState<WizardState>(initialState ?? INITIAL_WIZARD_STATE);
   const [persistError, setPersistError] = useState<string | null>(null);
   const [genState, setGenState] = useState<'idle' | 'running' | 'ready' | 'failed'>('idle');
+  const [funnelState, setFunnelState] = useState<'idle' | 'running' | 'ready' | 'failed'>('idle');
   const [genError, setGenError] = useState<string | null>(null);
   // Non-blocking warning for the funnel-offer generator. Failure here does
   // NOT fail the wizard (site + funnel still publish, just without an
   // AI-drafted offer); the customer can run it from the editor later.
   // Surfaced on step 7's BuildReady surface as an inline note.
   const [offerWarning, setOfferWarning] = useState<string | null>(null);
+  const [funnelNotice, setFunnelNotice] = useState<string | null>(null);
   const generationStartedRef = useRef(false);
   // Stamp `wizard_completed_at` the moment step 7 is reached — NOT just on
   // the "See my dashboard" CTA. Most customers close the tab on step 7
@@ -160,8 +162,10 @@ export function WizardShell({
       if (generationStartedRef.current) return;
       generationStartedRef.current = true;
       setGenState('running');
+      setFunnelState('idle');
       setGenError(null);
       setOfferWarning(null);
+      setFunnelNotice(null);
 
       // Build the initial brief WITHOUT the offer — the offer generator
       // takes raw funnel inputs (industry / serviceArea / service / pain /
@@ -187,6 +191,7 @@ export function WizardShell({
         console.error('[wizard] generation aborted — no auth token');
         setGenError(msg);
         setGenState('failed');
+        setFunnelState('failed');
         // Allow a future retry — clear the ref so retryGeneration() can fire
         // again once the session is back.
         generationStartedRef.current = false;
@@ -223,12 +228,13 @@ export function WizardShell({
       if (alreadyHasWebsite && alreadyHasFunnel) {
         // Nothing left to do — mark ready immediately.
         setGenState('ready');
+        setFunnelState('ready');
         return;
       }
 
-      // Two retries with exponential-backoff (1s, 3s). After two fails we
-      // park 'failed' — step 7 surfaces the "taking longer than expected"
-      // message; the customer can retry from step 7 if it never lands.
+      // The website draft is the gating asset for the builder experience, so
+      // it gets the blocking retries. The funnel continues in the background
+      // once the site is visible.
       const attempts = [0, 1000, 3000];
       let lastError: string | null = null;
       for (let i = 0; i < attempts.length; i += 1) {
@@ -236,26 +242,6 @@ export function WizardShell({
           await sleep(attempts[i]);
         }
         try {
-          // Phase 2 parity fix — fire the Sonnet-backed funnel-offer
-          // generator alongside site generation (in parallel). Adds
-          // ~5s + ~$0.01/customer; brings the wizard into parity with
-          // the concierge path (which always generates an offer at
-          // step 7-equivalent in CreateClientModal).
-          //
-          // The funnel generator (generate-funnel-live.ts:611-620) reads
-          // brief.funnel.offer to thread headline / promise / risk_reversal
-          // / cta_text through every funnel section, so we MUST wait for
-          // the offer before kicking off funnel generation. We don't wait
-          // for the offer to start the site (the website generator
-          // doesn't read it) — that stays in parallel.
-          //
-          // Offer-failure policy: NON-BLOCKING. If the offer call fails
-          // (key unset → 503, real failure → 500, network), we surface
-          // a warning on step 7 ("Offer generation failed — you can run
-          // it from the editor") and continue with `offer: null`. The
-          // funnel still generates (generic copy instead of offer-driven)
-          // and persists. This matches "fall back to offer: null and
-          // continue" from the Phase 2 brief.
           const offerInputs = {
             industry: briefWithoutOffer.industry,
             serviceArea: briefWithoutOffer.business.serviceArea,
@@ -274,36 +260,13 @@ export function WizardShell({
                 return null;
               });
 
-          // Fire site + offer in parallel. Site doesn't depend on the
-          // offer; funnel does.
-          const [siteResult, offerResult] = await Promise.all([
-            alreadyHasWebsite ? Promise.resolve(null) : generateSiteStub(briefWithoutOffer, { clientId }),
-            offerPromise,
-          ]);
-
-          // Re-derive the brief with the resolved offer (or null on
-          // failure / when the funnel already exists). The new brief
-          // feeds BOTH the funnel generator (so it threads offer copy
-          // through every section) AND the wizard-assets POST (so the
-          // offer lands on funnels.funnel_offer via offerToRow).
-          const brief = offerResult
-            ? deriveBriefFromWizard({
-                state: latestState,
-                fallbackBusinessName,
-                fallbackEmail,
-                fallbackIndustry,
-                offerOverride: offerResult,
-              })
-            : briefWithoutOffer;
-
-          const funnelResult = alreadyHasFunnel
+          const siteResult = alreadyHasWebsite
             ? null
-            : await generateFunnelStub(brief, { clientId });
+            : await generateSiteStub(briefWithoutOffer, {
+                clientId,
+                generationProfile: 'draft',
+              });
 
-          // POST to wizard-assets to persist whichever arms produced content.
-          // The route re-probes for idempotency before each insert — a
-          // concurrent run (e.g. step 4 commit + step 7 retry) can't double-
-          // create.
           const persistRes = await fetch(`/api/clients/${clientId}/wizard-assets`, {
             method: 'POST',
             headers: {
@@ -311,10 +274,10 @@ export function WizardShell({
               Authorization: `Bearer ${token}`,
             },
             body: JSON.stringify({
-              brief,
+              brief: briefWithoutOffer,
               clientSlug,
               site: siteResult,
-              funnel: funnelResult,
+              funnel: null,
             }),
           });
           if (!persistRes.ok) {
@@ -324,39 +287,51 @@ export function WizardShell({
             );
           }
           const result = (await persistRes.json()) as WizardAssetsResult;
-
-          // Partial failure — one arm persisted, the other errored. We
-          // surface the error but treat the run as 'ready' if at least one
-          // asset is in place (so step 7 doesn't lock on a recoverable
-          // funnel-only failure). The error string carries the diagnostic.
           const websiteOk =
             result.websiteCreated || result.websiteSkipped || alreadyHasWebsite;
-          const funnelOk =
-            result.funnelCreated || result.funnelSkipped || alreadyHasFunnel;
-
           if (result.errors.website) {
             console.error('[wizard] website persistence error', result.errors.website);
           }
-          if (result.errors.funnel) {
-            console.error('[wizard] funnel persistence error', result.errors.funnel);
+          if (!websiteOk) {
+            lastError = result.errors.website ?? 'unknown website persistence failure';
+            throw new Error(lastError);
           }
 
-          if (websiteOk && funnelOk) {
-            // At least one of each landed (or already existed). 'ready'.
-            // If a soft error came back on either arm we still set 'ready'
-            // because the asset exists somewhere down the chain — but we
-            // surface the message inline so the operator sees it.
-            const softMsg =
-              result.errors.website ?? result.errors.funnel ?? null;
-            if (softMsg) setGenError(softMsg);
-            setGenState('ready');
+          setGenState('ready');
+
+          if (alreadyHasFunnel) {
+            setFunnelState('ready');
             return;
           }
 
-          // Hard failure on at least one required arm — retry.
-          lastError =
-            result.errors.website ?? result.errors.funnel ?? 'unknown persistence failure';
-          throw new Error(lastError);
+          setFunnelState('running');
+          setFunnelNotice(
+            "Your site is ready to preview now. We're still finishing your lead funnel in the background.",
+          );
+          void completeFunnelInBackground({
+            attemptDelays: attempts,
+            clientId,
+            clientSlug,
+            token,
+            latestState,
+            briefWithoutOffer,
+            offerPromise,
+            alreadyHasFunnel,
+            fallbackBusinessName,
+            fallbackEmail,
+            fallbackIndustry,
+            onReady: () => {
+              setFunnelState('ready');
+              setFunnelNotice(null);
+            },
+            onFailure: (msg) => {
+              setFunnelState('failed');
+              setFunnelNotice(
+                `Your site is ready, but we couldn't finish the lead funnel yet (${msg}). You can continue to the dashboard and retry it later.`,
+              );
+            },
+          });
+          return;
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
           console.error(`[wizard] generation attempt ${i + 1} failed`, error);
@@ -381,7 +356,9 @@ export function WizardShell({
   const retryGeneration = useCallback(async () => {
     generationStartedRef.current = false;
     setGenError(null);
+    setFunnelState('idle');
     setOfferWarning(null);
+    setFunnelNotice(null);
     await triggerGeneration(state);
   }, [state, triggerGeneration]);
 
@@ -608,8 +585,10 @@ export function WizardShell({
             state={state}
             clientSlug={clientSlug}
             generationStatus={genState}
+            funnelStatus={funnelState}
             generationError={genError}
             generationWarning={offerWarning}
+            generationInfo={funnelNotice}
             onRetryGeneration={retryGeneration}
             onComplete={continueFromStep.onStep7Complete}
             onBack={goBack}
@@ -683,6 +662,104 @@ function stepNumberFor(key: keyof WizardState['step_data']): WizardStepId {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+type BackgroundFunnelArgs = {
+  attemptDelays: readonly number[];
+  clientId: string;
+  clientSlug: string;
+  token: string;
+  latestState: WizardState;
+  briefWithoutOffer: ReturnType<typeof deriveBriefFromWizard>;
+  offerPromise: Promise<FunnelOffer | null>;
+  alreadyHasFunnel: boolean;
+  fallbackBusinessName: string;
+  fallbackEmail: string;
+  fallbackIndustry: string;
+  onReady: () => void;
+  onFailure: (message: string) => void;
+};
+
+async function completeFunnelInBackground(args: BackgroundFunnelArgs): Promise<void> {
+  const {
+    attemptDelays,
+    clientId,
+    clientSlug,
+    token,
+    latestState,
+    briefWithoutOffer,
+    offerPromise,
+    alreadyHasFunnel,
+    fallbackBusinessName,
+    fallbackEmail,
+    fallbackIndustry,
+    onReady,
+    onFailure,
+  } = args;
+
+  if (alreadyHasFunnel) {
+    onReady();
+    return;
+  }
+
+  let lastError = 'unknown funnel error';
+  for (let i = 0; i < attemptDelays.length; i += 1) {
+    if (attemptDelays[i] > 0) {
+      await sleep(attemptDelays[i]);
+    }
+    try {
+      const offerResult = await offerPromise;
+      const brief = offerResult
+        ? deriveBriefFromWizard({
+            state: latestState,
+            fallbackBusinessName,
+            fallbackEmail,
+            fallbackIndustry,
+            offerOverride: offerResult,
+          })
+        : briefWithoutOffer;
+
+      const funnelResult = await generateFunnelStub(brief, { clientId });
+      const persistRes = await fetch(`/api/clients/${clientId}/wizard-assets`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          brief,
+          clientSlug,
+          site: null,
+          funnel: funnelResult,
+        }),
+      });
+      if (!persistRes.ok) {
+        const errBody = (await persistRes.json().catch(() => ({}))) as { error?: string };
+        throw new Error(
+          `wizard-assets POST ${persistRes.status}: ${errBody.error ?? 'unknown'}`,
+        );
+      }
+      const result = (await persistRes.json()) as WizardAssetsResult;
+      const funnelOk = result.funnelCreated || result.funnelSkipped || alreadyHasFunnel;
+      if (result.errors.funnel) {
+        console.error('[wizard] funnel persistence error', result.errors.funnel);
+      }
+      if (!funnelOk) {
+        lastError = result.errors.funnel ?? 'unknown funnel persistence failure';
+        throw new Error(lastError);
+      }
+      onReady();
+      return;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error(`[wizard] background funnel attempt ${i + 1} failed`, error);
+      lastError = msg;
+      if (i === attemptDelays.length - 1) {
+        onFailure(lastError);
+        return;
+      }
+    }
+  }
 }
 
 /** Re-export `Button` so step files importing from shell can use it without

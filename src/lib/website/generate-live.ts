@@ -20,9 +20,11 @@ import {
   type GeneratedSection,
   type GenerationResult,
 } from './generation-stub';
+import type { WebsiteGenerationProfile } from './site-generation-stub';
 import type { PageSEO } from './types';
 
-const MODEL = 'claude-opus-4-7';
+const FULL_MODEL = 'claude-opus-4-7';
+const DRAFT_MODEL = 'claude-sonnet-4-6';
 
 /** Persona + conversion methodology + the strict JSON output contract. Stable
  *  across every call, so it rides in the cached `system` slot; the per-request
@@ -86,21 +88,34 @@ type RawPage = {
 export async function generatePageLive(
   ctx: GenerationContext,
   generationId: string = crypto.randomUUID(),
+  options?: { profile?: WebsiteGenerationProfile },
 ): Promise<GenerationResult> {
   const client = new Anthropic(); // reads ANTHROPIC_API_KEY from the environment
-
-  const stream = client.messages.stream({
-    model: MODEL,
-    max_tokens: 64000,
-    thinking: { type: 'adaptive' },
-    // The methodology + contract is stable — cache it across the four
-    // per-page calls of a generation (and across generations).
-    system: [
-      { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
-    ],
-    messages: [{ role: 'user', content: composePrompt(ctx) }],
-  });
-  const message = await stream.finalMessage();
+  const profile = options?.profile ?? 'full';
+  const system = [
+    { type: 'text' as const, text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' as const } },
+  ];
+  const messages = [{ role: 'user' as const, content: composePrompt(ctx) }];
+  const message =
+    profile === 'draft'
+      ? await client.messages.create({
+          model: DRAFT_MODEL,
+          max_tokens: 12000,
+          thinking: { type: 'enabled', budget_tokens: 4000 },
+          system,
+          messages,
+        })
+      : await client.messages
+          .stream({
+            model: FULL_MODEL,
+            max_tokens: 64000,
+            thinking: { type: 'adaptive' },
+            // The methodology + contract is stable — cache it across the four
+            // per-page calls of a generation (and across generations).
+            system,
+            messages,
+          })
+          .finalMessage();
 
   const text = message.content
     .filter((block): block is Anthropic.TextBlock => block.type === 'text')

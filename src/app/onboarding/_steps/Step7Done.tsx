@@ -38,11 +38,13 @@ import { cn } from '@/lib/utils';
 import type { WizardState } from '@/lib/onboarding/types';
 
 type GenerationStatus = 'idle' | 'running' | 'ready' | 'failed';
+type FunnelStatus = 'idle' | 'running' | 'ready' | 'failed';
 
 type Step7Props = {
   state: WizardState;
   clientSlug: string;
   generationStatus: GenerationStatus;
+  funnelStatus: FunnelStatus;
   /** Diagnostic from the last generation attempt — surfaced inline on
    *  the failed surface so the customer / support sees what happened. */
   generationError: string | null;
@@ -51,6 +53,9 @@ type Step7Props = {
    *  inline note so the customer knows part of the run didn't land but
    *  the site + funnel are still usable. Null = no warning. */
   generationWarning?: string | null;
+  /** Non-blocking background-progress note (currently used when the site is
+   *  ready before the funnel finishes). */
+  generationInfo?: string | null;
   onRetryGeneration: () => void;
   onComplete: () => void;
   onBack: () => void;
@@ -60,8 +65,10 @@ export function Step7Done({
   state,
   clientSlug,
   generationStatus,
+  funnelStatus,
   generationError,
   generationWarning = null,
+  generationInfo = null,
   onRetryGeneration,
   onComplete,
   onBack,
@@ -90,7 +97,9 @@ export function Step7Done({
       <BuildReady
         state={state}
         previewUrl={previewUrl}
+        funnelStatus={funnelStatus}
         warning={generationWarning}
+        info={generationInfo}
         onComplete={onComplete}
       />
     );
@@ -204,12 +213,16 @@ function BuildingSequence() {
 function BuildReady({
   state,
   previewUrl,
+  funnelStatus,
   warning,
+  info,
   onComplete,
 }: {
   state: WizardState;
   previewUrl: string;
+  funnelStatus: FunnelStatus;
   warning: string | null;
+  info: string | null;
   onComplete: () => void;
 }) {
   const integrationsConnected = countConnected(state);
@@ -238,10 +251,22 @@ function BuildReady({
         Your <em className="not-italic text-rust">platform</em> is ready.
       </h1>
       <p className="mt-3 text-[14px] leading-[1.55] text-ink-soft md:text-[15px]">
-        We&rsquo;ve built your site, set up your funnel, and wired in your
-        automation defaults. Take a look around — when you&rsquo;re ready
-        to go live, hit Publish on your dashboard.
+        {funnelStatus === 'running'
+          ? "Your first site draft is ready to preview now. We're still finishing your lead funnel in the background, so you can start editing the website immediately without waiting on the full setup."
+          : funnelStatus === 'failed'
+            ? "Your first site draft is ready to preview now. The lead funnel still needs a retry, but you can start editing the website immediately and come back to the funnel from the dashboard."
+            : 'We&rsquo;ve built your site, set up your funnel, and wired in your automation defaults. Take a look around — when you&rsquo;re ready to go live, hit Publish on your dashboard.'}
       </p>
+
+      {info ? (
+        <div
+          role="status"
+          className="mt-6 rounded-lg border border-ink/[0.12] bg-paper px-4 py-3 text-[13px] leading-[1.5] text-ink-soft"
+        >
+          <span className="mr-1.5 font-bold text-ink">Still working:</span>
+          {info}
+        </div>
+      ) : null}
 
       {/* Non-blocking warning slot — a sub-generator (currently only the
           funnel-offer call) failed but the site + funnel still published.
