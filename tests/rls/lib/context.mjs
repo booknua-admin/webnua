@@ -31,6 +31,10 @@ const AUTH_OPTS = { auth: { persistSession: false, autoRefreshToken: false } };
 // Phase-7 tables come first — most cascade-delete with `clients`, so order
 // against the rest is forgiving, but explicit beats implicit.
 const TEARDOWN_ORDER = [
+  // Approval spine + social calendar (service-role-seeded, migrations 0119-0122)
+  'suggested_actions',
+  'social_posts',
+  'meta_campaign_flags',
   // Phase 7 (service-role-seeded; only present when SUPABASE_SERVICE_ROLE_KEY is set)
   'meta_ads_insights',
   'meta_campaigns',
@@ -299,6 +303,23 @@ async function seedPhase7Tenant(svc, clientId, parents, tag, tracker) {
   await mustInsert(svc, 'meta_ads_insights', {
     id: f.metaInsight, client_id: clientId, meta_campaign_id: f.metaCampaign,
     date_recorded: now.slice(0, 10),
+  }, tracker);
+
+  // ===== approval spine + ads flags + social (migrations 0119, 0120, 0122) ==
+  f.suggestedAction = id();
+  await mustInsert(svc, 'suggested_actions', {
+    id: f.suggestedAction, client_id: clientId, kind: 'generic',
+    title: sentinel, body: 'rls probe',
+  }, tracker);
+  f.campaignFlag = id();
+  await mustInsert(svc, 'meta_campaign_flags', {
+    id: f.campaignFlag, client_id: clientId, meta_campaign_db_id: f.metaCampaign,
+    flag_type: 'spend_not_pacing',
+  }, tracker);
+  f.socialPost = id();
+  await mustInsert(svc, 'social_posts', {
+    id: f.socialPost, client_id: clientId, caption: sentinel,
+    scheduled_for: now,
   }, tracker);
 
   return f;

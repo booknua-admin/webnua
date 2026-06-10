@@ -2035,10 +2035,43 @@ The Phase 6 generator pair, called via the `/api/generate-site` route. See the p
 
 ---
 
+## Approval-first action spine + conversation intelligence (June 2026 session)
+
+> The "AI drafts everything, the owner approves with one tap" layer. One queue
+> (`suggested_actions`, migration 0119) every AI module writes drafted work
+> into; one card UI (`ActionFeed`/`ActionCard`) renders it everywhere; one
+> dispatch route executes approvals. **New AI modules should write into this
+> spine** — don't invent a parallel "pending things" surface.
+
+- **`lib/actions/`** — `types.ts` (kinds: `reply_draft / ads_budget / ads_pause / ads_creative_refresh / review_reply_draft / followup_nudge / generic`; `APPROVE_LABEL` per kind), `server.ts` (SERVER-ONLY `createSuggestedAction` — dedupe contract: one OPEN action per `(client, dedupe_key)`, a fresh draft expires + replaces the stale one; `findSuggestedAction` / `resolveSuggestedAction`), `queries.tsx` (`useSuggestedActions({ clientId?, sourceEntityId?, excludeKinds? })`, `useApproveAction` (POSTs the dispatch route with the caller's bearer), `useDismissAction` (browser-direct status flip under RLS)).
+- **`app/api/actions/[id]/approve/route.ts`** — `POST`, `requireClientAccess` on the action's client. Dispatches by kind via SELF-FETCH with the caller's own Authorization header so the downstream route's auth + side-machinery run exactly as a manual action would: `reply_draft` → `/api/leads/[id]/reply` (takeover/handoff/auto-status all fire); `review_reply_draft` → the GBP reply route; `ads_pause`/`ads_budget` → the Meta campaigns route (operator-only downstream, so ads kinds are excluded from the client dashboard feed via `OPERATOR_ONLY_KINDS`); acknowledge-only kinds just resolve. Body `{ body?: string }` = the Edit-then-approve override.
+- **`components/shared/actions/ActionFeed.tsx`** + **`ActionCard.tsx`** — the card queue (urgent first, kind-tinted icon, detection chip, draft body, Approve / Edit / Dismiss; reply + review-reply kinds are inline-editable). Self-hides when empty (pass `showEmpty` on dedicated surfaces). Mounted: client `/dashboard` (excluding ads kinds), operator hub + agency `/dashboard`, `/campaigns` (both operator modes — "Today's actions"), both `/leads/[id]/conversation` variants (scoped by `sourceEntityId`). `RealtimeProvider` invalidates `['suggested-actions']` on `suggested_actions` changes.
+- **`lib/conversation-ai/`** — `analyze.ts` (SERVER-ONLY Haiku 4.5 call: intent classification — price_request / booking_request / reschedule / complaint / payment_question / question / spam — + one-line summary + a drafted reply; hard anti-fabrication rules: never invent prices / availability / credentials), `job-handlers.ts` (`analyze_inbound_message` — enqueued by the Resend inbound webhook per customer reply; writes a `reply_draft` action, dedupe `reply_draft:{leadId}`, 48h expiry, urgency high for complaints; skips spam/auto-responders/no-key), `review-reply.ts` (`draft_review_reply` — enqueued by the GBP review sync per fresh reply-less review; drafts a personalised reply, ≤2★ = high urgency; approving posts via the GBP reply route — **never auto-posted**).
+- **Ads autopilot** — `lib/integrations/meta-ads/anomaly-handlers.ts` (`meta_detect_anomalies`, daily 06:30 UTC cron per wired client, migration 0120): compares each active campaign's last-3-days to its own prior-7-day baseline; rules = CPL spike (drafts a 30% budget cut), lead drought (drafts a pause), performing-well (drafts +50% raise when fully pacing), spend-not-pacing (creative-fatigue acknowledge), Meta-side issue. Flags persist on `meta_campaign_flags` (one open per campaign+type — exception queue, no daily re-noise); cleared conditions resolve the flag + expire its card. `updateCampaignDailyBudget` in the Meta client + the `set_budget` action on the campaigns route apply approved budget changes.
+
+## Social media calendar (June 2026 session)
+
+- **Migration 0122** — `social_posts` (status `draft → approved → published/failed`, `dismissed`; tenant-scoped full-CRUD RLS for owners/operators, publish-state flips service-role) + an every-15-min `pg_cron` sweep enqueueing `social_publish_due` only when an approved post is due.
+- **`lib/social/`** — `types.ts`, `queries.tsx` (`useSocialPosts` with a post-generate polling mode, `useUpdateSocialPost`, `useApproveAllSocialPosts`, `useGenerateSocialCalendar`), `job-handlers.ts` (SERVER-ONLY: `generate_social_calendar` — Sonnet drafts ~13 posts/30 days from the brand (trade/services/area/audience), anti-fabrication rules, scheduled 09:30 in the client's `quiet_hours_timezone`; `social_publish_due` — publishes approved due posts to the client's connected **Facebook Page** via `lib/integrations/meta-ads/page-posts.ts` `publishFacebookPagePost` (the Meta OAuth Page token already on file; `/feed` for text, `/photos` for image posts), honest failed-state with a plain-English error when no Page is wired).
+- **`/social`** — shared route (canonical layout pattern); client = own calendar, operator = active sub-account (agency mode → pick-a-client notice). `SocialCalendarContent` + `SocialPostCard` (`components/shared/social/`): "✦ Draft my next 30 days" + "Approve all (N)" + per-card inline edit (caption / hashtags / reschedule / photo via `uploadAdImage`) / approve / dismiss / retry. Nav item `Social` added to both roles. **Instagram + GBP channels are schema-ready (`channels text[]`) but V1 publishes Facebook only.**
+
+## Public-site SEO + compliance (June 2026 session)
+
+- **`/published/[host]/sitemap.xml` + `robots.txt` route handlers** — per-site sitemap (published, non-preview websites) + robots policy (preview/unresolvable → Disallow all). The middleware matcher no longer excludes `robots.txt`/`sitemap.xml` — public hosts rewrite them here; the app host passes through to its own static files. **`LocalBusinessJsonLd`** in `PublicSiteRenderer` (website branch, non-preview) — schema.org block built ONLY from owner-supplied data (site name + footer contact fields + brand logo).
+- **Customer opt-out (migration 0121)** — `customers.unsubscribed_at` + HMAC-signed tokens (`lib/email/unsubscribe.ts`, no expiry) + `/api/email/unsubscribe` (GET footer link + RFC 8058 POST; the signed token IS the authorisation). `appendCustomerFooter(text, unsubscribeUrl?)` adds the opt-out line; the `send_email` AND `send_sms` handlers skip unsubscribed customers (one flag, both channels — alphanumeric SMS has no STOP path). Direct 1:1 operator replies stay ungated (transactional).
+- **RLS tests** — `tests/rls/suites/approval-actions.mjs` covers `suggested_actions` / `meta_campaign_flags` / `social_posts`; fixtures seeded in `seedPhase7Tenant`.
+
+---
+
 ## Migration log (recent)
 
 > One line per migration since the May 2026 audit found inventory drift.
 > Older migrations are referenced inline in the relevant inventory entries.
+
+- **`0119_suggested_actions.sql`** — the approval-first spine. `suggested_actions` table (kind/status enums, payload jsonb, dedupe partial-unique, urgency, expiry) + tenant-scoped SELECT/UPDATE RLS (insert/delete service-role) + `supabase_realtime` publication. See the "Approval-first action spine" section above.
+- **`0120_meta_campaign_flags.sql`** — ads autopilot. `meta_campaign_flags` (one open flag per campaign+type) + the daily 06:30 UTC `meta_detect_anomalies` cron per client with a wired ad account.
+- **`0121_customer_unsubscribe.sql`** — `customers.unsubscribed_at` (applied as `customer_unsubscribe`). The opt-out flag both the email + SMS send handlers gate on.
+- **`0122_social_posts.sql`** — the social calendar. `social_posts` table (tenant full-CRUD RLS) + the every-15-min `social_publish_due` cron (enqueues only when an approved post is due).
 
 - **`0023_seed_builder_websites_funnels.sql`** — PR #41. Seed rows for the builder family (websites + funnels + their draft versions) so the editor has something to open after a fresh hydration.
 - **`0024_brands_capability_rls.sql`** — PR #43. RLS policies for `brands` + `capability_grants` once the auth + cap layer landed.
