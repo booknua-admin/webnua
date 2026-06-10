@@ -57,6 +57,7 @@ import { useUndoableState } from '@/lib/website/use-undoable-state';
 import { useUserPendingSubmission } from '@/lib/website/use-publish-state';
 
 import { AddSectionDialog } from './AddSectionDialog';
+import { AIEditBar, type AIEditProposal } from './AIEditBar';
 import { WebsiteEditorPendingBanner } from './WebsiteEditorPendingBanner';
 
 import { EditorToolbar, type EditorToolbarTab } from './EditorToolbar';
@@ -160,7 +161,13 @@ export function SectionEditor({ mode }: SectionEditorProps) {
   const clientUuidQuery = useClientId(clientId);
   const user = useUser();
   const canEditSeo = useCan('editSEO');
+  const canUseAI = useCan('useAI');
   const [seoOpen, setSeoOpen] = useState(false);
+
+  // Bolt/Lovable-style AI edit bar — a pending proposal swaps the preview to
+  // its sections (the visual diff) until the operator applies or discards.
+  // Apply commits through the undoable state below, so it is one undo away.
+  const [aiProposal, setAiProposal] = useState<AIEditProposal | null>(null);
 
   // Lane B lock — a submitter waiting on operator review. Websites resolve
   // through useUserPendingSubmission; funnels through
@@ -205,6 +212,7 @@ export function SectionEditor({ mode }: SectionEditorProps) {
     resetSections(seedSectionsForMode(mode));
     setSelectedSectionId(mode.kind === 'singleton' ? mode.section.id : null);
     setSelectedElementId(null);
+    setAiProposal(null);
   }, [mode, slot, resetSections]);
 
   // Selecting a section resets the element selection.
@@ -417,10 +425,20 @@ export function SectionEditor({ mode }: SectionEditorProps) {
   })();
 
   // The fields panel shows when a section is selected. Locked editors
-  // (Lane B submitter waiting on review) hide it entirely.
+  // (Lane B submitter waiting on review) hide it entirely; a pending AI
+  // proposal also hides it (the proposal preview is read-only until applied).
   const isSingleton = mode.kind === 'singleton';
   const isFunnelStep = mode.kind === 'funnelStep';
-  const showFields = !locked && selectedSection != null;
+  const showFields = !locked && selectedSection != null && !aiProposal;
+  const showAIEditBar = canUseAI && !locked && !isSingleton;
+
+  const handleApplyProposal = () => {
+    if (!aiProposal) return;
+    const next = aiProposal.sections;
+    setSections(() => next);
+    setAiProposal(null);
+    handleSelectSection(null);
+  };
   // The site's pages — fed to a form section's after-submit redirect picker.
   const formPageLinks: FormPageLink[] =
     mode.kind === 'page'
@@ -491,23 +509,50 @@ export function SectionEditor({ mode }: SectionEditorProps) {
           locked ? 'opacity-65 [&_*]:pointer-events-none' : ''
         }`}
       >
-        <PagePreviewPane
-          sections={sections}
-          brand={brand}
-          device={device}
-          selectedSectionId={selectedSectionId}
-          onSelectSection={handleSelectSection}
-          selectedElementId={selectedElementId}
-          onSelectElement={setSelectedElementId}
-          testClientId={clientUuidQuery.data ?? null}
-          testSurfaceKind={mode.kind === 'funnelStep' ? 'funnel' : 'website'}
-          testFunnelId={mode.kind === 'funnelStep' ? mode.funnel.id : null}
-          onToggleSectionEnabled={isSingleton ? undefined : handleToggleSectionEnabled}
-          onRemoveSection={isSingleton ? undefined : handleRemoveSection}
-          onMoveSection={isSingleton ? undefined : handleMoveSection}
-          onDuplicateSection={isSingleton ? undefined : handleDuplicateSection}
-          onRequestAddSection={isSingleton ? undefined : () => setAddOpen(true)}
-        />
+        <div className="relative min-h-0">
+          <PagePreviewPane
+            // A pending AI proposal previews ITS sections (the visual diff);
+            // section management + selection are suppressed until the
+            // operator applies or discards.
+            sections={aiProposal ? aiProposal.sections : sections}
+            brand={brand}
+            device={device}
+            selectedSectionId={aiProposal ? null : selectedSectionId}
+            onSelectSection={aiProposal ? undefined : handleSelectSection}
+            selectedElementId={selectedElementId}
+            onSelectElement={setSelectedElementId}
+            testClientId={clientUuidQuery.data ?? null}
+            testSurfaceKind={mode.kind === 'funnelStep' ? 'funnel' : 'website'}
+            testFunnelId={mode.kind === 'funnelStep' ? mode.funnel.id : null}
+            proposalHighlightIds={aiProposal?.changedIds ?? null}
+            onToggleSectionEnabled={
+              isSingleton || aiProposal ? undefined : handleToggleSectionEnabled
+            }
+            onRemoveSection={isSingleton || aiProposal ? undefined : handleRemoveSection}
+            onMoveSection={isSingleton || aiProposal ? undefined : handleMoveSection}
+            onDuplicateSection={
+              isSingleton || aiProposal ? undefined : handleDuplicateSection
+            }
+            onRequestAddSection={
+              isSingleton || aiProposal ? undefined : () => setAddOpen(true)
+            }
+          />
+          {showAIEditBar ? (
+            <AIEditBar
+              sections={sections}
+              container={mode.kind === 'funnelStep' ? 'funnelStep' : 'page'}
+              brand={brand}
+              businessName={
+                mode.kind === 'funnelStep' ? mode.funnel.name : mode.website.name
+              }
+              selectedSectionId={selectedSectionId}
+              proposal={aiProposal}
+              onProposal={setAiProposal}
+              onApply={handleApplyProposal}
+              onDiscard={() => setAiProposal(null)}
+            />
+          ) : null}
+        </div>
         {showFields && selectedSection ? (
           <SectionFieldsPanel
             // Force remount when the selected section changes so the Fields

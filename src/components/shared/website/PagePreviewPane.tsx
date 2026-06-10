@@ -49,6 +49,10 @@ export type PagePreviewPaneProps = {
    *  `leads.source_funnel_id` so test leads attribute to the funnel under
    *  edit (FIX E). Omitted on website-page editing. */
   testFunnelId?: string | null;
+  /** Section ids changed by a pending AI-edit proposal — these ring in rust
+   *  with a "✦ AI" badge so the operator sees exactly what the proposal
+   *  touched before applying (the AIEditBar owns Apply/Discard). */
+  proposalHighlightIds?: Set<string> | null;
   // Section management — when provided, the hover toolbar + add button show.
   onToggleSectionEnabled?: (id: string, enabled: boolean) => void;
   onRemoveSection?: (id: string) => void;
@@ -68,6 +72,7 @@ export function PagePreviewPane({
   testClientId,
   testSurfaceKind = 'website',
   testFunnelId,
+  proposalHighlightIds,
   onToggleSectionEnabled,
   onRemoveSection,
   onMoveSection,
@@ -101,6 +106,7 @@ export function PagePreviewPane({
             if (!def) return null;
             const Preview = def.Preview;
             const isSelected = selectedSectionId === section.id;
+            const isProposalChanged = proposalHighlightIds?.has(section.id) ?? false;
             return (
               <div
                 key={section.id}
@@ -115,7 +121,7 @@ export function PagePreviewPane({
                 }}
                 className={
                   'group relative block w-full overflow-hidden rounded-xl text-left transition-shadow ' +
-                  (isSelected
+                  (isSelected || isProposalChanged
                     ? 'ring-2 ring-rust ring-offset-2 ring-offset-paper-2'
                     : 'cursor-pointer hover:ring-2 hover:ring-rust/30 hover:ring-offset-2 hover:ring-offset-paper-2')
                 }
@@ -158,6 +164,11 @@ export function PagePreviewPane({
                 {!section.enabled ? (
                   <span className="absolute left-3 top-3 z-20 rounded bg-ink/90 px-2 py-1 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-paper">
                     Hidden
+                  </span>
+                ) : null}
+                {isProposalChanged ? (
+                  <span className="absolute right-3 top-3 z-20 rounded bg-rust px-2 py-1 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-paper">
+                    ✦ AI edit
                   </span>
                 ) : null}
                 {manageable ? (
