@@ -58,6 +58,8 @@ import {
   registerJobHandler,
 } from '@/lib/integrations/_shared/jobs';
 
+import { composeUnsubscribeUrl } from '@/lib/email/unsubscribe';
+
 import { isResendConfigured, sendEmail as resendSend } from './client';
 import {
   BATCH_NOTIFICATION_DIGEST_JOB,
@@ -98,6 +100,18 @@ registerJobHandler(SEND_EMAIL_JOB, async (rawPayload, ctx: JobContext) => {
     return { skipped: true, reason: 'resend-not-configured' };
   }
 
+  // --- opt-out gate (customer-facing only) -----------------------------------
+  // A customer who unsubscribed gets NO automation-driven email. Direct 1:1
+  // operator replies don't run through this handler, so they're unaffected.
+  let unsubscribeCustomerId: string | null = null;
+  if (payload.relatedLeadId && isCustomerFacingTemplate(templateKey)) {
+    const optOut = await resolveCustomerOptOut(payload.relatedLeadId);
+    if (optOut?.unsubscribedAt) {
+      return { skipped: true, reason: 'customer-unsubscribed' };
+    }
+    unsubscribeCustomerId = optOut?.customerId ?? null;
+  }
+
   // --- resolve the sender ----------------------------------------------------
   const sender = await getSenderByClientId(clientId);
   if (!sender) {
@@ -132,7 +146,10 @@ registerJobHandler(SEND_EMAIL_JOB, async (rawPayload, ctx: JobContext) => {
   let finalText = rendered.text;
   let finalHtml = rendered.html;
   if (isCustomerFacingTemplate(templateKey)) {
-    finalText = appendCustomerFooter(rendered.text);
+    const unsubscribeUrl = unsubscribeCustomerId
+      ? composeUnsubscribeUrl(unsubscribeCustomerId)
+      : null;
+    finalText = appendCustomerFooter(rendered.text, unsubscribeUrl);
     finalHtml = '';
   }
 
@@ -401,6 +418,23 @@ type PendingLeadRow = {
 /** True for templates whose recipient is the lead (customer-facing). */
 function isCustomerFacingTemplate(key: EmailTemplateKey): boolean {
   return key === 'lead_followup' || key === 'review_request' || key === 'quote_followup';
+}
+
+/** The lead's customer id + opt-out state — the unsubscribe gate + footer
+ *  link both need it. Null when the lead has no customer row. */
+async function resolveCustomerOptOut(
+  leadId: string,
+): Promise<{ customerId: string; unsubscribedAt: string | null } | null> {
+  const { data } = await getIntegrationDb()
+    .from('leads')
+    .select('customer:customers(id, unsubscribed_at)')
+    .eq('id', leadId)
+    .maybeSingle();
+  const customer = (
+    data as { customer: { id: string; unsubscribed_at: string | null } | null } | null
+  )?.customer;
+  if (!customer) return null;
+  return { customerId: customer.id, unsubscribedAt: customer.unsubscribed_at };
 }
 
 /** True for operator-facing templates that live at platform level (one body
