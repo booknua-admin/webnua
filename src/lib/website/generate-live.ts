@@ -64,7 +64,7 @@ Rules:
 - Use ONLY section types from "Available section types". Lead with a hero; close with a cta (or a contact section on a contact page).
 - Each section type lists its fields split into two buckets: COPY fields and LAYOUT fields.
 - Populate every COPY field with real, specific, on-brand content built from the business details provided. Never placeholders, never lorem ipsum, never "[business name]"-style tokens.
-- Do NOT specify LAYOUT fields unless the brief specifically requires a variation (e.g. brief says "use a centered hero" would justify setting contentAlign: "center"). The renderer applies sensible defaults — emit fewer keys when in doubt.
+- DESIGN the page, don't just fill it. Before writing copy, decide a design plan like an art director: (a) a "surface" rhythm across the page — open strong, alternate light and tinted bands through the middle, close the final cta on a dark or accent band (see the surface notes in the field appendix); (b) deliberate LAYOUT variant picks from each section's allowed enum values — vary alignment, density, and structure across sections so the page feels custom-designed, not templated. Two different businesses should not get the same skeleton. Stay strictly inside the listed enum values; an omitted key falls back to the default.
 - Match the brand voice exactly as described, and honour the "things to avoid" list without exception.
 - Length discipline: headlines <= 72 characters, subheadings <= 140 characters, body copy <= 400 characters unless the field is explicitly a paragraph.`;
 

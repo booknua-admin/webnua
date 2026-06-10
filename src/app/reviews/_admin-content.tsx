@@ -1,5 +1,6 @@
 'use client';
 
+import { PageSkeleton } from '@/components/shared/PageSkeleton';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { ReviewClientCard } from '@/components/shared/reviews/ReviewClientCard';
 import { StatCard } from '@/components/shared/StatCard';
@@ -30,7 +31,7 @@ function AdminReviewsContent() {
       />
       <div className="flex flex-col gap-5 px-4 py-6 md:px-10 md:py-10">
         {isLoading ? (
-          <ReviewsNotice>{'// Loading reviews…'}</ReviewsNotice>
+          <PageSkeleton />
         ) : error || !page ? (
           <ReviewsNotice>
             {`// ${error ? normalizeError(error).message : 'Reviews unavailable'}`}

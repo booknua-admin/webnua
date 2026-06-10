@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
+import { SkeletonRows } from '@/components/shared/PageSkeleton';
 import { TicketRow } from '@/components/shared/tickets/TicketRow';
 import { TicketTabsBar } from '@/components/shared/tickets/TicketTabsBar';
 import { TicketsHero } from '@/components/shared/tickets/TicketsHero';
@@ -82,7 +83,7 @@ function ClientTicketsContent() {
 
         <div className="overflow-hidden rounded-[14px] border border-ink/8 bg-card">
           {isLoading ? (
-            <InboxNotice>{'// Loading tickets…'}</InboxNotice>
+            <SkeletonRows />
           ) : error ? (
             <InboxNotice>{`// ${normalizeError(error).message}`}</InboxNotice>
           ) : visibleTickets.length === 0 ? (

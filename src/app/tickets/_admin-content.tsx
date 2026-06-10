@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 
 import { FunnelApprovalRow } from '@/components/admin/funnels/FunnelApprovalRow';
 import { WebsiteApprovalRow } from '@/components/admin/tickets/WebsiteApprovalRow';
+import { SkeletonRows } from '@/components/shared/PageSkeleton';
 import { ClientMultiSelect } from '@/components/shared/ClientMultiSelect';
 import { TicketRow } from '@/components/shared/tickets/TicketRow';
 import { TicketTabsBar } from '@/components/shared/tickets/TicketTabsBar';
@@ -240,7 +241,7 @@ function RegularTicketsList({
         <div className="text-right">{'// Age'}</div>
       </div>
       {isLoading ? (
-        <ListNotice>{'// Loading tickets…'}</ListNotice>
+        <SkeletonRows />
       ) : error ? (
         <ListNotice>{`// ${normalizeError(error).message}`}</ListNotice>
       ) : tickets.length === 0 ? (

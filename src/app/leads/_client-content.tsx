@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 
+import { SkeletonRows } from '@/components/shared/PageSkeleton';
 import { ColdLeadRow } from '@/components/shared/leads/ColdLeadRow';
 import { LeadRow } from '@/components/shared/leads/LeadRow';
 import { LeadTabsBar } from '@/components/shared/leads/LeadTabsBar';
@@ -86,7 +87,7 @@ function ClientLeadsContent() {
 
         <div className="overflow-hidden rounded-[14px] border border-ink/8 bg-card">
           {isLoading ? (
-            <InboxNotice>{'// Loading leads…'}</InboxNotice>
+            <SkeletonRows />
           ) : error ? (
             <InboxNotice>
               {`// ${normalizeError(error).message}`}

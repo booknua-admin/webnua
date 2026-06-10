@@ -12,6 +12,7 @@ import type { ActivityRowData, ActivityTone } from '@/components/shared/Activity
 import { FunnelConversionBars } from '@/components/shared/funnels/FunnelConversionBars';
 import { MiniTrendBars } from '@/components/shared/MiniTrendBars';
 import { PageHeader } from '@/components/shared/PageHeader';
+import { PageSkeleton } from '@/components/shared/PageSkeleton';
 import { StatCard } from '@/components/shared/StatCard';
 import { Topbar, TopbarBreadcrumb } from '@/components/shared/Topbar';
 import { useUser } from '@/lib/auth/user-stub';
@@ -52,7 +53,7 @@ export function ClientDashboardContent() {
       <Topbar breadcrumb={<TopbarBreadcrumb current="Home" />} />
       <div className="flex flex-col gap-7 px-4 py-6 md:px-10 md:py-10">
         {isLoading ? (
-          <DashboardNotice>{'// Loading your dashboard…'}</DashboardNotice>
+          <PageSkeleton hero />
         ) : error || !dash ? (
           <DashboardNotice>
             {`// ${error ? normalizeError(error).message : 'Dashboard unavailable'}`}

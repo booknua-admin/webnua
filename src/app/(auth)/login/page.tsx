@@ -53,7 +53,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex w-full max-w-md flex-col items-stretch gap-8">
+    <div className="flex w-full max-w-md flex-col items-stretch gap-8 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-3 motion-safe:duration-500">
       <div className="flex flex-col items-center gap-3 text-ink">
         <img src="/webnua-logo.png" alt="Webnua" width={160} height={40} className="h-10 w-auto" />
         <Eyebrow tone="quiet">{'// Webnua platform'}</Eyebrow>
